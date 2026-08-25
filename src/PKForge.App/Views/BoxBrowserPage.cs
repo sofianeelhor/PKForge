@@ -191,7 +191,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             HorizontalOptions = LayoutOptions.Center,
             Children =
             {
-                PksmIcons.Icon("box", 44),
+                PksmIcons.Icon("storage", 44),
                 new Label { Text = "Select a Pokémon", TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = 15 },
                 new Label { Text = "Tap an empty slot to add one", TextColor = UiTokens.Ink1, FontSize = 11, HorizontalTextAlignment = TextAlignment.Center },
             },

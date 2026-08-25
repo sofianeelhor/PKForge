@@ -192,7 +192,7 @@ public static class EventGallery
             // actual laid-out size, so the shelf can never overflow the frame again.
             var maxW = host.Width > 0 ? host.Width - 24 : 616;
             var maxH = host.Height > 0 ? host.Height - 16 : 344;
-            _cardH = (float)Math.Clamp((maxH - 152) / 2, 84, 122); // chrome ~= 120; two rows must show
+            _cardH = (float)Math.Clamp((maxH - 152) / 2, 96, 122); // chrome ~= 120; two rows must show
             _cardW = _cardH * 1.08f;
             var previewW = Math.Clamp(maxW * 0.30, 148, 210);
 
@@ -230,7 +230,7 @@ public static class EventGallery
             var previewPane = Kit.LcdPanel(new VerticalStackLayout
             {
                 Spacing = 6,
-                Children = { _preview, _giftTitle, _giftFacts },
+                Children = { Kit.HeaderBar("WONDERCARD"), _preview, _giftTitle, _giftFacts },
             }, padding: 10);
 
             var body = new Grid
@@ -239,6 +239,7 @@ public static class EventGallery
                 ColumnDefinitions = [new(new GridLength(previewW)), new(GridLength.Star)],
                 Children = { previewPane, _wall },
             };
+            body.SetColumn(_wall, 1);
             var content = new Grid
             {
                 RowSpacing = 10,
@@ -346,11 +347,12 @@ public static class EventGallery
                 }
                 else
                 {
-                    var scale = Math.Min(60f / bitmap.Width, 60f / bitmap.Height);
+                    var max = _cardH - 48; // texts live in the bottom 44px
+                    var scale = Math.Min(max / bitmap.Width, max / bitmap.Height);
                     var w = bitmap.Width * scale;
                     var h = bitmap.Height * scale;
                     using var image = SKImage.FromBitmap(bitmap);
-                    canvas.DrawImage(image, new SKRect(x + (_cardW - w) / 2, y + 8 + (60 - h) / 2, x + (_cardW + w) / 2, y + 8 + (60 + h) / 2),
+                    canvas.DrawImage(image, new SKRect(x + (_cardW - w) / 2, y + 6 + (max - h) / 2, x + (_cardW + w) / 2, y + 6 + (max + h) / 2),
                         new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
                 }
 
@@ -358,8 +360,8 @@ public static class EventGallery
                     PaintSparkle(canvas, x + _cardW - 14, y + 14, 6f);
 
                 var name = Fit(nameFont, SpeciesName(gift.Species), _cardW - 12);
-                canvas.DrawText(name, x + _cardW / 2, y + 88, SKTextAlign.Center, nameFont, namePaint);
-                canvas.DrawText($"Lv. {gift.Level}", x + _cardW / 2, y + 106, SKTextAlign.Center, lvFont, lvPaint);
+                canvas.DrawText(name, x + _cardW / 2, y + _cardH - 30, SKTextAlign.Center, nameFont, namePaint);
+                canvas.DrawText($"Lv. {gift.Level}", x + _cardW / 2, y + _cardH - 12, SKTextAlign.Center, lvFont, lvPaint);
 
                 if (i == _index)
                     PksmPaint.Selection(canvas, rect);
