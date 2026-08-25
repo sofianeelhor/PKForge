@@ -14,7 +14,7 @@ public static class TextPopup
             HeightRequest = 120,
             FontSize = 16,
             FontFamily = DsChrome.PixelFont,
-            TextColor = UiTokens.Paper,
+            TextColor = UiTokens.Ink0,
             BackgroundColor = UiTokens.ShellPress,
             Placeholder = "Pikachu @ Light Ball\nAbility: Static\nLevel: 50\nShiny: Yes\n- Thunderbolt\n…",
             PlaceholderColor = UiTokens.Ink1,

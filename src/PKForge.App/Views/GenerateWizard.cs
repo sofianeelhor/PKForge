@@ -35,7 +35,7 @@ public static class GenerateWizard
             Placeholder = "auto",
             Keyboard = Keyboard.Numeric,
             FontSize = 14,
-            TextColor = UiTokens.Paper,
+            TextColor = UiTokens.Ink0,
             PlaceholderColor = UiTokens.Ink1,
             BackgroundColor = UiTokens.ShellPress,
             WidthRequest = 90,
@@ -54,7 +54,7 @@ public static class GenerateWizard
         // A chooser row: caption, current value ("auto" until picked), opens a picker.
         (View Row, Action Refresh) Chooser(string caption, Func<List<PickItem>> items, Func<int?> get, Action<int?> set)
         {
-            var value = new Label { TextColor = UiTokens.Paper, FontSize = 13, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center, Text = "auto" };
+            var value = new Label { TextColor = UiTokens.Ink0, FontSize = 13, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center, Text = "auto" };
             void Refresh()
             {
                 var current = get();

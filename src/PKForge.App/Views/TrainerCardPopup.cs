@@ -16,7 +16,7 @@ public static class TrainerCardPopup
             Keyboard = keyboard ?? Keyboard.Default,
             FontSize = 16,
             FontFamily = DsChrome.PixelFont,
-            TextColor = UiTokens.Paper,
+            TextColor = UiTokens.Ink0,
             BackgroundColor = UiTokens.ShellPress,
             IsSpellCheckEnabled = false,
             IsTextPredictionEnabled = false,

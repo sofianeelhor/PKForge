@@ -1399,7 +1399,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         monActions.Children.Add(met);
 
         // Potential opens the Tera / Hyper Training / ability slot sub-editor (gen-gated).
-        var potential = Kit.Capsule("POTENTIAL", UiTokens.Gold);
+        var potential = Kit.Capsule("POTENTIAL", UiTokens.Cyan);
         potential.FontSize = 11;
         potential.Padding = new Thickness(10, 6);
         potential.Margin = new Thickness(0, 0, 6, 6);

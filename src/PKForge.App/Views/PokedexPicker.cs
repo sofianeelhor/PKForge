@@ -306,7 +306,7 @@ public sealed class PokedexPicker : IPadHandler
                 States =
                 {
                     new VisualState { Name = "Normal", Setters = { new Setter { Property = Border.StrokeThicknessProperty, Value = 1.0 } } },
-                    new VisualState { Name = "Selected", Setters = { new Setter { Property = Border.StrokeProperty, Value = UiTokens.Gold }, new Setter { Property = Border.StrokeThicknessProperty, Value = 3.0 } } },
+                    new VisualState { Name = "Selected", Setters = { new Setter { Property = Border.StrokeProperty, Value = UiTokens.SelectBorder }, new Setter { Property = Border.StrokeThicknessProperty, Value = 3.0 } } },
                 },
             },
         });

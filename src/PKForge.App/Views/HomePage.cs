@@ -136,7 +136,7 @@ public sealed class HomePage : ContentPage, IPadHandler
                 var choice = await PadMenu.ShowAsync(_hostGrid, "Get started", null,
                     new PadOption("Link an emulator", IconPath: "folder"),
                     new PadOption("Open a single save file", IconPath: "search"),
-                    new PadOption($"Download the sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "box"),
+                    new PadOption($"Download the sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "storage"),
                     new PadOption("Maybe later", IconPath: "events"));
                 switch (choice)
                 {
@@ -216,10 +216,10 @@ public sealed class HomePage : ContentPage, IPadHandler
     private async Task ShowLinkMenuAsync()
     {
         var choice = await PadMenu.ShowAsync(_hostGrid, "LINK A STORAGE UNIT", null,
-            new PadOption("RetroArch (GB/GBC/GBA)", IconPath: "editor"),
-            new PadOption("melonDS (DS)", IconPath: "editor"),
-            new PadOption("Azahar (3DS)", IconPath: "editor"),
-            new PadOption("Eden (Switch)", IconPath: "editor"),
+            new PadOption("RetroArch (GB/GBC/GBA)", IconPath: "retroarch"),
+            new PadOption("melonDS (DS)", IconPath: "melonds"),
+            new PadOption("Azahar (3DS)", IconPath: "azahar"),
+            new PadOption("Eden (Switch)", IconPath: "eden"),
             new PadOption("Single save file", IconPath: "search"));
         switch (choice)
         {
@@ -237,7 +237,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             new PadOption("Link an emulator", IconPath: "folder"),
             new PadOption("Open a save file", IconPath: "search"),
             new PadOption("Rescan games", IconPath: "hex"),
-            new PadOption($"Download full sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "box"),
+            new PadOption($"Download full sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "storage"),
             new PadOption("Scan report", IconPath: "script"),
             new PadOption("Restore points", IconPath: "credits"),
             new PadOption("About PKForge", IconPath: "settings"));
@@ -416,7 +416,7 @@ public sealed class HomePage : ContentPage, IPadHandler
                         Name = "Selected",
                         Setters =
                         {
-                            new Setter { Property = Border.StrokeProperty, Value = UiTokens.Gold },
+                            new Setter { Property = Border.StrokeProperty, Value = UiTokens.SelectBorder },
                             new Setter { Property = Border.StrokeThicknessProperty, Value = 3.0 },
                             new Setter { Property = BackgroundColorProperty, Value = UiTokens.Shell },
                         },
@@ -431,7 +431,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     private async Task ShowEventsMenuAsync()
     {
         var choice = await PadMenu.ShowAsync(_hostGrid, "EVENT DATABASE", null,
-            new PadOption($"Community boxes ({Services.CommunityBoxService.RepoTitle})", IconPath: "box"),
+            new PadOption($"Community boxes ({Services.CommunityBoxService.RepoTitle})", IconPath: "storage"),
             new PadOption("Wonder cards", IconPath: "events"));
         switch (choice)
         {

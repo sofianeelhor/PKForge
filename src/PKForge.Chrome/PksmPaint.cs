@@ -272,18 +272,17 @@ public static class PksmPaint
 
     // ---------- Storage slots ----------
 
-    /// <summary>A box slot on the wallpaper: soft white fill, crisp white border, faint ball outline when empty.</summary>
+    /// <summary>An empty box slot: only a faint waiting ball on the wallpaper (the games
+    /// draw no cell frames - the sprite itself is the slot).</summary>
     public static void Slot(SKCanvas c, SKRect r, SKColor wallpaper, bool empty)
     {
-        var fill = new SKColor(0xFF, 0xFF, 0xFF, 0x5C);
-        c.DrawRoundRect(r, 4, 4, Paint(fill));
-        c.DrawRoundRect(r, 4, 4, Stroke(new SKColor(0xFF, 0xFF, 0xFF, 0xB4), 1.5f));
-        if (empty)
-        {
-            var ball = new SKRect(r.MidX - r.Width * 0.18f, r.MidY - r.Width * 0.18f, r.MidX + r.Width * 0.18f, r.MidY + r.Width * 0.18f);
-            c.DrawOval(ball, Stroke(new SKColor(0xFF, 0xFF, 0xFF, 0x60), 2));
-            c.DrawLine(ball.MidX, ball.Top, ball.MidX, ball.Bottom, Stroke(new SKColor(0xFF, 0xFF, 0xFF, 0x60), 2));
-        }
+        if (!empty) return;
+        var shade = Pksm.WallpaperShade(wallpaper);
+        var ball = new SKRect(r.MidX - r.Width * 0.16f, r.MidY - r.Width * 0.16f, r.MidX + r.Width * 0.16f, r.MidY + r.Width * 0.16f);
+        var p = Stroke(shade.WithAlpha(0x66), 2);
+        c.DrawOval(ball, p);
+        c.DrawLine(ball.MidX, ball.Top, ball.MidX, ball.Bottom, p);
+        c.DrawOval(new SKRect(ball.MidX - 3, ball.MidY - 3, ball.MidX + 3, ball.MidY + 3), p);
     }
 
     /// <summary>Bottom hint bar: black strip, white border, key discs + white labels.</summary>

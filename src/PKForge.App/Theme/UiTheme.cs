@@ -35,6 +35,8 @@ public static class UiTokens
     public static readonly Color Ink1 = As(Pksm.InkSoft);
     public static readonly Color InkSoft = As(Pksm.InkSoft);
     public static readonly Color SelectInk = As(Pksm.SelectInk);
+    public static readonly Color SelectBorder = As(Pksm.SelectBorder);
+    public static readonly Color SelectFill = As(Pksm.SelectFill);
 
     // ---- Chrome accents ----
     public static readonly Color Maroon = As(Pksm.HeaderBlue);       // header strips are PKSM blue

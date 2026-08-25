@@ -15,6 +15,7 @@ public static class PksmIcons
     public const string Periwinkle = "periwinkle";
     public const string Indigo = "indigo";
     public const string White = "white";
+    public const string Native = "native";
 
     /// <summary>Semantic → bundled asset file.</summary>
     public static string Asset(string name) => name switch
@@ -40,6 +41,10 @@ public static class PksmIcons
         "male" => "icon_male.png",
         "female" => "icon_female.png",
         "genderless" => "icon_genderless.png",
+        "retroarch" => "emu_retroarch.png",
+        "melonds" => "emu_melonds.png",
+        "azahar" => "emu_azahar.png",
+        "eden" => "emu_eden.png",
         _ => "icon_hex.png",
     };
 
@@ -60,6 +65,7 @@ public static class PksmIcons
             var color = tint switch
             {
                 Periwinkle => (SKColor?)null, // native
+                Native => (SKColor?)null,
                 White => SKColors.White,
                 _ => Pksm.IndigoInk,
             };

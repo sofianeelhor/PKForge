@@ -116,7 +116,7 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
     {
         var icon = PksmIcons.Icon("credits", 22);
 
-        var title = new Label { TextColor = UiTokens.Paper, FontFamily = DsChrome.PixelFont, FontSize = 15 };
+        var title = new Label { TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 15 };
         title.SetBinding(Label.TextProperty, nameof(BackupInfo.DisplayName));
 
         var detail = new Label { TextColor = UiTokens.InkSoft, FontFamily = DsChrome.PixelFont, FontSize = 12 };

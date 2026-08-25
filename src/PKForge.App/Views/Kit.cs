@@ -241,7 +241,7 @@ public static class Kit
             BackgroundColor = UiTokens.ChoiceFill,
             BorderColor = UiTokens.ChoiceRim,
             BorderWidth = 2,
-            TextColor = UiTokens.Paper,
+            TextColor = UiTokens.Ink0,
             FontAttributes = FontAttributes.Bold,
             FontSize = 13,
             CornerRadius = 6,

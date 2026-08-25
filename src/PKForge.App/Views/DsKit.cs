@@ -44,9 +44,10 @@ public sealed class DsFolderButton : Grid
         if (!string.IsNullOrEmpty(option.IconPath) && !option.IconPath.Contains('/'))
         {
             _iconName = option.IconPath;
+            var native = _iconName.StartsWith("emu_", StringComparison.Ordinal);
             _icon = new Image
             {
-                Source = PksmIcons.Source(option.IconPath, PksmIcons.White),
+                Source = PksmIcons.Source(option.IconPath, native ? PksmIcons.Native : PksmIcons.White),
                 WidthRequest = 22,
                 HeightRequest = 22,
                 HorizontalOptions = LayoutOptions.Center,
@@ -103,7 +104,7 @@ public sealed class DsFolderButton : Grid
             if (_selected == value) return;
             _selected = value;
             _label.TextColor = value ? UiTokens.SelectInk : UiTokens.Paper;
-            if (_icon is not null && _icon.Source is ImageSource)
+            if (_icon is not null && !_iconName.StartsWith("emu_", StringComparison.Ordinal))
                 _icon.Source = PksmIcons.Source(_iconName, value ? PksmIcons.Indigo : PksmIcons.White);
             _bg.InvalidateSurface();
             _pointer?.InvalidateSurface();

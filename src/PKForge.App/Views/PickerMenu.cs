@@ -41,7 +41,7 @@ public sealed class PickerMenu : IPadHandler
         {
             Placeholder = "Search…",
             FontSize = 14,
-            TextColor = UiTokens.Paper,
+            TextColor = UiTokens.Ink0,
             PlaceholderColor = UiTokens.Ink1,
             BackgroundColor = UiTokens.ShellPress,
         };
@@ -103,7 +103,7 @@ public sealed class PickerMenu : IPadHandler
         icon.SetBinding(Image.SourceProperty, new Binding(nameof(PickItem.IconPath)));
         icon.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(PickItem.IconPath), converter: NotNull));
 
-        var name = new Label { TextColor = UiTokens.Paper, FontFamily = DsChrome.PixelFont, FontSize = 15, VerticalTextAlignment = TextAlignment.Center };
+        var name = new Label { TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 15, VerticalTextAlignment = TextAlignment.Center };
         name.SetBinding(Label.TextProperty, nameof(PickItem.Name));
 
         var row = new Grid
@@ -131,7 +131,7 @@ public sealed class PickerMenu : IPadHandler
                 States =
                 {
                     new VisualState { Name = "Normal", Setters = { new Setter { Property = Border.StrokeProperty, Value = Colors.Transparent } } },
-                    new VisualState { Name = "Selected", Setters = { new Setter { Property = Border.StrokeProperty, Value = UiTokens.Gold }, new Setter { Property = Border.StrokeThicknessProperty, Value = 2.5 } } },
+                    new VisualState { Name = "Selected", Setters = { new Setter { Property = Border.StrokeProperty, Value = UiTokens.SelectBorder }, new Setter { Property = Border.StrokeThicknessProperty, Value = 2.5 } } },
                 },
             },
         });

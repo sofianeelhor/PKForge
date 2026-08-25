@@ -12,6 +12,7 @@ using PKForge.Domain;
 namespace PKForge.App;
 
 [Activity(Theme = "@style/Maui.SplashTheme", MainLauncher = true,
+    Icon = "@mipmap/appicon", RoundIcon = "@mipmap/appicon_round",
     ScreenOrientation = ScreenOrientation.SensorLandscape,
     ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
 public sealed class MainActivity : MauiAppCompatActivity

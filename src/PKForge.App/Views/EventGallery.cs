@@ -194,14 +194,13 @@ public static class EventGallery
             var maxH = host.Height > 0 ? host.Height - 16 : 344;
             _cardH = (float)Math.Clamp((maxH - 152) / 2, 84, 122); // chrome ~= 120; two rows must show
             _cardW = _cardH * 1.08f;
-            var wallH = Math.Max(maxH - 118, 2 * (_cardH + Gap) + Pad * 2);
             var previewW = Math.Clamp(maxW * 0.30, 148, 210);
 
-            _wall = new SKCanvasView { EnableTouchEvents = true, HeightRequest = wallH, HorizontalOptions = LayoutOptions.Fill };
+            _wall = new SKCanvasView { EnableTouchEvents = true, HorizontalOptions = LayoutOptions.Fill, VerticalOptions = LayoutOptions.Fill };
             _wall.PaintSurface += PaintWall;
             _wall.Touch += OnWallTouch;
 
-            _preview = new SKCanvasView { HeightRequest = Math.Max(84, wallH - 84), HorizontalOptions = LayoutOptions.Fill };
+            _preview = new SKCanvasView { HeightRequest = 96, HorizontalOptions = LayoutOptions.Fill };
             _preview.PaintSurface += (_, args) =>
             {
                 var gift = _gifts[_index];
@@ -240,9 +239,10 @@ public static class EventGallery
                 ColumnDefinitions = [new(new GridLength(previewW)), new(GridLength.Star)],
                 Children = { previewPane, _wall },
             };
-            var content = new VerticalStackLayout
+            var content = new Grid
             {
-                Spacing = 10,
+                RowSpacing = 10,
+                RowDefinitions = [new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto)],
                 Children =
                 {
                     Kit.HeaderBar($"MYSTERY GIFT · {gifts.Count}"),
@@ -250,6 +250,8 @@ public static class EventGallery
                     Kit.HintBar(("A", "WONDERCARD", null), ("B", "BACK", () => Close(null))),
                 },
             };
+            content.SetRow(body, 1);
+            content.SetRow((View)content.Children[2], 2);
 
             // The gift world itself: a pink panel washed with fixed white sparkles -
             // the white cards and preview pane float on top of it.

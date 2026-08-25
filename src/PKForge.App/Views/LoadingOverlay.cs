@@ -23,7 +23,7 @@ public sealed class LoadingOverlay
         _host = host;
         _progress = new Label
         {
-            TextColor = UiTokens.Paper,
+            TextColor = UiTokens.Ink0,
             FontFamily = DsChrome.PixelFont,
             FontSize = 14,
             HorizontalTextAlignment = TextAlignment.Center,

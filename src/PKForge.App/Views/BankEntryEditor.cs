@@ -853,7 +853,7 @@ public static class BankEntryEditor
                 Content = content;
             }
 
-            public void SetFocused(bool focused) => Stroke = focused ? UiTokens.Gold : Colors.Transparent;
+            public void SetFocused(bool focused) => Stroke = focused ? UiTokens.SelectBorder : Colors.Transparent;
         }
     }
 }
