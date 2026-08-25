@@ -14,7 +14,7 @@ public static class TextPopup
             HeightRequest = 120,
             FontSize = 16,
             FontFamily = DsChrome.PixelFont,
-            TextColor = UiTokens.Ink0,
+            TextColor = UiTokens.Paper,
             BackgroundColor = UiTokens.ShellPress,
             Placeholder = "Pikachu @ Light Ball\nAbility: Static\nLevel: 50\nShiny: Yes\n- Thunderbolt\n…",
             PlaceholderColor = UiTokens.Ink1,
@@ -40,7 +40,7 @@ public static class TextPopup
             Children =
             {
                 Kit.HeaderBar(title),
-                new Label { Text = hint, TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = 12, LineBreakMode = LineBreakMode.WordWrap },
+                new Label { Text = hint, TextColor = Color.FromArgb("#9AA5B0"), FontFamily = DsChrome.PixelFont, FontSize = 12, LineBreakMode = LineBreakMode.WordWrap },
                 editor,
                 new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { cancel, ok } },
             },

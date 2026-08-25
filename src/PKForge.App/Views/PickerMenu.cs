@@ -41,7 +41,7 @@ public sealed class PickerMenu : IPadHandler
         {
             Placeholder = "Search…",
             FontSize = 14,
-            TextColor = UiTokens.Ink0,
+            TextColor = UiTokens.Paper,
             PlaceholderColor = UiTokens.Ink1,
             BackgroundColor = UiTokens.ShellPress,
         };
@@ -103,7 +103,7 @@ public sealed class PickerMenu : IPadHandler
         icon.SetBinding(Image.SourceProperty, new Binding(nameof(PickItem.IconPath)));
         icon.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(PickItem.IconPath), converter: NotNull));
 
-        var name = new Label { TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 15, VerticalTextAlignment = TextAlignment.Center };
+        var name = new Label { TextColor = UiTokens.Paper, FontFamily = DsChrome.PixelFont, FontSize = 15, VerticalTextAlignment = TextAlignment.Center };
         name.SetBinding(Label.TextProperty, nameof(PickItem.Name));
 
         var row = new Grid
@@ -117,7 +117,7 @@ public sealed class PickerMenu : IPadHandler
 
         var cell = new Border
         {
-            BackgroundColor = UiTokens.Paper,
+            BackgroundColor = UiTokens.ShellPress,
             StrokeThickness = 1.5,
             Stroke = Colors.Transparent,
             StrokeShape = new RoundRectangle { CornerRadius = 8 },

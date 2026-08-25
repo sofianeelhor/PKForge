@@ -35,7 +35,7 @@ public static class GenerateWizard
             Placeholder = "auto",
             Keyboard = Keyboard.Numeric,
             FontSize = 14,
-            TextColor = UiTokens.Ink0,
+            TextColor = UiTokens.Paper,
             PlaceholderColor = UiTokens.Ink1,
             BackgroundColor = UiTokens.ShellPress,
             WidthRequest = 90,
@@ -54,7 +54,7 @@ public static class GenerateWizard
         // A chooser row: caption, current value ("auto" until picked), opens a picker.
         (View Row, Action Refresh) Chooser(string caption, Func<List<PickItem>> items, Func<int?> get, Action<int?> set)
         {
-            var value = new Label { TextColor = UiTokens.Ink0, FontSize = 13, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center, Text = "auto" };
+            var value = new Label { TextColor = UiTokens.Paper, FontSize = 13, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center, Text = "auto" };
             void Refresh()
             {
                 var current = get();
@@ -72,7 +72,7 @@ public static class GenerateWizard
                     ColumnDefinitions = [new(new GridLength(80)), new(GridLength.Star), new(GridLength.Auto)],
                     Children =
                     {
-                        new Label { Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center },
+                        new Label { Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = Color.FromArgb("#9AA5B0"), VerticalTextAlignment = TextAlignment.Center },
                         value,
                         PksmIcons.Icon("search", 16),
                     },
@@ -135,9 +135,9 @@ public static class GenerateWizard
             Spacing = 14,
             Children =
             {
-                new Label { Text = "LEVEL", FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center },
+                new Label { Text = "LEVEL", FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = Color.FromArgb("#9AA5B0"), VerticalTextAlignment = TextAlignment.Center },
                 level,
-                new Label { Text = "SHINY", FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center },
+                new Label { Text = "SHINY", FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = Color.FromArgb("#9AA5B0"), VerticalTextAlignment = TextAlignment.Center },
                 shiny,
             },
         };
@@ -148,7 +148,7 @@ public static class GenerateWizard
             Children =
             {
                 Kit.HeaderBar($"STEP 2 · {species.Name.ToUpperInvariant()}"),
-                new Label { Text = "Everything left on \"auto\" is chosen by the legalizer to guarantee a legal Pokémon.", TextColor = UiTokens.Ink1, FontSize = 11, LineBreakMode = LineBreakMode.WordWrap },
+                new Label { Text = "Everything left on \"auto\" is chosen by the legalizer to guarantee a legal Pokémon.", TextColor = Color.FromArgb("#9AA5B0"), FontSize = 11, LineBreakMode = LineBreakMode.WordWrap },
                 levelRow, natureRow, abilityRow, ballRow,
                 moveRows[0], moveRows[1], moveRows[2], moveRows[3],
                 new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { cancel, generate } },

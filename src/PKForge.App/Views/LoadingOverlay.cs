@@ -23,7 +23,7 @@ public sealed class LoadingOverlay
         _host = host;
         _progress = new Label
         {
-            TextColor = UiTokens.Ink0,
+            TextColor = UiTokens.Paper,
             FontFamily = DsChrome.PixelFont,
             FontSize = 14,
             HorizontalTextAlignment = TextAlignment.Center,
@@ -41,7 +41,7 @@ public sealed class LoadingOverlay
             Children =
             {
                 Kit.HeaderBar(title),
-                new Label { Text = subtitle, TextColor = UiTokens.Ink1, FontSize = 12, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap },
+                new Label { Text = subtitle, TextColor = Color.FromArgb("#9AA5B0"), FontSize = 12, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap },
                 Kit.WalkerStrip(34),
                 _bar,
                 _progress,

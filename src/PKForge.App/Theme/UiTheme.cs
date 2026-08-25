@@ -15,28 +15,28 @@ public static class UiTokens
     private static Color As(SKColor c) => Color.FromRgb(c.Red, c.Green, c.Blue);
 
     // ---- Surfaces ----
-    public static readonly Color Paper = As(Pksm.Paper);              // panel white
+    public static readonly Color Paper = As(Pksm.Paper);              // white content cards on worlds
     public static readonly Color PaperShade = As(Pksm.PaperShade);
-    public static readonly Color Shell = Paper;                        // legacy name kept for views
-    public static readonly Color ShellEdge = As(Pksm.Chrome);          // warm-grey panel border
-    public static readonly Color ShellPress = As(Pksm.ChromeLight);
-    public static readonly Color Housing = As(Pksm.Housing);           // warm page backdrop (never blue)
+    public static readonly Color Shell = As(Pksm.Strip);               // dark chrome windows
+    public static readonly Color ShellEdge = As(Pksm.Chrome);          // grey border on dark
+    public static readonly Color ShellPress = As(Pksm.ChromeDark);
+    public static readonly Color Housing = As(Pksm.Housing);           // the grey grid page backdrop
 
-    // Legacy names still referenced by views mid-migration to the PKSM language; do not add uses.
-    public static readonly Color LcdBg = As(Pksm.PaperShade);
-    public static readonly Color LcdText = As(Pksm.Ink);
+    // Legacy names still referenced by views; do not add uses.
+    public static readonly Color LcdBg = As(Pksm.Panel);
+    public static readonly Color LcdText = As(Pksm.Paper);
     public static readonly Color LcdFrame = As(Pksm.Chrome);
-    public static readonly Color Navy0 = As(Pksm.Paper);
-    public static readonly Color Navy1 = As(Pksm.Ink);
-    public static readonly Color Blueprint = As(Pksm.Indigo);
+    public static readonly Color Navy0 = As(Pksm.Panel);
+    public static readonly Color Navy1 = As(Pksm.Paper);
+    public static readonly Color Blueprint = As(Pksm.SelectBorder);
 
     // ---- Ink ----
     public static readonly Color Ink0 = As(Pksm.Ink);
     public static readonly Color Ink1 = As(Pksm.InkSoft);
 
     // ---- Chrome accents ----
-    public static readonly Color Maroon = As(Pksm.Maroon);
-    public static readonly Color MaroonDeep = As(Pksm.MaroonDeep);
+    public static readonly Color Maroon = As(Pksm.Strip);           // header strips are near-black now
+    public static readonly Color MaroonDeep = As(Pksm.Chrome);
     public static readonly Color Indigo = As(Pksm.Indigo);
     public static readonly Color IndigoLight = As(Pksm.IndigoLight);
     public static readonly Color IndigoInk = As(Pksm.IndigoInk);
@@ -44,11 +44,11 @@ public static class UiTokens
     public static readonly Color MenuBlueDeep = As(Pksm.StorageMenuBlueDeep);
 
     // ---- Button language ----
-    public static readonly Color ChoiceFill = As(Pksm.ChoiceFill);
-    public static readonly Color ChoiceFillPress = As(Pksm.ChoiceFillPress);
-    public static readonly Color ChoiceRim = As(Pksm.ChoiceRim);
-    public static readonly Color ChoiceRimDeep = As(Pksm.ChoiceRimDeep);
-    public static readonly Color Cyan = As(Pksm.ChoiceRim);
+    public static readonly Color ChoiceFill = As(Pksm.Panel);
+    public static readonly Color ChoiceFillPress = As(Pksm.SelectFill);
+    public static readonly Color ChoiceRim = As(Pksm.SelectBorder);
+    public static readonly Color ChoiceRimDeep = As(Pksm.SelectMid);
+    public static readonly Color Cyan = As(Pksm.SelectBorder);
     public static readonly Color Blue = As(Pksm.StorageMenuBlue);
 
     // ---- Worlds ----
@@ -64,7 +64,7 @@ public static class UiTokens
     // ---- Signal (functional, reserved) ----
     public static readonly Color Green = As(Pksm.Legal);
     public static readonly Color Yellow = As(Pksm.ShinyGold);
-    public static readonly Color Gold = As(Pksm.ShinyGold);
+    public static readonly Color Gold = As(Pksm.ShinyGold);   // shiny mark only
     public static readonly Color RedOrange = As(Pksm.Illegal);
     public static readonly Color Ok = Green;
     public static readonly Color Warn = As(Pksm.ShinyGold);
@@ -78,10 +78,10 @@ public static class UiTokens
     public static readonly SKColor SkChrome = Pksm.Chrome;
     public static readonly SKColor SkInk = Pksm.Ink;
     public static readonly SKColor SkMenuBlue = Pksm.StorageMenuBlue;
-    public static readonly SKColor SkFocusGold = Pksm.FocusGold;
+    public static readonly SKColor SkFocusGold = Pksm.FocusBlue;
     public static readonly SKColor SkShinyGold = Pksm.ShinyGold;
     public static readonly SKColor SkCursorRed = Pksm.CursorRed;
-    public static readonly SKColor SkDefaultAccent = Pksm.ChoiceRim;
+    public static readonly SKColor SkDefaultAccent = Pksm.SelectBorder;
     public static readonly SKColor SkLcdBg = Pksm.PaperShade;
     public static readonly SKColor SkLcdText = Pksm.Ink;
     public static readonly SKColor SkLcdTileEdge = Pksm.Chrome;

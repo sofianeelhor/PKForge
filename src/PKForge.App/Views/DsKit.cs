@@ -33,7 +33,7 @@ public sealed class DsFolderButton : Grid
         _pointer.PaintSurface += (_, args) =>
         {
             if (!_selected) return;
-            PksmPaint.Pointer(args.Surface.Canvas, new SKPoint(4, args.Info.Height * 0.18f), args.Info.Height * 0.5f);
+            PksmPaint.Pointer(args.Surface.Canvas, new SKPoint(1, args.Info.Height * 0.22f), args.Info.Height * 0.46f);
         };
 
         // The icon column: a bundled PKSM pixel icon when the option carries a semantic
@@ -50,7 +50,7 @@ public sealed class DsFolderButton : Grid
                 Text = option.Glyph,
                 FontFamily = "Rounded",
                 FontSize = 18,
-                TextColor = option.Accent ?? UiTokens.IndigoInk,
+                TextColor = option.Accent ?? UiTokens.Paper,
                 HorizontalTextAlignment = TextAlignment.Center,
                 VerticalTextAlignment = TextAlignment.Center,
             };
@@ -65,7 +65,7 @@ public sealed class DsFolderButton : Grid
             Text = option.Label,
             FontFamily = DsChrome.PixelFont,
             FontSize = 15,
-            TextColor = UiTokens.Ink0,
+            TextColor = UiTokens.Paper,
             VerticalTextAlignment = TextAlignment.Center,
             LineBreakMode = LineBreakMode.TailTruncation,
         };
@@ -90,25 +90,18 @@ public sealed class DsFolderButton : Grid
         {
             if (_selected == value) return;
             _selected = value;
-            _label.TextColor = value ? UiTokens.IndigoInk : UiTokens.Ink0;
+            _label.TextColor = UiTokens.Paper;
             _bg.InvalidateSurface();
             _pointer?.InvalidateSurface();
         }
     }
 
-    /// <summary>Draws the row chrome: white idle, indigo-light band + indigo edge when selected.</summary>
+    /// <summary>Draws the row chrome: glossy black idle, navy + light-blue border selected.</summary>
     internal static void DrawRow(SKCanvas canvas, SKImageInfo info, bool selected)
     {
-        var r = new SKRect(0, 1, info.Width, info.Height - 1);
-        using var fill = new SKPaint { Color = selected ? Pksm.IndigoLight : Pksm.Paper, IsAntialias = true };
-        using var edge = new SKPaint { Color = selected ? Pksm.Indigo : Pksm.Chrome, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = selected ? 3 : 1.5f };
-        canvas.DrawRoundRect(r, 4, 4, fill);
-        canvas.DrawRoundRect(r, 4, 4, edge);
-        if (selected)
-        {
-            using var bar = new SKPaint { Color = Pksm.Indigo };
-            canvas.DrawRect(new SKRect(0, 3, 4, info.Height - 3), bar);
-        }
+        var r = new SKRect(1, 1, info.Width - 1, info.Height - 1);
+        if (selected) PksmPaint.SelectedButton(canvas, r, 5);
+        else PksmPaint.BlackButton(canvas, r, 5);
     }
 }
 
@@ -217,11 +210,11 @@ public sealed class DsCard : Grid
         };
         View iconView = _iconCanvas;
         if (asset is not null)
-            iconView = PksmIcons.Icon(asset, 36);
+            iconView = PksmIcons.Icon(asset, 36, PksmIcons.Periwinkle);
 
         _label = new Label
         {
-            Text = label, FontFamily = DsChrome.PixelFont, FontSize = 15, TextColor = UiTokens.Ink0,
+            Text = label, FontFamily = DsChrome.PixelFont, FontSize = 15, TextColor = UiTokens.Paper,
             VerticalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap, MaxLines = 2,
             HorizontalTextAlignment = TextAlignment.Center,
         };
@@ -255,19 +248,12 @@ public sealed class DsCard : Grid
         }
     }
 
-    /// <summary>White tile with warm border; gold focus ring when selected.</summary>
+    /// <summary>Glossy black tile; the navy + light-blue selection when chosen.</summary>
     internal static void DrawTile(SKCanvas canvas, SKImageInfo info, bool selected)
     {
         var r = new SKRect(1, 1, info.Width - 1, info.Height - 1);
-        using var fill = new SKPaint { Color = Pksm.Paper, IsAntialias = true };
-        using var edge = new SKPaint { Color = Pksm.Chrome, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2 };
-        canvas.DrawRoundRect(r, 6, 6, fill);
-        canvas.DrawRoundRect(r, 6, 6, edge);
-        if (selected)
-        {
-            using var gold = new SKPaint { Color = Pksm.FocusGold, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 3 };
-            canvas.DrawRoundRect(SKRect.Inflate(r, 3, 3), 8, 8, gold);
-        }
+        if (selected) PksmPaint.SelectedButton(canvas, r, 7);
+        else PksmPaint.BlackButton(canvas, r, 7);
     }
 }
 
@@ -340,10 +326,9 @@ public static class DsChrome
         {
             var c = a.Surface.Canvas;
             c.Clear(Pksm.Housing);
-            using var dot = new SKPaint { Color = Pksm.ChromeDark.WithAlpha(0x28) };
-            for (var y = 6f; y < a.Info.Height; y += 12)
-                for (var x = 6f; x < a.Info.Width; x += 12)
-                    c.DrawRect(x, y, x + 2, y + 2, dot);
+            using var line = new SKPaint { Color = Pksm.HousingLine, StrokeWidth = 1 };
+            for (var x = 0f; x < a.Info.Width; x += 26) c.DrawLine(x, 0, x, a.Info.Height, line);
+            for (var y = 0f; y < a.Info.Height; y += 26) c.DrawLine(0, y, a.Info.Width, y, line);
         };
         return view;
     }

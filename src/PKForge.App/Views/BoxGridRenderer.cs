@@ -138,7 +138,7 @@ public static class BoxGridRenderer
 
             if (viewModel.SelectMode && occupied && viewModel.IsMarked(viewModel.BoxIndex, index))
             {
-                using var badge = new SKPaint { Color = Pksm.FocusGold, IsAntialias = true };
+                using var badge = new SKPaint { Color = Pksm.SelectBorder, IsAntialias = true };
                 using var check = new SKPaint { Color = Pksm.IndigoInk, Style = SKPaintStyle.Stroke, StrokeWidth = 3f, IsAntialias = true, StrokeCap = SKStrokeCap.Round };
                 var size = Math.Min(rect.Width, rect.Height);
                 var cx = rect.Left + size * 0.15f;

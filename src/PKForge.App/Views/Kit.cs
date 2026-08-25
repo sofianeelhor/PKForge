@@ -53,10 +53,10 @@ public static class Kit
         using var canvas = new SKCanvas(bitmap);
         canvas.Clear(Pksm.Housing);
 
-        // Resting pokéball outlines — quiet, indigo.
+        // Resting pokéball outlines — quiet on the dark grid.
         using var ball = new SKPaint
         {
-            Color = Pksm.ChromeDark.WithAlpha(0x30),
+            Color = Pksm.ChromeLight.WithAlpha(0x2E),
             Style = SKPaintStyle.Stroke,
             StrokeWidth = 3f,
             IsAntialias = true,
@@ -70,11 +70,10 @@ public static class Kit
             canvas.DrawCircle(x, y, radius * 0.3f, ball);
         }
 
-        // The PC-box dot lattice.
-        using var dot = new SKPaint { Color = Pksm.ChromeDark.WithAlpha(0x26) };
-        for (var y = 6f; y < info.Height; y += 12)
-            for (var x = 6f; x < info.Width; x += 12)
-                canvas.DrawRect(x, y, x + 2, y + 2, dot);
+        // The B/W system-menu grid.
+        using var line = new SKPaint { Color = Pksm.HousingLine, StrokeWidth = 1 };
+        for (var x = 0f; x < info.Width; x += 26) canvas.DrawLine(x, 0, x, info.Height, line);
+        for (var y = 0f; y < info.Height; y += 26) canvas.DrawLine(0, y, info.Width, y, line);
         return bitmap;
     }
 
@@ -87,13 +86,13 @@ public static class Kit
         Offset = new Point(0, 4),
     };
 
-    /// <summary>A white PKSM panel: warm-grey 2px border, soft shadow.</summary>
+    /// <summary>A dark chrome window: near-black body, grey border, soft shadow.</summary>
     public static Border DevicePanel(View content, double padding = 12) => new()
     {
-        BackgroundColor = UiTokens.Paper,
+        BackgroundColor = UiTokens.Shell,
         Stroke = UiTokens.ShellEdge,
         StrokeThickness = 2,
-        StrokeShape = new RoundRectangle { CornerRadius = 6 },
+        StrokeShape = new RoundRectangle { CornerRadius = 8 },
         Shadow = FloatShadow,
         Padding = padding,
         Content = content,
@@ -102,10 +101,10 @@ public static class Kit
     /// <summary>Alias kept for views: the panel is the plate now.</summary>
     public static Border TopPlate(View content) => DevicePanel(content);
 
-    /// <summary>The framed screen surface (box grid, summaries): white frame around drawn content.</summary>
+    /// <summary>The framed screen surface (box grid, summaries): dark frame around drawn content.</summary>
     public static Border LcdPanel(View content, double padding = 6) => new()
     {
-        BackgroundColor = UiTokens.Paper,
+        BackgroundColor = UiTokens.Shell,
         Stroke = UiTokens.ShellEdge,
         StrokeThickness = 2,
         StrokeShape = new RoundRectangle { CornerRadius = 4 },
@@ -114,10 +113,10 @@ public static class Kit
         Content = content,
     };
 
-    /// <summary>Readout text on a panel surface.</summary>
+    /// <summary>Readout text on a dark surface.</summary>
     public static Label LcdLabel(double size = 13) => new()
     {
-        TextColor = UiTokens.Ink0,
+        TextColor = UiTokens.Paper,
         FontSize = size,
         FontAttributes = FontAttributes.Bold,
         LineBreakMode = LineBreakMode.TailTruncation,
@@ -241,7 +240,7 @@ public static class Kit
             BackgroundColor = UiTokens.ChoiceFill,
             BorderColor = UiTokens.ChoiceRim,
             BorderWidth = 2,
-            TextColor = UiTokens.Ink0,
+            TextColor = UiTokens.Paper,
             FontAttributes = FontAttributes.Bold,
             FontSize = 13,
             CornerRadius = 6,
@@ -343,7 +342,7 @@ public static class Kit
                             HorizontalTextAlignment = TextAlignment.Center,
                         },
                     },
-                    new Label { Text = label, FontFamily = DsChrome.PixelFont, TextColor = Colors.White.WithAlpha(0.9f), FontSize = 13, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center },
+                    new Label { Text = label, FontFamily = DsChrome.PixelFont, TextColor = Colors.White, FontSize = 13, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center },
                 },
             };
             if (onTap is not null)
@@ -380,7 +379,7 @@ public static class Kit
         };
         return new Border
         {
-            BackgroundColor = UiTokens.Paper,
+            BackgroundColor = UiTokens.ShellPress,
             Stroke = UiTokens.ShellEdge,
             StrokeThickness = 1.2,
             StrokeShape = new RoundRectangle { CornerRadius = 6 },
@@ -496,7 +495,7 @@ public static class Kit
         var entry = new Entry
         {
             FontSize = 13,
-            TextColor = UiTokens.Ink0,
+            TextColor = UiTokens.Paper,
             BackgroundColor = UiTokens.ShellPress,
             HeightRequest = 36,
             // Nicknames and trainer names are proper nouns: no red squiggles, no autocorrect.

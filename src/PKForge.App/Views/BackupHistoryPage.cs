@@ -37,7 +37,7 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
 
         var readout = new Label
         {
-            TextColor = UiTokens.Ink1,
+            TextColor = Color.FromArgb("#9AA5B0"),
             FontFamily = DsChrome.PixelFont,
             FontSize = 14,
             LineBreakMode = LineBreakMode.WordWrap,
@@ -116,10 +116,10 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
     {
         var icon = PksmIcons.Icon("credits", 22);
 
-        var title = new Label { TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 15 };
+        var title = new Label { TextColor = UiTokens.Paper, FontFamily = DsChrome.PixelFont, FontSize = 15 };
         title.SetBinding(Label.TextProperty, nameof(BackupInfo.DisplayName));
 
-        var detail = new Label { TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = 12 };
+        var detail = new Label { TextColor = Color.FromArgb("#9AA5B0"), FontFamily = DsChrome.PixelFont, FontSize = 12 };
         detail.SetBinding(Label.TextProperty, new MultiBinding
         {
             Bindings =

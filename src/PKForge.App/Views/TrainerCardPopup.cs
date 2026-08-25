@@ -16,7 +16,7 @@ public static class TrainerCardPopup
             Keyboard = keyboard ?? Keyboard.Default,
             FontSize = 16,
             FontFamily = DsChrome.PixelFont,
-            TextColor = UiTokens.Ink0,
+            TextColor = UiTokens.Paper,
             BackgroundColor = UiTokens.ShellPress,
             IsSpellCheckEnabled = false,
             IsTextPredictionEnabled = false,
@@ -36,7 +36,7 @@ public static class TrainerCardPopup
                 ColumnDefinitions = [new(new GridLength(90)), new(GridLength.Star)],
                 Children =
                 {
-                    new Label { Text = caption, FontSize = 11, FontFamily = DsChrome.PixelFont, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center },
+                    new Label { Text = caption, FontSize = 11, FontFamily = DsChrome.PixelFont, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#9AA5B0"), VerticalTextAlignment = TextAlignment.Center },
                     value,
                 },
             };
