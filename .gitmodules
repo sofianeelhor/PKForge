@@ -1,0 +1,6 @@
+[submodule "external/PKHeX"]
+	path = external/PKHeX
+	url = https://github.com/kwsch/PKHeX.git
+[submodule "external/PKHeX-Plugins"]
+	path = external/PKHeX-Plugins
+	url = https://github.com/santacrab2/PKHeX-Plugins.git

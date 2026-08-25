@@ -1,0 +1,87 @@
+using PKForge.Domain;
+using PKHeX.Core;
+
+namespace PKForge.Engine;
+
+/// <summary>Adapts the pinned PKHeX.Core save parser without leaking engine types.</summary>
+public sealed class SaveEngine : ISaveEngine
+{
+    public SaveSnapshot Open(ReadOnlyMemory<byte> bytes, string? displayName = null)
+    {
+        if (!SaveUtil.TryGetSaveFile(bytes.ToArray(), out var save) || save is null)
+            throw new InvalidDataException("The selected bytes are not a recognized save file.");
+
+        var slots = new List<SlotSummary>(save.BoxCount * save.BoxSlotCount);
+        for (var box = 0; box < save.BoxCount; box++)
+        {
+            for (var slot = 0; slot < save.BoxSlotCount; slot++)
+            {
+                var entity = save.GetBoxSlotAtIndex(box, slot);
+                slots.Add(new SlotSummary(box, slot, entity.Species == 0 ? null : entity.Species,
+                    entity.IsNicknamed ? entity.Nickname : null, entity.IsShiny,
+                    entity.Species == 0 || entity.Valid, entity.Form));
+            }
+        }
+
+        return new SaveSnapshot(save.Context.ToString(), save.Generation, bytes.ToArray(), slots, displayName);
+    }
+
+    public ISaveEngineSession OpenSession(ReadOnlyMemory<byte> bytes, string? displayName = null) =>
+        new SaveEngineSession(bytes, displayName);
+
+    public ReadOnlyMemory<byte> Serialize(SaveSnapshot snapshot) => snapshot.OriginalBytes.ToArray();
+
+    public bool Validate(ReadOnlyMemory<byte> bytes) => SaveUtil.TryGetSaveFile(bytes.ToArray(), out _);
+
+    public BankEntryInfo? TryDescribeEntity(byte[] bytes, string sourceName)
+    {
+        var entity = EntityFormat.GetFromBytes(bytes);
+        if (entity is null || entity.Species == 0) return null;
+        return new BankEntryInfo(entity.Species, entity.Form, entity.IsShiny,
+            entity.IsNicknamed ? entity.Nickname : GameInfo.GetStrings("en").specieslist[entity.Species],
+            entity.CurrentLevel, entity.Format, sourceName);
+    }
+
+    public ISaveEngineSession? OpenEntitySession(byte[] entityBytes, string? displayName = null)
+    {
+        var entity = EntityFormat.GetFromBytes(entityBytes);
+        if (entity is null || entity.Species == 0)
+            return null; // genuinely not an editable Pokémon
+
+        // A throwaway save of the mon's own generation gives the editor a real trainer
+        // context (legality, ability tables, stat maths) without touching any game file.
+        // Past this point the bytes ARE a mon, so failures throw with a reason the UI shows.
+        SaveFile blank;
+        try
+        {
+            var version = entity.Context.GetSingleGameVersion();
+            if (entity is { Format: 1, Japanese: true }) version = GameVersion.BU;
+            var language = (uint)entity.Language <= 12 ? (LanguageID)entity.Language : LanguageID.English;
+            blank = BlankSaveFile.Get(version, entity.OriginalTrainerName, language);
+        }
+        catch (Exception error)
+        {
+            throw new InvalidOperationException($"No editable context for this {entity.Context} Pokémon: {error.Message}", error);
+        }
+
+        var converted = EntityConverter.ConvertToType(entity, blank.PKMType, out var result);
+        if (converted is null)
+            throw new InvalidOperationException($"This {entity.Context} Pokémon could not be loaded into a {blank.Version} editor ({result}).");
+        converted.RefreshChecksum();
+        blank.SetBoxSlotAtIndex(converted, 0, 0);
+        return new SaveEngineSession(blank, displayName);
+    }
+
+    public SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes)
+    {
+        if (!SaveUtil.TryGetSaveFile(bytes.ToArray(), out var save) || save is null)
+            return null;
+
+        var strings = GameInfo.GetStrings("en");
+        var versionIndex = (int)save.Version;
+        var gameName = versionIndex > 0 && versionIndex < strings.gamelist.Length && strings.gamelist[versionIndex].Length > 0
+            ? strings.gamelist[versionIndex]
+            : $"Generation {save.Generation}";
+        return new SaveDescription(gameName, save.Generation, save.OT, save.PlayTimeString);
+    }
+}

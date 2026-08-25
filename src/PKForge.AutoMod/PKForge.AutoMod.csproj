@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Shim that compiles the pinned PKHeX-Plugins (santacrab2 fork) AutoMod sources
+    against our pristine PKHeX.Core submodule instead of the NuGet package,
+    so both always share one engine revision. No upstream file is modified.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>PKHeX.Core.AutoMod</AssemblyName>
+    <RootNamespace>PKHeX.Core.AutoMod</RootNamespace>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../external/PKHeX-Plugins/PKHeX.Core.AutoMod/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../external/PKHeX/PKHeX.Core/PKHeX.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,21 @@
+# Build output
+bin/
+obj/
+*.user
+.vs/
+.vscode/
+
+# OS noise
+.DS_Store
+
+# Local tooling / SDKs (not part of the repo)
+.dotnet-home/
+
+# Read-only reference checkouts used for prior-art mining — never production code
+# (root-anchored so external/PKHeX, the engine submodule, is NOT ignored)
+/pkhex/
+/PKSafe/
+src/PKForge.App/Resources/Raw/sgdb.key
+
+# Design preview renders (regenerated on demand)
+tools/ChromePreview/out/
