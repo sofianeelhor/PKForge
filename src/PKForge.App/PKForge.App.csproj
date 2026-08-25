@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PKForge.App</RootNamespace>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <ApplicationId>org.pkforge.app</ApplicationId>
+    <ApplicationVersion>100</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
+    <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="SkiaSharp.Views.Maui.Controls" Version="3.116.1" />
+    <PackageReference Include="ZXing.Net" Version="0.16.10" />
+  </ItemGroup>
+  <ItemGroup>
+    <MauiIcon Include="Resources/AppIcon/appicon.svg" Color="#E9ECF6" />
+    <MauiSplashScreen Include="Resources/Splash/splash.svg" Color="#E9ECF6" BaseSize="192,192" />
+    <MauiFont Include="Resources/Fonts/*.ttf" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Bundled fallback sprites from pristine PKHeX submodule (always offline-available). -->
+    <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Big Pokemon Sprites/*.png" LogicalName="sprites/%(Filename)%(Extension)" />
+    <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Big Shiny Sprites/*.png" LogicalName="sprites/%(Filename)%(Extension)" />
+    <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/ball/*.png" LogicalName="balls/%(Filename)%(Extension)" />
+    <!-- Game icons + hero art fetched once at build time from SteamGridDB (no key ships in the app). -->
+    <MauiAsset Include="Resources/GameArt/*.png" LogicalName="gameart/%(Filename)%(Extension)" />
+    <MauiAsset Include="Resources/GameHero/*.png" LogicalName="gamehero/%(Filename)%(Extension)" />
+    <!-- PKSM-derived pixel chrome (GPL-3, see Resources/UI/ATTRIBUTION.md). -->
+    <MauiAsset Include="Resources/UI/pksm/*.png" LogicalName="ui/pksm/%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../PKForge.Domain/PKForge.Domain.csproj" />
+    <ProjectReference Include="../PKForge.Chrome/PKForge.Chrome.csproj" />
+    <ProjectReference Include="../PKForge.Engine/PKForge.Engine.csproj" />
+    <ProjectReference Include="../PKForge.Infrastructure/PKForge.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
