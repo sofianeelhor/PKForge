@@ -136,7 +136,7 @@ public sealed class HomePage : ContentPage, IPadHandler
                 var choice = await PadMenu.ShowAsync(_hostGrid, "Get started", null,
                     new PadOption("Link an emulator", IconPath: "folder"),
                     new PadOption("Open a single save file", IconPath: "search"),
-                    new PadOption($"Download the sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "party"),
+                    new PadOption($"Download the sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "box"),
                     new PadOption("Maybe later", IconPath: "events"));
                 switch (choice)
                 {
@@ -237,7 +237,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             new PadOption("Link an emulator", IconPath: "folder"),
             new PadOption("Open a save file", IconPath: "search"),
             new PadOption("Rescan games", IconPath: "hex"),
-            new PadOption($"Download full sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "party"),
+            new PadOption($"Download full sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "box"),
             new PadOption("Scan report", IconPath: "script"),
             new PadOption("Restore points", IconPath: "credits"),
             new PadOption("About PKForge", IconPath: "settings"));

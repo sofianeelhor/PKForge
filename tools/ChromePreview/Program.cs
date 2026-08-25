@@ -33,17 +33,19 @@ static void Grid(SKCanvas c, SKRect r)
 {
     using var bg = new SKPaint { Color = Pksm.Housing };
     c.DrawRect(r, bg);
-    using var line = new SKPaint { Color = Pksm.HousingLine, StrokeWidth = 1 };
-    for (float x = 0; x < r.Width; x += 26) c.DrawLine(x, 0, x, r.Height, line);
-    for (float y = 0; y < r.Height; y += 26) c.DrawLine(0, y, r.Width, y, line);
+    using var dot = new SKPaint { Color = Pksm.HousingDot };
+    for (var y = 7f; y < r.Height; y += 14)
+        for (var x = 7f; x < r.Width; x += 14)
+            c.DrawRect(x, y, x + 2, y + 2, dot);
 }
 
 void StatusStrip(SKCanvas c, SKRect bar)
 {
-    using var p = new SKPaint { Color = Pksm.Strip };
+    using var p = new SKPaint { Color = Pksm.Paper };
     c.DrawRect(bar, p);
-    PksmPaint.CenterText(c, "PKForge", bar.Left + 24, bar.MidY, Font(22), SKColors.White, SKColors.Black.WithAlpha(0x50));
-    PksmPaint.CenterText(c, "OFFLINE", bar.Right - 130, bar.MidY, Font(18), new SKColor(0x8A, 0x95, 0xA0), SKColors.Black.WithAlpha(0x40));
+    c.DrawRect(new SKRect(bar.Left, bar.Bottom - 2, bar.Right, bar.Bottom), new SKPaint { Color = Pksm.PaperEdge });
+    PksmPaint.CenterText(c, "PKForge", bar.Left + 24, bar.MidY, Font(22), Pksm.Ink, SKColors.White.WithAlpha(0x60));
+    PksmPaint.CenterText(c, "OFFLINE", bar.Right - 130, bar.MidY, Font(18), Pksm.InkSoft, SKColors.White.WithAlpha(0x50));
     c.DrawRect(new SKRect(bar.Right - 80, bar.MidY - 6, bar.Right - 56, bar.MidY + 6), new SKPaint { Color = new SKColor(0x5F, 0xD0, 0x6A) });
 }
 

@@ -17,26 +17,28 @@ public static class UiTokens
     // ---- Surfaces ----
     public static readonly Color Paper = As(Pksm.Paper);              // white content cards on worlds
     public static readonly Color PaperShade = As(Pksm.PaperShade);
-    public static readonly Color Shell = As(Pksm.Strip);               // dark chrome windows
-    public static readonly Color ShellEdge = As(Pksm.Chrome);          // grey border on dark
-    public static readonly Color ShellPress = As(Pksm.ChromeDark);
+    public static readonly Color Shell = As(Pksm.Paper);               // white chrome windows
+    public static readonly Color ShellEdge = As(Pksm.PaperEdge);        // soft grey border
+    public static readonly Color ShellPress = As(Pksm.PaperShade);
     public static readonly Color Housing = As(Pksm.Housing);           // the grey grid page backdrop
 
     // Legacy names still referenced by views; do not add uses.
-    public static readonly Color LcdBg = As(Pksm.Panel);
-    public static readonly Color LcdText = As(Pksm.Paper);
-    public static readonly Color LcdFrame = As(Pksm.Chrome);
-    public static readonly Color Navy0 = As(Pksm.Panel);
-    public static readonly Color Navy1 = As(Pksm.Paper);
+    public static readonly Color LcdBg = As(Pksm.PaperShade);
+    public static readonly Color LcdText = As(Pksm.Ink);
+    public static readonly Color LcdFrame = As(Pksm.PaperEdge);
+    public static readonly Color Navy0 = As(Pksm.Paper);
+    public static readonly Color Navy1 = As(Pksm.Ink);
     public static readonly Color Blueprint = As(Pksm.SelectBorder);
 
     // ---- Ink ----
     public static readonly Color Ink0 = As(Pksm.Ink);
     public static readonly Color Ink1 = As(Pksm.InkSoft);
+    public static readonly Color InkSoft = As(Pksm.InkSoft);
+    public static readonly Color SelectInk = As(Pksm.SelectInk);
 
     // ---- Chrome accents ----
-    public static readonly Color Maroon = As(Pksm.Strip);           // header strips are near-black now
-    public static readonly Color MaroonDeep = As(Pksm.Chrome);
+    public static readonly Color Maroon = As(Pksm.HeaderBlue);       // header strips are PKSM blue
+    public static readonly Color MaroonDeep = As(Pksm.ButtonBlueDeep);
     public static readonly Color Indigo = As(Pksm.Indigo);
     public static readonly Color IndigoLight = As(Pksm.IndigoLight);
     public static readonly Color IndigoInk = As(Pksm.IndigoInk);
@@ -44,11 +46,11 @@ public static class UiTokens
     public static readonly Color MenuBlueDeep = As(Pksm.StorageMenuBlueDeep);
 
     // ---- Button language ----
-    public static readonly Color ChoiceFill = As(Pksm.Panel);
+    public static readonly Color ChoiceFill = As(Pksm.Paper);
     public static readonly Color ChoiceFillPress = As(Pksm.SelectFill);
-    public static readonly Color ChoiceRim = As(Pksm.SelectBorder);
-    public static readonly Color ChoiceRimDeep = As(Pksm.SelectMid);
-    public static readonly Color Cyan = As(Pksm.SelectBorder);
+    public static readonly Color ChoiceRim = As(Pksm.ButtonBlue);
+    public static readonly Color ChoiceRimDeep = As(Pksm.ButtonBlueDeep);
+    public static readonly Color Cyan = As(Pksm.ButtonBlue);
     public static readonly Color Blue = As(Pksm.StorageMenuBlue);
 
     // ---- Worlds ----
@@ -75,7 +77,7 @@ public static class UiTokens
 
     // ---- Skia twins for the grid renderers ----
     public static readonly SKColor SkPaper = Pksm.Paper;
-    public static readonly SKColor SkChrome = Pksm.Chrome;
+    public static readonly SKColor SkChrome = Pksm.PaperEdge;
     public static readonly SKColor SkInk = Pksm.Ink;
     public static readonly SKColor SkMenuBlue = Pksm.StorageMenuBlue;
     public static readonly SKColor SkFocusGold = Pksm.FocusBlue;
@@ -84,8 +86,8 @@ public static class UiTokens
     public static readonly SKColor SkDefaultAccent = Pksm.SelectBorder;
     public static readonly SKColor SkLcdBg = Pksm.PaperShade;
     public static readonly SKColor SkLcdText = Pksm.Ink;
-    public static readonly SKColor SkLcdTileEdge = Pksm.Chrome;
-    public static readonly SKColor SkEmptyMark = Pksm.ChromeLight;
+    public static readonly SKColor SkLcdTileEdge = Pksm.PaperEdge;
+    public static readonly SKColor SkEmptyMark = Pksm.PaperShade;
 
     /// <summary>MAUI color for a box wallpaper index (cycled like the games' PC boxes).</summary>
     public static Color Wallpaper(int boxIndex) => As(Pksm.BoxWallpapers[((boxIndex % Pksm.BoxWallpapers.Length) + Pksm.BoxWallpapers.Length) % Pksm.BoxWallpapers.Length]);

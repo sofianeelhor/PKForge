@@ -314,7 +314,7 @@ public static class EventGallery
             using var namePaint = new SKPaint { Color = Pksm.Ink, IsAntialias = true };
             using var lvPaint = new SKPaint { Color = Pksm.InkSoft, IsAntialias = true };
             using var cardFill = new SKPaint { Color = Pksm.Paper, Style = SKPaintStyle.Fill, IsAntialias = true };
-            using var cardEdge = new SKPaint { Color = Pksm.Chrome, Style = SKPaintStyle.Stroke, StrokeWidth = 2f, IsAntialias = true };
+            using var cardEdge = new SKPaint { Color = Pksm.PaperEdge, Style = SKPaintStyle.Stroke, StrokeWidth = 2f, IsAntialias = true };
 
             var first = _scrollRow * _cols;
             var last = Math.Min(_gifts.Count, first + _visibleRows * _cols);

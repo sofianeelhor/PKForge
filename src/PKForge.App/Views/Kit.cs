@@ -56,7 +56,7 @@ public static class Kit
         // Resting pokéball outlines — quiet on the dark grid.
         using var ball = new SKPaint
         {
-            Color = Pksm.ChromeLight.WithAlpha(0x2E),
+            Color = Pksm.HousingDot.WithAlpha(0x80),
             Style = SKPaintStyle.Stroke,
             StrokeWidth = 3f,
             IsAntialias = true,
@@ -70,10 +70,11 @@ public static class Kit
             canvas.DrawCircle(x, y, radius * 0.3f, ball);
         }
 
-        // The B/W system-menu grid.
-        using var line = new SKPaint { Color = Pksm.HousingLine, StrokeWidth = 1 };
-        for (var x = 0f; x < info.Width; x += 26) canvas.DrawLine(x, 0, x, info.Height, line);
-        for (var y = 0f; y < info.Height; y += 26) canvas.DrawLine(0, y, info.Width, y, line);
+        // The quiet dot lattice.
+        using var dot = new SKPaint { Color = Pksm.HousingDot };
+        for (var y = 7f; y < info.Height; y += 14)
+            for (var x = 7f; x < info.Width; x += 14)
+                canvas.DrawRect(x, y, x + 2, y + 2, dot);
         return bitmap;
     }
 
@@ -86,7 +87,7 @@ public static class Kit
         Offset = new Point(0, 4),
     };
 
-    /// <summary>A dark chrome window: near-black body, grey border, soft shadow.</summary>
+    /// <summary>A white chrome window: paper body, soft grey border, soft shadow.</summary>
     public static Border DevicePanel(View content, double padding = 12) => new()
     {
         BackgroundColor = UiTokens.Shell,
@@ -113,10 +114,10 @@ public static class Kit
         Content = content,
     };
 
-    /// <summary>Readout text on a dark surface.</summary>
+    /// <summary>Readout text on a panel.</summary>
     public static Label LcdLabel(double size = 13) => new()
     {
-        TextColor = UiTokens.Paper,
+        TextColor = UiTokens.Ink0,
         FontSize = size,
         FontAttributes = FontAttributes.Bold,
         LineBreakMode = LineBreakMode.TailTruncation,
@@ -342,7 +343,7 @@ public static class Kit
                             HorizontalTextAlignment = TextAlignment.Center,
                         },
                     },
-                    new Label { Text = label, FontFamily = DsChrome.PixelFont, TextColor = Colors.White, FontSize = 13, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center },
+                    new Label { Text = label, FontFamily = DsChrome.PixelFont, TextColor = UiTokens.Ink0, FontSize = 13, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center },
                 },
             };
             if (onTap is not null)
@@ -355,8 +356,9 @@ public static class Kit
         }
         return new Border
         {
-            BackgroundColor = Color.FromArgb("#10131A"),
-            StrokeThickness = 0,
+            BackgroundColor = UiTokens.Paper,
+            Stroke = UiTokens.ShellEdge,
+            StrokeThickness = 2,
             StrokeShape = new RoundRectangle { CornerRadius = 6 },
             Padding = new Thickness(16, 7),
             Content = row,
@@ -495,7 +497,7 @@ public static class Kit
         var entry = new Entry
         {
             FontSize = 13,
-            TextColor = UiTokens.Paper,
+            TextColor = UiTokens.Ink0,
             BackgroundColor = UiTokens.ShellPress,
             HeightRequest = 36,
             // Nicknames and trainer names are proper nouns: no red squiggles, no autocorrect.

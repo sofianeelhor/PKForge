@@ -72,7 +72,7 @@ public static class GenerateWizard
                     ColumnDefinitions = [new(new GridLength(80)), new(GridLength.Star), new(GridLength.Auto)],
                     Children =
                     {
-                        new Label { Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = Color.FromArgb("#9AA5B0"), VerticalTextAlignment = TextAlignment.Center },
+                        new Label { Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
                         value,
                         PksmIcons.Icon("search", 16),
                     },
@@ -135,9 +135,9 @@ public static class GenerateWizard
             Spacing = 14,
             Children =
             {
-                new Label { Text = "LEVEL", FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = Color.FromArgb("#9AA5B0"), VerticalTextAlignment = TextAlignment.Center },
+                new Label { Text = "LEVEL", FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
                 level,
-                new Label { Text = "SHINY", FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = Color.FromArgb("#9AA5B0"), VerticalTextAlignment = TextAlignment.Center },
+                new Label { Text = "SHINY", FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
                 shiny,
             },
         };
@@ -148,7 +148,7 @@ public static class GenerateWizard
             Children =
             {
                 Kit.HeaderBar($"STEP 2 · {species.Name.ToUpperInvariant()}"),
-                new Label { Text = "Everything left on \"auto\" is chosen by the legalizer to guarantee a legal Pokémon.", TextColor = Color.FromArgb("#9AA5B0"), FontSize = 11, LineBreakMode = LineBreakMode.WordWrap },
+                new Label { Text = "Everything left on \"auto\" is chosen by the legalizer to guarantee a legal Pokémon.", TextColor = UiTokens.InkSoft, FontSize = 11, LineBreakMode = LineBreakMode.WordWrap },
                 levelRow, natureRow, abilityRow, ballRow,
                 moveRows[0], moveRows[1], moveRows[2], moveRows[3],
                 new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { cancel, generate } },

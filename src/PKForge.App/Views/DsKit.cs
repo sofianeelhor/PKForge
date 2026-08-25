@@ -17,6 +17,8 @@ public sealed class DsFolderButton : Grid
     private readonly SKCanvasView _bg;
     private readonly Label _label;
     private readonly SKCanvasView? _pointer;
+    private readonly Image? _icon;
+    private readonly string _iconName = "";
     private bool _selected;
 
     public Action? Tapped { get; set; }
@@ -37,11 +39,21 @@ public sealed class DsFolderButton : Grid
         };
 
         // The icon column: a bundled PKSM pixel icon when the option carries a semantic
-        // name, else the accent glyph. The icon stays visible in both row states.
+        // name, else the accent glyph. White on blue buttons, indigo when selected.
         View iconHost;
         if (!string.IsNullOrEmpty(option.IconPath) && !option.IconPath.Contains('/'))
         {
-            iconHost = PksmIcons.Icon(option.IconPath, 22);
+            _iconName = option.IconPath;
+            _icon = new Image
+            {
+                Source = PksmIcons.Source(option.IconPath, PksmIcons.White),
+                WidthRequest = 22,
+                HeightRequest = 22,
+                HorizontalOptions = LayoutOptions.Center,
+                VerticalOptions = LayoutOptions.Center,
+                InputTransparent = true,
+            };
+            iconHost = _icon;
         }
         else if (option.Glyph is not null)
         {
@@ -50,7 +62,7 @@ public sealed class DsFolderButton : Grid
                 Text = option.Glyph,
                 FontFamily = "Rounded",
                 FontSize = 18,
-                TextColor = option.Accent ?? UiTokens.Paper,
+                TextColor = option.Accent ?? UiTokens.IndigoInk,
                 HorizontalTextAlignment = TextAlignment.Center,
                 VerticalTextAlignment = TextAlignment.Center,
             };
@@ -90,7 +102,9 @@ public sealed class DsFolderButton : Grid
         {
             if (_selected == value) return;
             _selected = value;
-            _label.TextColor = UiTokens.Paper;
+            _label.TextColor = value ? UiTokens.SelectInk : UiTokens.Paper;
+            if (_icon is not null && _icon.Source is ImageSource)
+                _icon.Source = PksmIcons.Source(_iconName, value ? PksmIcons.Indigo : PksmIcons.White);
             _bg.InvalidateSurface();
             _pointer?.InvalidateSurface();
         }
@@ -210,7 +224,7 @@ public sealed class DsCard : Grid
         };
         View iconView = _iconCanvas;
         if (asset is not null)
-            iconView = PksmIcons.Icon(asset, 36, PksmIcons.Periwinkle);
+            iconView = PksmIcons.Icon(asset, 36, PksmIcons.White);
 
         _label = new Label
         {
@@ -291,22 +305,22 @@ public static class DsChrome
     public static View StatusStrip(string left, params string[] flags)
     {
         var row = new HorizontalStackLayout { Spacing = 15, VerticalOptions = LayoutOptions.Center };
-        row.Children.Add(new Label { Text = left, FontFamily = PixelFont, FontSize = 14, TextColor = Color.FromArgb("#EEF2F6"), VerticalTextAlignment = TextAlignment.Center });
+        row.Children.Add(new Label { Text = left, FontFamily = PixelFont, FontSize = 14, TextColor = UiTokens.Ink0, VerticalTextAlignment = TextAlignment.Center });
         foreach (var f in flags)
         {
-            row.Children.Add(new BoxView { WidthRequest = 6, HeightRequest = 6, CornerRadius = 1, Color = UiTokens.Green, VerticalOptions = LayoutOptions.Center });
-            row.Children.Add(new Label { Text = f, FontFamily = PixelFont, FontSize = 13, TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center });
+            row.Children.Add(new BoxView { WidthRequest = 6, HeightRequest = 6, CornerRadius = 1, Color = UiTokens.InkSoft, VerticalOptions = LayoutOptions.Center });
+            row.Children.Add(new Label { Text = f, FontFamily = PixelFont, FontSize = 13, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center });
         }
 
         var batt = new Border
         {
-            WidthRequest = 22, HeightRequest = 12, StrokeThickness = 2, Stroke = Color.FromArgb("#6A7682"),
+            WidthRequest = 22, HeightRequest = 12, StrokeThickness = 2, Stroke = UiTokens.InkSoft,
             StrokeShape = new RoundRectangle { CornerRadius = 2 }, HorizontalOptions = LayoutOptions.End, VerticalOptions = LayoutOptions.Center,
             Content = new BoxView { Color = UiTokens.Green, Margin = new Thickness(1, 1, 6, 1) },
         };
         var grid = new Grid
         {
-            BackgroundColor = Color.FromArgb("#10131A"), Padding = new Thickness(12, 4),
+            BackgroundColor = UiTokens.Paper, Padding = new Thickness(12, 4),
             ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto)],
             Children = { row, batt },
         };
@@ -326,9 +340,10 @@ public static class DsChrome
         {
             var c = a.Surface.Canvas;
             c.Clear(Pksm.Housing);
-            using var line = new SKPaint { Color = Pksm.HousingLine, StrokeWidth = 1 };
-            for (var x = 0f; x < a.Info.Width; x += 26) c.DrawLine(x, 0, x, a.Info.Height, line);
-            for (var y = 0f; y < a.Info.Height; y += 26) c.DrawLine(0, y, a.Info.Width, y, line);
+            using var dot = new SKPaint { Color = Pksm.HousingDot };
+            for (var y = 7f; y < a.Info.Height; y += 14)
+                for (var x = 7f; x < a.Info.Width; x += 14)
+                    c.DrawRect(x, y, x + 2, y + 2, dot);
         };
         return view;
     }
