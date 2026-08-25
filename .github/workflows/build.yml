@@ -33,9 +33,11 @@ jobs:
           echo "path=$apk" >> "$GITHUB_OUTPUT"
           echo "name=PKForge-${GITHUB_REF_NAME}.apk" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
+        if: github.ref_type != 'tag'
         with:
           name: pkforge-apk
           path: ${{ steps.apk.outputs.path }}
+          retention-days: 3
       - name: Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
