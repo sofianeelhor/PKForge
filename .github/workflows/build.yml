@@ -1,0 +1,45 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install MAUI Android workload
+        run: dotnet workload install maui-android
+      - name: Restore
+        run: dotnet restore PKForge.sln
+      - name: Test
+        run: |
+          dotnet test tests/PKForge.Domain.Tests/PKForge.Domain.Tests.csproj --no-restore --configuration Release
+          dotnet test tests/PKForge.Engine.Tests/PKForge.Engine.Tests.csproj --no-restore --configuration Release
+      - name: Build Android APK
+        run: dotnet build src/PKForge.App/PKForge.App.csproj --no-restore --configuration ${{ github.ref_type == 'tag' && 'Release' || 'Debug' }} -f net10.0-android -p:AndroidKeyStore=false
+      - name: Locate APK
+        id: apk
+        run: |
+          apk=$(find src/PKForge.App/bin -name '*-Signed.apk' | head -1)
+          echo "path=$apk" >> "$GITHUB_OUTPUT"
+          echo "name=PKForge-${GITHUB_REF_NAME}.apk" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkforge-apk
+          path: ${{ steps.apk.outputs.path }}
+      - name: Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.apk.outputs.path }}
+          asset_name: ${{ steps.apk.outputs.name }}
+          generate_release_notes: true
