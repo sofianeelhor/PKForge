@@ -40,10 +40,12 @@ jobs:
           name: pkforge-apk
           path: ${{ steps.apk.outputs.path }}
           retention-days: 3
+      - name: Stage release asset
+        if: github.ref_type == 'tag'
+        run: cp "${{ steps.apk.outputs.path }}" "PKForge-${GITHUB_REF_NAME}.apk"
       - name: Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.apk.outputs.path }}
-          asset_name: ${{ steps.apk.outputs.name }}
+          files: PKForge-${{ github.ref_name }}.apk
           generate_release_notes: true
