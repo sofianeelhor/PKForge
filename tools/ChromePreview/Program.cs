@@ -33,7 +33,23 @@ void RenderMenu(string path)
 {
     using var s = Surface(1280, 675);
     var c = s.Canvas;
-    PksmPaint.Wallpaper(c, All(1280, 675), Pksm.BoxWallpapers[1]);
+    c.DrawRect(All(1280, 675), new SKPaint { Color = Pksm.Housing, IsAntialias = true });
+    // home cards row: the three destinations as icon tiles
+    string[] cards = ["pkf_bank.png", "icon_events.png", "icon_settings.png"];
+    string[] names = ["Bank", "Events", "Settings"];
+    for (var i = 0; i < 3; i++)
+    {
+        var r = new SKRect(760 + i * 170, 60, 760 + i * 170 + 150, 148);
+        using (var f = new SKPaint { Color = Pksm.Paper, IsAntialias = true })
+            c.DrawRoundRect(r, 6, 6, f);
+        using (var e = new SKPaint { Color = Pksm.Chrome, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2 })
+            c.DrawRoundRect(r, 6, 6, e);
+        if (i == 0)
+            using (var g = new SKPaint { Color = Pksm.FocusGold, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 3 })
+                c.DrawRoundRect(SKRect.Inflate(r, 3, 3), 8, 8, g);
+        art.DrawScaled(c, cards[i], r.MidX - 36, r.Top + 14, 2);
+        PksmPaint.CenterText(c, names[i], r.MidX, r.Bottom - 26, Font(22), Pksm.Ink, SKColors.White.WithAlpha(0x60), SKTextAlign.Center);
+    }
 
     var win = new SKRect(360, 130, 920, 545);
     PksmPaint.Panel(c, win);

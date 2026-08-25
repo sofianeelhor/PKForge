@@ -52,7 +52,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         Grid.SetRow(_shelf, 1);
 
         // The three destinations as PKSM tiles with bundled pixel icons.
-        var bank = new DsCard("box", "Bank") { Tapped = () => _ = PushAsync<BankPage>() };
+        var bank = new DsCard("bank", "Bank") { Tapped = () => _ = PushAsync<BankPage>() };
         var events = new DsCard("events", "Events") { Tapped = () => _ = ShowEventsMenuAsync() };
         var settings = new DsCard("settings", "Settings") { Tapped = () => _ = ShowSettingsAsync() };
         _cards = [bank, events, settings];

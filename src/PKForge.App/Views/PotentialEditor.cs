@@ -77,8 +77,8 @@ public static class PotentialEditor
                 var trained = p.HyperTrained[i];
                 options.Add(new PadOption($"{StatNames[i]} · {(trained ? "trained" : "-")}"));
             }
-            options.Add(new PadOption("Train all"));
-            options.Add(new PadOption("Clear all"));
+            options.Add(new PadOption("Train all", IconPath: "party"));
+            options.Add(new PadOption("Clear all", IconPath: "hex"));
 
             var choice = await EditorMenu.ShowAsync(host, "HYPER TRAINING", null, options.ToArray());
             if (choice is null) return dirty;

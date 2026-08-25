@@ -57,21 +57,7 @@ public sealed class PadMenu : IPadHandler
         for (var i = 0; i < options.Length; i++)
         {
             var captured = options[i].Label;
-            var option = options[i];
-            // A semantic icon name (no '/') rides in the row's icon column as a bundled
-            // PKSM pixel icon; path-style icons (cached ball art) keep the glyph accent.
-            Image? icon = null;
-            if (!string.IsNullOrEmpty(option.IconPath) && !option.IconPath.Contains('/'))
-            {
-                icon = PksmIcons.Icon(option.IconPath, 24);
-                option = option with { Glyph = null };
-            }
-            var button = new DsFolderButton(option, buttonHeight) { Tapped = () => Close(captured) };
-            if (icon is not null)
-            {
-                Grid.SetColumn(icon, 1);
-                button.Children.Add(icon);
-            }
+            var button = new DsFolderButton(options[i], buttonHeight) { Tapped = () => Close(captured) };
             _optionViews.Add(button);
             grid.Add(button);
             Grid.SetRow(button, i / _columns);

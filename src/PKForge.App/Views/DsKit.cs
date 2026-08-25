@@ -16,7 +16,6 @@ public sealed class DsFolderButton : Grid
 {
     private readonly SKCanvasView _bg;
     private readonly Label _label;
-    private readonly Label? _glyph;
     private readonly SKCanvasView? _pointer;
     private bool _selected;
 
@@ -37,15 +36,29 @@ public sealed class DsFolderButton : Grid
             PksmPaint.Pointer(args.Surface.Canvas, new SKPoint(4, args.Info.Height * 0.18f), args.Info.Height * 0.5f);
         };
 
-        _glyph = option.Glyph is null ? null : new Label
+        // The icon column: a bundled PKSM pixel icon when the option carries a semantic
+        // name, else the accent glyph. The icon stays visible in both row states.
+        View iconHost;
+        if (!string.IsNullOrEmpty(option.IconPath) && !option.IconPath.Contains('/'))
         {
-            Text = option.Glyph,
-            FontFamily = "Rounded",
-            FontSize = 18,
-            TextColor = option.Accent ?? UiTokens.IndigoInk,
-            HorizontalTextAlignment = TextAlignment.Center,
-            VerticalTextAlignment = TextAlignment.Center,
-        };
+            iconHost = PksmIcons.Icon(option.IconPath, 22);
+        }
+        else if (option.Glyph is not null)
+        {
+            iconHost = new Label
+            {
+                Text = option.Glyph,
+                FontFamily = "Rounded",
+                FontSize = 18,
+                TextColor = option.Accent ?? UiTokens.IndigoInk,
+                HorizontalTextAlignment = TextAlignment.Center,
+                VerticalTextAlignment = TextAlignment.Center,
+            };
+        }
+        else
+        {
+            iconHost = new BoxView { InputTransparent = true, WidthRequest = 0 };
+        }
 
         _label = new Label
         {
@@ -59,7 +72,6 @@ public sealed class DsFolderButton : Grid
 
         Children.Add(_bg);
         Grid.SetColumnSpan(_bg, 3);
-        View iconHost = _glyph is not null ? _glyph : new BoxView { InputTransparent = true, WidthRequest = 0 };
         Children.Add(iconHost);
         Children.Add(_label);
         Grid.SetColumn(_pointer, 0);
@@ -183,10 +195,10 @@ public sealed class DsCard : Grid
 
     public Action? Tapped { get; set; }
 
-    public DsCard(DsIcon icon, string label, double height = 74)
+    public DsCard(DsIcon icon, string label, double height = 88)
         : this((DsIcon?)icon, null, label, height) { }
 
-    public DsCard(string pksmAssetIcon, string label, double height = 74)
+    public DsCard(string pksmAssetIcon, string label, double height = 88)
         : this(null, pksmAssetIcon, label, height) { }
 
     private DsCard(DsIcon? drawn, string? asset, string label, double height)
@@ -198,14 +210,14 @@ public sealed class DsCard : Grid
         _bg = new SKCanvasView { InputTransparent = true };
         _bg.PaintSurface += (_, a) => DrawTile(a.Surface.Canvas, a.Info, _selected);
 
-        _iconCanvas = new SKCanvasView { InputTransparent = true, WidthRequest = 32, HeightRequest = 32 };
+        _iconCanvas = new SKCanvasView { InputTransparent = true, WidthRequest = 36, HeightRequest = 36 };
         _iconCanvas.PaintSurface += (_, a) =>
         {
             if (_drawnIcon is { } di) DsIcons.Draw(a.Surface.Canvas, a.Info, di);
         };
         View iconView = _iconCanvas;
         if (asset is not null)
-            iconView = PksmIcons.Icon(asset, 32);
+            iconView = PksmIcons.Icon(asset, 36);
 
         _label = new Label
         {
@@ -216,7 +228,7 @@ public sealed class DsCard : Grid
 
         var row = new VerticalStackLayout
         {
-            Padding = new Thickness(10, 6, 10, 8), Spacing = 5, VerticalOptions = LayoutOptions.Center,
+            Padding = new Thickness(12, 9, 12, 11), Spacing = 7, VerticalOptions = LayoutOptions.Center,
             Children = { iconView, _label },
         };
 
@@ -236,6 +248,10 @@ public sealed class DsCard : Grid
             if (_selected == value) return;
             _selected = value;
             _bg.InvalidateSurface();
+            // The Nintendo focus pop: a short spring scale, never a slow fade.
+            _ = _selected
+                ? this.ScaleToAsync(1.05, 130, Easing.SpringOut)
+                : this.ScaleToAsync(1.0, 110, Easing.CubicOut);
         }
     }
 
@@ -323,8 +339,8 @@ public static class DsChrome
         view.PaintSurface += (_, a) =>
         {
             var c = a.Surface.Canvas;
-            c.Clear(new SKColor(0xE9, 0xEC, 0xF6));
-            using var dot = new SKPaint { Color = new SKColor(0x1A, 0x23, 0x7E, 0x12) };
+            c.Clear(Pksm.Housing);
+            using var dot = new SKPaint { Color = Pksm.ChromeDark.WithAlpha(0x28) };
             for (var y = 6f; y < a.Info.Height; y += 12)
                 for (var x = 6f; x < a.Info.Width; x += 12)
                     c.DrawRect(x, y, x + 2, y + 2, dot);

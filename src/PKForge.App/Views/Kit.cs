@@ -51,12 +51,12 @@ public static class Kit
     {
         var bitmap = new SKBitmap(info.Width, info.Height);
         using var canvas = new SKCanvas(bitmap);
-        canvas.Clear(new SKColor(0xE9, 0xEC, 0xF6));
+        canvas.Clear(Pksm.Housing);
 
         // Resting pokéball outlines — quiet, indigo.
         using var ball = new SKPaint
         {
-            Color = new SKColor(0x1A, 0x23, 0x7E, 0x14),
+            Color = Pksm.ChromeDark.WithAlpha(0x30),
             Style = SKPaintStyle.Stroke,
             StrokeWidth = 3f,
             IsAntialias = true,
@@ -71,7 +71,7 @@ public static class Kit
         }
 
         // The PC-box dot lattice.
-        using var dot = new SKPaint { Color = new SKColor(0x1A, 0x23, 0x7E, 0x10) };
+        using var dot = new SKPaint { Color = Pksm.ChromeDark.WithAlpha(0x26) };
         for (var y = 6f; y < info.Height; y += 12)
             for (var x = 6f; x < info.Width; x += 12)
                 canvas.DrawRect(x, y, x + 2, y + 2, dot);

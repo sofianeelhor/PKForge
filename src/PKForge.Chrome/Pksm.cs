@@ -13,8 +13,9 @@ public static class Pksm
     public static readonly SKColor InkSoft = new(0x6E, 0x6E, 0x6E);   // secondary text
     public static readonly SKColor Paper = new(0xFC, 0xFC, 0xFB);     // panel white
     public static readonly SKColor PaperShade = new(0xF2, 0xEE, 0xE7);
-
-    // ---- Warm-grey chrome (box-name bars, window borders: PKSM #D1CBC0 family) ----
+    /// <summary>The page housing every screen sits on: warm light neutral (the DS-system family), so the
+    /// gold cursor, cream caps and warm panel borders all agree. Never tinted blue.</summary>
+    public static readonly SKColor Housing = new(0xF3, 0xF0, 0xE9);
     public static readonly SKColor Chrome = new(0xD1, 0xCB, 0xC0);
     public static readonly SKColor ChromeLight = new(0xE7, 0xE2, 0xDA);
     public static readonly SKColor ChromeDark = new(0xB4, 0xAD, 0xA1);

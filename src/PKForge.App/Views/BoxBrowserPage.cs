@@ -232,12 +232,12 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             return;
         }
         var choice = await PadMenu.ShowAsync(_hostGrid, "STORAGE TOOLS", null,
-            new PadOption("Organizer (multi-select)"),
-            new PadOption("Import .pk files"),
-            new PadOption("Import Showdown team"),
-            new PadOption("Export box to Showdown"),
-            new PadOption("Generate Living Dex"),
-            new PadOption("Batch editor"));
+            new PadOption("Organizer (multi-select)", IconPath: "storage"),
+            new PadOption("Import .pk files", IconPath: "folder"),
+            new PadOption("Import Showdown team", IconPath: "script"),
+            new PadOption("Export box to Showdown", IconPath: "script"),
+            new PadOption("Generate Living Dex", IconPath: "pokedex"),
+            new PadOption("Batch editor", IconPath: "script"));
         switch (choice)
         {
             case "Organizer (multi-select)":
@@ -266,11 +266,11 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     private async Task ShowOrganizerMenuAsync()
     {
         var choice = await PadMenu.ShowAsync(_hostGrid, $"ORGANIZER · {_viewModel.MarkedCount} MARKED", null,
-            new PadOption("Move selection to box…"),
-            new PadOption("Move selection to Bank"),
-            new PadOption("Export selection (.pk files)"),
-            new PadOption("Release selection"),
-            new PadOption("Done (exit organizer)"));
+            new PadOption("Move selection to box…", IconPath: "storage"),
+            new PadOption("Move selection to Bank", IconPath: "bank"),
+            new PadOption("Export selection (.pk files)", IconPath: "folder"),
+            new PadOption("Release selection", IconPath: "hex"),
+            new PadOption("Done (exit organizer)", IconPath: "settings"));
         switch (choice)
         {
             case "Move selection to box…":
@@ -460,11 +460,11 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     private async Task ShowSaveDataAsync()
     {
         var choice = await PadMenu.ShowAsync(_hostGrid, "SAVE DATA", null,
-            new PadOption("Trainer card"),
-            new PadOption("Bag & items"),
-            new PadOption("Pokédex"),
-            new PadOption("Wonder cards"),
-            new PadOption("Restore points"));
+            new PadOption("Trainer card", IconPath: "trainer"),
+            new PadOption("Bag & items", IconPath: "bag"),
+            new PadOption("Pokédex", IconPath: "pokedex"),
+            new PadOption("Wonder cards", IconPath: "events"),
+            new PadOption("Restore points", IconPath: "credits"));
         switch (choice)
         {
             case "Trainer card": await ShowTrainerCardAsync(); return;
@@ -1118,13 +1118,13 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     {
         var nickname = _viewModel.Selected?.Nickname is { Length: > 0 } nick ? nick : $"slot {slot + 1}";
         var choice = await PadMenu.ShowAsync(_hostGrid, nickname.ToUpperInvariant(), null,
-            new PadOption("Edit (side panel)"),
-            new PadOption("Move"),
-            new PadOption("Send to Bank"),
-            new PadOption("Export .pk file"),
-            new PadOption("Show as Showdown set"),
-            new PadOption("Show as QR code"),
-            new PadOption("Release"));
+            new PadOption("Edit (side panel)", IconPath: "editor"),
+            new PadOption("Move", IconPath: "storage"),
+            new PadOption("Send to Bank", IconPath: "bank"),
+            new PadOption("Export .pk file", IconPath: "folder"),
+            new PadOption("Show as Showdown set", IconPath: "script"),
+            new PadOption("Show as QR code", IconPath: "search"),
+            new PadOption("Release", IconPath: "hex"));
         switch (choice)
         {
             case "Move":
@@ -1730,10 +1730,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     private async Task OfferAddPokemonAsync(int slot)
     {
         var choice = await PadMenu.ShowAsync(_hostGrid, $"ADD A POKéMON - SLOT {slot + 1}", null,
-            new PadOption("Create a Pokémon"),
-            new PadOption("Paste a Showdown set"),
-            new PadOption("Import .pk file"),
-            new PadOption("From event database"));
+            new PadOption("Create a Pokémon", IconPath: "editor"),
+            new PadOption("Paste a Showdown set", IconPath: "script"),
+            new PadOption("Import .pk file", IconPath: "folder"),
+            new PadOption("From event database", IconPath: "events"));
         switch (choice)
         {
             case "Create a Pokémon":

@@ -212,11 +212,11 @@ public sealed class BankPage : ContentPage, IPadHandler
         var canSend = _boxViewModel.Save is not null;
         var choice = await PadMenu.ShowAsync(_hostGrid, entry.Info.Nickname.ToUpperInvariant(),
             $"From {entry.Info.SourceName} · Gen {entry.Info.Generation} · deposited {entry.AddedUtc:yyyy-MM-dd}",
-            new PadOption("Edit"),
+            new PadOption("Edit", IconPath: "editor"),
             new PadOption(canSend ? "Send to game" : "Send to game (connect a save first)"),
-            new PadOption("Move (carry)"),
-            new PadOption("Export .pk file"),
-            new PadOption("Release from bank"));
+            new PadOption("Move (carry)", IconPath: "storage"),
+            new PadOption("Export .pk file", IconPath: "folder"),
+            new PadOption("Release from bank", IconPath: "hex"));
         switch (choice)
         {
             case "Edit":
@@ -263,9 +263,9 @@ public sealed class BankPage : ContentPage, IPadHandler
     {
         var session = IPlatformApplication.Current?.Services.GetService<ISaveSessionService>()?.CurrentSession;
         var choice = await PadMenu.ShowAsync(_hostGrid, "ADD TO BANK", null,
-            new PadOption("Create a Pokémon"),
-            new PadOption("Paste a Showdown set"),
-            new PadOption("Import .pk file"));
+            new PadOption("Create a Pokémon", IconPath: "editor"),
+            new PadOption("Paste a Showdown set", IconPath: "script"),
+            new PadOption("Import .pk file", IconPath: "folder"));
         switch (choice)
         {
             case "Create a Pokémon" or "Paste a Showdown set" when session is null:

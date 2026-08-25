@@ -20,7 +20,7 @@ public static class UiTokens
     public static readonly Color Shell = Paper;                        // legacy name kept for views
     public static readonly Color ShellEdge = As(Pksm.Chrome);          // warm-grey panel border
     public static readonly Color ShellPress = As(Pksm.ChromeLight);
-    public static readonly Color Housing = As(Pksm.IndigoInk);         // page backdrop under chrome
+    public static readonly Color Housing = As(Pksm.Housing);           // warm page backdrop (never blue)
 
     // Legacy names still referenced by views mid-migration to the PKSM language; do not add uses.
     public static readonly Color LcdBg = As(Pksm.PaperShade);
