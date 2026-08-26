@@ -216,7 +216,7 @@ public sealed class BankPage : ContentPage, IPadHandler
             new PadOption("Send to game…", IconPath: "storage"),
             new PadOption("Move (carry)", IconPath: "storage"),
             new PadOption("Export .pk file", IconPath: "folder"),
-            new PadOption("Release from bank", IconPath: "hex"));
+            new PadOption("Release from bank", IconPath: "release"));
         switch (choice)
         {
             case "Edit":

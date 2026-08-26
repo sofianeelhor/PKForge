@@ -291,7 +291,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Duplicate selection", IconPath: "storage"),
             new PadOption("Move selection to Bank", IconPath: "bank"),
             new PadOption("Export selection (.pk files)", IconPath: "folder"),
-            new PadOption("Release selection", IconPath: "hex"),
+            new PadOption("Release selection", IconPath: "release"),
             new PadOption("Done (exit organizer)", IconPath: "settings"));
         switch (choice)
         {
@@ -1232,7 +1232,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Export .pk file", IconPath: "folder"),
             new PadOption("Show as Showdown set", IconPath: "script"),
             new PadOption("Show as QR code", IconPath: "search"),
-            new PadOption("Release", IconPath: "hex"));
+            new PadOption("Release", IconPath: "release"));
         switch (choice)
         {
             case "Move":
