@@ -23,7 +23,7 @@ public sealed class LegalizerService : ILegalizerService
 
     public GenerationOutcome Generate(ISaveEngineSession session, int box, int slot, GenerationRequest request)
     {
-        var text = BuildShowdownText(request);
+        var text = BuildShowdownText(request, ((SaveEngineSession)session).SaveFile.Context);
         return GenerateFromShowdown(session, box, slot, text);
     }
 
@@ -85,7 +85,7 @@ public sealed class LegalizerService : ILegalizerService
     }
 
     public GeneratedEntity? GenerateData(ISaveEngineSession session, GenerationRequest request) =>
-        GenerateDataFromShowdown(session, BuildShowdownText(request));
+        GenerateDataFromShowdown(session, BuildShowdownText(request, ((SaveEngineSession)session).SaveFile.Context));
 
     public GeneratedEntity? GenerateDataFromShowdown(ISaveEngineSession session, string showdownText)
     {
@@ -130,10 +130,19 @@ public sealed class LegalizerService : ILegalizerService
     }
 
     /// <summary>Builds standard Showdown-format text from the wizard's structured request.</summary>
-    private string BuildShowdownText(GenerationRequest request)
+    private string BuildShowdownText(GenerationRequest request, EntityContext context)
     {
         var text = new StringBuilder();
-        text.AppendLine(_strings.specieslist[request.Species]);
+        var speciesName = _strings.specieslist[request.Species];
+        if (request.Form > 0)
+        {
+            // "Rotom" + "-" + "Wash" => "Rotom-Wash"; the showdown parser matches form
+            // names ignoring case and dash/space differences, so the display name works.
+            var forms = FormConverter.GetFormList((ushort)request.Species, _strings.Types, _strings.forms, context);
+            if (request.Form < forms.Length && forms[request.Form].Length > 0)
+                speciesName = $"{speciesName}-{ShowdownParsing.GetShowdownFormName((ushort)request.Species, forms[request.Form])}";
+        }
+        text.AppendLine(speciesName);
         if (request.Level is { } level)
             text.AppendLine($"Level: {Math.Clamp(level, 1, 100)}");
         if (request.Shiny)
