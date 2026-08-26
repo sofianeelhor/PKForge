@@ -264,7 +264,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             new PadOption("Open a save file", IconPath: "search"),
             new PadOption("Restore points", IconPath: "credits"),
             new PadOption("About PKForge", IconPath: "settings"),
-            new PadOption("Music", IconPath: "hex"),
+            new PadOption("Music", IconPath: "music"),
             new PadOption("Misc", IconPath: "script"),
             new PadOption("Quit PKForge", IconPath: "hex"));
         switch (choice)
@@ -299,11 +299,11 @@ public sealed class HomePage : ContentPage, IPadHandler
             if (androidMusic?.LastError is { } err)
                 playing += $"\nLast error: {err}";
             var choice = await PadMenu.ShowAsync(_hostGrid, "BACKGROUND MUSIC", playing,
-                new PadOption(music.IsPlaying ? "Pause" : "Play", IconPath: "script"),
-                new PadOption("Skip to next track", IconPath: "script"),
+                new PadOption(music.IsPlaying ? "Pause" : "Play", IconPath: "music"),
+                new PadOption("Skip to next track", IconPath: "skip"),
                 new PadOption($"Add music files ({music.Library.Count})", IconPath: "folder"),
                 new PadOption(music.Library.Count > 0 ? "Clear library" : "-", IconPath: "hex"),
-                new PadOption($"Order: {order}", IconPath: "script"),
+                new PadOption($"Order: {order}", IconPath: "shuffle"),
                 new PadOption($"Autostart: {auto}", IconPath: "settings"));
             switch (choice)
             {
