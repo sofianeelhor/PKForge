@@ -76,5 +76,22 @@ public sealed class PartyTests
         while (LivePartyCount() < 6)
             Assert.True(session.ImportSlot(-1, 0, exported.Data));
         Assert.False(session.ImportSlot(-1, 0, exported.Data));
+
+        // Reorder inside a FULL party: a real swap, nothing lost, count unchanged.
+        var firstBefore = session.ReadEntity(-1, 0).Nickname;
+        var thirdBefore = session.ReadEntity(-1, 2).Nickname;
+        session.MoveSlot(-1, 0, -1, 2);
+        Assert.Equal(thirdBefore, session.ReadEntity(-1, 0).Nickname);
+        Assert.Equal(firstBefore, session.ReadEntity(-1, 2).Nickname);
+        Assert.Equal(6, LivePartyCount());
+
+        // The full pipeline the app drives: edit, serialize, write, reopen from disk bytes.
+        session.ApplyEdit(-1, 0, new EntityEdit(Nickname: "PERSISTED"));
+        var written = session.Serialize().ToArray();
+        using (var reloaded = new SaveEngineSession(written))
+        {
+            Assert.Equal("PERSISTED", reloaded.ReadEntity(-1, 0).Nickname);
+            Assert.Equal(6, Enumerable.Range(0, 6).Count(i => !reloaded.ReadEntity(-1, i).IsEmpty));
+        }
     }
 }

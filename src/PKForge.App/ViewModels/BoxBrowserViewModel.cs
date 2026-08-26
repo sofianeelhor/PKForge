@@ -52,6 +52,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     [ObservableProperty] private string _editMove3 = string.Empty;
     [ObservableProperty] private string _editMove4 = string.Empty;
     [ObservableProperty] private string _editIvs = string.Empty;
+    [ObservableProperty] private string _editStats = string.Empty;
     [ObservableProperty] private string _editEvs = string.Empty;
     [ObservableProperty] private string _editBall = string.Empty;
     [ObservableProperty] private string _editOt = string.Empty;
@@ -138,6 +139,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         EditMove4 = detail.Move4.ToString();
         EditIvs = string.Join(' ', detail.IVs);
         EditEvs = string.Join(' ', detail.EVs);
+        EditStats = detail.Stats is { Count: 6 } ? string.Join(' ', detail.Stats) : string.Empty;
         EditBall = detail.Ball.ToString();
         EditOt = detail.OriginalTrainer;
         EditShiny = detail.IsShiny;
