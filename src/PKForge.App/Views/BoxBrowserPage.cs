@@ -33,7 +33,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         if (_partyPulseTimer is not null || _viewModel.SelectedSlot < 0) return;
         _partyPulseStart = Environment.TickCount64;
         _partyPulseTimer = Dispatcher.CreateTimer();
-        _partyPulseTimer.Interval = TimeSpan.FromMilliseconds(70);
+        _partyPulseTimer.Interval = TimeSpan.FromMilliseconds(45);
         _partyPulseTimer.Tick += (_, _) => _frame.Request();
         _partyPulseTimer.Start();
     }
