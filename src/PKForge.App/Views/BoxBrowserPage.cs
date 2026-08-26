@@ -1669,8 +1669,20 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     }
 
     /// <summary>A Kit.Field wrapped in the striped attribute-row plate.</summary>
-    private static View FieldRow(string caption, string bindingPath, bool shaded) =>
-        Striped(Kit.Field(caption, bindingPath), shaded);
+    private View FieldRow(string caption, string bindingPath, bool shaded)
+    {
+        var entry = new Entry
+        {
+            FontSize = 13,
+            TextColor = UiTokens.Ink0,
+            BackgroundColor = UiTokens.ShellPress,
+            HeightRequest = 34,
+            IsSpellCheckEnabled = false,
+            IsTextPredictionEnabled = false,
+        };
+        entry.SetBinding(Entry.TextProperty, bindingPath);
+        return RowChrome(caption, entry, shaded);
+    }
 
     /// <summary>Attribute rows alternate paper / paper-shade plates with a chrome hairline.</summary>
     private static View Striped(View inner, bool shaded) => new Border
@@ -1748,27 +1760,12 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var value = Kit.BlueprintValue(13);
         value.SetBinding(Label.TextProperty, new Binding(vmProperty, converter: new IdNameConverter(names)));
 
-        var chip = new Border
+        var chevron = new Label
         {
-            BackgroundColor = shaded ? UiTokens.PaperShade : UiTokens.Paper,
-            Stroke = UiTokens.ShellEdge,
-            StrokeThickness = 1.2,
-            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 6 },
-            Padding = new Thickness(10, 5),
-            Content = new Grid
-            {
-                ColumnDefinitions = [new(new GridLength(78)), new(GridLength.Star), new(GridLength.Auto)],
-                Children =
-                {
-                    new Label { Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center },
-                    value,
-                    new Label { Text = ">", FontFamily = DsChrome.PixelFont, TextColor = UiTokens.Blueprint, FontSize = 13, VerticalTextAlignment = TextAlignment.Center },
-                },
-            },
+            Text = ">", FontFamily = DsChrome.PixelFont, TextColor = UiTokens.Blueprint,
+            FontSize = 13, VerticalTextAlignment = TextAlignment.Center,
         };
-        var inner = (Grid)chip.Content!;
-        Grid.SetColumn(inner.Children[1] as View, 1);
-        Grid.SetColumn(inner.Children[2] as View, 2);
+        var chip = RowChrome(caption, value, shaded, chevron);
 
         var tap = new TapGestureRecognizer();
         tap.Tapped += async (_, _) =>
@@ -1796,32 +1793,28 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         return chip;
     }
 
-    /// <summary>Read-only computed stats: six labeled cells (HP/ATK/DEF/SPA/SPD/SPE) in two rows.</summary>
-    private View StatsRow(string caption, string vmProperty, bool shaded)
+    /// <summary>One shared row chrome for the side panel: fixed caption column, aligned values.</summary>
+    private View RowChrome(string caption, View content, bool shaded, View? trailing = null)
     {
-        string[] labels = ["HP", "ATK", "DEF", "SPA", "SPD", "SPE"];
         var grid = new Grid
         {
-            RowSpacing = 2,
-            ColumnSpacing = 10,
-            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Star), new(GridLength.Star)],
-        };
-        var converter = new StatCellConverter();
-        for (var i = 0; i < 6; i++)
-        {
-            var cell = new HorizontalStackLayout { Spacing = 5, VerticalOptions = LayoutOptions.Center };
-            var name = new Label
+            ColumnSpacing = 8,
+            ColumnDefinitions = [new(new GridLength(64)), new(GridLength.Star), new(GridLength.Auto)],
+            Children =
             {
-                Text = labels[i], FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1,
-                TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center,
-            };
-            var value = Kit.BlueprintValue(12);
-            value.SetBinding(Label.TextProperty, new Binding(vmProperty, converter: converter, converterParameter: i.ToString()));
-            cell.Children.Add(name);
-            cell.Children.Add(value);
-            grid.Add(cell);
-            Grid.SetRow(cell, i / 3);
-            Grid.SetColumn(cell, i % 3);
+                new Label
+                {
+                    Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1.5,
+                    TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center,
+                },
+                content,
+            },
+        };
+        Grid.SetColumn(content, 1);
+        if (trailing is not null)
+        {
+            grid.Children.Add(trailing);
+            Grid.SetColumn(trailing, 2);
         }
         return new Border
         {
@@ -1829,17 +1822,47 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             Stroke = UiTokens.ShellEdge,
             StrokeThickness = 1.2,
             StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 6 },
-            Padding = new Thickness(10, 5),
-            Content = new VerticalStackLayout
+            Padding = new Thickness(10, 6),
+            Content = grid,
+        };
+    }
+
+    /// <summary>Read-only computed stats: six labeled cells (HP/ATK/DEF/SPA/SPD/SPE) in two rows.</summary>
+    private View StatsRow(string caption, string vmProperty, bool shaded)
+    {
+        string[] labels = ["HP", "ATK", "DEF", "SPA", "SPD", "SPE"];
+        var grid = new Grid
+        {
+            RowSpacing = 2,
+            ColumnSpacing = 12,
+            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Star)],
+        };
+        var converter = new StatCellConverter();
+        for (var i = 0; i < 6; i++)
+        {
+            var cell = new Grid
             {
-                Spacing = 3,
+                ColumnSpacing = 6,
+                ColumnDefinitions = [new(GridLength.Auto), new(new GridLength(52))],
                 Children =
                 {
-                    new Label { Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 2, TextColor = UiTokens.Ink1 },
-                    grid,
+                    new Label
+                    {
+                        Text = labels[i], FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1,
+                        TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center,
+                    },
                 },
-            },
-        };
+            };
+            var value = Kit.BlueprintValue(12);
+            value.HorizontalTextAlignment = TextAlignment.End;
+            value.SetBinding(Label.TextProperty, new Binding(vmProperty, converter: converter, converterParameter: i.ToString()));
+            cell.Children.Add(value);
+            Grid.SetColumn(value, 1);
+            grid.Add(cell);
+            Grid.SetRow(cell, i / 2);
+            Grid.SetColumn(cell, i % 2);
+        }
+        return RowChrome(caption, grid, shaded);
     }
 
     /// <summary>Picks one stat out of the space-separated EditStats string by index.</summary>
@@ -1876,16 +1899,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 SetVmString(vmProperty, string.Join(' ', updated));
         };
 
-        var row = new Grid
-        {
-            ColumnSpacing = 8,
-            ColumnDefinitions = [new(new GridLength(78)), new(GridLength.Star), new(GridLength.Auto)],
-            Children =
-            {
-                new Label { Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center },
-                value, edit,
-            },
-        };
+        var row = RowChrome(caption, value, shaded, edit);
         Grid.SetColumn(value, 1);
         Grid.SetColumn(edit, 2);
         return new Border
