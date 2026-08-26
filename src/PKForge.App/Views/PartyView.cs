@@ -48,8 +48,8 @@ public static class PartyView
             var rect = SlotRect(info, i);
             EntityDetail? detail = null;
             try { detail = session?.ReadEntity(-1, i); } catch { /* engine validates coordinates */ }
-            var carriedFrom = carrySource is { Box: -1, Slot: var cs } && cs == i;
-            _ = carriedFrom;
+            var carriedFrom = carrySource is { Box: -1, Slot: var cs } && cs == i
+                && detail is { IsEmpty: false };
             var breath = 1f;
             if (carriedFrom)
                 breath = 1f + 0.028f * (0.5f + 0.5f * MathF.Sin(pulsePhase));
@@ -143,10 +143,10 @@ public static class PartyView
             using var tagFont = new SKFont(PixelFont.Face, 13) { Edging = SKFontEdging.Antialias, Embolden = true };
             canvas.DrawText("A SWAP", tag.MidX, tag.Bottom - 5, SKTextAlign.Center, tagFont, new SKPaint { Color = SKColors.White, IsAntialias = true });
         }
-        if (selected && !ghost)
+        if (selected && !ghost && !lifted)
         {
-            var glow = (int)(0x60 + 0x60 * (0.5f + 0.5f * MathF.Sin(pulsePhase)));
-            using var sel = new SKPaint { Color = Selected.WithAlpha((byte)(0xC0 + glow / 4)), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 3 + glow / 120f };
+            // The cursor frame is STATIC: only the carried card breathes, never the cursor.
+            using var sel = new SKPaint { Color = Selected, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 3 };
             canvas.DrawPath(path, sel);
         }
 
