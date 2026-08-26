@@ -21,6 +21,7 @@ Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
 - A cross-game bank with unlimited themed boxes
 - The mystery-gift database, fully offline, plus community event boxes
 - Bag editor, trainer card, Pokédex, restore points
+<img width="952" height="908" alt="image" src="https://github.com/user-attachments/assets/5c1db1a7-fe74-4799-9f82-8f1e39352f06" />
 
 ![Storage](docs/screenshots/storage.png)
 ![Editor](docs/screenshots/editor.png)
