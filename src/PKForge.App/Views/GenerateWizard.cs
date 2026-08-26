@@ -23,12 +23,13 @@ public static class GenerateWizard
         // Deoxys-Speed, regional forms...). Skipped silently for single-form species.
         var forms = session.GetFormChoices(species.Id);
         int form = 0;
-        var formOptions = forms
-            .Select((name, index) => new PadOption(
-                index == 0 || name.Length == 0 ? "Standard" : name,
-                IconPath: index == 0 || name.Length == 0 ? null : "editor"))
-            .Where((option, index) => index == 0 || forms[index].Length > 0)
-            .ToList();
+        var formOptions = new List<PadOption>();
+        for (var index = 0; index < forms.Count; index++)
+        {
+            if (index != 0 && forms[index].Length == 0) continue;
+            var label = index == 0 || forms[index].Length == 0 ? "Standard" : forms[index];
+            formOptions.Add(new PadOption(label, IconPath: FormSpritePath(species.Id, index)));
+        }
         if (formOptions.Count > 1)
         {
             var chosen = await PadMenu.ShowAsync(host, $"FORM OF {species.Name.ToUpperInvariant()}",
@@ -40,6 +41,25 @@ public static class GenerateWizard
 
         // Step 2 - the features.
         return await ShowFeaturesFormAsync(host, data, session, species, form);
+    }
+
+    /// <summary>Caches the bundled form sprite (b_479-5.png style) as a file the menu can show.</summary>
+    private static string? FormSpritePath(int species, int form)
+    {
+        var source = form == 0 ? $"sprites/b_{species}.png" : $"sprites/b_{species}-{form}.png";
+        var target = System.IO.Path.Combine(FileSystem.CacheDirectory, $"form-{species}-{form}.png");
+        if (File.Exists(target)) return target;
+        try
+        {
+            using var asset = FileSystem.OpenAppPackageFileAsync(source).GetAwaiter().GetResult();
+            using var output = File.Create(target);
+            asset.CopyTo(output);
+            return target;
+        }
+        catch
+        {
+            return null; // sprite not bundled for this form; the label still carries it
+        }
     }
 
     private static Task<GenerationRequest?> ShowFeaturesFormAsync(Grid host, IGameDataService data, ISaveEngineSession session, PickItem species, int form = 0)
