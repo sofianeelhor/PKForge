@@ -138,7 +138,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             var cache = System.IO.Path.Combine(FileSystem.CacheDirectory, "NDS12.ttf");
             if (!File.Exists(cache))
             {
-                using var asset = FileSystem.OpenAppPackageFileAsync("Fonts/NDS12.ttf").GetAwaiter().GetResult();
+                using var asset = FileSystem.OpenAppPackageFileAsync("NDS12.ttf").GetAwaiter().GetResult();
                 using var output = File.Create(cache);
                 asset.CopyTo(output);
             }

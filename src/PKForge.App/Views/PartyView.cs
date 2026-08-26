@@ -193,37 +193,7 @@ public static class PartyView
         return path;
     }
 
-    /// <summary>The bundled NDS12 face, loaded once from the app package (MAUI aliases are
-    /// not Skia family names, so FromFamilyName("PixelUI") never resolves).</summary>
-    private static SKTypeface? _pixelFace;
-
-    private static SKTypeface PixelFace()
-    {
-        if (_pixelFace is not null) return _pixelFace;
-        try
-        {
-            using var stream = FileSystem.OpenAppPackageFileAsync("Fonts/NDS12.ttf").GetAwaiter().GetResult();
-            var bytes = new MemoryStream();
-            stream.CopyTo(bytes);
-            var cache = System.IO.Path.Combine(FileSystem.CacheDirectory, "NDS12.ttf");
-            File.WriteAllBytes(cache, bytes.ToArray());
-            _pixelFace = SKTypeface.FromFile(cache);
-        }
-        catch { _pixelFace = SKTypeface.Default; }
-        return _pixelFace ?? SKTypeface.Default;
-    }
-
-    /// <summary>A font that can draw the text: the pixel face when it covers every glyph, else system default (CJK nicknames).</summary>
-    private static SKFont FontFor(string text, float size)
-    {
-        var pixel = PixelFace();
-        var covered = text.All(c => pixel.GetGlyph(c) != 0);
-        return new SKFont(covered ? pixel : SKTypeface.Default, size)
-        {
-            Edging = SKFontEdging.Antialias,
-            Embolden = true,
-        };
-    }
+    private static SKFont FontFor(string text, float size) => PixelFont.For(text, size);
 
     /// <summary>The gender glyphs as clean vectors: blue male arrow, pink female cross.</summary>
     private static void DrawGender(SKCanvas canvas, SKPoint center, float radius, bool male)
