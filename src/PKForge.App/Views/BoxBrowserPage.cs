@@ -1245,11 +1245,14 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
         if (box == -1)
         {
+            var partyCount = Enumerable.Range(0, 6).Count(i => !session.ReadEntity(-1, i).IsEmpty);
             var ok = await _viewModel.RunMutationAsync(s =>
                 s.ImportSlot(-1, 0, export.Data)
                     ? new GenerationOutcome(true, $"{name} cloned into the party.")
                     : new GenerationOutcome(false, "The party is full."), slot);
-            if (!ok) _viewModel.Status = "The party is full - no room to clone.";
+            if (!ok) { _viewModel.Status = "The party is full - no room to clone."; return; }
+            _viewModel.SelectSlot(Math.Min(partyCount, 5));
+            _canvas.InvalidateSurface();
             return;
         }
 
@@ -1263,6 +1266,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             s.ImportSlot(box, empty, export.Data)
                 ? new GenerationOutcome(true, $"{name} cloned.")
                 : new GenerationOutcome(false, "Clone failed."), empty);
+        _viewModel.SelectSlot(empty);
+        _canvas.InvalidateSurface();
     }
 
     /// <summary>

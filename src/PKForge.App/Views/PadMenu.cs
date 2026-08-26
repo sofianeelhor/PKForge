@@ -43,11 +43,17 @@ public sealed class PadMenu : IPadHandler
         _options = options;
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
 
-        // Short menus are a 2-column grid of folder cards (the B/W bottom-screen look); menus with
-        // long labels or many options become a full-width Pokémon-style list so the text always fits.
-        var longLabels = options.Any(o => o.Label.Length > 16);
-        _columns = options.Length > 1 && !longLabels && options.Length <= 8 ? 2 : 1;
-        var buttonHeight = _columns == 1 ? 58.0 : 52.0;
+        // Menus columnize by size: 1-4 options stay a single column, 5-12 split in two,
+        // bigger menus go three-wide. Long labels force the single column so text fits.
+        var longLabels = options.Any(o => o.Label.Length > 22);
+        _columns = options.Length switch
+        {
+            <= 4 => 1,
+            <= 12 => 2,
+            _ => 3,
+        };
+        if (longLabels) _columns = 1;
+        var buttonHeight = _columns == 1 ? 58.0 : _columns == 2 ? 52.0 : 46.0;
 
         var grid = new Grid { ColumnSpacing = 8, RowSpacing = 8 };
         for (var c = 0; c < _columns; c++) grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));

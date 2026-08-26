@@ -212,6 +212,7 @@ public sealed class BankPage : ContentPage, IPadHandler
         var choice = await PadMenu.ShowAsync(_hostGrid, entry.Info.Nickname.ToUpperInvariant(),
             $"From {entry.Info.SourceName} · Gen {entry.Info.Generation} · deposited {entry.AddedUtc:yyyy-MM-dd}",
             new PadOption("Edit", IconPath: "editor"),
+            new PadOption("Duplicate", IconPath: "storage"),
             new PadOption("Send to game…", IconPath: "storage"),
             new PadOption("Move (carry)", IconPath: "storage"),
             new PadOption("Export .pk file", IconPath: "folder"),
@@ -220,6 +221,16 @@ public sealed class BankPage : ContentPage, IPadHandler
         {
             case "Edit":
                 await EditEntryAsync(entry);
+                return;
+            case "Duplicate":
+                var clone = _bank.Add(_bank.GetData(entry.Id), entry.Info);
+                _boxIndex = clone.Box;
+                _selectedSlot = clone.Slot;
+                RefreshBoxEntries();
+                UpdatePageLabel();
+                UpdatePreview();
+                _boxViewModel.Status = $"{entry.Info.Nickname} cloned in the bank.";
+                _canvas.InvalidateSurface();
                 return;
             case "Send to game…":
                 await SendToGamePickerAsync(entry);
