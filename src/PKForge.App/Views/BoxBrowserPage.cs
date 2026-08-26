@@ -1834,24 +1834,26 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         string[] labels = ["HP", "ATK", "DEF", "SPA", "SPD", "SPE"];
         var grid = new Grid
         {
-            RowSpacing = 2,
-            ColumnSpacing = 12,
+            RowSpacing = 4,
+            ColumnSpacing = 14,
             RowDefinitions = [new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto)],
             ColumnDefinitions = [new(GridLength.Star), new(GridLength.Star)],
         };
         var converter = new StatCellConverter();
         for (var i = 0; i < 6; i++)
         {
+            // Fixed icon + label columns so every value starts at the same x, per column.
             var cell = new Grid
             {
                 ColumnSpacing = 6,
-                ColumnDefinitions = [new(GridLength.Auto), new(new GridLength(52))],
+                ColumnDefinitions = [new(new GridLength(18)), new(new GridLength(34)), new(new GridLength(44))],
                 Children =
                 {
+                    StatBadge((byte)i),
                     new Label
                     {
-                        Text = labels[i], FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1,
-                        TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center,
+                        Text = labels[i], FontFamily = DsChrome.PixelFont, FontSize = 12, FontAttributes = FontAttributes.Bold,
+                        TextColor = StatColor(i).WithLuminosity(0.28f), VerticalTextAlignment = TextAlignment.Center,
                     },
                 },
             };
@@ -1859,12 +1861,62 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             value.HorizontalTextAlignment = TextAlignment.End;
             value.SetBinding(Label.TextProperty, new Binding(vmProperty, converter: converter, converterParameter: i.ToString()));
             cell.Children.Add(value);
-            Grid.SetColumn(value, 1);
+            cell.SetColumn(cell.Children[0], 0);
+            cell.SetColumn(cell.Children[1], 1);
+            cell.SetColumn(value, 2);
             grid.Add(cell);
             Grid.SetRow(cell, i / 2);
             Grid.SetColumn(cell, i % 2);
         }
         return RowChrome(caption, grid, shaded);
+    }
+
+    /// <summary>Stat identity colors, muted for a light panel (HP red, ATK orange, DEF blue, SPA violet, SPD green, SPE gold).</summary>
+    private static Color StatColor(int stat) => stat switch
+    {
+        0 => Color.FromArgb("#C64B4B"),
+        1 => Color.FromArgb("#C98A3D"),
+        2 => Color.FromArgb("#4E7FB8"),
+        3 => Color.FromArgb("#8A6BB8"),
+        4 => Color.FromArgb("#5D9B62"),
+        _ => Color.FromArgb("#B8A03E"),
+    };
+
+    /// <summary>A 16px drawn pixel badge per stat: heart, sword, shield, spark, leaf, wing.</summary>
+    private static SKCanvasView StatBadge(byte stat)
+    {
+        var view = new SKCanvasView { WidthRequest = 16, HeightRequest = 16, InputTransparent = true, VerticalOptions = LayoutOptions.Center };
+        var color = StatColor(stat).ToSKColor();
+        view.PaintSurface += (_, args) =>
+        {
+            var c = args.Surface.Canvas;
+            c.Clear(SKColors.Transparent);
+            using var p = new SKPaint { Color = color, IsAntialias = false };
+            var w = args.Info.Width / 16f;
+            void Px(int x, int y) => c.DrawRect(x * w, y * w, w + 0.5f, w + 0.5f, p);
+            switch (stat)
+            {
+                case 0: // heart
+                    foreach (var (x, y) in new[] { (4,3),(5,3),(10,3),(11,3),(3,4),(6,4),(9,4),(12,4),(3,5),(6,5),(9,5),(12,5),(4,6),(11,6),(5,7),(10,7),(6,8),(9,8),(7,9),(8,9),(7,4),(8,4),(7,5),(8,5) }) Px(x, y);
+                    break;
+                case 1: // sword (diagonal)
+                    foreach (var (x, y) in new[] { (10,3),(11,3),(11,4),(9,5),(10,5),(8,6),(9,6),(7,7),(8,7),(6,8),(7,8),(5,9),(6,9),(4,10),(5,10),(3,11),(4,11),(6,5),(5,6),(9,3) }) Px(x, y);
+                    break;
+                case 2: // shield
+                    foreach (var (x, y) in new[] { (4,3),(5,3),(6,3),(7,3),(8,3),(9,3),(10,3),(11,3),(4,4),(11,4),(4,5),(11,5),(4,6),(11,6),(5,7),(10,7),(6,8),(9,8),(7,9),(8,9) }) Px(x, y);
+                    break;
+                case 3: // spark
+                    foreach (var (x, y) in new[] { (7,2),(6,4),(8,4),(5,6),(7,6),(9,6),(7,7),(6,8),(8,8),(4,7),(10,7),(7,10),(7,3),(7,9) }) Px(x, y);
+                    break;
+                case 4: // leaf
+                    foreach (var (x, y) in new[] { (8,3),(9,3),(7,4),(10,4),(6,5),(10,5),(6,6),(9,6),(5,7),(8,7),(6,8),(7,8),(5,9),(6,9),(4,10),(5,10) }) Px(x, y);
+                    break;
+                default: // wing / speed streak
+                    foreach (var (x, y) in new[] { (3,4),(4,4),(5,4),(6,4),(5,5),(7,5),(6,6),(8,6),(7,7),(9,7),(8,8),(10,8),(9,9),(11,9),(4,7),(5,8),(3,6) }) Px(x, y);
+                    break;
+            }
+        };
+        return view;
     }
 
     /// <summary>Picks one stat out of the space-separated EditStats string by index.</summary>
