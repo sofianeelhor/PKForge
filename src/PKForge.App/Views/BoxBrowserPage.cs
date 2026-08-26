@@ -1674,8 +1674,9 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var entry = new Entry
         {
             FontSize = 13,
+            FontFamily = DsChrome.PixelFont,
             TextColor = UiTokens.Ink0,
-            BackgroundColor = UiTokens.ShellPress,
+            BackgroundColor = Colors.Transparent,
             HeightRequest = 34,
             IsSpellCheckEnabled = false,
             IsTextPredictionEnabled = false,

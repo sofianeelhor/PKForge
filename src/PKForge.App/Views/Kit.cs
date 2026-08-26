@@ -390,10 +390,11 @@ public static class Kit
         };
     }
 
-    /// <summary>Value text inside a chip.</summary>
+    /// <summary>Value text inside a chip: pixel voice, matches the entries line-for-line.</summary>
     public static Label BlueprintValue(double size = 12) => new()
     {
         TextColor = UiTokens.Ink0,
+        FontFamily = DsChrome.PixelFont,
         FontSize = size,
         FontAttributes = FontAttributes.Bold,
         LineBreakMode = LineBreakMode.TailTruncation,
