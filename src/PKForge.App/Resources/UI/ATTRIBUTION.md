@@ -11,3 +11,8 @@ Pokémon species sprites are bundled from [PKHeX](https://github.com/kwsch/PKHeX
 
 Pokémon and Pokémon character names are trademarks of Nintendo, Creatures Inc., and GAME FREAK Inc.
 PKForge is not affiliated with Nintendo, Creatures Inc., GAME FREAK Inc., or The Pokémon Company.
+
+Additional icons from [game-icons.net](https://game-icons.net) (CC-BY 3.0,
+© Lorc, Delapouite, Guard13007, Carl Olsen and other contributing artists):
+music, play, pause, skip, shuffle, autostart, quit, restore, release,
+male, female, genderless and pokedex symbols.
