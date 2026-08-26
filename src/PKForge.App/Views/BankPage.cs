@@ -209,11 +209,10 @@ public sealed class BankPage : ContentPage, IPadHandler
             return;
         }
 
-        var canSend = _boxViewModel.Save is not null;
         var choice = await PadMenu.ShowAsync(_hostGrid, entry.Info.Nickname.ToUpperInvariant(),
             $"From {entry.Info.SourceName} · Gen {entry.Info.Generation} · deposited {entry.AddedUtc:yyyy-MM-dd}",
             new PadOption("Edit", IconPath: "editor"),
-            new PadOption(canSend ? "Send to game" : "Send to game (connect a save first)"),
+            new PadOption("Send to game…", IconPath: "storage"),
             new PadOption("Move (carry)", IconPath: "storage"),
             new PadOption("Export .pk file", IconPath: "folder"),
             new PadOption("Release from bank", IconPath: "hex"));
@@ -222,8 +221,8 @@ public sealed class BankPage : ContentPage, IPadHandler
             case "Edit":
                 await EditEntryAsync(entry);
                 return;
-            case "Send to game":
-                await SendToGameAsync(entry);
+            case "Send to game…":
+                await SendToGamePickerAsync(entry);
                 return;
             case "Move (carry)":
                 _carryId = entry.Id;
@@ -341,26 +340,28 @@ public sealed class BankPage : ContentPage, IPadHandler
         _canvas.InvalidateSurface();
     }
 
-    /// <summary>Withdraw: convert the stored bytes into the connected save's first empty slot.</summary>
-    private async Task SendToGameAsync(BankEntry entry)
+    /// <summary>Withdraw into ANY detected game: pick the destination, the transfer service
+    /// converts the format, backs up, and writes. No need to connect the save first.</summary>
+    private async Task SendToGamePickerAsync(BankEntry entry)
     {
-        if (_boxViewModel.Save is null)
+        var services = IPlatformApplication.Current?.Services;
+        var picker = services?.GetService<SavePickerViewModel>();
+        var transfer = services?.GetService<Services.TransferService>();
+        if (picker is null || transfer is null) return;
+
+        var connectedDoc = services?.GetService<ISaveSessionService>()?.Current?.Document.DocumentId;
+        var target = await SavePickerSheet.PickAsync(_hostGrid, picker.Saves,
+            "SEND TO GAME", $"{entry.Info.Nickname} → pick the destination", connectedDoc);
+        if (target is null)
         {
-            _boxViewModel.Status = "Connect a save first.";
+            if (connectedDoc is null && picker.Saves.Count == 0)
+                _boxViewModel.Status = "No games linked. Link an emulator on Home first.";
             return;
         }
-        var target = _boxViewModel.VisibleSlots.FirstOrDefault(s => s.Species is null)?.Slot ?? -1;
-        if (target < 0)
-        {
-            _boxViewModel.Status = "No empty slot in the game's current box.";
-            return;
-        }
-        var bytes = _bank.GetData(entry.Id);
-        var ok = await _boxViewModel.RunMutationAsync(session =>
-            session.ImportSlot(_boxViewModel.BoxIndex, target, bytes)
-                ? new GenerationOutcome(true, $"{entry.Info.Nickname} joined the game.")
-                : new GenerationOutcome(false, "This mon cannot enter this game's format."), target);
-        if (ok)
+
+        var outcome = await transfer.SendToGameAsync(_bank.GetData(entry.Id), entry.Info.Nickname, target);
+        _boxViewModel.Status = outcome.Message;
+        if (outcome.Success)
         {
             _bank.Remove(entry.Id);
             RefreshBoxEntries();

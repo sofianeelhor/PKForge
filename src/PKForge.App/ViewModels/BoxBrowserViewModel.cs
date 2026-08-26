@@ -361,11 +361,15 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     }, TaskScheduler.FromCurrentSynchronizationContext());
 
     /// <summary>Releases every marked mon. One backup, one write.</summary>
-    public Task<bool> BulkReleaseAsync() => RunMutationAsync(session =>
+    public Task<bool> BulkReleaseAsync() => BulkReleaseAsync(null);
+
+    /// <summary>Releases only the given slots (or every marked mon when null). One backup, one write.</summary>
+    public Task<bool> BulkReleaseAsync(IReadOnlyList<(int Box, int Slot)>? only) => RunMutationAsync(session =>
     {
-        foreach (var (box, slot) in _marked)
+        var targets = only ?? _marked.Select(m => (m.Box, m.Slot)).ToList();
+        foreach (var (box, slot) in targets)
             session.ReleaseSlot(box, slot);
-        return new GenerationOutcome(true, $"Released {_marked.Count} Pokémon. Bye-bye!");
+        return new GenerationOutcome(true, $"Released {targets.Count} Pokémon. Bye-bye!");
     }, Math.Max(0, SelectedSlot)).ContinueWith(t =>
     {
         RefreshAllSlots();
