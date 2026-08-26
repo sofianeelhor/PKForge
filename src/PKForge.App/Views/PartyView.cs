@@ -18,6 +18,10 @@ public static class PartyView
     private const int Columns = 2;
     private const int Rows = 3;
 
+    private static SKFont? _nameFont;
+    private static SKFont? _smallFont;
+    private static SKFont? _labelFont;
+
     private static readonly SKColor Bg = new(0x14, 0x1D, 0x3E);
     private static readonly SKColor BgLine = new(0x1D, 0x2A, 0x55);
     private static readonly SKColor Body = new(0x2A, 0x3A, 0x78, 0xC8);
@@ -48,10 +52,15 @@ public static class PartyView
             var rect = SlotRect(info, i);
             EntityDetail? detail = null;
             try { detail = session?.ReadEntity(-1, i); } catch { /* engine validates coordinates */ }
-            var carriedFrom = carrySource is { Box: -1, Slot: var cs } && cs == i
+            var srcSlot = carrySource is { Box: -1, Slot: var cs } ? cs : -1;
+            var aiming = srcSlot >= 0 && selectedSlot != srcSlot;
+            // The held mon breathes wherever it is RENDERED: on its source slot when idle,
+            // on the aimed slot while previewing the swap (it follows the cursor).
+            var heldHere = srcSlot >= 0
+                && (aiming ? i == selectedSlot : i == srcSlot)
                 && detail is { IsEmpty: false };
             var breath = 1f;
-            if (carriedFrom)
+            if (heldHere)
                 breath = 1f + 0.028f * (0.5f + 0.5f * MathF.Sin(pulsePhase));
             var pulsed = breath == 1f ? rect : ScaleRect(rect, breath);
 
@@ -74,7 +83,7 @@ public static class PartyView
             }
 
             Slot(canvas, pulsed, drawDetail, sprites, i == selectedSlot, invalidate,
-                lifted: carriedFrom && !isGhost, pulsePhase: pulsePhase,
+                lifted: heldHere, pulsePhase: pulsePhase,
                 ghost: previewPartner >= 0, ghostTag: isGhost);
         }
     }
@@ -185,9 +194,9 @@ public static class PartyView
         var textRight = r.Right - 16;
         var nameColor = fainted ? FaintName : SKColors.White;
 
-        using var nameFont = FontFor(detail.Nickname, Math.Max(20f, r.Height * 0.175f));
-        using var smallFont = FontFor("Lv.", Math.Max(15f, r.Height * 0.13f));
-        using var labelFont = FontFor("HP", Math.Max(12f, r.Height * 0.105f));
+        var nameFont = _nameFont ??= FontFor(detail.Nickname, Math.Max(20f, r.Height * 0.175f));
+        var smallFont = _smallFont ??= FontFor("Lv.", Math.Max(15f, r.Height * 0.13f));
+        var labelFont = _labelFont ??= FontFor("HP", Math.Max(12f, r.Height * 0.105f));
 
         using (var fg = new SKPaint { Color = nameColor, IsAntialias = true })
             canvas.DrawText(detail.Nickname, tx, r.Top + r.Height * 0.3f, SKTextAlign.Left, nameFont, fg);
