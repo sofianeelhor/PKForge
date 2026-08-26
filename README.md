@@ -44,6 +44,12 @@ Pokémon in battle or in trades with people who do not know they are edited.
 Download the APK from [Releases](https://github.com/sofianeelhor/PKForge/releases) and
 allow installs from unknown sources. First run walks you through linking an emulator.
 
+## Discord
+
+Join for updates, support, bug reports, feature requests, or just to chat about the project.
+
+👉 **[Join the PKForge Discord](https://discord.gg/bMtzZmTDfu)**
+
 ## Build
 
 .NET 10 SDK with the `maui-android` workload, Android SDK (API 36).
