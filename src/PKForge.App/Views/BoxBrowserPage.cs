@@ -267,6 +267,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     {
         var choice = await PadMenu.ShowAsync(_hostGrid, $"ORGANIZER · {_viewModel.MarkedCount} MARKED", null,
             new PadOption("Move selection to box…", IconPath: "storage"),
+            new PadOption("Move selection to another game…", IconPath: "storage"),
             new PadOption("Move selection to Bank", IconPath: "bank"),
             new PadOption("Export selection (.pk files)", IconPath: "folder"),
             new PadOption("Release selection", IconPath: "hex"),
@@ -281,6 +282,45 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 if (target is null) return;
                 var boxIndex = Array.IndexOf(boxes, target);
                 await _viewModel.BulkMoveAsync(boxIndex);
+                _canvas.InvalidateSurface();
+                return;
+            }
+            case "Move selection to another game…":
+            {
+                if (_viewModel.MarkedCount == 0) { _viewModel.Status = "Nothing marked."; return; }
+                var session = _sessionsFor();
+                var picker = IPlatformApplication.Current?.Services.GetService<SavePickerViewModel>();
+                var transfer = IPlatformApplication.Current?.Services.GetService<Services.TransferService>();
+                if (session is null || picker is null || transfer is null) return;
+
+                var currentDoc = IPlatformApplication.Current?.Services.GetService<ISaveSessionService>()?.Current?.Document.DocumentId;
+                var target = await SavePickerSheet.PickAsync(_hostGrid, picker.Saves,
+                    "MOVE SELECTION TO GAME", $"{_viewModel.MarkedCount} Pokémon leave this box", currentDoc);
+                if (target is null) return;
+
+                var confirm = await PadMenu.ConfirmAsync(_hostGrid, "MOVE SELECTION?",
+                    $"{_viewModel.MarkedCount} Pokémon will leave this box and join {target.GameLabel}. Mons that cannot enter that format stay here.", "Move all");
+                if (!confirm) return;
+
+                var sentSlots = new List<(int Box, int Slot)>();
+                var skipped = 0;
+                foreach (var (box, markedSlot) in _viewModel.MarkedSlots.ToArray())
+                {
+                    var export = session.ExportSlot(box, markedSlot);
+                    var outcome = await transfer.SendToGameAsync(export.Data, export.FileName, target);
+                    if (outcome.Success) sentSlots.Add((box, markedSlot));
+                    else skipped++;
+                }
+                if (sentSlots.Count == 0)
+                {
+                    _viewModel.Status = skipped > 0 ? $"No Pokémon could enter {target.GameLabel}'s format." : "Transfer failed.";
+                    return;
+                }
+                // Only the mons that actually arrived leave this save; the rest stay marked.
+                var moved = await _viewModel.BulkReleaseAsync(sentSlots);
+                _viewModel.Status = skipped > 0
+                    ? $"Moved {sentSlots.Count} to {target.GameLabel}; {skipped} could not enter that format and stayed."
+                    : $"Moved {sentSlots.Count} Pokémon to {target.GameLabel}.";
                 _canvas.InvalidateSurface();
                 return;
             }
@@ -1121,6 +1161,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Edit (side panel)", IconPath: "editor"),
             new PadOption("Move", IconPath: "storage"),
             new PadOption("Send to Bank", IconPath: "bank"),
+            new PadOption("Send to another game…", IconPath: "storage"),
             new PadOption("Export .pk file", IconPath: "folder"),
             new PadOption("Show as Showdown set", IconPath: "script"),
             new PadOption("Show as QR code", IconPath: "search"),
@@ -1132,6 +1173,9 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 return;
             case "Send to Bank":
                 await SendToBankAsync(slot, nickname);
+                return;
+            case "Send to another game…":
+                await SendSlotToAnotherGameAsync(slot, nickname);
                 return;
             case "Export .pk file":
                 await ExportSlotAsync(slot);
@@ -1148,6 +1192,44 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             default:
                 return; // Edit: the editor is already open on the right
         }
+    }
+
+    /// <summary>
+    /// Game-to-game: pick any other detected save, the transfer service converts and
+    /// writes there, then the mon leaves this box (a real move, not a copy).
+    /// </summary>
+    private async Task SendSlotToAnotherGameAsync(int slot, string nickname)
+    {
+        var services = IPlatformApplication.Current?.Services;
+        var picker = services?.GetService<SavePickerViewModel>();
+        var transfer = services?.GetService<Services.TransferService>();
+        var session = _sessionsFor();
+        if (picker is null || transfer is null || session is null) return;
+
+        var currentDoc = IPlatformApplication.Current?.Services.GetService<ISaveSessionService>()?.Current?.Document.DocumentId;
+        var target = await SavePickerSheet.PickAsync(_hostGrid, picker.Saves,
+            "SEND TO GAME", $"{nickname} → pick the destination (the mon leaves this box)", currentDoc);
+        if (target is null)
+        {
+            if (picker.Saves.Count == 0)
+                _viewModel.Status = "No other games linked. Link another emulator or save on Home.";
+            return;
+        }
+
+        var confirm = await PadMenu.ConfirmAsync(_hostGrid, "MOVE TO ANOTHER GAME?",
+            $"{nickname} will leave this box and join {target.GameLabel} (box space permitting).", "Move");
+        if (!confirm) return;
+
+        var export = session.ExportSlot(_viewModel.BoxIndex, slot);
+        var outcome = await transfer.SendToGameAsync(export.Data, nickname, target);
+        _viewModel.Status = outcome.Message;
+        if (!outcome.Success) return;
+
+        await _viewModel.RunMutationAsync(s =>
+        {
+            s.ReleaseSlot(_viewModel.BoxIndex, slot);
+            return new GenerationOutcome(true, $"{nickname} moved to {target.GameLabel}.");
+        }, slot);
     }
 
     /// <summary>Writes the decrypted .pk* file and hands it to Android's share sheet.</summary>
