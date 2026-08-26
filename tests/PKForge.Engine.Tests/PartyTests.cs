@@ -85,6 +85,13 @@ public sealed class PartyTests
         Assert.Equal(firstBefore, session.ReadEntity(-1, 2).Nickname);
         Assert.Equal(6, LivePartyCount());
 
+        // Move to an empty slot beyond the party count: inserts there, no throw, no loss.
+        var countNow = LivePartyCount();
+        var movingNick = session.ReadEntity(-1, 0).Nickname;
+        session.MoveSlot(-1, 0, -1, Math.Min(5, countNow)); // first empty slot at the tail
+        Assert.Equal(countNow, LivePartyCount());
+        Assert.Equal(movingNick, session.ReadEntity(-1, Math.Min(5, countNow)).Nickname);
+
         // Adjacent columns (slot 0 <-> slot 1), then serialize/reload: the exact user flow.
         var a0 = session.ReadEntity(-1, 0).Nickname;
         var a1 = session.ReadEntity(-1, 1).Nickname;
