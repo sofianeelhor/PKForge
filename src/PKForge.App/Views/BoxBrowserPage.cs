@@ -1773,8 +1773,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     {
         if (_viewModel.BoxIndex == -1)
         {
-            // The party pseudo-box renders as HGSS-style cards, not the grid.
-            BoxGridRenderer.PaintBackdrop(args.Surface.Canvas, args.Info, _viewModel.BoxIndex);
+            // The party pseudo-box renders as the navy deck, not the grid.
             PartyView.Paint(args.Surface.Canvas, args.Info, _sprites, _sessionsFor(), _viewModel.SelectedSlot);
             return;
         }
