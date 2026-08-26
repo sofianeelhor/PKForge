@@ -45,6 +45,7 @@ public static class PksmIcons
         "melonds" => "emu_melonds.png",
         "azahar" => "emu_azahar.png",
         "eden" => "emu_eden.png",
+        "linkboy" => "emu_linkboy.png",
         _ => "icon_hex.png",
     };
 

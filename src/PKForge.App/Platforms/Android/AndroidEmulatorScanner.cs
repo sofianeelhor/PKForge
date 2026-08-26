@@ -28,7 +28,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
             _rejected.Clear();
             var found = kind switch
             {
-                EmulatorKind.RetroArch or EmulatorKind.MelonDS => ScanFlatFolder(treeUri, rootDocId, kind, cancellationToken),
+                EmulatorKind.RetroArch or EmulatorKind.MelonDS or EmulatorKind.Linkboy => ScanFlatFolder(treeUri, rootDocId, kind, cancellationToken),
                 EmulatorKind.Eden => ScanEden(treeUri, rootDocId, cancellationToken),
                 EmulatorKind.Azahar => ScanAzahar(treeUri, rootDocId, cancellationToken),
                 _ => [],

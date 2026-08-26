@@ -242,6 +242,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         var choice = await PadMenu.ShowAsync(_hostGrid, "LINK A STORAGE UNIT", null,
             new PadOption("RetroArch (GB/GBC/GBA)", IconPath: "retroarch"),
             new PadOption("melonDS (DS)", IconPath: "melonds"),
+            new PadOption("Linkboy (GB/GBC/GBA)", IconPath: "linkboy"),
             new PadOption("Azahar (3DS)", IconPath: "azahar"),
             new PadOption("Eden (Switch)", IconPath: "eden"),
             new PadOption("Single save file", IconPath: "search"));
@@ -249,6 +250,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         {
             case "RetroArch (GB/GBC/GBA)": await _viewModel.AddRetroArchCommand.ExecuteAsync(null); break;
             case "melonDS (DS)": await _viewModel.AddMelonDsCommand.ExecuteAsync(null); break;
+            case "Linkboy (GB/GBC/GBA)": await _viewModel.AddLinkboyCommand.ExecuteAsync(null); break;
             case "Azahar (3DS)": await _viewModel.AddAzaharCommand.ExecuteAsync(null); break;
             case "Eden (Switch)": await _viewModel.AddEdenCommand.ExecuteAsync(null); break;
             case "Single save file": await LinkFileAsync(); break;
