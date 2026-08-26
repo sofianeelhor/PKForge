@@ -264,6 +264,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             new PadOption("Open a save file", IconPath: "search"),
             new PadOption("Restore points", IconPath: "credits"),
             new PadOption("About PKForge", IconPath: "settings"),
+            new PadOption("Music", IconPath: "script"),
             new PadOption("Misc", IconPath: "script"),
             new PadOption("Quit PKForge", IconPath: "hex"));
         switch (choice)
@@ -272,11 +273,64 @@ public sealed class HomePage : ContentPage, IPadHandler
             case "Open a save file": await LinkFileAsync(); break;
             case "Restore points": await PushAsync<BackupHistoryPage>(); break;
             case "About PKForge": _viewModel.Status = "PKForge - open-source save manager & bank. GPLv3."; break;
+            case "Music": await ShowMusicAsync(); break;
             case "Misc": await ShowMiscAsync(); break;
             case "Quit PKForge":
                 if (await PadMenu.ConfirmAsync(_hostGrid, "QUIT PKFORGE?", "Unsaved edits in open menus are already backed up per write.", "Quit"))
                     Microsoft.Maui.Controls.Application.Current?.Quit();
                 break;
+        }
+    }
+
+    /// <summary>Background music: library, play/pause, skip, order, autostart.</summary>
+    private async Task ShowMusicAsync()
+    {
+        var music = IPlatformApplication.Current?.Services.GetService<Domain.IMusicPlayer>();
+        if (music is null) return;
+
+        while (true)
+        {
+            var order = music.Order == Domain.MusicOrder.Shuffle ? "Shuffle" : "In order";
+            var auto = music.Autostart ? "ON" : "OFF";
+            var playing = music.IsPlaying
+                ? $"▶ {music.Library[music.CurrentIndex ?? 0].Title}"
+                : $"Library: {music.Library.Count} track(s)";
+            var choice = await PadMenu.ShowAsync(_hostGrid, "BACKGROUND MUSIC", playing,
+                new PadOption(music.IsPlaying ? "Pause" : "Play", IconPath: "party"),
+                new PadOption("Skip to next track", IconPath: "editor"),
+                new PadOption($"Add music files ({music.Library.Count})", IconPath: "folder"),
+                new PadOption(music.Library.Count > 0 ? "Clear library" : "-", IconPath: "hex"),
+                new PadOption($"Order: {order}", IconPath: "script"),
+                new PadOption($"Autostart: {auto}", IconPath: "settings"));
+            switch (choice)
+            {
+                case "Play": music.Play(); break;
+                case "Pause": music.Pause(); break;
+                case "Skip to next track": music.Skip(); break;
+                case var add when add?.StartsWith("Add music files", StringComparison.Ordinal) == true:
+                {
+                    var picker = IPlatformApplication.Current?.Services.GetService<Domain.IDocumentPicker>();
+                    if (picker is null) break;
+                    var documents = await picker.PickManyAsync();
+                    if (documents.Count == 0) break;
+                    var added = music.Add(documents);
+                    _viewModel.Status = added > 0 ? $"Added {added} track(s) to the music library." : "Those files are already in the library.";
+                    break;
+                }
+                case "Clear library":
+                    var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "CLEAR MUSIC LIBRARY?",
+                        "Removes every track. Your audio files on storage are untouched.", "Clear");
+                    if (confirmed) music.Clear();
+                    break;
+                case var o when o?.StartsWith("Order: ", StringComparison.Ordinal) == true:
+                    music.SetOrder(music.Order == Domain.MusicOrder.InOrder ? Domain.MusicOrder.Shuffle : Domain.MusicOrder.InOrder);
+                    break;
+                case var a when a?.StartsWith("Autostart: ", StringComparison.Ordinal) == true:
+                    music.SetAutostart(!music.Autostart);
+                    break;
+                default:
+                    return;
+            }
         }
     }
 
