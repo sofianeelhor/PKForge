@@ -368,11 +368,18 @@ public sealed class HomePage : ContentPage, IPadHandler
         var iconHost = new Grid { Children = { cartBody } };
         iconHost.BindingContextChanged += async (sender, _) =>
         {
-            if (((Grid)sender!).BindingContext is not DetectedSave save) return;
+            var ctx = ((Grid)sender!).BindingContext;
+            var gameLabel = ctx switch
+            {
+                DetectedSave single => single.GameLabel,
+                SaveGroup group => group.Saves[0].GameLabel,
+                _ => null,
+            };
+            if (gameLabel is null) return;
             artImage.IsVisible = false;
             labelText.IsVisible = true;
-            var path = await GameArt.GetIconAsync(save.GameLabel);
-            if (path is null || !ReferenceEquals(((Grid)sender).BindingContext, save)) return;
+            var path = await GameArt.GetIconAsync(gameLabel);
+            if (path is null || !ReferenceEquals(((Grid)sender).BindingContext, ctx)) return;
             artImage.Source = ImageSource.FromFile(path);
             artImage.IsVisible = true;
             labelText.IsVisible = false;
@@ -407,17 +414,19 @@ public sealed class HomePage : ContentPage, IPadHandler
         });
 
         // Every tile is exactly the same size: the shelf must read as a row of carts.
+        var chipIcon = PksmIcons.Icon("folder", 12, PksmIcons.White);
+        var chipLabel = new Label { TextColor = Colors.White, FontSize = 9, FontAttributes = FontAttributes.Bold };
+        chipLabel.SetBinding(Label.TextProperty, new Binding(nameof(SaveGroup.Count), stringFormat: "x{0}"));
         var countChip = new Border
         {
             BackgroundColor = UiTokens.Cyan,
             StrokeThickness = 0,
             StrokeShape = new RoundRectangle { CornerRadius = 4 },
-            Padding = new Thickness(5, 1),
-            HorizontalOptions = LayoutOptions.End,
+            Padding = new Thickness(6, 2),
+            HorizontalOptions = LayoutOptions.Center,
             IsVisible = false,
-            Content = new Label { TextColor = Colors.White, FontSize = 9, FontAttributes = FontAttributes.Bold },
+            Content = new HorizontalStackLayout { Spacing = 4, Children = { chipIcon, chipLabel } },
         };
-        countChip.Content.SetBinding(Label.TextProperty, new Binding(nameof(SaveGroup.Count), stringFormat: "x{0}"));
         countChip.SetBinding(IsVisibleProperty, new Binding(nameof(SaveGroup.Count), converter: MoreThanOne));
 
         var card = Kit.DevicePanel(new VerticalStackLayout
@@ -494,7 +503,7 @@ public sealed class HomePage : ContentPage, IPadHandler
 
     private async void OnGameSelected(object? sender, SelectionChangedEventArgs args)
     {
-        if (args.CurrentSelection.FirstOrDefault() is not DetectedSave save) return;
+        if (args.CurrentSelection.FirstOrDefault() is not SaveGroup group) return;
         if (_padSelecting)
         {
             // Pad navigation only moves the highlight; A opens.
@@ -502,7 +511,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             return;
         }
         ((CollectionView)sender!).SelectedItem = null;
-        await OpenSaveAsync(save);
+        await OpenGroupAsync(group);
     }
 
     private async Task OpenSaveAsync(DetectedSave save)

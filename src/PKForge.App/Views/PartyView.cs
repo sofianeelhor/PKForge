@@ -32,7 +32,7 @@ public static class PartyView
     private static readonly SKColor HpLabel = new(0x66, 0x7A, 0xB8);
     private static readonly SKColor Selected = new(0x35, 0xB8, 0xC8);
 
-    public static void Paint(SKCanvas canvas, SKImageInfo info, ISpriteService sprites, ISaveEngineSession? session, int selectedSlot)
+    public static void Paint(SKCanvas canvas, SKImageInfo info, ISpriteService sprites, ISaveEngineSession? session, int selectedSlot, Action invalidate)
     {
         // The navy world with its faint grid.
         using (var bg = new SKPaint { Color = Bg })
@@ -48,7 +48,7 @@ public static class PartyView
             var rect = SlotRect(info, i);
             EntityDetail? detail = null;
             try { detail = session?.ReadEntity(-1, i); } catch { /* engine validates coordinates */ }
-            Slot(canvas, rect, detail, sprites, i == selectedSlot);
+            Slot(canvas, rect, detail, sprites, i == selectedSlot, invalidate);
         }
     }
 
@@ -75,7 +75,7 @@ public static class PartyView
         return new SKRect(x, y, x + w, y + h);
     }
 
-    private static void Slot(SKCanvas canvas, SKRect r, EntityDetail? detail, ISpriteService sprites, bool selected)
+    private static void Slot(SKCanvas canvas, SKRect r, EntityDetail? detail, ISpriteService sprites, bool selected, Action invalidate)
     {
         var fainted = detail is { IsEmpty: false, CurrentHp: 0 };
         var body = detail is null or { IsEmpty: true } ? Body.WithAlpha(0x50)
@@ -124,7 +124,7 @@ public static class PartyView
         }
         else
         {
-            sprites.Warm(detail.Species, detail.Form, detail.IsShiny, () => { });
+            sprites.Warm(detail.Species, detail.Form, detail.IsShiny, invalidate);
         }
 
         var tx = r.Left + r.Width * 0.32f;
@@ -150,7 +150,7 @@ public static class PartyView
         if (ball is not null)
             canvas.DrawBitmap(ball, new SKRect(tx, ballY, tx + ballSize, ballY + ballSize), new SKPaint());
         else
-            sprites.WarmBall(detail.Ball, () => { });
+            sprites.WarmBall(detail.Ball, invalidate);
         using (var fg = new SKPaint { Color = fainted ? FaintLv : LvColor, IsAntialias = true })
             canvas.DrawText($"Lv.{detail.Level}", tx + ballSize + 8, r.Top + r.Height * 0.53f, SKTextAlign.Left, smallFont, fg);
 
@@ -193,11 +193,31 @@ public static class PartyView
         return path;
     }
 
+    /// <summary>The bundled NDS12 face, loaded once from the app package (MAUI aliases are
+    /// not Skia family names, so FromFamilyName("PixelUI") never resolves).</summary>
+    private static SKTypeface? _pixelFace;
+
+    private static SKTypeface PixelFace()
+    {
+        if (_pixelFace is not null) return _pixelFace;
+        try
+        {
+            using var stream = FileSystem.OpenAppPackageFileAsync("Fonts/NDS12.ttf").GetAwaiter().GetResult();
+            var bytes = new MemoryStream();
+            stream.CopyTo(bytes);
+            var cache = System.IO.Path.Combine(FileSystem.CacheDirectory, "NDS12.ttf");
+            File.WriteAllBytes(cache, bytes.ToArray());
+            _pixelFace = SKTypeface.FromFile(cache);
+        }
+        catch { _pixelFace = SKTypeface.Default; }
+        return _pixelFace ?? SKTypeface.Default;
+    }
+
     /// <summary>A font that can draw the text: the pixel face when it covers every glyph, else system default (CJK nicknames).</summary>
     private static SKFont FontFor(string text, float size)
     {
-        var pixel = SKTypeface.FromFamilyName("PixelUI");
-        var covered = pixel is not null && text.All(c => pixel.GetGlyph(c) != 0);
+        var pixel = PixelFace();
+        var covered = text.All(c => pixel.GetGlyph(c) != 0);
         return new SKFont(covered ? pixel : SKTypeface.Default, size)
         {
             Edging = SKFontEdging.Antialias,
