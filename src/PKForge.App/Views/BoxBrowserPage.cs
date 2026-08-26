@@ -1835,6 +1835,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         {
             RowSpacing = 2,
             ColumnSpacing = 12,
+            RowDefinitions = [new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto)],
             ColumnDefinitions = [new(GridLength.Star), new(GridLength.Star)],
         };
         var converter = new StatCellConverter();
