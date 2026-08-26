@@ -24,6 +24,7 @@ public sealed class PickerMenu : IPadHandler
     private readonly Grid _overlay;
     private readonly GamepadRouter? _router;
     private readonly CollectionView _list;
+    private readonly Label _preview;
     private List<PickItem> _filtered;
     private int _index;
 
@@ -61,13 +62,27 @@ public sealed class PickerMenu : IPadHandler
         };
         _list.SelectionChanged += (_, args) =>
         {
-            if (_padSelecting) { _padSelecting = false; return; } // pad only moves the highlight
+            if (_padSelecting) { _padSelecting = false; UpdatePreview(); return; } // pad only moves the highlight
             if (args.CurrentSelection.FirstOrDefault() is PickItem picked)
                 Close(picked);
         };
 
         // The list is the Star row so it fills the host-capped window and scrolls itself -
         // never a fixed 340 that pushed the title and hint bar off a 360dp screen.
+        _preview = new Label
+        {
+            TextColor = UiTokens.Paper,
+            FontFamily = DsChrome.PixelFont,
+            FontSize = 14,
+            FontAttributes = FontAttributes.Bold,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center,
+            LineBreakMode = LineBreakMode.TailTruncation,
+        };
+        var hints = Kit.HintBar(("A", "PICK", null), ("B", "CANCEL", () => Close(null)));
+        var hintRow = new Grid { Children = { hints, _preview }, Padding = new Thickness(0, 3, 0, 0) };
+        _preview.HorizontalOptions = LayoutOptions.Center;
+
         var content = new Grid
         {
             RowSpacing = 10,
@@ -78,15 +93,16 @@ public sealed class PickerMenu : IPadHandler
                 Kit.HeaderBar(title),
                 search,
                 _list,
-                Kit.HintBar(("A", "CHOOSE", null), ("B", "CANCEL", () => Close(null))),
+                hintRow,
             },
         };
         Grid.SetRow(search, 1);
         Grid.SetRow(_list, 2);
-        Grid.SetRow((View)content.Children[3], 3);
+        Grid.SetRow(hintRow, 3);
 
         var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 520, scroll: false);
         _overlay = Kit.AttachOverlay(host, window, () => Close(null));
+        search.Unfocus(); // the pad drives first; touch users tap the box to type
 
         if (currentId is { } id)
         {
@@ -131,7 +147,10 @@ public sealed class PickerMenu : IPadHandler
                 States =
                 {
                     new VisualState { Name = "Normal", Setters = { new Setter { Property = Border.StrokeProperty, Value = Colors.Transparent } } },
-                    new VisualState { Name = "Selected", Setters = { new Setter { Property = Border.StrokeProperty, Value = UiTokens.SelectBorder }, new Setter { Property = Border.StrokeThicknessProperty, Value = 2.5 } } },
+                    new VisualState { Name = "Selected", Setters = {
+                        new Setter { Property = Border.StrokeProperty, Value = UiTokens.SelectBorder },
+                        new Setter { Property = Border.StrokeThicknessProperty, Value = 3 },
+                        new Setter { Property = Border.BackgroundColorProperty, Value = UiTokens.SelectFill } } },
                 },
             },
         });
@@ -184,6 +203,14 @@ public sealed class PickerMenu : IPadHandler
         _padSelecting = true;
         _list.SelectedItem = _filtered[_index];
         _list.ScrollTo(_index, position: ScrollToPosition.Center, animate: false);
+        UpdatePreview();
+    }
+
+    /// <summary>The hint line always says what A will pick, so pad aim can be misread but never mispurchased.</summary>
+    private void UpdatePreview()
+    {
+        if (_index >= 0 && _index < _filtered.Count)
+            _preview.Text = $"A picks: {_filtered[_index].Name}";
     }
 
     private void Close(PickItem? result)
