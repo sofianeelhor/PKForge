@@ -27,6 +27,7 @@ public static class SavePickerSheet
         EmulatorKind.MelonDS => "melonds",
         EmulatorKind.Azahar => "azahar",
         EmulatorKind.Eden => "eden",
+        EmulatorKind.Linkboy => "linkboy",
         _ => "storage",
     };
 }

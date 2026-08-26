@@ -80,6 +80,9 @@ public partial class SavePickerViewModel : ObservableObject
     private Task AddEdenAsync() => AddRootAndScanAsync(EmulatorKind.Eden);
 
     [RelayCommand]
+    private Task AddLinkboyAsync() => AddRootAndScanAsync(EmulatorKind.Linkboy);
+
+    [RelayCommand]
     public async Task RescanAsync()
     {
         if (IsBusy) return;

@@ -6,6 +6,7 @@ public enum EmulatorKind
     MelonDS,
     Azahar,
     Eden,
+    Linkboy,
 }
 
 /// <summary>A persistable SAF folder grant, opaque to the domain layer.</summary>
