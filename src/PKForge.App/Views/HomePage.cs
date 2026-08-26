@@ -264,7 +264,8 @@ public sealed class HomePage : ContentPage, IPadHandler
             new PadOption($"Download full sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "storage"),
             new PadOption("Scan report", IconPath: "script"),
             new PadOption("Restore points", IconPath: "credits"),
-            new PadOption("About PKForge", IconPath: "settings"));
+            new PadOption("About PKForge", IconPath: "settings"),
+            new PadOption("Quit PKForge", IconPath: "hex"));
         switch (choice)
         {
             case "Link an emulator": await ShowLinkMenuAsync(); break;
@@ -276,6 +277,10 @@ public sealed class HomePage : ContentPage, IPadHandler
             case "Scan report": await PadMenu.ShowAsync(_hostGrid, "SCAN REPORT", _viewModel.ScanReport, "OK"); break;
             case "Restore points": await PushAsync<BackupHistoryPage>(); break;
             case "About PKForge": _viewModel.Status = "PKForge - open-source save manager & bank. GPLv3."; break;
+            case "Quit PKForge":
+                if (await PadMenu.ConfirmAsync(_hostGrid, "QUIT PKFORGE?", "Unsaved edits in open menus are already backed up per write.", "Quit"))
+                    Microsoft.Maui.Controls.Application.Current?.Quit();
+                break;
         }
     }
 
