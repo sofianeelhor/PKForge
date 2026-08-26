@@ -38,14 +38,18 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         ThrowIfDisposed();
         ValidateCoordinates(box, slot);
-        return _save.GetBoxSlotAtIndex(box, slot);
+        return GetEntityCore(box, slot);
     }
+
+    /// <summary>Box -1 addresses the party (0-5, compact like the games).</summary>
+    private PKM GetEntityCore(int box, int slot)
+        => box == -1 ? _save.GetPartySlotAtIndex(slot) : _save.GetBoxSlotAtIndex(box, slot);
 
     public EntityDetail ReadEntity(int box, int slot)
     {
         ThrowIfDisposed();
         ValidateCoordinates(box, slot);
-        var entity = _save.GetBoxSlotAtIndex(box, slot);
+        var entity = GetEntityCore(box, slot);
         if (entity.Species == 0)
             return new EntityDetail(box, slot, true, 0, string.Empty, 0, string.Empty, 0, 0, 0, 0, 0, 0, 0, 0, [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], false, 0, string.Empty);
 
@@ -71,7 +75,9 @@ public sealed class SaveEngineSession : ISaveEngineSession
             GetTypes(entity.Species, entity.Form),
             entity.Gender,
             entity.CurrentFriendship,
-            ComputeStats(entity));
+            ComputeStats(entity),
+            entity.Stat_HPCurrent,
+            (int)entity.Status_Condition);
     }
 
     /// <summary>The mon's final battle stats (HP/Atk/Def/SpA/SpD/Spe) at its current level.</summary>
@@ -88,7 +94,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(edit);
         ValidateCoordinates(box, slot);
-        var entity = _save.GetBoxSlotAtIndex(box, slot);
+        var entity = GetEntityCore(box, slot);
         if (entity.Species == 0)
             throw new InvalidOperationException("Cannot edit an empty slot.");
 
@@ -133,7 +139,10 @@ public sealed class SaveEngineSession : ISaveEngineSession
             entity.CurrentFriendship = (byte)Math.Clamp(friendship, 0, 255);
 
         entity.RefreshChecksum();
-        _save.SetBoxSlotAtIndex(entity, box, slot);
+        if (box == -1)
+            _save.SetPartySlotAtIndex(entity, slot);
+        else
+            _save.SetBoxSlotAtIndex(entity, box, slot);
     }
 
     /// <summary>Engine-internal access for sibling adapters (legalizer); never leaves the assembly.</summary>
@@ -150,10 +159,62 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         ThrowIfDisposed();
         if (fromBox == toBox && fromSlot == toSlot) return;
-        var source = _save.GetBoxSlotAtIndex(fromBox, fromSlot);
+
+        var source = GetEntityCore(fromBox, fromSlot);
+        if (source.Species == 0) return;
+
+        if (toBox == -1)
+        {
+            // Into the party: games append, they never swap into a slot.
+            if (_save.PartyCount >= 6) return;
+            // Same-format moves return null from the converter; clone instead of aliasing
+            // the live slot we are about to empty.
+            var moved = EntityConverter.ConvertToType(source, _save.PKMType, out _) ?? source.Clone();
+            DeleteEntityCore(fromBox, fromSlot);
+            InsertParty(moved);
+            return;
+        }
+
         var target = _save.GetBoxSlotAtIndex(toBox, toSlot);
-        _save.SetBoxSlotAtIndex(target, fromBox, fromSlot);
+        if (fromBox == -1)
+        {
+            // Out of the party: the mon lands at the box slot; a displaced box mon joins
+            // the party (swap), refused when the party is full.
+            if (target.Species != 0 && _save.PartyCount >= 6) return;
+            var srcClone = source.Clone();
+            _save.SetBoxSlotAtIndex(srcClone, toBox, toSlot);
+            DeleteEntityCore(-1, fromSlot);
+            if (target.Species != 0)
+                InsertParty(EntityConverter.ConvertToType(target, _save.PKMType, out _) ?? target.Clone());
+            return;
+        }
+
+        // Box to box: plain swap.
         _save.SetBoxSlotAtIndex(source, toBox, toSlot);
+        _save.SetBoxSlotAtIndex(target, fromBox, fromSlot);
+    }
+
+    /// <summary>Appends a mon to the party (compacting, like the games).</summary>
+    private void InsertParty(PKM pk)
+    {
+        var party = _save.PartyData.ToList();
+        party.Add(pk);
+        _save.PartyData = party;
+    }
+
+    /// <summary>Empties a slot; party slots compact instead of leaving a hole.</summary>
+    private void DeleteEntityCore(int box, int slot)
+    {
+        if (box == -1)
+        {
+            var party = _save.PartyData.ToList();
+            party.RemoveAt(slot);
+            _save.PartyData = party;
+        }
+        else
+        {
+            _save.SetBoxSlotAtIndex(_save.BlankPKM, box, slot);
+        }
     }
 
     public IReadOnlyList<int> GetSpeciesTypes(int species)
@@ -172,7 +233,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public SlotExport ExportSlot(int box, int slot)
     {
         ThrowIfDisposed();
-        var entity = _save.GetBoxSlotAtIndex(box, slot);
+        var entity = GetEntityCore(box, slot);
         var data = new byte[entity.SIZE_PARTY];
         entity.WriteDecryptedDataParty(data);
         var safeName = string.Concat(entity.FileName.Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_' or ' ' ? c : '_'));
@@ -188,7 +249,8 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public void ReleaseSlot(int box, int slot)
     {
         ThrowIfDisposed();
-        _save.SetBoxSlotAtIndex(_save.BlankPKM, box, slot);
+        ValidateCoordinates(box, slot);
+        DeleteEntityCore(box, slot);
     }
 
     public bool ImportSlot(int box, int slot, byte[] fileBytes)
@@ -198,6 +260,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (imported is null) return false;
         var converted = EntityConverter.ConvertToType(imported, _save.PKMType, out _);
         if (converted is null) return false;
+        if (box == -1)
+        {
+            if (_save.PartyCount >= 6) return false;
+            InsertParty(converted);
+            return true;
+        }
         _save.SetBoxSlotAtIndex(converted, box, slot);
         return true;
     }
@@ -520,7 +588,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     private SaveSnapshot BuildSnapshot(string? displayName)
     {
-        var slots = new List<SlotSummary>(_save.BoxCount * _save.BoxSlotCount);
+        var slots = new List<SlotSummary>(_save.BoxCount * _save.BoxSlotCount + 6);
         for (var box = 0; box < _save.BoxCount; box++)
         for (var slot = 0; slot < _save.BoxSlotCount; slot++)
         {
@@ -529,11 +597,23 @@ public sealed class SaveEngineSession : ISaveEngineSession
                 entity.IsNicknamed ? entity.Nickname : null, entity.IsShiny,
                 entity.Species == 0 || entity.Valid, entity.Form));
         }
+        for (var i = 0; i < _save.PartyCount && i < 6; i++)
+        {
+            var partyMon = _save.GetPartySlotAtIndex(i);
+            slots.Add(new SlotSummary(-1, i, partyMon.Species == 0 ? null : partyMon.Species,
+                partyMon.Species == 0 ? null : partyMon.Nickname, partyMon.IsShiny, true, partyMon.Form));
+        }
         return new SaveSnapshot(_save.Context.ToString(), _save.Generation, _originalBytes, slots, displayName);
     }
 
     private void ValidateCoordinates(int box, int slot)
     {
+        if (box == -1)
+        {
+            if ((uint)slot >= 6u)
+                throw new ArgumentOutOfRangeException($"Party slot {slot} is outside this save's storage.");
+            return;
+        }
         if ((uint)box >= (uint)_save.BoxCount || (uint)slot >= (uint)_save.BoxSlotCount)
             throw new ArgumentOutOfRangeException($"Box/slot {box}/{slot} is outside this save's storage.");
     }

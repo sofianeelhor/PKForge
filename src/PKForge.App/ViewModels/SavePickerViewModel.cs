@@ -5,6 +5,14 @@ using PKForge.Domain;
 
 namespace PKForge.App.ViewModels;
 
+/// <summary>One game on the shelf: every detected save for it (folders for multiple saves of one game).</summary>
+public sealed record SaveGroup(
+    string GameLabel, int Generation, EmulatorKind Emulator,
+    string? TrainerName, string? PlayTime, IReadOnlyList<DetectedSave> Saves)
+{
+    public int Count => Saves.Count;
+}
+
 public partial class SavePickerViewModel : ObservableObject
 {
     private readonly IFolderPicker _folderPicker;
@@ -33,6 +41,9 @@ public partial class SavePickerViewModel : ObservableObject
     private const string SetupDoneKey = "setup_complete";
 
     public ObservableCollection<DetectedSave> Saves { get; } = [];
+
+    /// <summary>The shelf view: saves grouped by game. Rebuilt on every scan.</summary>
+    public ObservableCollection<SaveGroup> Groups { get; } = [];
 
     private readonly List<string> _rejectedCandidates = [];
 
@@ -103,6 +114,10 @@ public partial class SavePickerViewModel : ObservableObject
                     Status = $"Scan of {root.Kind} failed: {error.Message}";
                 }
             }
+            Groups.Clear();
+            foreach (var group in Saves.GroupBy(s => s.GameLabel).OrderBy(g => g.Key))
+                Groups.Add(new SaveGroup(group.Key, group.First().Generation, group.First().Emulator,
+                    group.First().TrainerName, group.First().PlayTime, group.ToArray()));
             Status = Saves.Count == 0
                 ? $"No games found. Scanned {filesSeen} file(s), {_rejectedCandidates.Count} looked like saves but did not parse."
                 : $"{Saves.Count} game(s) on the shelf. Scanned {filesSeen} file(s).";

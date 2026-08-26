@@ -41,7 +41,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             ItemTemplate = new DataTemplate(BuildCartridgeTile),
             VerticalOptions = LayoutOptions.Center,
         };
-        _shelf.SetBinding(ItemsView.ItemsSourceProperty, nameof(SavePickerViewModel.Saves));
+        _shelf.SetBinding(ItemsView.ItemsSourceProperty, nameof(SavePickerViewModel.Groups));
         _shelf.SelectionChanged += OnGameSelected;
         var shelfArea = new Grid
         {
@@ -193,23 +193,47 @@ public sealed class HomePage : ContentPage, IPadHandler
 
     private bool MoveShelf(int delta)
     {
-        if (_viewModel.Saves.Count == 0) return false;
-        _shelfIndex = Math.Clamp(_shelfIndex < 0 ? 0 : _shelfIndex + delta, 0, _viewModel.Saves.Count - 1);
+        if (_viewModel.Groups.Count == 0) return false;
+        _shelfIndex = Math.Clamp(_shelfIndex < 0 ? 0 : _shelfIndex + delta, 0, _viewModel.Groups.Count - 1);
         _padSelecting = true;
-        var selected = _viewModel.Saves[_shelfIndex];
+        var selected = _viewModel.Groups[_shelfIndex];
         _shelf.SelectedItem = selected;
         _shelf.ScrollTo(_shelfIndex, position: ScrollToPosition.Center);
         // The lower screen previews the highlighted game's hero art.
         var state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
-        if (state is not null) state.PreviewGame = selected;
+        if (state is not null) state.PreviewGame = selected.Saves[0];
         return true;
     }
 
     private bool OpenShelfSelection()
     {
-        if (_shelfIndex < 0 || _shelfIndex >= _viewModel.Saves.Count) return MoveShelf(0);
-        _ = OpenSaveAsync(_viewModel.Saves[_shelfIndex]);
+        if (_shelfIndex < 0 || _shelfIndex >= _viewModel.Groups.Count) return MoveShelf(0);
+        _ = OpenGroupAsync(_viewModel.Groups[_shelfIndex]);
         return true;
+    }
+
+    /// <summary>One save opens directly; several saves of one game get a folder picker.</summary>
+    private async Task OpenGroupAsync(SaveGroup group)
+    {
+        if (group.Saves.Count == 1)
+        {
+            await OpenSaveAsync(group.Saves[0]);
+            return;
+        }
+        var options = group.Saves.Select(SaveOption).ToArray();
+        var choice = await PadMenu.ShowAsync(_hostGrid, group.GameLabel.ToUpperInvariant(),
+            $"{group.Saves.Count} saves for this game", options);
+        if (choice is null) return;
+        var index = Array.FindIndex(options, o => o.Label == choice);
+        if (index >= 0) await OpenSaveAsync(group.Saves[index]);
+    }
+
+    private static PadOption SaveOption(DetectedSave save)
+    {
+        var label = save.FileName;
+        if (!string.IsNullOrEmpty(save.TrainerName)) label += $" · {save.TrainerName}";
+        if (save.LastModified is { } modified) label += $" · {modified:yyyy-MM-dd}";
+        return new PadOption(label, IconPath: "storage");
     }
 
     /// <summary>Pad-navigable emulator link menu (Ⓨ) - same choices as the wizard, popup form.</summary>
@@ -383,12 +407,25 @@ public sealed class HomePage : ContentPage, IPadHandler
         });
 
         // Every tile is exactly the same size: the shelf must read as a row of carts.
+        var countChip = new Border
+        {
+            BackgroundColor = UiTokens.Cyan,
+            StrokeThickness = 0,
+            StrokeShape = new RoundRectangle { CornerRadius = 4 },
+            Padding = new Thickness(5, 1),
+            HorizontalOptions = LayoutOptions.End,
+            IsVisible = false,
+            Content = new Label { TextColor = Colors.White, FontSize = 9, FontAttributes = FontAttributes.Bold },
+        };
+        countChip.Content.SetBinding(Label.TextProperty, new Binding(nameof(SaveGroup.Count), stringFormat: "x{0}"));
+        countChip.SetBinding(IsVisibleProperty, new Binding(nameof(SaveGroup.Count), converter: MoreThanOne));
+
         var card = Kit.DevicePanel(new VerticalStackLayout
         {
             Spacing = 4,
             HorizontalOptions = LayoutOptions.Center,
             VerticalOptions = LayoutOptions.Center,
-            Children = { iconHost, name, trainer },
+            Children = { iconHost, name, trainer, countChip },
         }, padding: 8);
         card.WidthRequest = 122;
         card.HeightRequest = 138;
@@ -447,6 +484,7 @@ public sealed class HomePage : ContentPage, IPadHandler
 
     private static readonly IValueConverter GenerationColor = new FuncConverter(gen => Kit.EraColor((int)(gen ?? 0)));
     private static readonly IValueConverter GenerationEdge = new FuncConverter(gen => Kit.EraColor((int)(gen ?? 0)).AddLuminosity(-0.15f));
+    private static readonly MoreThanOneConverter MoreThanOne = new();
 
     private sealed class FuncConverter(Func<object?, Color> convert) : IValueConverter
     {
@@ -494,6 +532,16 @@ public sealed class HomePage : ContentPage, IPadHandler
             ?? throw new InvalidOperationException("MAUI services are unavailable.");
         await Navigation.PushAsync(services.GetRequiredService<TPage>());
     }
+}
+
+/// <summary>Visible when a game has more than one save (the folder chip).</summary>
+internal sealed class MoreThanOneConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+        value is int count && count > 1;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+        throw new NotSupportedException();
 }
 
 internal static class ViewBuilderExtensions

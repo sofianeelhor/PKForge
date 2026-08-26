@@ -121,7 +121,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         canvas.Clear(SKColors.Transparent);
         using var font = new SKFont(PixelTypeface(), 20);
         PksmPaint.BoxNameBar(canvas, new SKRect(0, 0, args.Info.Width, args.Info.Height),
-            $"BOX {_viewModel.BoxIndex + 1:00}", font,
+            _viewModel.BoxIndex == -1 ? "PARTY" : $"BOX {_viewModel.BoxIndex + 1:00}", font,
             canPrev: _viewModel.BoxIndex > 0,
             canNext: _viewModel.BoxIndex < _viewModel.BoxCount - 1);
     }
@@ -1769,15 +1769,26 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         await Navigation.PushAsync(services.GetRequiredService<TPage>());
     }
 
-    private void Paint(object? sender, SKPaintSurfaceEventArgs args) =>
+    private void Paint(object? sender, SKPaintSurfaceEventArgs args)
+    {
+        if (_viewModel.BoxIndex == -1)
+        {
+            // The party pseudo-box renders as HGSS-style cards, not the grid.
+            BoxGridRenderer.PaintBackdrop(args.Surface.Canvas, args.Info, _viewModel.BoxIndex);
+            PartyView.Paint(args.Surface.Canvas, args.Info, _sprites, _sessionsFor(), _viewModel.SelectedSlot);
+            return;
+        }
         BoxGridRenderer.Paint(args.Surface.Canvas, args.Info, _viewModel, _sprites, _theme, _frame.Request);
+    }
 
     private void Touch(object? sender, SKTouchEventArgs args)
     {
         // Skia only delivers Released if Pressed was marked handled.
         if (args.ActionType == SKTouchAction.Pressed) { args.Handled = true; return; }
         if (args.ActionType != SKTouchAction.Released) return;
-        var slot = BoxGridRenderer.SlotFromTouch(_canvas.CanvasSize, args.Location);
+        var slot = _viewModel.BoxIndex == -1
+            ? PartyView.SlotFromTouch(_canvas.CanvasSize, args.Location)
+            : BoxGridRenderer.SlotFromTouch(_canvas.CanvasSize, args.Location);
         args.Handled = true;
         if (slot < 0) return;
 

@@ -58,12 +58,17 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     [ObservableProperty] private bool _editShiny;
 
     public IReadOnlyList<SlotSummary> VisibleSlots =>
-        _slots.Where(x => x.Box == BoxIndex).OrderBy(x => x.Slot).ToArray();
+        BoxIndex == -1
+            ? Enumerable.Range(0, 6).Select(i =>
+                _slots.FirstOrDefault(x => x.Box == -1 && x.Slot == i) is { Box: -1 } found
+                    ? found
+                    : new SlotSummary(-1, i, null, null, false, true)).ToArray()
+            : _slots.Where(x => x.Box == BoxIndex).OrderBy(x => x.Slot).ToArray();
 
     public int BoxCount => _slots.Length == 0 ? 0 : _slots.Max(x => x.Box) + 1;
 
-    /// <summary>LCD readout above the grid.</summary>
-    public string BoxLabel => Save is null ? "NO DATA" : $"{BoxIndex + 1:00} / {BoxCount:00}";
+    /// <summary>LCD readout above the grid; the party rides before box 1.</summary>
+    public string BoxLabel => Save is null ? "NO DATA" : BoxIndex == -1 ? "PARTY" : $"{BoxIndex + 1:00} / {BoxCount:00}";
 
     partial void OnBoxIndexChanged(int value) => OnPropertyChanged(nameof(BoxLabel));
     partial void OnSaveChanged(SaveSnapshot? value) => OnPropertyChanged(nameof(BoxLabel));
@@ -107,7 +112,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         if (Save is null) return;
         var engineSession = _sessions.CurrentSession;
         if (engineSession is null) return;
-        var count = _slots.Count(x => x.Box == BoxIndex);
+        var count = BoxIndex == -1 ? 6 : _slots.Count(x => x.Box == BoxIndex);
         if (slot < 0 || slot >= count) return;
 
         SelectedSlot = slot;
@@ -493,18 +498,20 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     public bool MoveCursor(FocusDirection direction)
     {
         if (Save is null) return false;
+        var cols = BoxIndex == -1 ? 2 : GridColumns;
+        var rows = BoxIndex == -1 ? 3 : GridRows;
         var slot = SelectedSlot < 0 ? 0 : SelectedSlot;
-        var col = slot % GridColumns;
-        var row = slot / GridColumns;
+        var col = slot % cols;
+        var row = slot / cols;
         (col, row) = direction switch
         {
             FocusDirection.Left => (Math.Max(0, col - 1), row),
-            FocusDirection.Right => (Math.Min(GridColumns - 1, col + 1), row),
+            FocusDirection.Right => (Math.Min(cols - 1, col + 1), row),
             FocusDirection.Up => (col, Math.Max(0, row - 1)),
-            FocusDirection.Down => (col, Math.Min(GridRows - 1, row + 1)),
+            FocusDirection.Down => (col, Math.Min(rows - 1, row + 1)),
             _ => (col, row),
         };
-        var next = row * GridColumns + col;
+        var next = row * cols + col;
         if (next == SelectedSlot) return true; // edge of the grid still consumes the input
         SelectSlot(next);
         return true;
@@ -513,7 +520,11 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     public void ChangeBox(int delta)
     {
         if (Save is null || BoxCount == 0) return;
-        BoxIndex = Math.Clamp(BoxIndex + delta, 0, BoxCount - 1);
+        // The party wraps around the boxes: last box, then PARTY, then box 1 again.
+        var next = BoxIndex + delta;
+        if (next > BoxCount - 1) next = -1;
+        else if (next < -1) next = BoxCount - 1;
+        BoxIndex = next;
         SelectedSlot = -1;
         Selected = null;
         OnPropertyChanged(nameof(VisibleSlots));

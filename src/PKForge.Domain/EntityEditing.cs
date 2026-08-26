@@ -217,7 +217,9 @@ public sealed record EntityDetail(
     IReadOnlyList<int>? Types = null,
     int Gender = 2,
     int Friendship = 0,
-    IReadOnlyList<int>? Stats = null);
+    IReadOnlyList<int>? Stats = null,
+    int CurrentHp = 0,
+    int StatusCondition = 0);
 
 /// <summary>A partial entity mutation; only non-null fields are applied.</summary>
 public sealed record EntityEdit(
