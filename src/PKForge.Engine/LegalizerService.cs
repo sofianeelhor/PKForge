@@ -48,7 +48,19 @@ public sealed class LegalizerService : ILegalizerService
 
         var created = result.Created;
         var analysis = new LegalityAnalysis(created);
-        save.SetBoxSlotAtIndex(created, box, slot);
+        if (box == -1)
+        {
+            // The party is not a box: it appends (capped at six, compact like the games).
+            if (save.PartyCount >= 6)
+                return new GenerationOutcome(false, "The party is full.");
+            var party = save.PartyData.ToList();
+            party.Add(created);
+            save.PartyData = party;
+        }
+        else
+        {
+            save.SetBoxSlotAtIndex(created, box, slot);
+        }
         return new GenerationOutcome(true, analysis.Valid ? "Generated - legal." : "Generated (legality imperfect).");
     }
 

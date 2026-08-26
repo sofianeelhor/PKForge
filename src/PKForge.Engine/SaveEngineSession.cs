@@ -169,6 +169,15 @@ public sealed class SaveEngineSession : ISaveEngineSession
         var source = GetEntityCore(fromBox, fromSlot);
         if (source.Species == 0) return;
 
+        if (fromBox == -1 && toBox == -1)
+        {
+            // Reorder inside the party: a plain swap of the two slots, count untouched.
+            var party = _save.PartyData.ToList();
+            (party[fromSlot], party[toSlot]) = (party[toSlot], party[fromSlot]);
+            _save.PartyData = party;
+            return;
+        }
+
         if (toBox == -1)
         {
             // Into the party: games append, they never swap into a slot.

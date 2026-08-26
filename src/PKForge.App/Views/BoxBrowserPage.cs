@@ -1617,6 +1617,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 FieldRow("Level", nameof(BoxBrowserViewModel.EditLevel), shaded: false),
                 nature, ability, item,
                 move1, move2, move3, move4,
+                StatsRow("STATS", nameof(BoxBrowserViewModel.EditStats), shaded: true),
                 StatsField("IVS", nameof(BoxBrowserViewModel.EditIvs), 31, shaded: false),
                 StatsField("EVS", nameof(BoxBrowserViewModel.EditEvs), 252, shaded: true),
                 ball,
@@ -1762,6 +1763,30 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         };
         chip.GestureRecognizers.Add(tap);
         return chip;
+    }
+
+    /// <summary>Read-only computed stats (HP/Atk/Def/SpA/SpD/Spe at the mon's current level).</summary>
+    private View StatsRow(string caption, string vmProperty, bool shaded)
+    {
+        var value = Kit.BlueprintValue(12);
+        value.SetBinding(Label.TextProperty, vmProperty);
+        return new Border
+        {
+            BackgroundColor = shaded ? UiTokens.PaperShade : UiTokens.Paper,
+            Stroke = UiTokens.ShellEdge,
+            StrokeThickness = 1.2,
+            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 6 },
+            Padding = new Thickness(10, 5),
+            Content = new Grid
+            {
+                ColumnDefinitions = [new(new GridLength(78)), new(GridLength.Star)],
+                Children =
+                {
+                    new Label { Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center },
+                    value,
+                },
+            },
+        };
     }
 
     /// <summary>Read-only stat row with an explicit EDIT button for manual (expert) input.</summary>
