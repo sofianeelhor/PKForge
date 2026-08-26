@@ -1,56 +1,51 @@
 # PKForge
 
-A Pokémon save editor and multi-generation bank for Android, built for dual-screen
-handhelds — designed and tested on the [AYN Thor](https://www.ayn.com.cn). It renders its
-whole interface with [SkiaSharp](https://github.com/mono/SkiaSharp) in a 3DS-era visual
-language: white panels, maroon Gen-5 headers, striped menus, and per-box wallpapers,
-driven entirely by a gamepad across two screens.
+A Pokémon save editor and bank for Android, built for dual-screen handhelds like the
+AYN Thor. The whole interface is drawn with SkiaSharp in the visual language of the
+DS-era games: box wallpapers, pixel sprites, gamepad controls, and a second screen that
+shows a live summary of whatever is under the cursor.
 
-Built on the pristine [PKHeX.Core](https://github.com/kwsch/PKHeX) engine (git submodule,
-pinned) with the [Auto Legality Mod](https://github.com/santacrab2/PKHeX-Plugins) compiled
-in-process.
+![Home, both screens](docs/screenshots/home.png)
 
-**We do not support or condone cheating at the expense of others. Do not use significantly
-edited Pokémon in battle or in trades with those who are unaware edited Pokémon are in use.**
+Built on [PKHeX.Core](https://github.com/kwsch/PKHeX) (pinned git submodule, untouched)
+with the [Auto Legality Mod](https://github.com/santacrab2/PKHeX-Plugins) compiled
+in-process, so legalizing a Pokémon works offline, on device.
 
 Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
 
-## Features
+## What it does
 
-- **Storage** — box browser with grab/place like the games' PC, legality verdicts, a live
-  summary + stat radar on the second screen.
-- **Editor** — full Pokémon editing (species, moves, IVs/EVs, Met/Origin, Tera, Hyper
-  Training...), Showdown import/export, one-tap legalizer, QR export.
-- **Bank** — durable cross-game vault with unlimited themed boxes.
-- **Events** — the full mystery-gift database, offline wondercards, community boxes.
-- **Save tools** — trainer card, bag editor, Pokédex, backups with one-tap restore.
-- Every gamepad button mapped on every screen; touch works too.
+- Open saves from linked emulators (RetroArch, melonDS, Azahar, Eden) or single files
+- Edit any Pokémon: stats, moves, Met/Origin, Tera type, Hyper Training, ribbons soon
+- One-tap legalize, Showdown import/export, QR codes
+- A cross-game bank with unlimited themed boxes
+- The mystery-gift database, fully offline, plus community event boxes
+- Bag editor, trainer card, Pokédex, restore points
 
-## Safety invariants
+![Storage](docs/screenshots/storage.png)
+![Editor](docs/screenshots/editor.png)
+![Events](docs/screenshots/events.png)
+![Menus](docs/screenshots/menu.png)
 
-- Every save write is preceded by a timestamped backup.
-- Writes validate through the engine and fail closed — an invalid candidate never touches storage.
-- Open → serialize with no edits is byte-identical (enforced by tests against a real save corpus).
-- All storage access uses Android's Storage Access Framework; no raw filesystem paths.
+## Safety
 
-## Layout
+- Every write is validated, backed up, then written atomically. An invalid Pokémon never
+  reaches storage.
+- Open and re-save with no edits produces a byte-identical file. The tests prove it
+  against a real save corpus.
+- All file access goes through Android's Storage Access Framework.
 
-```
-src/PKForge.Domain          engine-agnostic contracts + DTOs (no MAUI/Android deps)
-src/PKForge.Engine          thin adapter over pinned PKHeX.Core
-src/PKForge.AutoMod         source-compile shim for the Auto Legality Mod
-src/PKForge.Infrastructure  DI-friendly service implementations
-src/PKForge.App             .NET MAUI Android app (SkiaSharp UI)
-src/PKForge.Chrome          the design system: tokens + chrome painters (pure Skia)
-tools/ChromePreview         off-device renderer for the design system
-tests/                      xUnit: domain behavior + save round-trip corpus
-external/PKHeX              pristine engine submodule (pinned revision)
-docs/                       ARCHITECTURE, BANK_MODEL, DEVELOPMENT, PRIOR_ART, UI_DESIGN
-```
+We do not support cheating at the expense of others. Do not use significantly edited
+Pokémon in battle or in trades with people who do not know they are edited.
+
+## Install
+
+Download the APK from [Releases](https://github.com/sofianeelhor/PKForge/releases) and
+allow installs from unknown sources. First run walks you through linking an emulator.
 
 ## Build
 
-Requirements: .NET 10 SDK with the `maui-android` workload, Android SDK (API 36).
+.NET 10 SDK with the `maui-android` workload, Android SDK (API 36).
 
 ```bash
 git submodule update --init --recursive
@@ -59,17 +54,28 @@ dotnet test tests/PKForge.Engine.Tests/PKForge.Engine.Tests.csproj
 dotnet build src/PKForge.App/PKForge.App.csproj -f net10.0-android
 ```
 
-Produces a debug-signed APK under `src/PKForge.App/bin/Debug/net10.0-android/`.
-Releases are published from CI on version tags.
+Version tags build and publish the APK from CI.
+
+## Layout
+
+```
+src/PKForge.Domain          contracts and DTOs, no engine or Android dependencies
+src/PKForge.Engine          adapters over pinned PKHeX.Core
+src/PKForge.AutoMod         compiles the Auto Legality Mod against our Core
+src/PKForge.Infrastructure  bank, backups, atomic save writer
+src/PKForge.App             MAUI app, SkiaSharp UI, gamepad and second screen
+src/PKForge.Chrome          the design system: tokens and painters, pure Skia
+tools/ChromePreview         renders the design system off-device
+docs/                       architecture, bank model, development, art direction
+```
 
 ## Credits
 
-- [PKHeX](https://github.com/kwsch/PKHeX) and its contributors — the engine everything runs on.
-- [Auto Legality Mod](https://github.com/antialiasis/PKHeX-Plugins) — legal histories made easy.
-- [PKSM](https://github.com/FlagBrew/PKSM) by FlagBrew — the pixel chrome this app's UI
-  language builds on (GPL-3; see `src/PKForge.App/Resources/UI/ATTRIBUTION.md`).
-- Pokémon sprite art © Nintendo/Creatures Inc./GAME FREAK inc., bundled via PKHeX.
+- [PKHeX](https://github.com/kwsch/PKHeX), the engine everything runs on
+- [PKSM](https://github.com/FlagBrew/PKSM), the pixel chrome this UI builds on (GPL-3,
+  see src/PKForge.App/Resources/UI/ATTRIBUTION.md)
+- Sprites and Pokémon names © Nintendo, Creatures Inc., GAME FREAK inc.
 
 ## License
 
-GPLv3-or-later, inherited from PKHeX.Core. See [LICENSE](LICENSE).
+GPLv3 or later, inherited from PKHeX.Core. See [LICENSE](LICENSE).
