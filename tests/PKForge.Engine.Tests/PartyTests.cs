@@ -85,6 +85,19 @@ public sealed class PartyTests
         Assert.Equal(firstBefore, session.ReadEntity(-1, 2).Nickname);
         Assert.Equal(6, LivePartyCount());
 
+        // Adjacent columns (slot 0 <-> slot 1), then serialize/reload: the exact user flow.
+        var a0 = session.ReadEntity(-1, 0).Nickname;
+        var a1 = session.ReadEntity(-1, 1).Nickname;
+        session.MoveSlot(-1, 0, -1, 1);
+        Assert.Equal(a1, session.ReadEntity(-1, 0).Nickname);
+        Assert.Equal(a0, session.ReadEntity(-1, 1).Nickname);
+        var swappedBytes = session.Serialize().ToArray();
+        using (var r2 = new SaveEngineSession(swappedBytes))
+        {
+            Assert.Equal(a1, r2.ReadEntity(-1, 0).Nickname);
+            Assert.Equal(a0, r2.ReadEntity(-1, 1).Nickname);
+        }
+
         // The full pipeline the app drives: edit, serialize, write, reopen from disk bytes.
         session.ApplyEdit(-1, 0, new EntityEdit(Nickname: "PERSISTED"));
         var written = session.Serialize().ToArray();

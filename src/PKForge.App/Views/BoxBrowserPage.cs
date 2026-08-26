@@ -1877,7 +1877,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         if (_viewModel.BoxIndex == -1)
         {
             // The party pseudo-box renders as the navy deck, not the grid.
-            PartyView.Paint(args.Surface.Canvas, args.Info, _sprites, _sessionsFor(), _viewModel.SelectedSlot, _frame.Request);
+            PartyView.Paint(args.Surface.Canvas, args.Info, _sprites, _sessionsFor(), _viewModel.SelectedSlot, _frame.Request, _viewModel.CarrySource);
             return;
         }
         BoxGridRenderer.Paint(args.Surface.Canvas, args.Info, _viewModel, _sprites, _theme, _frame.Request);

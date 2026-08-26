@@ -32,7 +32,7 @@ public static class PartyView
     private static readonly SKColor HpLabel = new(0x66, 0x7A, 0xB8);
     private static readonly SKColor Selected = new(0x35, 0xB8, 0xC8);
 
-    public static void Paint(SKCanvas canvas, SKImageInfo info, ISpriteService sprites, ISaveEngineSession? session, int selectedSlot, Action invalidate)
+    public static void Paint(SKCanvas canvas, SKImageInfo info, ISpriteService sprites, ISaveEngineSession? session, int selectedSlot, Action invalidate, (int Box, int Slot)? carrySource = null)
     {
         // The navy world with its faint grid.
         using (var bg = new SKPaint { Color = Bg })
@@ -48,7 +48,8 @@ public static class PartyView
             var rect = SlotRect(info, i);
             EntityDetail? detail = null;
             try { detail = session?.ReadEntity(-1, i); } catch { /* engine validates coordinates */ }
-            Slot(canvas, rect, detail, sprites, i == selectedSlot, invalidate);
+            var carriedFrom = carrySource is { Box: -1, Slot: var cs } && cs == i;
+            Slot(canvas, rect, detail, sprites, i == selectedSlot, invalidate, lifted: carriedFrom);
         }
     }
 
@@ -75,14 +76,20 @@ public static class PartyView
         return new SKRect(x, y, x + w, y + h);
     }
 
-    private static void Slot(SKCanvas canvas, SKRect r, EntityDetail? detail, ISpriteService sprites, bool selected, Action invalidate)
+    private static void Slot(SKCanvas canvas, SKRect r, EntityDetail? detail, ISpriteService sprites, bool selected, Action invalidate, bool lifted = false)
     {
         var fainted = detail is { IsEmpty: false, CurrentHp: 0 };
         var body = detail is null or { IsEmpty: true } ? Body.WithAlpha(0x50)
             : fainted ? FaintBody : Body;
         var topEdge = fainted ? FaintEdge : TopEdge;
 
-        var path = BevelPath(r, 0);
+        var path = BevelPath(lifted ? SKRect.Inflate(r, 2, -4) : r, 0);
+        if (lifted)
+        {
+            using var ghost = new SKPaint { Color = Selected.WithAlpha(0x70), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2 };
+            ghost.PathEffect = SKPathEffect.CreateDash([7, 6], 0);
+            canvas.DrawPath(BevelPath(r, 0), ghost);
+        }
         using (var b = new SKPaint { Color = BotEdge, IsAntialias = true })
             canvas.DrawPath(path, b);
         using (var b = new SKPaint { Color = body, IsAntialias = true })
