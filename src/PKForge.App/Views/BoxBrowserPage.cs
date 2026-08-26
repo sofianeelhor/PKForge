@@ -23,6 +23,25 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     private readonly SKCanvasView _boxBar;
     private readonly FrameInvalidator _frame;
     private Grid _hostGrid = null!;
+    private long _partyPulseStart = Environment.TickCount64;
+    private IDispatcherTimer? _partyPulseTimer;
+
+    /// <summary>The party cursor breathes: a light repaint loop that only runs on the party view.</summary>
+    private void EnsurePartyPulse()
+    {
+        if (_partyPulseTimer is not null || _viewModel.SelectedSlot < 0) return;
+        _partyPulseStart = Environment.TickCount64;
+        _partyPulseTimer = Dispatcher.CreateTimer();
+        _partyPulseTimer.Interval = TimeSpan.FromMilliseconds(70);
+        _partyPulseTimer.Tick += (_, _) => _frame.Request();
+        _partyPulseTimer.Start();
+    }
+
+    private void StopPartyPulse()
+    {
+        _partyPulseTimer?.Stop();
+        _partyPulseTimer = null;
+    }
 
     public BoxBrowserPage(BoxBrowserViewModel viewModel, ISpriteService sprites, ThemeService theme)
     {
@@ -1876,10 +1895,14 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     {
         if (_viewModel.BoxIndex == -1)
         {
-            // The party pseudo-box renders as the navy deck, not the grid.
-            PartyView.Paint(args.Surface.Canvas, args.Info, _sprites, _sessionsFor(), _viewModel.SelectedSlot, _frame.Request, _viewModel.CarrySource);
+            // The party pseudo-box renders as the navy deck, not the grid. The selected
+            // card breathes like the games' party cursor.
+            var phase = (float)((Environment.TickCount64 - _partyPulseStart) / 1000.0 * Math.PI * 2 / 1.4);
+            PartyView.Paint(args.Surface.Canvas, args.Info, _sprites, _sessionsFor(), _viewModel.SelectedSlot, _frame.Request, _viewModel.CarrySource, phase);
+            EnsurePartyPulse();
             return;
         }
+        StopPartyPulse();
         BoxGridRenderer.Paint(args.Surface.Canvas, args.Info, _viewModel, _sprites, _theme, _frame.Request);
     }
 

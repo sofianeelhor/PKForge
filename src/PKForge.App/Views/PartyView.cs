@@ -32,7 +32,7 @@ public static class PartyView
     private static readonly SKColor HpLabel = new(0x66, 0x7A, 0xB8);
     private static readonly SKColor Selected = new(0x35, 0xB8, 0xC8);
 
-    public static void Paint(SKCanvas canvas, SKImageInfo info, ISpriteService sprites, ISaveEngineSession? session, int selectedSlot, Action invalidate, (int Box, int Slot)? carrySource = null)
+    public static void Paint(SKCanvas canvas, SKImageInfo info, ISpriteService sprites, ISaveEngineSession? session, int selectedSlot, Action invalidate, (int Box, int Slot)? carrySource = null, float pulsePhase = 0f)
     {
         // The navy world with its faint grid.
         using (var bg = new SKPaint { Color = Bg })
@@ -49,8 +49,19 @@ public static class PartyView
             EntityDetail? detail = null;
             try { detail = session?.ReadEntity(-1, i); } catch { /* engine validates coordinates */ }
             var carriedFrom = carrySource is { Box: -1, Slot: var cs } && cs == i;
-            Slot(canvas, rect, detail, sprites, i == selectedSlot, invalidate, lifted: carriedFrom);
+            var breath = 1f;
+            if (i == selectedSlot)
+                breath = 1f + 0.028f * (0.5f + 0.5f * MathF.Sin(pulsePhase));
+            var pulsed = breath == 1f ? rect : ScaleRect(rect, breath);
+            Slot(canvas, pulsed, detail, sprites, i == selectedSlot, invalidate, lifted: carriedFrom, pulsePhase: pulsePhase);
         }
+    }
+
+    private static SKRect ScaleRect(SKRect r, float scale)
+    {
+        var w = r.Width * (scale - 1f) / 2f;
+        var h = r.Height * (scale - 1f) / 2f;
+        return new SKRect(r.Left - w, r.Top - h, r.Right + w, r.Bottom + h);
     }
 
     /// <summary>Maps a touch point to a slot index (3 rows x 2 columns), -1 outside.</summary>
@@ -76,7 +87,7 @@ public static class PartyView
         return new SKRect(x, y, x + w, y + h);
     }
 
-    private static void Slot(SKCanvas canvas, SKRect r, EntityDetail? detail, ISpriteService sprites, bool selected, Action invalidate, bool lifted = false)
+    private static void Slot(SKCanvas canvas, SKRect r, EntityDetail? detail, ISpriteService sprites, bool selected, Action invalidate, bool lifted = false, float pulsePhase = 0f)
     {
         var fainted = detail is { IsEmpty: false, CurrentHp: 0 };
         var body = detail is null or { IsEmpty: true } ? Body.WithAlpha(0x50)
@@ -99,7 +110,8 @@ public static class PartyView
 
         if (selected)
         {
-            using var sel = new SKPaint { Color = Selected, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 3 };
+            var glow = (int)(0x60 + 0x60 * (0.5f + 0.5f * MathF.Sin(pulsePhase)));
+            using var sel = new SKPaint { Color = Selected.WithAlpha((byte)(0xC0 + glow / 4)), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 3 + glow / 120f };
             canvas.DrawPath(path, sel);
         }
 
