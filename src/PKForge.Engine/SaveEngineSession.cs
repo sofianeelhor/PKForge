@@ -484,7 +484,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public IReadOnlyList<string> GetFormChoices(int species)
     {
         ThrowIfDisposed();
-        var strings = GameInfo.GetStrings("en");
+        var strings = GameInfo.Strings; // app language, cached by the engine
         return FormConverter.GetFormList((ushort)species, strings.Types, strings.forms, _save.Context);
     }
 
