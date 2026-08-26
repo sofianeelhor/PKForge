@@ -1800,13 +1800,13 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var grid = new Grid
         {
             ColumnSpacing = 8,
-            ColumnDefinitions = [new(new GridLength(64)), new(GridLength.Star), new(GridLength.Auto)],
+            ColumnDefinitions = [new(new GridLength(52)), new(GridLength.Star), new(GridLength.Auto)],
             Children =
             {
                 new Label
                 {
                     Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1.5,
-                    TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center,
+                    TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.NoWrap,
                 },
                 content,
             },
@@ -1842,11 +1842,12 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var converter = new StatCellConverter();
         for (var i = 0; i < 6; i++)
         {
-            // Fixed icon + label columns so every value starts at the same x, per column.
+            // Tight fixed columns: icon 14, label 28, value 34 - compact cells that never
+            // clip 3-digit values and read as "HP 384", not "HP .... 384".
             var cell = new Grid
             {
-                ColumnSpacing = 6,
-                ColumnDefinitions = [new(new GridLength(18)), new(new GridLength(34)), new(new GridLength(44))],
+                ColumnSpacing = 4,
+                ColumnDefinitions = [new(new GridLength(14)), new(new GridLength(28)), new(new GridLength(34))],
                 Children =
                 {
                     StatBadge((byte)i),
@@ -1858,7 +1859,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 },
             };
             var value = Kit.BlueprintValue(12);
-            value.HorizontalTextAlignment = TextAlignment.End;
+            value.HorizontalTextAlignment = TextAlignment.Start;
             value.SetBinding(Label.TextProperty, new Binding(vmProperty, converter: converter, converterParameter: i.ToString()));
             cell.Children.Add(value);
             cell.SetColumn(cell.Children[0], 0);
@@ -1885,7 +1886,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     /// <summary>A 16px drawn pixel badge per stat: heart, sword, shield, spark, leaf, wing.</summary>
     private static SKCanvasView StatBadge(byte stat)
     {
-        var view = new SKCanvasView { WidthRequest = 16, HeightRequest = 16, InputTransparent = true, VerticalOptions = LayoutOptions.Center };
+        var view = new SKCanvasView { WidthRequest = 14, HeightRequest = 14, InputTransparent = true, VerticalOptions = LayoutOptions.Center };
         var color = StatColor(stat).ToSKColor();
         view.PaintSurface += (_, args) =>
         {
