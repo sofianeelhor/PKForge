@@ -100,10 +100,14 @@ public sealed class MusicPlayer : IMusicPlayer, IDisposable
         if (Autostart && _library.Count > 0) Play();
     }
 
+    /// <summary>Set when playback fails; the UI shows it so failures are never silent.</summary>
+    public string? LastError { get; private set; }
+
     private void PlayIndex(int index)
     {
         StopInternal();
         var track = _library[index];
+        LastError = null;
         try
         {
             var context = global::Android.App.Application.Context ?? throw new InvalidOperationException("No app context.");
@@ -113,13 +117,14 @@ public sealed class MusicPlayer : IMusicPlayer, IDisposable
                 .SetContentType(AudioContentType.Music)!
                 .Build()!;
             _player.SetAudioAttributes(attrs);
-            _player.SetDataSource(context, global::Android.Net.Uri.Parse("content://" + track.DocumentId)!);
+            _player.SetDataSource(context, global::Android.Net.Uri.Parse(track.DocumentId)!);
             _player.Prepare();
             _player.Start();
             _player.Completion += (_, _) => Skip();
         }
-        catch
+        catch (Exception error)
         {
+            LastError = error.Message;
             // Unplayable track: skip forward instead of dying.
             if (_library.Count > 1) Skip();
         }
