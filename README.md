@@ -7,7 +7,7 @@ shows a live summary of whatever is under the cursor.
 
 ![Home, both screens](docs/screenshots/home.png)
 
-Built on [PKHeX.Core](https://github.com/kwsch/PKHeX) (pinned git submodule, untouched)
+Built on [PKHeX.Core](https://github.com/kwsch/PKHeX)
 with the [Auto Legality Mod](https://github.com/santacrab2/PKHeX-Plugins) compiled
 in-process, so legalizing a Pokémon works offline, on device.
 
