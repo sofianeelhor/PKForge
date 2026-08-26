@@ -1586,9 +1586,11 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var ability = NamedPicker("ABILITY", nameof(BoxBrowserViewModel.EditAbility), data.AbilityNames,
             () =>
             {
-                // Only the abilities this species can legally carry in the open game.
+                // Only the abilities this species can legally carry in the open game,
+                // unless HaX mode is on: then every ability is offerable.
                 var detail = _viewModel.Selected;
                 var session = _sessionsFor();
+                if (Services.HaXMode.IsOn) return AllItems(data.AbilityNames, includeZero: true);
                 if (detail is null || session is null) return [];
                 return session.GetAbilityChoices(detail.Species, detail.Form)
                     .Select(id => new PickItem(id, id < data.AbilityNames.Count ? data.AbilityNames[id] : $"#{id}"))
