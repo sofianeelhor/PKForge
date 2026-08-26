@@ -19,6 +19,13 @@ public interface ISaveEngine
     /// The mon sits at box 0, slot 0. Null when the bytes are not a recognizable entity.
     /// </summary>
     ISaveEngineSession? OpenEntitySession(byte[] entityBytes, string? displayName = null);
+
+    /// <summary>
+    /// Opens a blank throwaway save of the given generation (1-9) with a placeholder
+    /// trainer identity (OT "PKForge"). Used to generate Pokémon with no game connected;
+    /// the identity is editable afterwards. Never serialized back to any file.
+    /// </summary>
+    ISaveEngineSession OpenBlankSession(int generation, string? displayName = null);
 }
 
 public sealed record SaveDescription(string GameName, int Generation, string TrainerName, string PlayTime);

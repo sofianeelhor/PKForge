@@ -52,6 +52,7 @@ public sealed class SafeSaveWriterTests
         public SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes) => throw new NotImplementedException();
         public BankEntryInfo? TryDescribeEntity(byte[] bytes, string sourceName) => throw new NotImplementedException();
         public ISaveEngineSession? OpenEntitySession(byte[] entityBytes, string? displayName = null) => throw new NotImplementedException();
+        public ISaveEngineSession OpenBlankSession(int generation, string? displayName = null) => throw new NotImplementedException();
     }
 
     private sealed class FakeBackupService : IBackupService
