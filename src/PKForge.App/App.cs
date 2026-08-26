@@ -2,6 +2,14 @@ namespace PKForge.App;
 
 public sealed class App : Application
 {
+    /// <summary>The user's optional default background music starts with the app, once.</summary>
+    protected override void OnStart()
+    {
+        base.OnStart();
+        var music = IPlatformApplication.Current?.Services.GetService<Domain.IMusicPlayer>() as Platforms.Android.MusicPlayer;
+        music?.MaybeAutostart();
+    }
+
     public App()
     {
         Trace("App ctor");
