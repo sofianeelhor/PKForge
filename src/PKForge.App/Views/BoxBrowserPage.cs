@@ -24,6 +24,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     private readonly FrameInvalidator _frame;
     private Grid _hostGrid = null!;
     private long _partyPulseStart = Environment.TickCount64;
+    private int _lastAimSlot = -1;
     private IDispatcherTimer? _partyPulseTimer;
 
     /// <summary>The party cursor breathes: a light repaint loop that only runs on the party view.</summary>
@@ -1175,9 +1176,20 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         }
         if (_viewModel.CarrySource is not null)
         {
-            _ = DropAndRepaintAsync();
+            if (_viewModel.BoxIndex == -1 && _viewModel.SelectedSlot != _viewModel.CarrySource.Value.Slot)
+            {
+                // Party swap: the first A aims (preview), the second A on the same slot confirms.
+                if (_lastAimSlot == _viewModel.SelectedSlot) { _lastAimSlot = -1; _ = DropAndRepaintAsync(); }
+                else { _lastAimSlot = _viewModel.SelectedSlot; _canvas.InvalidateSurface(); }
+            }
+            else
+            {
+                _lastAimSlot = -1;
+                _ = DropAndRepaintAsync();
+            }
             return true;
         }
+        _lastAimSlot = -1;
         if (_viewModel.BeginCarry())
         {
             _canvas.InvalidateSurface();
@@ -1931,7 +1943,16 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         _viewModel.SelectSlot(slot);
         if (_viewModel.CarrySource is not null)
         {
-            _ = DropAndRepaintAsync();
+            if (_viewModel.BoxIndex == -1 && slot != _viewModel.CarrySource.Value.Slot)
+            {
+                // Aim with the first tap (preview), confirm with the second on the same slot.
+                if (wasSelected) _ = DropAndRepaintAsync();
+                else _canvas.InvalidateSurface();
+            }
+            else
+            {
+                _ = DropAndRepaintAsync();
+            }
             return;
         }
         var slots = _viewModel.VisibleSlots;
