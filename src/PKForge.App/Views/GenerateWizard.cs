@@ -19,11 +19,30 @@ public static class GenerateWizard
         var species = await PokedexPicker.ShowAsync(host, data, session);
         if (species is null) return null;
 
+        // Step 1b - the form, when this game's species has more than one (Rotom-Wash,
+        // Deoxys-Speed, regional forms...). Skipped silently for single-form species.
+        var forms = session.GetFormChoices(species.Id);
+        int form = 0;
+        var formOptions = forms
+            .Select((name, index) => new PadOption(
+                index == 0 || name.Length == 0 ? "Standard" : name,
+                IconPath: index == 0 || name.Length == 0 ? null : "editor"))
+            .Where((option, index) => index == 0 || forms[index].Length > 0)
+            .ToList();
+        if (formOptions.Count > 1)
+        {
+            var chosen = await PadMenu.ShowAsync(host, $"FORM OF {species.Name.ToUpperInvariant()}",
+                "This species has multiple forms in this game.", [.. formOptions]);
+            if (chosen is null) return null;
+            var index = formOptions.FindIndex(o => o.Label == chosen);
+            form = Math.Max(0, index);
+        }
+
         // Step 2 - the features.
-        return await ShowFeaturesFormAsync(host, data, session, species);
+        return await ShowFeaturesFormAsync(host, data, session, species, form);
     }
 
-    private static Task<GenerationRequest?> ShowFeaturesFormAsync(Grid host, IGameDataService data, ISaveEngineSession session, PickItem species)
+    private static Task<GenerationRequest?> ShowFeaturesFormAsync(Grid host, IGameDataService data, ISaveEngineSession session, PickItem species, int form = 0)
     {
         var result = new TaskCompletionSource<GenerationRequest?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -98,7 +117,7 @@ public static class GenerateWizard
             Enumerable.Range(0, data.NatureNames.Count).Where(i => data.NatureNames[i].Length > 0)
                 .Select(i => new PickItem(i, data.NatureNames[i])).ToList();
         List<PickItem> AbilityItems() =>
-            session.GetAbilityChoices(species.Id, 0)
+            session.GetAbilityChoices(species.Id, form)
                 .Select(id => new PickItem(id, id < data.AbilityNames.Count ? data.AbilityNames[id] : $"#{id}")).ToList();
         List<PickItem> BallItems() =>
             Enumerable.Range(1, data.BallNames.Count - 1).Where(i => data.BallNames[i].Length > 0)
@@ -122,7 +141,7 @@ public static class GenerateWizard
             int? parsedLevel = int.TryParse(level.Text?.Trim(), out var lv) ? lv : null;
             var pickedMoves = moves.Where(m => m is > 0).Select(m => m!.Value).ToList();
             Close(new GenerationRequest(species.Id, parsedLevel, shiny.IsToggled, nature, ability, ball,
-                pickedMoves.Count > 0 ? pickedMoves : null));
+                pickedMoves.Count > 0 ? pickedMoves : null, form));
         }
 
         var generate = Kit.Capsule("GENERATE", UiTokens.Green);

@@ -11,6 +11,10 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Ability ids this species/form can legally have in the open save's game.</summary>
     IReadOnlyList<int> GetAbilityChoices(int species, int form);
 
+    /// <summary>Display names of every form this species has in the open save's game,
+    /// indexed by form id. One entry (or an empty name at 0) means no form choice.</summary>
+    IReadOnlyList<string> GetFormChoices(int species);
+
     /// <summary>Moves (or swaps, when the target is occupied) two box slots.</summary>
     void MoveSlot(int fromBox, int fromSlot, int toBox, int toSlot);
 
@@ -176,7 +180,8 @@ public sealed record GenerationRequest(
     int? Nature,
     int? Ability,
     int? Ball,
-    IReadOnlyList<int>? Moves);
+    IReadOnlyList<int>? Moves,
+    int Form = 0);
 
 public sealed record GenerationOutcome(bool Success, string Message);
 

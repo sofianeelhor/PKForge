@@ -481,6 +481,13 @@ public sealed class SaveEngineSession : ISaveEngineSession
             .ToList();
     }
 
+    public IReadOnlyList<string> GetFormChoices(int species)
+    {
+        ThrowIfDisposed();
+        var strings = GameInfo.GetStrings("en");
+        return FormConverter.GetFormList((ushort)species, strings.Types, strings.forms, _save.Context);
+    }
+
     public IReadOnlyList<int> GetAbilityChoices(int species, int form)
     {
         ThrowIfDisposed();
