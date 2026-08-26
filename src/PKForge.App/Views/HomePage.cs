@@ -286,7 +286,8 @@ public sealed class HomePage : ContentPage, IPadHandler
         var choice = await PadMenu.ShowAsync(_hostGrid, "MISC", null,
             new PadOption($"Download full sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "storage"),
             new PadOption("Rescan games", IconPath: "hex"),
-            new PadOption("Scan report", IconPath: "script"));
+            new PadOption("Scan report", IconPath: "script"),
+            new PadOption(Services.HaXMode.IsOn ? "HaX mode: ON" : "HaX mode: OFF", IconPath: "editor"));
         switch (choice)
         {
             case var pack when pack?.StartsWith("Download full sprite pack", StringComparison.Ordinal) == true:
@@ -294,6 +295,16 @@ public sealed class HomePage : ContentPage, IPadHandler
                 break;
             case "Rescan games": await _viewModel.RescanCommand.ExecuteAsync(null); break;
             case "Scan report": await PadMenu.ShowAsync(_hostGrid, "SCAN REPORT", _viewModel.ScanReport, "OK"); break;
+            case "HaX mode: OFF":
+                var on = await PadMenu.ConfirmAsync(_hostGrid, "TURN ON HAX MODE?",
+                    "Pickers will offer every option instead of the legal subset (any ability on any mon). " +
+                    "Use at your own risk: mons edited this way will show as illegal.", "Turn on");
+                if (on) { Services.HaXMode.Set(true); _viewModel.Status = "HaX mode is ON."; }
+                break;
+            case "HaX mode: ON":
+                Services.HaXMode.Set(false);
+                _viewModel.Status = "HaX mode is OFF.";
+                break;
         }
     }
 
