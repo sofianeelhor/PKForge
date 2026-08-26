@@ -260,27 +260,38 @@ public sealed class HomePage : ContentPage, IPadHandler
         var choice = await PadMenu.ShowAsync(_hostGrid, "SETTINGS", null,
             new PadOption("Link an emulator", IconPath: "folder"),
             new PadOption("Open a save file", IconPath: "search"),
-            new PadOption("Rescan games", IconPath: "hex"),
-            new PadOption($"Download full sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "storage"),
-            new PadOption("Scan report", IconPath: "script"),
             new PadOption("Restore points", IconPath: "credits"),
             new PadOption("About PKForge", IconPath: "settings"),
+            new PadOption("Misc", IconPath: "script"),
             new PadOption("Quit PKForge", IconPath: "hex"));
         switch (choice)
         {
             case "Link an emulator": await ShowLinkMenuAsync(); break;
             case "Open a save file": await LinkFileAsync(); break;
-            case "Rescan games": await _viewModel.RescanCommand.ExecuteAsync(null); break;
-            case var pack when pack?.StartsWith("Download full sprite pack", StringComparison.Ordinal) == true:
-                await DownloadSpritePackAsync();
-                break;
-            case "Scan report": await PadMenu.ShowAsync(_hostGrid, "SCAN REPORT", _viewModel.ScanReport, "OK"); break;
             case "Restore points": await PushAsync<BackupHistoryPage>(); break;
             case "About PKForge": _viewModel.Status = "PKForge - open-source save manager & bank. GPLv3."; break;
+            case "Misc": await ShowMiscAsync(); break;
             case "Quit PKForge":
                 if (await PadMenu.ConfirmAsync(_hostGrid, "QUIT PKFORGE?", "Unsaved edits in open menus are already backed up per write.", "Quit"))
                     Microsoft.Maui.Controls.Application.Current?.Quit();
                 break;
+        }
+    }
+
+    /// <summary>Maintenance actions: the sprite pack, the rescan, and the scan report.</summary>
+    private async Task ShowMiscAsync()
+    {
+        var choice = await PadMenu.ShowAsync(_hostGrid, "MISC", null,
+            new PadOption($"Download full sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "storage"),
+            new PadOption("Rescan games", IconPath: "hex"),
+            new PadOption("Scan report", IconPath: "script"));
+        switch (choice)
+        {
+            case var pack when pack?.StartsWith("Download full sprite pack", StringComparison.Ordinal) == true:
+                await DownloadSpritePackAsync();
+                break;
+            case "Rescan games": await _viewModel.RescanCommand.ExecuteAsync(null); break;
+            case "Scan report": await PadMenu.ShowAsync(_hostGrid, "SCAN REPORT", _viewModel.ScanReport, "OK"); break;
         }
     }
 
