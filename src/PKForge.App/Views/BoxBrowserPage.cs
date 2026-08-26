@@ -268,6 +268,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var choice = await PadMenu.ShowAsync(_hostGrid, $"ORGANIZER · {_viewModel.MarkedCount} MARKED", null,
             new PadOption("Move selection to box…", IconPath: "storage"),
             new PadOption("Move selection to another game…", IconPath: "storage"),
+            new PadOption("Duplicate selection", IconPath: "storage"),
             new PadOption("Move selection to Bank", IconPath: "bank"),
             new PadOption("Export selection (.pk files)", IconPath: "folder"),
             new PadOption("Release selection", IconPath: "hex"),
@@ -321,6 +322,40 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 _viewModel.Status = skipped > 0
                     ? $"Moved {sentSlots.Count} to {target.GameLabel}; {skipped} could not enter that format and stayed."
                     : $"Moved {sentSlots.Count} Pokémon to {target.GameLabel}.";
+                _canvas.InvalidateSurface();
+                return;
+            }
+            case "Duplicate selection":
+            {
+                if (_viewModel.MarkedCount == 0) { _viewModel.Status = "Nothing marked."; return; }
+                var session = _sessionsFor();
+                if (session is null) return;
+                var exports = _viewModel.MarkedSlots.Select(m => session.ExportSlot(m.Box, m.Slot).Data).ToList();
+                var used = new HashSet<(int Box, int Slot)>();
+                await _viewModel.RunMutationAsync(s =>
+                {
+                    var cloned = 0;
+                    foreach (var data in exports)
+                    {
+                        (int Box, int Slot)? landing = null;
+                        foreach (var cand in _viewModel.Save!.Slots.Where(x => x.Box >= 0 && x.Species is null))
+                        {
+                            if (used.Contains((cand.Box, cand.Slot))) continue;
+                            if (!s.ReadEntity(cand.Box, cand.Slot).IsEmpty) continue; // live check: never overwrite
+                            landing = (cand.Box, cand.Slot);
+                            break;
+                        }
+                        if (landing is null) break;
+                        if (s.ImportSlot(landing.Value.Box, landing.Value.Slot, data))
+                        {
+                            used.Add(landing.Value);
+                            cloned++;
+                        }
+                    }
+                    return new GenerationOutcome(cloned > 0,
+                        cloned == 0 ? "No room to clone."
+                        : $"Cloned {cloned} Pokémon." + (cloned < exports.Count ? $" {exports.Count - cloned} left (no room)." : ""));
+                }, Math.Max(0, _viewModel.SelectedSlot));
                 _canvas.InvalidateSurface();
                 return;
             }
@@ -1160,6 +1195,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var choice = await PadMenu.ShowAsync(_hostGrid, nickname.ToUpperInvariant(), null,
             new PadOption("Edit (side panel)", IconPath: "editor"),
             new PadOption("Move", IconPath: "storage"),
+            new PadOption("Duplicate", IconPath: "storage"),
             new PadOption("Send to Bank", IconPath: "bank"),
             new PadOption("Send to another game…", IconPath: "storage"),
             new PadOption("Export .pk file", IconPath: "folder"),
@@ -1170,6 +1206,9 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         {
             case "Move":
                 if (_viewModel.BeginCarry()) _canvas.InvalidateSurface();
+                return;
+            case "Duplicate":
+                await DuplicateSlotAsync(slot);
                 return;
             case "Send to Bank":
                 await SendToBankAsync(slot, nickname);
@@ -1192,6 +1231,38 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             default:
                 return; // Edit: the editor is already open on the right
         }
+    }
+
+    /// <summary>Clone the mon in place: party clones append (cap 6), box clones fill the
+    /// box's first empty slot. PKSM-style Duplicate, one backup per write.</summary>
+    private async Task DuplicateSlotAsync(int slot)
+    {
+        var session = _sessionsFor();
+        if (session is null) return;
+        var box = _viewModel.BoxIndex;
+        var export = session.ExportSlot(box, slot);
+        var name = _viewModel.Selected?.Nickname is { Length: > 0 } nick ? nick : "Pokémon";
+
+        if (box == -1)
+        {
+            var ok = await _viewModel.RunMutationAsync(s =>
+                s.ImportSlot(-1, 0, export.Data)
+                    ? new GenerationOutcome(true, $"{name} cloned into the party.")
+                    : new GenerationOutcome(false, "The party is full."), slot);
+            if (!ok) _viewModel.Status = "The party is full - no room to clone.";
+            return;
+        }
+
+        var empty = _viewModel.VisibleSlots.FirstOrDefault(x => x.Species is null)?.Slot ?? -1;
+        if (empty < 0)
+        {
+            _viewModel.Status = "This box is full - no room to clone.";
+            return;
+        }
+        await _viewModel.RunMutationAsync(s =>
+            s.ImportSlot(box, empty, export.Data)
+                ? new GenerationOutcome(true, $"{name} cloned.")
+                : new GenerationOutcome(false, "Clone failed."), empty);
     }
 
     /// <summary>

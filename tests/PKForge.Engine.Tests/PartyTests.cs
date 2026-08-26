@@ -37,6 +37,18 @@ public sealed class PartyTests
         session.ApplyEdit(-1, 0, new EntityEdit(Nickname: "PARTYMON"));
         Assert.Equal("PARTYMON", session.ReadEntity(-1, 0).Nickname);
 
+        // The met and potential editors must work on party slots too (they used to hit
+        // the box accessors directly and corrupt or throw).
+        session.ApplyMetEdit(-1, 0, new MetEdit(MetLevel: 7));
+        Assert.Equal(7, session.GetMetInfo(-1, 0).MetLevel);
+        var potential = session.GetPotential(-1, 0);
+        if (potential.SupportsHyperTrain)
+        {
+            session.ApplyPotentialEdit(-1, 0, new PotentialEdit(HyperTrained: [true, false, false, false, false, false]));
+            Assert.True(session.GetPotential(-1, 0).HyperTrained![0]);
+        }
+        Assert.NotEmpty(session.GetShowdownText(-1, 0));
+
         // Snapshot is a construction-time cache; party state is read live after mutations.
         int LivePartyCount() => Enumerable.Range(0, 6).Count(i => !session.ReadEntity(-1, i).IsEmpty);
 

@@ -45,6 +45,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
     private PKM GetEntityCore(int box, int slot)
         => box == -1 ? _save.GetPartySlotAtIndex(slot) : _save.GetBoxSlotAtIndex(box, slot);
 
+    private void SetEntityCore(int box, int slot, PKM pk)
+    {
+        if (box == -1) _save.SetPartySlotAtIndex(pk, slot);
+        else _save.SetBoxSlotAtIndex(pk, box, slot);
+    }
+
     public EntityDetail ReadEntity(int box, int slot)
     {
         ThrowIfDisposed();
@@ -243,7 +249,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public string GetShowdownText(int box, int slot)
     {
         ThrowIfDisposed();
-        return ShowdownParsing.GetShowdownText(_save.GetBoxSlotAtIndex(box, slot));
+        return ShowdownParsing.GetShowdownText(GetEntityCore(box, slot));
     }
 
     public void ReleaseSlot(int box, int slot)
@@ -356,7 +362,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         ThrowIfDisposed();
         ValidateCoordinates(box, slot);
-        var e = _save.GetBoxSlotAtIndex(box, slot);
+        var e = GetEntityCore(box, slot);
         string Loc(bool egg, ushort loc) => GameInfo.GetLocationName(egg, loc, e.Format, e.Generation, e.Version) ?? $"#{loc}";
         var met = e.MetDate;
         var eggDate = e.EggMetDate;
@@ -409,7 +415,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(edit);
         ValidateCoordinates(box, slot);
-        var e = _save.GetBoxSlotAtIndex(box, slot);
+        var e = GetEntityCore(box, slot);
         if (e.Species == 0) throw new InvalidOperationException("Cannot edit an empty slot.");
 
         if (edit.Version is { } version) e.Version = (GameVersion)version;
@@ -425,7 +431,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (edit.EggDate is { } eggDate) e.EggMetDate = ParseDate(eggDate);
 
         e.RefreshChecksum();
-        _save.SetBoxSlotAtIndex(e, box, slot);
+        SetEntityCore(box, slot, e);
     }
 
     private static DateOnly? ParseDate(string value) =>
@@ -435,7 +441,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         ThrowIfDisposed();
         ValidateCoordinates(box, slot);
-        var e = _save.GetBoxSlotAtIndex(box, slot);
+        var e = GetEntityCore(box, slot);
         return GameInfo.GetLocationList(e.Version, e.Context, egg)
             .Select(c => new NamedChoice(c.Value, c.Text))
             .ToList();
@@ -454,7 +460,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         ThrowIfDisposed();
         ValidateCoordinates(box, slot);
-        var e = _save.GetBoxSlotAtIndex(box, slot);
+        var e = GetEntityCore(box, slot);
         return GameInfo.LanguageDataSource(e.Generation, e.Context)
             .Select(c => new NamedChoice(c.Value, c.Text))
             .ToList();
@@ -482,7 +488,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         ThrowIfDisposed();
         ValidateCoordinates(box, slot);
-        var e = _save.GetBoxSlotAtIndex(box, slot);
+        var e = GetEntityCore(box, slot);
         var types = GameInfo.GetStrings("en").Types;
         string TypeName(int id) => id == TeraTypeUtil.Stellar ? types[TeraTypeUtil.StellarTypeDisplayStringIndex]
             : (uint)id < (uint)types.Count ? types[id] : $"#{id}";
@@ -524,7 +530,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(edit);
         ValidateCoordinates(box, slot);
-        var e = _save.GetBoxSlotAtIndex(box, slot);
+        var e = GetEntityCore(box, slot);
         if (e.Species == 0) throw new InvalidOperationException("Cannot edit an empty slot.");
 
         if (edit.TeraType is { } teraType)
@@ -558,7 +564,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         }
 
         e.RefreshChecksum();
-        _save.SetBoxSlotAtIndex(e, box, slot);
+        SetEntityCore(box, slot, e);
     }
 
     public IReadOnlyList<NamedChoice> GetTeraTypeChoices()
