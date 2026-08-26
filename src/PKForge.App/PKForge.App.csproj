@@ -10,8 +10,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationId>org.pkforge.app</ApplicationId>
     <ApplicationTitle>PKForge</ApplicationTitle>
-    <ApplicationVersion>100</ApplicationVersion>
-    <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
+    <ApplicationVersion>110</ApplicationVersion>
+    <ApplicationDisplayVersion>1.1.0</ApplicationDisplayVersion>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
   </PropertyGroup>
   <ItemGroup>

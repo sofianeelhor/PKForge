@@ -209,11 +209,11 @@ public sealed class BankPage : ContentPage, IPadHandler
             return;
         }
 
-        var canSend = _boxViewModel.Save is not null;
         var choice = await PadMenu.ShowAsync(_hostGrid, entry.Info.Nickname.ToUpperInvariant(),
             $"From {entry.Info.SourceName} · Gen {entry.Info.Generation} · deposited {entry.AddedUtc:yyyy-MM-dd}",
             new PadOption("Edit", IconPath: "editor"),
-            new PadOption(canSend ? "Send to game" : "Send to game (connect a save first)"),
+            new PadOption("Duplicate", IconPath: "storage"),
+            new PadOption("Send to game…", IconPath: "storage"),
             new PadOption("Move (carry)", IconPath: "storage"),
             new PadOption("Export .pk file", IconPath: "folder"),
             new PadOption("Release from bank", IconPath: "hex"));
@@ -222,8 +222,18 @@ public sealed class BankPage : ContentPage, IPadHandler
             case "Edit":
                 await EditEntryAsync(entry);
                 return;
-            case "Send to game":
-                await SendToGameAsync(entry);
+            case "Duplicate":
+                var clone = _bank.Add(_bank.GetData(entry.Id), entry.Info);
+                _boxIndex = clone.Box;
+                _selectedSlot = clone.Slot;
+                RefreshBoxEntries();
+                UpdatePageLabel();
+                UpdatePreview();
+                _boxViewModel.Status = $"{entry.Info.Nickname} cloned in the bank.";
+                _canvas.InvalidateSurface();
+                return;
+            case "Send to game…":
+                await SendToGamePickerAsync(entry);
                 return;
             case "Move (carry)":
                 _carryId = entry.Id;
@@ -269,10 +279,21 @@ public sealed class BankPage : ContentPage, IPadHandler
         switch (choice)
         {
             case "Create a Pokémon" or "Paste a Showdown set" when session is null:
-                _boxViewModel.Status = "Connect a save first - generation needs a game context.";
-                await PadMenu.ShowAsync(_hostGrid, "NO GAME CONNECTED",
-                    "Generating needs a connected save for trainer identity and format. Open a game, then come back.", "OK");
-                return;
+            {
+                // No game connected: pick the format, generate against a blank save with
+                // a placeholder identity (OT "PKForge", editable afterwards in the editor).
+                var eras = new[] { "Generation I", "Generation II", "Generation III", "Generation IV", "Generation V",
+                    "Generation VI", "Generation VII", "Generation VIII", "Generation IX" };
+                var era = await PadMenu.ShowAsync(_hostGrid, "CREATE FOR WHICH GAME ERA?",
+                    "No save connected. The mon gets a placeholder identity in the format you pick; edit it after.",
+                    eras);
+                if (era is null) return;
+                var generation = Array.IndexOf(eras, era) + 1;
+                var engine = IPlatformApplication.Current!.Services.GetRequiredService<ISaveEngine>();
+                session = engine.OpenBlankSession(generation);
+                if (choice == "Create a Pokémon") goto case "Create a Pokémon";
+                goto case "Paste a Showdown set";
+            }
             case "Create a Pokémon":
             {
                 var services = IPlatformApplication.Current!.Services;
@@ -341,32 +362,67 @@ public sealed class BankPage : ContentPage, IPadHandler
         _canvas.InvalidateSurface();
     }
 
-    /// <summary>Withdraw: convert the stored bytes into the connected save's first empty slot.</summary>
-    private async Task SendToGameAsync(BankEntry entry)
+    /// <summary>Withdraw into ANY detected game: pick the destination, the transfer service
+    /// converts the format, backs up, and writes. No need to connect the save first.</summary>
+    private async Task SendToGamePickerAsync(BankEntry entry)
     {
-        if (_boxViewModel.Save is null)
+        var services = IPlatformApplication.Current?.Services;
+        var picker = services?.GetService<SavePickerViewModel>();
+        var transfer = services?.GetService<Services.TransferService>();
+        if (picker is null || transfer is null) return;
+
+        var sessions = services?.GetService<ISaveSessionService>();
+        var connected = sessions?.Current;
+        var detected = connected is null
+            ? picker.Saves.ToArray()
+            : picker.Saves.Where(s => s.DocumentId != connected.Document.DocumentId).ToArray();
+        if (connected is null && detected.Length == 0)
         {
-            _boxViewModel.Status = "Connect a save first.";
+            _boxViewModel.Status = "No games linked. Link an emulator on Home first.";
             return;
         }
-        var target = _boxViewModel.VisibleSlots.FirstOrDefault(s => s.Species is null)?.Slot ?? -1;
-        if (target < 0)
-        {
-            _boxViewModel.Status = "No empty slot in the game's current box.";
-            return;
-        }
+
+        var connectedLabel = connected is null ? null : $"{connected.Document.DisplayName} (connected)";
+        var options = connectedLabel is null
+            ? detected.Select(s => new PadOption(s.GameLabel, IconPath: "storage")).ToArray()
+            : new[] { new PadOption(connectedLabel, IconPath: "storage") }
+                .Concat(detected.Select(s => new PadOption(s.GameLabel, IconPath: "storage"))).ToArray();
+
+        var choice = await PadMenu.ShowAsync(_hostGrid, "SEND TO GAME",
+            $"{entry.Info.Nickname} → pick the destination", options);
+        if (choice is null) return;
+
         var bytes = _bank.GetData(entry.Id);
-        var ok = await _boxViewModel.RunMutationAsync(session =>
-            session.ImportSlot(_boxViewModel.BoxIndex, target, bytes)
-                ? new GenerationOutcome(true, $"{entry.Info.Nickname} joined the game.")
-                : new GenerationOutcome(false, "This mon cannot enter this game's format."), target);
-        if (ok)
+        var nickname = entry.Info.Nickname;
+
+        if (connected is not null && choice == connectedLabel)
         {
-            _bank.Remove(entry.Id);
-            RefreshBoxEntries();
-            UpdatePreview();
-            _canvas.InvalidateSurface();
+            // The connected save goes through the live session, first empty slot of any box.
+            var landing = _boxViewModel.Save?.Slots.FirstOrDefault(s => s.Species is null);
+            if (landing is null)
+            {
+                _boxViewModel.Status = "No empty slot in the connected game.";
+                return;
+            }
+            var ok = await _boxViewModel.RunMutationAsync(session =>
+                session.ImportSlot(landing.Box, landing.Slot, bytes)
+                    ? new GenerationOutcome(true, $"{nickname} joined the game (box {landing.Box + 1}).")
+                    : new GenerationOutcome(false, "This mon cannot enter this game's format."), landing.Slot);
+            if (!ok) return;
         }
+        else
+        {
+            var index = Array.FindIndex(options, o => o.Label == choice) - (connectedLabel is null ? 0 : 1);
+            if (index < 0 || index >= detected.Length) return;
+            var outcome = await transfer.SendToGameAsync(bytes, nickname, detected[index]);
+            _boxViewModel.Status = outcome.Message;
+            if (!outcome.Success) return;
+        }
+
+        _bank.Remove(entry.Id);
+        RefreshBoxEntries();
+        UpdatePreview();
+        _canvas.InvalidateSurface();
     }
 
     private async Task ExportAsync(BankEntry entry)

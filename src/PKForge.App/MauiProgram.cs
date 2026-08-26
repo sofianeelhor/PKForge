@@ -42,6 +42,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<GamepadRouter>();
         builder.Services.AddSingleton<SecondScreenState>();
         builder.Services.AddSingleton<SpritePackDownloader>();
+        builder.Services.AddSingleton<TransferService>();
 #if ANDROID
         builder.Services.AddSingleton<ISaveFileAccess, AndroidSafFileAccess>();
         builder.Services.AddSingleton<IDocumentPicker, AndroidDocumentPicker>();
@@ -55,7 +56,7 @@ public static class MauiProgram
         builder.Services.AddTransient<BoxBrowserPage>();
         builder.Services.AddTransient<BackupHistoryViewModel>();
         builder.Services.AddTransient<BackupHistoryPage>();
-        builder.Services.AddTransient<SavePickerViewModel>();
+        builder.Services.AddSingleton<SavePickerViewModel>();
         builder.Services.AddTransient<HomePage>();
         builder.Services.AddTransient<SecondScreenBoxPage>();
         builder.Services.AddTransient<BankPage>();

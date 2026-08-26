@@ -72,6 +72,29 @@ public sealed class SaveEngine : ISaveEngine
         return new SaveEngineSession(blank, displayName);
     }
 
+    /// <summary>One representative game per generation for blank generation contexts.</summary>
+    private static GameVersion VersionFor(int generation) => generation switch
+    {
+        1 => GameVersion.BU,
+        2 => GameVersion.C,
+        3 => GameVersion.E,
+        4 => GameVersion.Pt,
+        5 => GameVersion.B2,
+        6 => GameVersion.AS,
+        7 => GameVersion.UM,
+        8 => GameVersion.SW,
+        9 => GameVersion.VL,
+        _ => GameVersion.VL,
+    };
+
+    public ISaveEngineSession OpenBlankSession(int generation, string? displayName = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(generation, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(generation, 9);
+        var blank = BlankSaveFile.Get(VersionFor(generation), "PKForge", LanguageID.English);
+        return new SaveEngineSession(blank, displayName);
+    }
+
     public SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes)
     {
         if (!SaveUtil.TryGetSaveFile(bytes.ToArray(), out var save) || save is null)

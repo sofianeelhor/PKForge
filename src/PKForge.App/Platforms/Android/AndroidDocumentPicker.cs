@@ -26,7 +26,7 @@ public sealed class AndroidDocumentPicker : Java.Lang.Object, IDocumentPicker
         });
         var intent = new Intent(Intent.ActionOpenDocument);
         intent.AddCategory(Intent.CategoryOpenable);
-        intent.SetType("application/octet-stream");
+        intent.SetType("*/*");
         intent.AddFlags(ActivityFlags.GrantReadUriPermission | ActivityFlags.GrantWriteUriPermission | ActivityFlags.GrantPersistableUriPermission);
         activity.StartActivityForResult(intent, RequestCode);
         return new ValueTask<PickedDocument?>(_pending.Task);
