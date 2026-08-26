@@ -49,11 +49,33 @@ public static class PartyView
             EntityDetail? detail = null;
             try { detail = session?.ReadEntity(-1, i); } catch { /* engine validates coordinates */ }
             var carriedFrom = carrySource is { Box: -1, Slot: var cs } && cs == i;
+            _ = carriedFrom;
             var breath = 1f;
-            if (i == selectedSlot)
+            if (carriedFrom)
                 breath = 1f + 0.028f * (0.5f + 0.5f * MathF.Sin(pulsePhase));
             var pulsed = breath == 1f ? rect : ScaleRect(rect, breath);
-            Slot(canvas, pulsed, detail, sprites, i == selectedSlot, invalidate, lifted: carriedFrom, pulsePhase: pulsePhase);
+
+            // Swap preview: while carrying and aiming at another slot, both cards show
+            // what the swap would look like, ghosted, before A confirms.
+            var previewPartner = -1;
+            if (carrySource is { Box: -1, Slot: var src } && selectedSlot != src)
+            {
+                if (i == selectedSlot) previewPartner = src;      // target shows the carried mon
+                else if (i == src) previewPartner = selectedSlot; // source shows the target's mon
+            }
+            var drawDetail = detail;
+            var isGhost = false;
+            if (previewPartner >= 0)
+            {
+                EntityDetail? partner = null;
+                try { partner = session?.ReadEntity(-1, previewPartner); } catch { }
+                drawDetail = partner;
+                isGhost = i == selectedSlot; // only the aimed slot wears the SWAP tag; both wear the veil
+            }
+
+            Slot(canvas, pulsed, drawDetail, sprites, i == selectedSlot, invalidate,
+                lifted: carriedFrom && !isGhost, pulsePhase: pulsePhase,
+                ghost: previewPartner >= 0, ghostTag: isGhost);
         }
     }
 
@@ -87,7 +109,7 @@ public static class PartyView
         return new SKRect(x, y, x + w, y + h);
     }
 
-    private static void Slot(SKCanvas canvas, SKRect r, EntityDetail? detail, ISpriteService sprites, bool selected, Action invalidate, bool lifted = false, float pulsePhase = 0f)
+    private static void Slot(SKCanvas canvas, SKRect r, EntityDetail? detail, ISpriteService sprites, bool selected, Action invalidate, bool lifted = false, float pulsePhase = 0f, bool ghost = false, bool ghostTag = false)
     {
         var fainted = detail is { IsEmpty: false, CurrentHp: 0 };
         var body = detail is null or { IsEmpty: true } ? Body.WithAlpha(0x50)
@@ -97,9 +119,9 @@ public static class PartyView
         var path = BevelPath(lifted ? SKRect.Inflate(r, 2, -4) : r, 0);
         if (lifted)
         {
-            using var ghost = new SKPaint { Color = Selected.WithAlpha(0x70), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2 };
-            ghost.PathEffect = SKPathEffect.CreateDash([7, 6], 0);
-            canvas.DrawPath(BevelPath(r, 0), ghost);
+            using var carryGhost = new SKPaint { Color = Selected.WithAlpha(0x70), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2 };
+            carryGhost.PathEffect = SKPathEffect.CreateDash([7, 6], 0);
+            canvas.DrawPath(BevelPath(r, 0), carryGhost);
         }
         using (var b = new SKPaint { Color = BotEdge, IsAntialias = true })
             canvas.DrawPath(path, b);
@@ -108,7 +130,20 @@ public static class PartyView
         using (var t = new SKPaint { Color = topEdge, IsAntialias = true, StrokeWidth = 3 })
             canvas.DrawLine(r.Left + 12, r.Top + 1.5f, r.Right - 28, r.Top + 1.5f, t);
 
-        if (selected)
+        if (ghost)
+        {
+            using var veil = new SKPaint { Color = new SKColor(0x14, 0x1D, 0x3E, 0xB4), IsAntialias = true };
+            canvas.DrawPath(BevelPath(SKRect.Inflate(r, -2, -2.5f), 0), veil);
+        }
+        if (ghostTag)
+        {
+            using var previewTag = new SKPaint { Color = Selected, IsAntialias = true };
+            var tag = new SKRect(r.Right - 62, r.Top + 6, r.Right - 8, r.Top + 24);
+            canvas.DrawRoundRect(tag, 4, 4, previewTag);
+            using var tagFont = new SKFont(PixelFont.Face, 13) { Edging = SKFontEdging.Antialias, Embolden = true };
+            canvas.DrawText("A SWAP", tag.MidX, tag.Bottom - 5, SKTextAlign.Center, tagFont, new SKPaint { Color = SKColors.White, IsAntialias = true });
+        }
+        if (selected && !ghost)
         {
             var glow = (int)(0x60 + 0x60 * (0.5f + 0.5f * MathF.Sin(pulsePhase)));
             using var sel = new SKPaint { Color = Selected.WithAlpha((byte)(0xC0 + glow / 4)), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 3 + glow / 120f };
