@@ -553,7 +553,16 @@ public static class BankEntryEditor
                     : _session.GetAbilityChoices(_detail.Species, _detail.Form))
                 .Select(id => new PickItem(id, NameOf(_data.AbilityNames, id))).ToList();
             var pick = await PickerMenu.ShowAsync(_host, "ABILITY", choices, _detail.Ability);
-            if (pick is not null) { _session.ApplyEdit(0, 0, new EntityEdit(Ability: pick.Id)); _dirty = true; }
+            if (pick is not null)
+            {
+                _session.ApplyEdit(0, 0, new EntityEdit(Ability: pick.Id));
+                var applied = _session.ReadEntity(0, 0).Ability;
+                _dirty = true;
+                if (applied != pick.Id)
+                    await EditorMenu.ShowAsync(_host, "ABILITY DID NOT STICK",
+                        $"Asked for {NameOf(_data.AbilityNames, pick.Id)}, the mon holds {NameOf(_data.AbilityNames, applied)}. " +
+                        "Tell the developer: this is the diagnostic he asked for.", "OK");
+            }
         }
 
         private async Task EditItemAsync()

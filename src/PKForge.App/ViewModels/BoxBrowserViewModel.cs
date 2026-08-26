@@ -198,6 +198,9 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate);
 
             var updated = engineSession.ReadEntity(detail.Box, detail.Slot);
+            var askedAbility = ParseInt(EditAbility);
+            if (askedAbility is { } wanted && updated.Ability != wanted)
+                Status = $"Ability did not stick: asked for {wanted}, the mon holds {updated.Ability}. This is the diagnostic the developer needs.";
             var index = Array.FindIndex(_slots, x => x.Box == detail.Box && x.Slot == detail.Slot);
             if (index >= 0)
                 _slots[index] = _slots[index] with { Species = updated.Species, Nickname = updated.Nickname, IsShiny = updated.IsShiny, Form = updated.Form };
