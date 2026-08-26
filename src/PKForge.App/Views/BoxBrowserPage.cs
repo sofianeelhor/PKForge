@@ -1796,11 +1796,33 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         return chip;
     }
 
-    /// <summary>Read-only computed stats (HP/Atk/Def/SpA/SpD/Spe at the mon's current level).</summary>
+    /// <summary>Read-only computed stats: six labeled cells (HP/ATK/DEF/SPA/SPD/SPE) in two rows.</summary>
     private View StatsRow(string caption, string vmProperty, bool shaded)
     {
-        var value = Kit.BlueprintValue(12);
-        value.SetBinding(Label.TextProperty, vmProperty);
+        string[] labels = ["HP", "ATK", "DEF", "SPA", "SPD", "SPE"];
+        var grid = new Grid
+        {
+            RowSpacing = 2,
+            ColumnSpacing = 10,
+            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Star), new(GridLength.Star)],
+        };
+        var converter = new StatCellConverter();
+        for (var i = 0; i < 6; i++)
+        {
+            var cell = new HorizontalStackLayout { Spacing = 5, VerticalOptions = LayoutOptions.Center };
+            var name = new Label
+            {
+                Text = labels[i], FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1,
+                TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center,
+            };
+            var value = Kit.BlueprintValue(12);
+            value.SetBinding(Label.TextProperty, new Binding(vmProperty, converter: converter, converterParameter: i.ToString()));
+            cell.Children.Add(name);
+            cell.Children.Add(value);
+            grid.Add(cell);
+            Grid.SetRow(cell, i / 3);
+            Grid.SetColumn(cell, i % 3);
+        }
         return new Border
         {
             BackgroundColor = shaded ? UiTokens.PaperShade : UiTokens.Paper,
@@ -1808,16 +1830,31 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             StrokeThickness = 1.2,
             StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 6 },
             Padding = new Thickness(10, 5),
-            Content = new Grid
+            Content = new VerticalStackLayout
             {
-                ColumnDefinitions = [new(new GridLength(78)), new(GridLength.Star)],
+                Spacing = 3,
                 Children =
                 {
-                    new Label { Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center },
-                    value,
+                    new Label { Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 2, TextColor = UiTokens.Ink1 },
+                    grid,
                 },
             },
         };
+    }
+
+    /// <summary>Picks one stat out of the space-separated EditStats string by index.</summary>
+    private sealed class StatCellConverter : IValueConverter
+    {
+        public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        {
+            if (value is not string text || parameter is not string indexText || !int.TryParse(indexText, out var index))
+                return "-";
+            var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return index < parts.Length ? parts[index] : "-";
+        }
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+            throw new NotSupportedException();
     }
 
     /// <summary>Read-only stat row with an explicit EDIT button for manual (expert) input.</summary>
