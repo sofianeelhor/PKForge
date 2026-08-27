@@ -117,7 +117,14 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (edit.Level is { } level)
             entity.CurrentLevel = (byte)Math.Clamp(level, 1, 100);
         if (edit.Nature is { } nature)
-            entity.Nature = (Nature)nature;
+        {
+            // Gen 3/4/5 natures are PID-derived with an empty setter: the only way to
+            // change them is re-rolling the personality (PKHeX's own SetPIDNature).
+            if (entity is G3PKM or G4PKM)
+                entity.SetPIDNature((Nature)nature);
+            else
+                entity.Nature = (Nature)nature;
+        }
         if (edit.Ability is { } ability)
             entity.Ability = ability;
         if (edit.HeldItem is { } item)
