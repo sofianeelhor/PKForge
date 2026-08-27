@@ -12,7 +12,7 @@ namespace PKForge.App.Views;
 
 /// <summary>
 /// The Bank: the app's own cross-game vault in the PKSM storage world. Each box page
-/// is a saturated wallpaper flat with the dot lattice and white crosshair brackets;
+/// is a saturated wallpaper flat with the dot lattice;
 /// the second screen shows the highlighted mon. A grabs/places, START opens the
 /// mon menu, L/R turn pages.
 /// </summary>

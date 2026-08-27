@@ -8,8 +8,8 @@ namespace PKForge.App.Views;
 
 /// <summary>
 /// Shared LCD box-grid painter (main browser + bank vault): the PKSM storage world.
-/// Saturated wallpaper flats with the dot lattice, white crosshair brackets around
-/// the grid, soft white slots, gold selection frames, dashed gold carry ghosts.
+/// Saturated wallpaper flats with the dot lattice, soft white slots, gold selection
+/// frames, and dashed gold carry ghosts.
 /// </summary>
 public static class BoxGridRenderer
 {
@@ -68,13 +68,10 @@ public static class BoxGridRenderer
 
     public static SKRect GridBounds(SKImageInfo info) => GridBounds(new SKSize(info.Width, info.Height));
 
-    /// <summary>The PKSM box backdrop: saturated wallpaper flat, faint dot lattice,
-    /// white corner brackets around the grid.</summary>
+    /// <summary>The PKSM box backdrop: saturated wallpaper flat and faint dot lattice.</summary>
     public static void PaintBackdrop(SKCanvas canvas, SKImageInfo info, int boxIndex)
     {
         PksmPaint.Wallpaper(canvas, new SKRect(0, 0, info.Width, info.Height), WallpaperAt(boxIndex));
-        var arm = Math.Clamp(GridMetrics(info).Cell * 0.22f, 12f, 24f);
-        PksmPaint.Crosshair(canvas, SKRect.Inflate(GridBounds(info), 8, 8), arm, 4f);
     }
 
     public static void Paint(

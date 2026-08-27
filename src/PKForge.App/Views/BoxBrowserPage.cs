@@ -21,7 +21,11 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     private readonly ThemeService _theme;
     private readonly SKCanvasView _canvas;
     private readonly SKCanvasView _boxBar;
+    private readonly SKCanvasView _boxNeighbors;
     private readonly FrameInvalidator _frame;
+    private readonly ContentView _footerHost;
+    private readonly Grid _storageContent;
+    private readonly View _sidePanel;
     private Grid _hostGrid = null!;
     private long _partyPulseStart = Environment.TickCount64;
     private int _lastAimSlot = -1;
@@ -29,7 +33,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     private IDispatcherTimer? _boxManagePulseTimer;
     private bool _boxManageMode;
     private bool _boxManageBusy;
+    private bool _boxHeld;
     private int _heldBox;
+    private int _slotBeforeBoxManage = -1;
+    private readonly HashSet<int> _markedBoxes = [];
 
     /// <summary>The party cursor breathes: a light repaint loop that only runs on the party view.</summary>
     private void EnsurePartyPulse()
@@ -66,12 +73,16 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         _boxBar = new SKCanvasView { HeightRequest = 26, InputTransparent = true, Margin = new Thickness(2, 0, 2, 4) };
         _boxBar.PaintSurface += PaintBoxBar;
 
+        _boxNeighbors = new SKCanvasView { HeightRequest = 100, IsVisible = false, InputTransparent = true };
+        _boxNeighbors.PaintSurface += PaintBoxNeighbors;
+
         var screenBody = new Grid
         {
-            RowDefinitions = [new(GridLength.Auto), new(GridLength.Star)],
-            Children = { _boxBar, _canvas },
+            RowDefinitions = [new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star)],
+            Children = { _boxBar, _boxNeighbors, _canvas },
         };
-        Grid.SetRow(_canvas, 1);
+        Grid.SetRow(_boxNeighbors, 1);
+        Grid.SetRow(_canvas, 2);
 
         var screen = Kit.LcdPanel(screenBody, padding: 4);
         // The frame and its padding wear the current box wallpaper - no leftover default corners.
@@ -88,36 +99,36 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 TintScreen();
         };
 
-        var sidePanel = BuildSidePanel();
+        _sidePanel = BuildSidePanel();
 
         // DS chrome around the box grid + editor.
-        var content = new Grid
+        _storageContent = new Grid
         {
             Padding = new Thickness(12, 10),
             ColumnSpacing = 12,
             ColumnDefinitions = [new(GridLength.Star), new(new GridLength(330))],
-            Children = { screen, sidePanel },
+            Children = { screen, _sidePanel },
         };
-        Grid.SetColumn(sidePanel, 1);
-        var bodyHost = new Grid { Children = { DsChrome.GridBackground(), content } };
+        Grid.SetColumn(_sidePanel, 1);
+        var bodyHost = new Grid { Children = { DsChrome.GridBackground(), _storageContent } };
 
         var title = string.IsNullOrEmpty(_viewModel.ConnectedName) ? "Storage" : _viewModel.ConnectedName;
-        var footer = DsChrome.Footer(
+        _footerHost = new ContentView { Content = DsChrome.Footer(
             ("A", "Grab", null),
             ("B", "Back", () => _ = Navigation.PopAsync()),
             ("LR", "Box", null),
             ("X", "Tools", () => _ = ShowToolsAsync()),
             ("Y", "Save data", () => _ = ShowSaveDataAsync()),
-            ("+", "Menu", () => OpenCursorMenu()));
+            ("+", "Menu", () => OpenCursorMenu())) };
 
         var root = new Grid
         {
             RowDefinitions = [new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto)],
-            Children = { DsChrome.TitleBar(), DsChrome.StatusStrip(title, "Connected"), bodyHost, footer },
+            Children = { DsChrome.TitleBar(), DsChrome.StatusStrip(title, "Connected"), bodyHost, _footerHost },
         };
         Grid.SetRow((View)root.Children[1], 1);
         Grid.SetRow(bodyHost, 2);
-        Grid.SetRow(footer, 3);
+        Grid.SetRow(_footerHost, 3);
 
         _hostGrid = new Grid { Children = { root } };
         Content = _hostGrid;
@@ -145,7 +156,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         canvas.Clear(SKColors.Transparent);
         var bounds = new SKRect(0, 0, args.Info.Width, args.Info.Height);
         var fontSize = 20f;
-        if (_boxManageMode)
+        if (_boxManageMode && _boxHeld)
         {
             var phase = (Environment.TickCount64 % 900) / 900d * Math.PI * 2;
             var breath = (float)((Math.Sin(phase) + 1) * 0.5);
@@ -153,11 +164,79 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             fontSize += breath * 1.5f;
         }
         using var font = new SKFont(PixelTypeface(), fontSize);
-        PksmPaint.BoxNameBar(canvas, bounds,
-            _viewModel.BoxIndex == -1 ? "PARTY" : $"BOX {_viewModel.BoxIndex + 1:00}", font,
+        var boxName = _viewModel.BoxIndex == -1 ? "PARTY" : $"BOX {_viewModel.BoxIndex + 1:00}";
+        if (_boxManageMode) boxName = _boxHeld ? $"HOLDING · {boxName}" : $"MANAGE · {boxName}";
+        PksmPaint.BoxNameBar(canvas, bounds, boxName, font,
             canPrev: _viewModel.BoxIndex > 0,
             canNext: _viewModel.BoxIndex < _viewModel.BoxCount - 1);
     }
+
+    /// <summary>A compact three-box map keeps both neighbors understandable while ordering.</summary>
+    private void PaintBoxNeighbors(object? sender, SKPaintSurfaceEventArgs args)
+    {
+        var canvas = args.Surface.Canvas;
+        canvas.Clear(Pksm.Housing);
+        var session = _sessionsFor();
+        if (!_boxManageMode || session is null) return;
+        using var label = new SKFont(PixelTypeface(), 13);
+        var gap = 10f;
+        var cardWidth = (args.Info.Width - gap * 4) / 3f;
+        for (var offset = -1; offset <= 1; offset++)
+        {
+            var box = _viewModel.BoxIndex + offset;
+            var left = gap + (offset + 1) * (cardWidth + gap);
+            var rect = new SKRect(left, 3, left + cardWidth, args.Info.Height - 3);
+            if ((uint)box >= (uint)_viewModel.BoxCount) continue;
+            using var background = new SKPaint { Color = BoxGridRenderer.WallpaperAt(box), IsAntialias = true };
+            using var border = new SKPaint
+            {
+                Color = _markedBoxes.Contains(box) ? Pksm.SelectBorder : offset == 0 ? Pksm.ShinyGold : SKColors.White,
+                Style = SKPaintStyle.Stroke, StrokeWidth = offset == 0 ? 4 : 2, IsAntialias = true,
+            };
+            canvas.DrawRoundRect(rect, 7, 7, background);
+            canvas.DrawRoundRect(rect, 7, 7, border);
+            PksmPaint.CenterText(canvas, $"{(offset < 0 ? "L  " : offset > 0 ? "R  " : "")}{session.GetBoxName(box)}",
+                rect.MidX, rect.Top + 13, label, SKColors.White, Pksm.WallpaperShade(background.Color), SKTextAlign.Center);
+
+            var slots = Enumerable.Range(0, BoxGridRenderer.Columns * BoxGridRenderer.Rows)
+                .Select(slot => session.ReadEntity(box, slot)).ToArray();
+            var dotW = (rect.Width - 12) / BoxGridRenderer.Columns;
+            var dotH = (rect.Height - 24) / BoxGridRenderer.Rows;
+            using var occupied = new SKPaint { Color = SKColors.White.WithAlpha(220), IsAntialias = true };
+            using var shiny = new SKPaint { Color = Pksm.ShinyGold, IsAntialias = true };
+            for (var slot = 0; slot < slots.Length; slot++)
+            {
+                if (slots[slot].IsEmpty) continue;
+                var x = rect.Left + 6 + (slot % BoxGridRenderer.Columns + 0.5f) * dotW;
+                var y = rect.Top + 21 + (slot / BoxGridRenderer.Columns + 0.5f) * dotH;
+                var radius = Math.Min(dotW, dotH) * 0.42f;
+                var sprite = _sprites.GetSprite(slots[slot].Species, slots[slot].Form, slots[slot].IsShiny);
+                if (sprite is null)
+                {
+                    _sprites.Warm(slots[slot].Species, slots[slot].Form, slots[slot].IsShiny, _boxNeighbors.InvalidateSurface);
+                    canvas.DrawCircle(x, y, radius * 0.65f, slots[slot].IsShiny ? shiny : occupied);
+                    continue;
+                }
+                using var image = SKImage.FromBitmap(sprite);
+                var scale = Math.Min(radius * 2 / image.Width, radius * 2 / image.Height);
+                var width = image.Width * scale;
+                var height = image.Height * scale;
+                canvas.DrawImage(image, new SKRect(x - width / 2, y - height / 2, x + width / 2, y + height / 2), BoxGridRenderer.SpriteSampling);
+            }
+        }
+    }
+
+    private void SetStorageFooter() => _footerHost.Content = DsChrome.Footer(
+        ("A", "Grab", null), ("B", "Back", () => _ = Navigation.PopAsync()), ("LR", "Box", null),
+        ("X", "Tools", () => _ = ShowToolsAsync()), ("Y", "Save data", () => _ = ShowSaveDataAsync()),
+        ("+", "Menu", () => OpenCursorMenu()));
+
+    private void SetBoxManageFooter() => _footerHost.Content = DsChrome.Footer(
+        ("A", _boxHeld ? "Drop box" : "Hold box", () => OnPadButton(PadButton.A)),
+        ("B", "Done", ExitBoxManageMode),
+        ("LR", _boxHeld ? "Swap" : "Browse", null),
+        ("Y", _markedBoxes.Contains(_viewModel.BoxIndex) ? "Deselect" : "Select", ToggleMarkedBox),
+        ("X", "Bulk actions", () => _ = ShowBoxBulkActionsAsync()));
 
     /// <summary>The NDS12 face (the chrome's PixelUI voice), cached once for Skia text.</summary>
     private static SKTypeface _pixelTypeface = null!;
@@ -310,23 +389,52 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         if (_viewModel.BoxCount == 0) return;
         if (_viewModel.BoxIndex < 0) _viewModel.BoxIndex = 0;
         _boxManageMode = true;
+        _boxHeld = false;
         _heldBox = _viewModel.BoxIndex;
+        _slotBeforeBoxManage = _viewModel.SelectedSlot;
+        _viewModel.SelectedSlot = -1;
+        _markedBoxes.Clear();
+        if (_viewModel.SelectMode) _viewModel.ExitSelectMode();
         _viewModel.CancelCarry();
-        _viewModel.Status = $"HOLDING BOX {_heldBox + 1:00} - L/R REORDER · Y DELETE · A/B DONE";
-        _boxManagePulseTimer ??= Dispatcher.CreateTimer();
-        _boxManagePulseTimer.Interval = TimeSpan.FromMilliseconds(60);
-        _boxManagePulseTimer.Tick += BoxManagePulse;
-        _boxManagePulseTimer.Start();
+        _viewModel.Status = "BOX MANAGER - A HOLD · L/R BROWSE · Y SELECT · X ACTIONS";
+        _sidePanel.IsVisible = false;
+        _storageContent.ColumnDefinitions[1].Width = new GridLength(0);
+        _storageContent.ColumnSpacing = 0;
+        _canvas.EnableTouchEvents = false;
+        _boxNeighbors.IsVisible = true;
+        _boxNeighbors.HeightRequest = 100;
+        SetBoxManageFooter();
+        if (_boxManagePulseTimer is null)
+        {
+            _boxManagePulseTimer = Dispatcher.CreateTimer();
+            _boxManagePulseTimer.Interval = TimeSpan.FromMilliseconds(60);
+            _boxManagePulseTimer.Tick += BoxManagePulse;
+        }
         _boxBar.InvalidateSurface();
     }
 
     private void BoxManagePulse(object? sender, EventArgs args) => _boxBar.InvalidateSurface();
 
+    private void UpdateBoxManagePulse()
+    {
+        if (_boxManageMode && _boxHeld) _boxManagePulseTimer?.Start();
+        else _boxManagePulseTimer?.Stop();
+    }
+
     private void ExitBoxManageMode()
     {
         if (!_boxManageMode) return;
         _boxManageMode = false;
+        _boxHeld = false;
+        _markedBoxes.Clear();
         _boxManagePulseTimer?.Stop();
+        _boxNeighbors.IsVisible = false;
+        _canvas.EnableTouchEvents = true;
+        _sidePanel.IsVisible = true;
+        _storageContent.ColumnDefinitions[1].Width = new GridLength(330);
+        _storageContent.ColumnSpacing = 12;
+        _viewModel.SelectedSlot = _slotBeforeBoxManage;
+        SetStorageFooter();
         _viewModel.Status = "READY";
         _boxBar.InvalidateSurface();
     }
@@ -354,44 +462,132 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             _heldBox = target;
             _viewModel.BoxIndex = target;
             _viewModel.RefreshAllSlots();
-            _viewModel.Status = $"HOLDING BOX {_heldBox + 1:00} - L/R REORDER · Y DELETE · A/B DONE";
+            _viewModel.Status = $"HOLDING BOX {_heldBox + 1:00} - L/R SWAP · A DROP";
             _canvas.InvalidateSurface();
             _boxBar.InvalidateSurface();
+            _boxNeighbors.InvalidateSurface();
         }
         finally { _boxManageBusy = false; }
     }
 
-    private async Task DeleteHeldBoxAsync()
+    private void BrowseManagedBoxes(int delta)
     {
-        if (_boxManageBusy) return;
-        _boxManageBusy = true;
-        try
-        {
-        var session = _sessionsFor();
-        if (session is null) return;
-        var count = Enumerable.Range(0, BoxGridRenderer.Rows * BoxGridRenderer.Columns)
-            .Count(slot => !session.ReadEntity(_heldBox, slot).IsEmpty);
-        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, $"DELETE BOX {_heldBox + 1:00}?",
-            count == 0
-                ? "This empty box is removed from the order. A blank box remains at the end."
-                : $"Its {count} Pokémon are rescued, later boxes shift left, and a restore point is created first.",
-            "Delete");
-        if (!confirmed) return;
+        var target = _viewModel.BoxIndex + delta;
+        if ((uint)target >= (uint)_viewModel.BoxCount) return;
+        _viewModel.BoxIndex = target;
+        _heldBox = target;
+        SetBoxManageFooter();
+        _boxNeighbors.InvalidateSurface();
+    }
 
-        var box = _heldBox;
-        var ok = await _viewModel.RunMutationAsync(s =>
+    private void ToggleMarkedBox()
+    {
+        var box = _viewModel.BoxIndex;
+        if (!_markedBoxes.Remove(box)) _markedBoxes.Add(box);
+        _viewModel.Status = _markedBoxes.Count == 0
+            ? "BOX MANAGER - no boxes selected"
+            : $"BOX MANAGER - {_markedBoxes.Count} BOX(ES) SELECTED";
+        SetBoxManageFooter();
+        _boxNeighbors.InvalidateSurface();
+    }
+
+    private async Task ShowBoxBulkActionsAsync()
+    {
+        if (_boxHeld || _boxManageBusy) return;
+        var selected = _markedBoxes.Count == 0 ? new[] { _viewModel.BoxIndex } : _markedBoxes.OrderBy(x => x).ToArray();
+        var noun = selected.Length == 1 ? $"BOX {selected[0] + 1:00}" : $"{selected.Length} SELECTED BOXES";
+        var emptyLabel = _markedBoxes.Count > 0 ? "Empty selected boxes" : "Empty all boxes";
+        var choice = await PadMenu.ShowAsync(_hostGrid, $"BOX ACTIONS · {noun}",
+            "No selection means the current box. Every write creates a restore point.",
+            new PadOption("Select all boxes", IconPath: "storage"),
+            new PadOption("Copy box(es)…", IconPath: "storage"),
+            new PadOption("Delete box(es) (rescue Pokémon)", IconPath: "release"),
+            new PadOption(emptyLabel, IconPath: "release"),
+            new PadOption("Clear selection", IconPath: "hex"));
+        if (choice == "Select all boxes")
         {
-            s.DeleteBox(box);
-            return new GenerationOutcome(true, $"Box {box + 1:00} removed from the order.");
-        }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
-        if (!ok) return;
-        _heldBox = Math.Min(box, _viewModel.BoxCount - 1);
-        _viewModel.BoxIndex = _heldBox;
-        _viewModel.RefreshAllSlots();
-        _viewModel.Status = $"HOLDING BOX {_heldBox + 1:00} - L/R REORDER · Y DELETE · A/B DONE";
-        _canvas.InvalidateSurface();
+            _markedBoxes.Clear();
+            foreach (var box in Enumerable.Range(0, _viewModel.BoxCount)) _markedBoxes.Add(box);
+            _viewModel.Status = $"BOX MANAGER - {_markedBoxes.Count} BOXES SELECTED";
+            SetBoxManageFooter();
+            _boxNeighbors.InvalidateSurface();
+            return;
         }
-        finally { _boxManageBusy = false; }
+        if (choice == "Clear selection")
+        {
+            _markedBoxes.Clear();
+            SetBoxManageFooter();
+            _boxNeighbors.InvalidateSurface();
+            return;
+        }
+        if (choice == emptyLabel && choice == "Empty selected boxes")
+        {
+            var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "EMPTY SELECTED BOXES?",
+                $"Release every Pokémon in {selected.Length} box(es). A restore point is created first.", "Empty");
+            if (!confirmed) return;
+            await _viewModel.RunMutationAsync(session =>
+            {
+                foreach (var box in selected) session.ClearBox(box);
+                return new GenerationOutcome(true, $"Emptied {selected.Length} box(es).");
+            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+        }
+        else if (choice == "Empty all boxes")
+        {
+            var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "EMPTY EVERY BOX?",
+                "Release every boxed Pokémon. Party Pokémon are untouched. A restore point is created first.", "Empty all");
+            if (!confirmed) return;
+            await _viewModel.RunMutationAsync(session =>
+            {
+                foreach (var box in Enumerable.Range(0, _viewModel.BoxCount)) session.ClearBox(box);
+                return new GenerationOutcome(true, "All storage boxes emptied.");
+            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+        }
+        else if (choice == "Copy box(es)…")
+        {
+            var starts = Enumerable.Range(0, _viewModel.BoxCount - selected.Length + 1)
+                .Select(i => $"Start at box {i + 1:00}").ToArray();
+            var targetChoice = await PadMenu.ShowAsync(_hostGrid, "COPY BOXES", "Choose the first destination box. Existing contents there will be replaced.", starts);
+            var start = Array.IndexOf(starts, targetChoice);
+            if (start < 0) return;
+            var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "REPLACE DESTINATION BOXES?",
+                $"Copy {selected.Length} box(es) starting at box {start + 1:00}. Destination contents will be replaced.", "Copy");
+            if (!confirmed) return;
+            await _viewModel.RunMutationAsync(session =>
+            {
+                var copies = selected.Select(source => Enumerable.Range(0, BoxGridRenderer.Columns * BoxGridRenderer.Rows)
+                    .Where(slot => !session.ReadEntity(source, slot).IsEmpty)
+                    .Select(slot => (Slot: slot, Data: session.ExportSlot(source, slot).Data)).ToArray()).ToArray();
+                for (var i = 0; i < copies.Length; i++)
+                {
+                    session.ClearBox(start + i);
+                    foreach (var copy in copies[i])
+                        session.ImportSlot(start + i, copy.Slot, copy.Data);
+                }
+                return new GenerationOutcome(true, $"Copied {copies.Length} box(es) starting at box {start + 1:00}.");
+            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+        }
+        else if (choice == "Delete box(es) (rescue Pokémon)")
+        {
+            var rescueNote = selected.Length >= _viewModel.BoxCount
+                ? "Every box is selected: rescued Pokémon have nowhere to go, so they are released."
+                : "Pokémon are rescued into free slots first.";
+            var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "DELETE SELECTED BOXES?",
+                $"Remove {selected.Length} box(es) from the order. {rescueNote}", "Delete");
+            if (!confirmed) return;
+            await _viewModel.RunMutationAsync(session =>
+            {
+                foreach (var box in selected.OrderByDescending(x => x)) session.DeleteBox(box);
+                return new GenerationOutcome(true, $"Removed {selected.Length} box(es) from the order.");
+            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+        }
+        else return;
+
+        _markedBoxes.Clear();
+        _viewModel.RefreshAllSlots();
+        _heldBox = _viewModel.BoxIndex;
+        SetBoxManageFooter();
+        _canvas.InvalidateSurface();
+        _boxNeighbors.InvalidateSurface();
     }
 
     /// <summary>Bulk actions for the organizer's marked selection.</summary>
@@ -730,142 +926,6 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         if (sorted)
             _viewModel.RefreshAllSlots();
         _canvas.InvalidateSurface();
-    }
-
-    /// <summary>Box order and lifecycle: the manage-boxes MODE (grab, swap, mark, bulk).</summary>
-    private async Task ShowBoxManagerAsync()
-    {
-        var session = _sessionsFor();
-        if (session is null) return;
-        var slotsPerBox = BoxGridRenderer.Rows * BoxGridRenderer.Columns;
-
-        int CountFor(int box)
-        {
-            var count = 0;
-            for (var slot = 0; slot < slotsPerBox; slot++)
-                if (!session.ReadEntity(box, slot).IsEmpty) count++;
-            return count;
-        }
-
-        await BoxManageOverlay.ShowAsync(
-            _hostGrid, _viewModel.BoxCount, slotsPerBox, CountFor,
-            box => session.GetBoxName(box), _viewModel.BoxIndex,
-            swap: async (a, b) => await _viewModel.RunMutationAsync(session2 =>
-            {
-                session2.SwapBoxes(a, b);
-                return new GenerationOutcome(true, $"Boxes {a + 1:00} and {b + 1:00} swapped.");
-            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false),
-            clear: async boxes => await _viewModel.RunMutationAsync(session2 =>
-            {
-                foreach (var box in boxes) session2.ClearBox(box);
-                return new GenerationOutcome(true, $"{boxes.Count} box(es) cleared.");
-            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false),
-            delete: async boxes => await _viewModel.RunMutationAsync(session2 =>
-            {
-                foreach (var box in boxes.OrderByDescending(x => x)) session2.DeleteBox(box);
-                return new GenerationOutcome(true, $"{boxes.Count} box(es) removed from the order.");
-            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false),
-            status: message => _viewModel.Status = message);
-        _viewModel.RefreshAllSlots();
-        _canvas.InvalidateSurface();
-    }
-
-    /// <summary>Legacy box menu (single-box ops still reachable): kept behind the mode.</summary>
-    private async Task ShowBoxManagerMenuAsync()
-    {
-        var current = _viewModel.BoxIndex;
-        while (true)
-        {
-            var choice = await PadMenu.ShowAsync(_hostGrid, $"MANAGE BOXES · BOX {current + 1:00}",
-                "Box operations apply with one backed-up write.",
-                new PadOption($"Swap box {current + 1:00} with…", IconPath: "storage"),
-                new PadOption($"Duplicate box {current + 1:00}", IconPath: "storage"),
-                new PadOption($"Clear box {current + 1:00}", IconPath: "hex"),
-                new PadOption($"Delete box {current + 1:00} (rescue mons)", IconPath: "release"));
-            switch (choice)
-            {
-                case var swap when swap?.StartsWith("Swap box", StringComparison.Ordinal) == true:
-                {
-                    var boxes = Enumerable.Range(1, _viewModel.BoxCount).Where(n => n != current + 1)
-                        .Select(n => $"Box {n:00}").ToArray();
-                    var target = await PadMenu.ShowAsync(_hostGrid, "SWAP WITH WHICH BOX?", null, boxes);
-                    if (target is null) break;
-                    var targetIndex = Array.FindIndex(boxes, b => b == target);
-                    if (targetIndex < 0) break;
-                    await _viewModel.RunMutationAsync(session =>
-                    {
-                        session.SwapBoxes(current, targetIndex);
-                        return new GenerationOutcome(true, $"Box {current + 1:00} swapped with box {targetIndex + 1:00}.");
-                    }, Math.Max(0, _viewModel.SelectedSlot));
-                    _canvas.InvalidateSurface();
-                    break;
-                }
-                case var dup when dup?.StartsWith("Duplicate box", StringComparison.Ordinal) == true:
-                {
-                    // Copy this box's mons into the emptiest boxes (same-format mons, no move).
-                    var session = _sessionsFor();
-                    if (session is null) break;
-                    var exports = Enumerable.Range(0, BoxGridRenderer.Rows * BoxGridRenderer.Columns)
-                        .Where(slot => _viewModel.VisibleSlots[slot].Species is not null)
-                        .Select(slot => session.ExportSlot(current, slot))
-                        .ToList();
-                    if (exports.Count == 0) { _viewModel.Status = "This box is empty."; break; }
-                    var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "DUPLICATE BOX?",
-                        $"{exports.Count} Pokémon copied into the first empty slots of other boxes.", "Duplicate");
-                    if (!confirmed) break;
-                    await _viewModel.RunMutationAsync(s =>
-                    {
-                        var placed = 0;
-                        foreach (var export in exports)
-                        {
-                            for (var box = 0; box < _viewModel.BoxCount; box++)
-                            {
-                                if (box == current) continue;
-                                for (var slot = 0; slot < BoxGridRenderer.Rows * BoxGridRenderer.Columns; slot++)
-                                {
-                                    if (!s.ReadEntity(box, slot).IsEmpty) continue;
-                                    if (s.ImportSlot(box, slot, export.Data)) { placed++; box = _viewModel.BoxCount; break; }
-                                }
-                            }
-                        }
-                        return placed > 0
-                            ? new GenerationOutcome(true, $"Duplicated {placed} Pokémon into other boxes.")
-                            : new GenerationOutcome(false, "No empty slots anywhere else.");
-                    }, Math.Max(0, _viewModel.SelectedSlot));
-                    _canvas.InvalidateSurface();
-                    break;
-                }
-                case var clear when clear?.StartsWith("Clear box", StringComparison.Ordinal) == true:
-                {
-                    var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "CLEAR BOX?",
-                        $"Every Pokémon in box {current + 1:00} is released. Backed up first.", "Clear");
-                    if (!confirmed) break;
-                    await _viewModel.RunMutationAsync(session =>
-                    {
-                        session.ClearBox(current);
-                        return new GenerationOutcome(true, $"Box {current + 1:00} cleared.");
-                    }, Math.Max(0, _viewModel.SelectedSlot));
-                    _canvas.InvalidateSurface();
-                    break;
-                }
-                case var del when del?.StartsWith("Delete box", StringComparison.Ordinal) == true:
-                {
-                    var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "DELETE BOX?",
-                        $"Box {current + 1:00} is emptied and its Pokémon are rescued into other boxes " +
-                        "(only released if storage is completely full).", "Delete");
-                    if (!confirmed) break;
-                    await _viewModel.RunMutationAsync(session =>
-                    {
-                        session.DeleteBox(current);
-                        return new GenerationOutcome(true, $"Box {current + 1:00} deleted, mons rescued.");
-                    }, Math.Max(0, _viewModel.SelectedSlot));
-                    _canvas.InvalidateSurface();
-                    break;
-                }
-                default:
-                    return;
-            }
-        }
     }
 
     /// <summary>
@@ -1711,10 +1771,24 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         {
             switch (button)
             {
-                case PadButton.L: _ = ShiftHeldBoxAsync(-1); return true;
-                case PadButton.R: _ = ShiftHeldBoxAsync(1); return true;
-                case PadButton.Y: _ = DeleteHeldBoxAsync(); return true;
+                case PadButton.L:
+                    if (_boxHeld) _ = ShiftHeldBoxAsync(-1); else BrowseManagedBoxes(-1);
+                    return true;
+                case PadButton.R:
+                    if (_boxHeld) _ = ShiftHeldBoxAsync(1); else BrowseManagedBoxes(1);
+                    return true;
+                case PadButton.Y: ToggleMarkedBox(); return true;
+                case PadButton.X: _ = ShowBoxBulkActionsAsync(); return true;
                 case PadButton.A:
+                    _boxHeld = !_boxHeld;
+                    _heldBox = _viewModel.BoxIndex;
+                    _viewModel.Status = _boxHeld
+                        ? $"HOLDING BOX {_heldBox + 1:00} - L/R SWAP · A DROP"
+                        : "BOX MANAGER - A HOLD · L/R BROWSE · Y SELECT · X ACTIONS";
+                    SetBoxManageFooter();
+                    UpdateBoxManagePulse();
+                    _boxBar.InvalidateSurface();
+                    return true;
                 case PadButton.B: ExitBoxManageMode(); return true;
                 default: return true;
             }
@@ -2045,8 +2119,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
     protected override void OnDisappearing()
     {
-        _boxManageMode = false;
-        _boxManagePulseTimer?.Stop();
+        if (_boxManageMode) ExitBoxManageMode();
         base.OnDisappearing();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
     }
