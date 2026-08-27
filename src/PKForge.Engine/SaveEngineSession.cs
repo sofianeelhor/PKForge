@@ -461,10 +461,16 @@ public sealed class SaveEngineSession : ISaveEngineSession
         }
 
         // Save formats have a fixed physical box count. Logical deletion closes the
-        // ordering gap and leaves one new empty box at the end, moving box metadata and
-        // slot pointers along with the contents through PKHeX's native operation.
-        if (box < _save.BoxCount - 1 && !_save.MoveBox(box, _save.BoxCount - 1))
-            throw new InvalidOperationException("This save does not allow that box to move.");
+        // ordering gap and leaves one new empty box at the end. PKHeX's MoveBox assumes
+        // boxes are packed at exactly 30*SIZE_STORED bytes, but Gen 5 boxes carry a
+        // 16-byte gap (stride 4096 vs 4080), so MoveBox shears the storage and the
+        // written save reloads as invalid species. SwapBox uses each format's exact
+        // GetBoxOffset, so chaining adjacent swaps moves the box safely on every format.
+        for (var target = box; target < _save.BoxCount - 1; target++)
+        {
+            if (!_save.SwapBox(target, target + 1))
+                throw new InvalidOperationException("This save does not allow that box to move.");
+        }
     }
 
     public void ClearBox(int box)
