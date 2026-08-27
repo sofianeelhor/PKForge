@@ -258,7 +258,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Export box to Showdown", IconPath: "script"),
             new PadOption("Generate Living Dex", IconPath: "pokedex"),
             new PadOption("Batch editor", IconPath: "script"),
-            new PadOption("Manage boxes…", IconPath: "storage"));
+            new PadOption("Manage boxes…", IconPath: "storage"),
+            new PadOption("Sort boxes…", IconPath: "restore"));
         switch (choice)
         {
             case "Organizer (multi-select)":
@@ -282,6 +283,9 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 return;
             case "Manage boxes…":
                 await ShowBoxManagerAsync();
+                return;
+            case "Sort boxes…":
+                await ShowSortMenuAsync();
                 return;
         }
     }
@@ -542,12 +546,32 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             "Fill my boxes");
         if (!confirmed) return;
 
-        var overlay = LoadingOverlay.Show(_hostGrid, "BUILDING THE LIVING DEX…",
-            "The offline legalizer is generating one of everything. Feel free to admire the walking Pokémon.");
+        var session = _sessionsFor();
+        if (session is null) { _viewModel.Status = "No save connected."; return; }
+        byte[]? bundle = null;
         try
         {
-            await _viewModel.RunLegalizerAsync((legalizer, s) =>
-                legalizer.FillLivingDex(s, overlay.Report, overlay.Cancellation.Token), Math.Max(0, _viewModel.SelectedSlot));
+            await using var stream = await FileSystem.OpenAppPackageFileAsync($"dex/dex-g{session.Generation}.bin.gz");
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            bundle = memory.ToArray();
+        }
+        catch
+        {
+            _viewModel.Status = "No living dex bundle for this generation yet.";
+            return;
+        }
+
+        var overlay = LoadingOverlay.Show(_hostGrid, "FILLING THE LIVING DEX…",
+            "One of every species, copied from the pre-generated dex. This is a straight write.");
+        try
+        {
+            await _viewModel.RunMutationAsync(s =>
+            {
+                var outcome = ((ILegalizerService)IPlatformApplication.Current!.Services.GetRequiredService(typeof(ILegalizerService)))
+                    .FillLivingDex(s, bundle!);
+                return outcome;
+            }, Math.Max(0, _viewModel.SelectedSlot));
             _viewModel.RefreshAllSlots();
             _canvas.InvalidateSurface();
         }
@@ -555,6 +579,51 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         {
             overlay.Close();
         }
+    }
+
+    /// <summary>Auto-sort: pick a criteria, pick a scope, one backed-up write compacts mons front.</summary>
+    private async Task ShowSortMenuAsync()
+    {
+        var choice = await PadMenu.ShowAsync(_hostGrid, "SORT", "How should the boxes be ordered?",
+            new PadOption("Dex number", IconPath: "pokedex"),
+            new PadOption("Alphabetical", IconPath: "script"),
+            new PadOption("Level (strongest first)", IconPath: "sword"),
+            new PadOption("IV total (best first)", IconPath: "spark"),
+            new PadOption("Type", IconPath: "leaf"),
+            new PadOption("Age (oldest first)", IconPath: "restore"),
+            new PadOption("Shiny first", IconPath: "spark"));
+        if (choice is null) return;
+
+        var scope = await PadMenu.ShowAsync(_hostGrid, "SORT", "Which boxes?",
+            new PadOption("This box", IconPath: "storage"),
+            new PadOption("All boxes", IconPath: "storage"));
+        if (scope is null) return;
+
+        var criteria = choice switch
+        {
+            "Alphabetical" => Domain.SortCriteria.Alphabetical,
+            "Level (strongest first)" => Domain.SortCriteria.LevelDesc,
+            "IV total (best first)" => Domain.SortCriteria.IvTotalDesc,
+            "Type" => Domain.SortCriteria.Type,
+            "Age (oldest first)" => Domain.SortCriteria.AgeOldest,
+            "Shiny first" => Domain.SortCriteria.ShinyFirst,
+            _ => Domain.SortCriteria.DexNumber,
+        };
+        IReadOnlyList<int>? boxes = scope == "This box" ? [_viewModel.BoxIndex] : null;
+
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "SORT NOW?",
+            scope == "This box"
+                ? "This box's Pokémon are reordered and compacted to the top."
+                : "Every box's Pokémon are pooled, ordered, and compacted from box 1. Empties gather at the end.",
+            "Sort");
+        if (!confirmed) return;
+
+        await _viewModel.RunMutationAsync(session =>
+        {
+            var placed = session.SortBoxes(criteria, boxes);
+            return new GenerationOutcome(true, $"Sorted {placed} Pokémon.");
+        }, Math.Max(0, _viewModel.SelectedSlot));
+        _canvas.InvalidateSurface();
     }
 
     /// <summary>Box order and lifecycle: the manage-boxes MODE (grab, swap, mark, bulk).</summary>

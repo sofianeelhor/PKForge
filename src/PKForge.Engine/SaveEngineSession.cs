@@ -245,6 +245,84 @@ public sealed class SaveEngineSession : ISaveEngineSession
         }
     }
 
+    public int Generation => _save.Generation;
+
+    public int PlaceLivingDex(byte[] compressedBundle)
+    {
+        ThrowIfDisposed();
+        using var input = new MemoryStream(compressedBundle);
+        using var inflate = new System.IO.Compression.GZipStream(input, System.IO.Compression.CompressionMode.Decompress);
+        using var raw = new MemoryStream();
+        inflate.CopyTo(raw);
+        raw.Position = 0;
+        using var reader = new BinaryReader(raw);
+        var capacity = _save.BoxCount * _save.BoxSlotCount;
+        var placed = 0;
+        var bundleGeneration = reader.ReadInt32(); // header: generation, then count
+        if (bundleGeneration != _save.Generation)
+            return 0; // wrong bundle for this game: refuse, write nothing
+        var count = reader.ReadInt32();
+        for (var i = 0; i < count; i++)
+        {
+            var species = reader.ReadUInt16();
+            var length = reader.ReadInt32();
+            var data = reader.ReadBytes(length);
+            if (placed >= capacity) break;
+            var mon = EntityFormat.GetFromBytes(data, _save.Context);
+            if (mon is null || mon.Species == 0 || mon.Species != species) continue;
+            _save.SetBoxSlotAtIndex(mon, placed / _save.BoxSlotCount, placed % _save.BoxSlotCount);
+            placed++;
+        }
+        return placed;
+    }
+
+    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null)
+    {
+        ThrowIfDisposed();
+        var targetBoxes = boxes ?? Enumerable.Range(0, _save.BoxCount).ToList();
+        var slotsPerBox = _save.BoxSlotCount;
+
+        // Read every mon from the target boxes once, in stable storage order.
+        var mons = new List<PKM>(targetBoxes.Count * slotsPerBox);
+        var orderedBoxes = targetBoxes.Where(b => (uint)b < (uint)_save.BoxCount).OrderBy(b => b).ToList();
+        foreach (var box in orderedBoxes)
+            for (var slot = 0; slot < slotsPerBox; slot++)
+            {
+                var mon = GetEntityCore(box, slot);
+                if (mon.Species != 0) mons.Add(mon);
+            }
+
+        int TypeRank(PKM mon) => mon.PersonalInfo.Type1; // dex type order runs types 0..17
+        int MetAge(PKM mon) => mon.MetDate?.DayNumber is { } day ? int.MaxValue - Math.Min(day, int.MaxValue - 1) : int.MaxValue;
+
+        mons = criteria switch
+        {
+            SortCriteria.DexNumber => mons.OrderBy(m => m.Species).ThenBy(m => m.Form).ThenBy(m => m.TID16).ToList(),
+            SortCriteria.Alphabetical => mons.OrderBy(m => GameInfo.Strings.specieslist[m.Species], StringComparer.OrdinalIgnoreCase)
+                .ThenBy(m => m.Species).ToList(),
+            SortCriteria.LevelDesc => mons.OrderByDescending(m => m.CurrentLevel).ThenBy(m => m.Species).ToList(),
+            SortCriteria.IvTotalDesc => mons.OrderByDescending(m => m.IVTotal).ThenBy(m => m.Species).ToList(),
+            SortCriteria.Type => mons.OrderBy(TypeRank).ThenBy(m => m.Species).ThenBy(m => m.Form).ToList(),
+            SortCriteria.AgeOldest => mons.OrderBy(MetAge).ThenBy(m => m.Species).ToList(),
+            SortCriteria.ShinyFirst => mons.OrderByDescending(m => m.IsShiny ? 1 : 0).ThenBy(m => m.Species).ThenBy(m => m.Form).ToList(),
+            _ => mons,
+        };
+
+        // Compact: write back into the target boxes front-first, then blank the tails.
+        var placed = 0;
+        foreach (var box in orderedBoxes)
+        {
+            for (var slot = 0; slot < slotsPerBox; slot++)
+            {
+                if (placed < mons.Count)
+                    SetEntityCore(box, slot, mons[placed++]);
+                else
+                    SetEntityCore(box, slot, _save.BlankPKM);
+            }
+        }
+        return mons.Count;
+    }
+
     public int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null)
     {
         ThrowIfDisposed();
@@ -495,6 +573,9 @@ public sealed class SaveEngineSession : ISaveEngineSession
                     .Select(item => new BagItem(item.Index, item.Count)).ToList()))
             .ToList();
     }
+
+    /// <summary>Highest species id this game's dex supports (per its personal table).</summary>
+    public int MaxSpeciesID => _save.MaxSpeciesID;
 
     public IReadOnlyList<string> GetItemNames()
     {

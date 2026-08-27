@@ -11,6 +11,9 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Ability ids this species/form can legally have in the open save's game.</summary>
     IReadOnlyList<int> GetAbilityChoices(int species, int form);
 
+    /// <summary>Console generation of the open save (1-9): selects the living dex bundle.</summary>
+    int Generation { get; }
+
     /// <summary>The open game's own item name table, indexed by its item ids. Modern
     /// lists misname Gen 1-4 ids (Rare Candy et al); this is per-context truth.</summary>
     IReadOnlyList<string> GetItemNames();
@@ -36,6 +39,21 @@ public interface ISaveEngineSession : IDisposable
 
     /// <summary>Empties the slot (release). Irreversible except via restore points.</summary>
     void ReleaseSlot(int box, int slot);
+
+    /// <summary>
+    /// Sorts the given boxes (null = every box). Mons compact to the front of the
+    /// FIRST target box, overflow continues into the next; empties pool at the end.
+    /// Party is untouched. One write on Save.
+    /// </summary>
+    /// <returns>How many mons were placed.</returns>
+    /// <summary>
+    /// Fills the storage with the pre-generated living dex bundle (built by tools/DexGen,
+    /// shipped as an asset): one of each species, copied byte-for-byte. Zero on-device
+    /// legalization. Returns how many mons were placed.
+    /// </summary>
+    int PlaceLivingDex(byte[] compressedBundle);
+
+    int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null);
 
     /// <summary>Applies an instruction ("Prop=Value", $suggest/$rand/$shiny) to every non-empty
     /// slot in the given boxes (null = all boxes). Returns how many mons were touched.</summary>
@@ -171,7 +189,7 @@ public interface ILegalizerService
     GenerationOutcome LegalizeSlot(ISaveEngineSession session, int box, int slot);
 
     /// <summary>Fills the PC from box 0 slot 0 with a legal living dex (overwrites; caller confirms + backs up).</summary>
-    GenerationOutcome FillLivingDex(ISaveEngineSession session, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
+    GenerationOutcome FillLivingDex(ISaveEngineSession session, byte[] compressedBundle, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
 
     /// <summary>Generates a legal mon as raw bytes + facts, without touching the save (bank deposits).</summary>
     GeneratedEntity? GenerateData(ISaveEngineSession session, GenerationRequest request);
@@ -220,6 +238,25 @@ public sealed record BagPouch(string Name, IReadOnlyList<BagItem> Items);
 public sealed record BagItem(int Id, int Count);
 
 /// <summary>Common editable fields of one Pokémon entity.</summary>
+public enum SortCriteria
+{
+    /// <summary>National dex number, then form.</summary>
+    DexNumber,
+    /// <summary>Species display name, A-Z.</summary>
+    Alphabetical,
+    /// <summary>Current level, strongest first.</summary>
+    LevelDesc,
+    /// <summary>IV total, best first.</summary>
+    IvTotalDesc,
+    /// <summary>Primary type (dex type order), then dex number: type-run boxes.</summary>
+    Type,
+    /// <summary>Met date, oldest team first (nulls last).</summary>
+    AgeOldest,
+    /// <summary>Shinies first, then dex number.</summary>
+    ShinyFirst,
+}
+
+
 public sealed record EntityDetail(
     int Box,
     int Slot,

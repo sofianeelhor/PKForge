@@ -107,38 +107,19 @@ public sealed class LegalizerService : ILegalizerService
         return new GeneratedEntity(data, info);
     }
 
-    public GenerationOutcome FillLivingDex(ISaveEngineSession session, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
+    public GenerationOutcome FillLivingDex(ISaveEngineSession session, byte[] compressedBundle, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
     {
         if (session is not SaveEngineSession engineSession)
             return new GenerationOutcome(false, "Unsupported session type.");
+        if (compressedBundle is not { Length: > 0 })
+            return new GenerationOutcome(false, "No living dex bundle for this game - nothing written.");
+
         var save = engineSession.SaveFile;
-
-        // Smoke test first: the bulk generator can stall producing nothing on some
-        // game formats (engine-pin mismatch). Fail in seconds, not after minutes of
-        // grinding that reads as a crash on device.
-        var probe = save.GenerateLivingDex(save.Personal).FirstOrDefault();
-        if (probe is null || probe.Species == 0)
-            return new GenerationOutcome(false,
-                "The living dex generator cannot build Pokémon for this game yet (known issue on some formats). " +
-                "Nothing was written; your save is untouched.");
-
         var capacity = save.BoxCount * save.BoxSlotCount;
-        var placed = 0;
-        var first = probe;
-        save.SetBoxSlotAtIndex(first, 0, 0);
-        placed = 1;
+        var placed = engineSession.PlaceLivingDex(compressedBundle);
         onProgress?.Invoke(placed, capacity);
-        foreach (var pk in save.GenerateLivingDex(save.Personal).Skip(1))
-        {
-            if (cancellationToken.IsCancellationRequested)
-                return new GenerationOutcome(placed > 0, $"Living dex stopped at {placed} Pokémon.");
-            if (placed >= capacity) break;
-            save.SetBoxSlotAtIndex(pk, placed / save.BoxSlotCount, placed % save.BoxSlotCount);
-            placed++;
-            onProgress?.Invoke(placed, capacity);
-        }
         return placed == 0
-            ? new GenerationOutcome(false, "The living dex generator produced nothing for this game.")
+            ? new GenerationOutcome(false, "The bundle held no compatible Pokémon; nothing was written.")
             : new GenerationOutcome(true, $"Living dex: {placed} Pokémon placed.");
     }
 
@@ -147,6 +128,10 @@ public sealed class LegalizerService : ILegalizerService
     {
         var text = new StringBuilder();
         var speciesName = _strings.specieslist[request.Species];
+        // Showdown names spell the Nidoran pair with a suffix; the gender sign alone
+        // misparses as the wrong sibling.
+        if (request.Species is (int)PKHeX.Core.Species.NidoranM) speciesName = "Nidoran-M";
+        else if (request.Species is (int)PKHeX.Core.Species.NidoranF) speciesName = "Nidoran-F";
         if (request.Form > 0)
         {
             // "Rotom" + "-" + "Wash" => "Rotom-Wash"; the showdown parser matches form
