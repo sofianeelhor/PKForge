@@ -113,9 +113,22 @@ public sealed class LegalizerService : ILegalizerService
             return new GenerationOutcome(false, "Unsupported session type.");
         var save = engineSession.SaveFile;
 
+        // Smoke test first: the bulk generator can stall producing nothing on some
+        // game formats (engine-pin mismatch). Fail in seconds, not after minutes of
+        // grinding that reads as a crash on device.
+        var probe = save.GenerateLivingDex(save.Personal).FirstOrDefault();
+        if (probe is null || probe.Species == 0)
+            return new GenerationOutcome(false,
+                "The living dex generator cannot build Pokémon for this game yet (known issue on some formats). " +
+                "Nothing was written; your save is untouched.");
+
         var capacity = save.BoxCount * save.BoxSlotCount;
         var placed = 0;
-        foreach (var pk in save.GenerateLivingDex(save.Personal))
+        var first = probe;
+        save.SetBoxSlotAtIndex(first, 0, 0);
+        placed = 1;
+        onProgress?.Invoke(placed, capacity);
+        foreach (var pk in save.GenerateLivingDex(save.Personal).Skip(1))
         {
             if (cancellationToken.IsCancellationRequested)
                 return new GenerationOutcome(placed > 0, $"Living dex stopped at {placed} Pokémon.");
