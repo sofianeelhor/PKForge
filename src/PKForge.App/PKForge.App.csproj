@@ -13,6 +13,13 @@
     <ApplicationVersion>120</ApplicationVersion>
     <ApplicationDisplayVersion>1.2.0</ApplicationDisplayVersion>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
+    <!-- PKHeX loads item/species text and legality binaries from embedded manifest
+         resources BY STRING NAME - invisible to the trimmer. Full AOT + trim stripped
+         them all, so every table loaded empty on device. Ship the engine assemblies
+         untrimmed and un-AOT'd; correctness over binary size. -->
+    <AndroidLinkTool>None</AndroidLinkTool>
+    <RunAOTCompilation>false</RunAOTCompilation>
+    <TrimMode>copy</TrimMode>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
@@ -21,6 +28,7 @@
     <PackageReference Include="ZXing.Net" Version="0.16.10" />
   </ItemGroup>
   <ItemGroup>
+    <AndroidLinkDescription Include="Platforms/Android/linker.xml" />
     <MauiIcon Include="Resources/AppIcon/pkforge.png" Color="#E9ECF6" />
     <MauiSplashScreen Include="Resources/Splash/splash.png" Color="#E9ECF6" BaseSize="192,192" />
     <MauiFont Include="Resources/Fonts/*.ttf" />

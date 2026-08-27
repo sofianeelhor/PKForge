@@ -1,0 +1,9 @@
+<linker>
+  <!-- PKHeX loads its data (item/species text, legality encounter binaries) through
+       GetManifestResourceStream BY STRING NAME, which the trimmer cannot see. Under
+       full AOT+trimming every embedded resource was stripped, so on-device every
+       table loaded empty: items showed as #ids, the legalizer produced nothing.
+       Preserve both engine assemblies completely. -->
+  <assembly fullname="PKHeX.Core" preserve="all" />
+  <assembly fullname="PKHeX.Core.AutoMod" preserve="all" />
+</linker>
