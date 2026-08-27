@@ -245,6 +245,146 @@ public sealed class SaveEngineSession : ISaveEngineSession
         }
     }
 
+    public int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null)
+    {
+        ThrowIfDisposed();
+        var targetBoxes = boxes ?? Enumerable.Range(0, _save.BoxCount).ToList();
+        var touched = 0;
+        foreach (var box in targetBoxes)
+        {
+            if ((uint)box >= (uint)_save.BoxCount) continue;
+            for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+            {
+                var entity = GetEntityCore(box, slot);
+                if (entity.Species == 0) continue;
+                if (ApplyInstructions(entity, instructions)) touched++;
+            }
+        }
+        return touched;
+    }
+
+    /// <summary>Parses ".Prop=Value" instructions against one entity, PKHeX batch-editor style.</summary>
+    private static bool ApplyInstructions(PKM entity, IReadOnlyList<string> instructions)
+    {
+        var changed = false;
+        var rnd = Random.Shared;
+        foreach (var raw in instructions)
+        {
+            var line = raw.Trim();
+            if (line.Length == 0) continue;
+            var eq = line.IndexOf('=');
+            if (eq <= 0) continue;
+            var prop = line[..eq].Trim().TrimStart('.').ToLowerInvariant();
+            var value = line[(eq + 1)..].Trim();
+
+            int ParseValue() => value switch
+            {
+                "$rand" => rnd.Next(0, 32),
+                "$shiny" => 1,
+                "$suggest" => 0,
+                _ => int.TryParse(value, out var n) ? n : 0,
+            };
+
+            switch (prop)
+            {
+                case "level" or "lv": entity.CurrentLevel = (byte)Math.Clamp(ParseValue(), 1, 100); changed = true; break;
+                case "nature": entity.Nature = (Nature)Math.Clamp(ParseValue(), 0, 24); changed = true; break;
+                case "friendship": entity.CurrentFriendship = (byte)Math.Clamp(ParseValue(), 0, 255); changed = true; break;
+                case "ball": entity.Ball = (byte)Math.Clamp(ParseValue(), 0, 100); changed = true; break;
+                case "helditem" or "item": entity.HeldItem = ParseValue(); changed = true; break;
+                case "move1": entity.Move1 = (ushort)ParseValue(); changed = true; break;
+                case "move2": entity.Move2 = (ushort)ParseValue(); changed = true; break;
+                case "move3": entity.Move3 = (ushort)ParseValue(); changed = true; break;
+                case "move4": entity.Move4 = (ushort)ParseValue(); changed = true; break;
+                case "iv_hp": case "iv_atk": case "iv_def": case "iv_spa": case "iv_spd": case "iv_spe":
+                {
+                    Span<int> ivs = stackalloc int[6];
+                    entity.GetIVs(ivs);
+                    var index = prop switch { "iv_hp" => 0, "iv_atk" => 1, "iv_def" => 2, "iv_spa" => 3, "iv_spd" => 4, _ => 5 };
+                    ivs[index] = Math.Clamp(ParseValue(), 0, 31);
+                    entity.SetIVs(ivs);
+                    changed = true;
+                    break;
+                }
+                case "ev_hp": case "ev_atk": case "ev_def": case "ev_spa": case "ev_spd": case "ev_spe":
+                {
+                    Span<int> evs = stackalloc int[6];
+                    entity.GetEVs(evs);
+                    var index = prop switch { "ev_hp" => 0, "ev_atk" => 1, "ev_def" => 2, "ev_spa" => 3, "ev_spd" => 4, _ => 5 };
+                    evs[index] = Math.Clamp(ParseValue(), 0, 252);
+                    entity.SetEVs(evs);
+                    changed = true;
+                    break;
+                }
+                case "shiny":
+                {
+                    var want = value.Equals("yes", StringComparison.OrdinalIgnoreCase) || ParseValue() == 1;
+                    if (want && !entity.IsShiny) entity.SetShiny();
+                    else if (!want && entity.IsShiny) entity.SetUnshiny();
+                    changed = true;
+                    break;
+                }
+                case "nickname":
+                    entity.Nickname = value;
+                    entity.IsNicknamed = value.Length > 0;
+                    changed = true;
+                    break;
+                case "ot" or "trainer":
+                    entity.OriginalTrainerName = value;
+                    changed = true;
+                    break;
+            }
+        }
+        if (changed) entity.RefreshChecksum();
+        return changed;
+    }
+
+    public void SwapBoxes(int a, int b)
+    {
+        ThrowIfDisposed();
+        if (a == b || (uint)a >= (uint)_save.BoxCount || (uint)b >= (uint)_save.BoxCount) return;
+        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+        {
+            var first = GetEntityCore(a, slot);
+            var second = GetEntityCore(b, slot);
+            SetEntityCore(b, slot, first);
+            SetEntityCore(a, slot, second);
+        }
+    }
+
+    public void DeleteBox(int box)
+    {
+        ThrowIfDisposed();
+        if ((uint)box >= (uint)_save.BoxCount) return;
+        // Merge into the first box with room; anything that fits nowhere is released.
+        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+        {
+            var mon = GetEntityCore(box, slot);
+            if (mon.Species == 0) continue;
+            var landed = false;
+            for (var targetBox = 0; targetBox < _save.BoxCount && !landed; targetBox++)
+            {
+                if (targetBox == box) continue;
+                for (var targetSlot = 0; targetSlot < _save.BoxSlotCount; targetSlot++)
+                {
+                    if (GetEntityCore(targetBox, targetSlot).Species != 0) continue;
+                    SetEntityCore(targetBox, targetSlot, mon);
+                    landed = true;
+                    break;
+                }
+            }
+            SetEntityCore(box, slot, _save.BlankPKM);
+        }
+    }
+
+    public void ClearBox(int box)
+    {
+        ThrowIfDisposed();
+        if ((uint)box >= (uint)_save.BoxCount) return;
+        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+            SetEntityCore(box, slot, _save.BlankPKM);
+    }
+
     public IReadOnlyList<int> GetSpeciesTypes(int species)
     {
         ThrowIfDisposed();

@@ -257,7 +257,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Import Showdown team", IconPath: "script"),
             new PadOption("Export box to Showdown", IconPath: "script"),
             new PadOption("Generate Living Dex", IconPath: "pokedex"),
-            new PadOption("Batch editor", IconPath: "script"));
+            new PadOption("Batch editor", IconPath: "script"),
+            new PadOption("Manage boxes…", IconPath: "storage"));
         switch (choice)
         {
             case "Organizer (multi-select)":
@@ -277,7 +278,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 await GenerateLivingDexAsync();
                 return;
             case "Batch editor":
-                _viewModel.Status = "BATCH EDITOR - in development.";
+                await RunBatchEditorAsync();
+                return;
+            case "Manage boxes…":
+                await ShowBoxManagerAsync();
                 return;
         }
     }
@@ -288,6 +292,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var choice = await PadMenu.ShowAsync(_hostGrid, $"ORGANIZER · {_viewModel.MarkedCount} MARKED", null,
             new PadOption("Move selection to box…", IconPath: "storage"),
             new PadOption("Move selection to another game…", IconPath: "storage"),
+            new PadOption("Copy selection to another game…", IconPath: "storage"),
             new PadOption("Duplicate selection", IconPath: "storage"),
             new PadOption("Move selection to Bank", IconPath: "bank"),
             new PadOption("Export selection (.pk files)", IconPath: "folder"),
@@ -550,6 +555,138 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         {
             overlay.Close();
         }
+    }
+
+    /// <summary>Box order and lifecycle: swap, duplicate, clear, delete-with-rescue.</summary>
+    private async Task ShowBoxManagerAsync()
+    {
+        var current = _viewModel.BoxIndex;
+        while (true)
+        {
+            var choice = await PadMenu.ShowAsync(_hostGrid, $"MANAGE BOXES · BOX {current + 1:00}",
+                "Box operations apply with one backed-up write.",
+                new PadOption($"Swap box {current + 1:00} with…", IconPath: "storage"),
+                new PadOption($"Duplicate box {current + 1:00}", IconPath: "storage"),
+                new PadOption($"Clear box {current + 1:00}", IconPath: "hex"),
+                new PadOption($"Delete box {current + 1:00} (rescue mons)", IconPath: "release"));
+            switch (choice)
+            {
+                case var swap when swap?.StartsWith("Swap box", StringComparison.Ordinal) == true:
+                {
+                    var boxes = Enumerable.Range(1, _viewModel.BoxCount).Where(n => n != current + 1)
+                        .Select(n => $"Box {n:00}").ToArray();
+                    var target = await PadMenu.ShowAsync(_hostGrid, "SWAP WITH WHICH BOX?", null, boxes);
+                    if (target is null) break;
+                    var targetIndex = Array.FindIndex(boxes, b => b == target);
+                    if (targetIndex < 0) break;
+                    await _viewModel.RunMutationAsync(session =>
+                    {
+                        session.SwapBoxes(current, targetIndex);
+                        return new GenerationOutcome(true, $"Box {current + 1:00} swapped with box {targetIndex + 1:00}.");
+                    }, Math.Max(0, _viewModel.SelectedSlot));
+                    _canvas.InvalidateSurface();
+                    break;
+                }
+                case var dup when dup?.StartsWith("Duplicate box", StringComparison.Ordinal) == true:
+                {
+                    // Copy this box's mons into the emptiest boxes (same-format mons, no move).
+                    var session = _sessionsFor();
+                    if (session is null) break;
+                    var exports = Enumerable.Range(0, BoxGridRenderer.Rows * BoxGridRenderer.Columns)
+                        .Where(slot => _viewModel.VisibleSlots[slot].Species is not null)
+                        .Select(slot => session.ExportSlot(current, slot))
+                        .ToList();
+                    if (exports.Count == 0) { _viewModel.Status = "This box is empty."; break; }
+                    var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "DUPLICATE BOX?",
+                        $"{exports.Count} Pokémon copied into the first empty slots of other boxes.", "Duplicate");
+                    if (!confirmed) break;
+                    await _viewModel.RunMutationAsync(s =>
+                    {
+                        var placed = 0;
+                        foreach (var export in exports)
+                        {
+                            for (var box = 0; box < _viewModel.BoxCount; box++)
+                            {
+                                if (box == current) continue;
+                                for (var slot = 0; slot < BoxGridRenderer.Rows * BoxGridRenderer.Columns; slot++)
+                                {
+                                    if (!s.ReadEntity(box, slot).IsEmpty) continue;
+                                    if (s.ImportSlot(box, slot, export.Data)) { placed++; box = _viewModel.BoxCount; break; }
+                                }
+                            }
+                        }
+                        return placed > 0
+                            ? new GenerationOutcome(true, $"Duplicated {placed} Pokémon into other boxes.")
+                            : new GenerationOutcome(false, "No empty slots anywhere else.");
+                    }, Math.Max(0, _viewModel.SelectedSlot));
+                    _canvas.InvalidateSurface();
+                    break;
+                }
+                case var clear when clear?.StartsWith("Clear box", StringComparison.Ordinal) == true:
+                {
+                    var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "CLEAR BOX?",
+                        $"Every Pokémon in box {current + 1:00} is released. Backed up first.", "Clear");
+                    if (!confirmed) break;
+                    await _viewModel.RunMutationAsync(session =>
+                    {
+                        session.ClearBox(current);
+                        return new GenerationOutcome(true, $"Box {current + 1:00} cleared.");
+                    }, Math.Max(0, _viewModel.SelectedSlot));
+                    _canvas.InvalidateSurface();
+                    break;
+                }
+                case var del when del?.StartsWith("Delete box", StringComparison.Ordinal) == true:
+                {
+                    var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "DELETE BOX?",
+                        $"Box {current + 1:00} is emptied and its Pokémon are rescued into other boxes " +
+                        "(only released if storage is completely full).", "Delete");
+                    if (!confirmed) break;
+                    await _viewModel.RunMutationAsync(session =>
+                    {
+                        session.DeleteBox(current);
+                        return new GenerationOutcome(true, $"Box {current + 1:00} deleted, mons rescued.");
+                    }, Math.Max(0, _viewModel.SelectedSlot));
+                    _canvas.InvalidateSurface();
+                    break;
+                }
+                default:
+                    return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The batch editor: instructions like "Level=100", "IV_HP=31", "Shiny=Yes" applied to
+    /// every mon in the current box (or all boxes), one safe write. PKHeX syntax.
+    /// </summary>
+    private async Task RunBatchEditorAsync()
+    {
+        var scope = await PadMenu.ShowAsync(_hostGrid, "BATCH EDITOR", "Apply to which boxes?",
+            new PadOption("This box", IconPath: "storage"),
+            new PadOption("All boxes", IconPath: "storage"));
+        if (scope is null) return;
+
+        var text = await TextPopup.ShowAsync(_hostGrid, "INSTRUCTIONS",
+            "One per line, PKHeX style:\nLevel=100\nIV_HP=31\nShiny=Yes\nEV_ATK=252");
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        var instructions = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (instructions.Length == 0) return;
+
+        IReadOnlyList<int>? boxes = scope == "This box" ? [_viewModel.BoxIndex] : null;
+        var preview = scope == "This box" ? $"box {_viewModel.BoxIndex + 1}" : "every box";
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "APPLY BATCH EDIT?",
+            $"{instructions.Length} instruction(s) to every Pokémon in {preview}. Backed up first.", "Apply");
+        if (!confirmed) return;
+
+        await _viewModel.RunMutationAsync(session =>
+        {
+            var touched = session.BatchApply(instructions, boxes);
+            return touched > 0
+                ? new GenerationOutcome(true, $"Batch edit applied to {touched} Pokémon.")
+                : new GenerationOutcome(false, "Nothing to edit in those boxes.");
+        }, Math.Max(0, _viewModel.SelectedSlot));
+        _canvas.InvalidateSurface();
     }
 
     private async Task ShowSaveDataAsync()
@@ -1228,7 +1365,9 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Move", IconPath: "storage"),
             new PadOption("Duplicate", IconPath: "storage"),
             new PadOption("Send to Bank", IconPath: "bank"),
+            new PadOption("Copy to Bank", IconPath: "bank"),
             new PadOption("Send to another game…", IconPath: "storage"),
+            new PadOption("Copy to another game…", IconPath: "storage"),
             new PadOption("Export .pk file", IconPath: "folder"),
             new PadOption("Show as Showdown set", IconPath: "script"),
             new PadOption("Show as QR code", IconPath: "search"),
@@ -1244,8 +1383,14 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             case "Send to Bank":
                 await SendToBankAsync(slot, nickname);
                 return;
+            case "Copy to Bank":
+                await SendToBankAsync(slot, nickname);
+                return;
             case "Send to another game…":
                 await SendSlotToAnotherGameAsync(slot, nickname);
+                return;
+            case "Copy to another game…":
+                await SendSlotToAnotherGameAsync(slot, nickname, copyInsteadOfMove: true);
                 return;
             case "Export .pk file":
                 await ExportSlotAsync(slot);
@@ -1305,7 +1450,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     /// Game-to-game: pick any other detected save, the transfer service converts and
     /// writes there, then the mon leaves this box (a real move, not a copy).
     /// </summary>
-    private async Task SendSlotToAnotherGameAsync(int slot, string nickname)
+    private async Task SendSlotToAnotherGameAsync(int slot, string nickname, bool copyInsteadOfMove = false)
     {
         var services = IPlatformApplication.Current?.Services;
         var picker = services?.GetService<SavePickerViewModel>();
@@ -1323,14 +1468,17 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             return;
         }
 
-        var confirm = await PadMenu.ConfirmAsync(_hostGrid, "MOVE TO ANOTHER GAME?",
-            $"{nickname} will leave this box and join {target.GameLabel} (box space permitting).", "Move");
+        var verb = copyInsteadOfMove ? "Copy" : "Move";
+        var confirm = await PadMenu.ConfirmAsync(_hostGrid, $"{verb.ToUpperInvariant()} TO ANOTHER GAME?",
+            copyInsteadOfMove
+                ? $"A copy of {nickname} joins {target.GameLabel}; the original stays here."
+                : $"{nickname} will leave this box and join {target.GameLabel} (box space permitting).", verb);
         if (!confirm) return;
 
         var export = session.ExportSlot(_viewModel.BoxIndex, slot);
         var outcome = await transfer.SendToGameAsync(export.Data, nickname, target);
         _viewModel.Status = outcome.Message;
-        if (!outcome.Success) return;
+        if (!outcome.Success || copyInsteadOfMove) return;
 
         await _viewModel.RunMutationAsync(s =>
         {

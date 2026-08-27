@@ -33,6 +33,21 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Empties the slot (release). Irreversible except via restore points.</summary>
     void ReleaseSlot(int box, int slot);
 
+    /// <summary>Applies an instruction ("Prop=Value", $suggest/$rand/$shiny) to every non-empty
+    /// slot in the given boxes (null = all boxes). Returns how many mons were touched.</summary>
+    int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null);
+
+    /// <summary>Swaps two boxes' entire contents (order management: box 1 with box 2).</summary>
+    void SwapBoxes(int a, int b);
+
+    /// <summary>Deletes a box by merging: its mons move to the first box with room (or are
+    /// released when the storage is full). Box order closes the gap. Gen1-8 fixed-storage
+    /// formats fall back to clearing the box instead.</summary>
+    void DeleteBox(int box);
+
+    /// <summary>Deletes the box outright (mon loss possible) - the explicit destructive path.</summary>
+    void ClearBox(int box);
+
     /// <summary>Imports a .pk* file's bytes into the slot; false if the bytes are not a compatible entity.</summary>
     bool ImportSlot(int box, int slot, byte[] fileBytes);
 

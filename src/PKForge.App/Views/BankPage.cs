@@ -214,6 +214,7 @@ public sealed class BankPage : ContentPage, IPadHandler
             new PadOption("Edit", IconPath: "editor"),
             new PadOption("Duplicate", IconPath: "storage"),
             new PadOption("Send to game…", IconPath: "storage"),
+            new PadOption("Copy to game…", IconPath: "storage"),
             new PadOption("Move (carry)", IconPath: "storage"),
             new PadOption("Export .pk file", IconPath: "folder"),
             new PadOption("Release from bank", IconPath: "release"));
@@ -234,6 +235,9 @@ public sealed class BankPage : ContentPage, IPadHandler
                 return;
             case "Send to game…":
                 await SendToGamePickerAsync(entry);
+                return;
+            case "Copy to game…":
+                await SendToGamePickerAsync(entry, keepOriginal: true);
                 return;
             case "Move (carry)":
                 _carryId = entry.Id;
@@ -364,7 +368,7 @@ public sealed class BankPage : ContentPage, IPadHandler
 
     /// <summary>Withdraw into ANY detected game: pick the destination, the transfer service
     /// converts the format, backs up, and writes. No need to connect the save first.</summary>
-    private async Task SendToGamePickerAsync(BankEntry entry)
+    private async Task SendToGamePickerAsync(BankEntry entry, bool keepOriginal = false)
     {
         var services = IPlatformApplication.Current?.Services;
         var picker = services?.GetService<SavePickerViewModel>();
@@ -419,9 +423,12 @@ public sealed class BankPage : ContentPage, IPadHandler
             if (!outcome.Success) return;
         }
 
-        _bank.Remove(entry.Id);
-        RefreshBoxEntries();
-        UpdatePreview();
+        if (!keepOriginal)
+        {
+            _bank.Remove(entry.Id);
+            RefreshBoxEntries();
+            UpdatePreview();
+        }
         _canvas.InvalidateSurface();
     }
 
