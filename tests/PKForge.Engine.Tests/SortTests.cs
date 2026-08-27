@@ -33,6 +33,18 @@ public sealed class SortTests
         return list;
     }
 
+    private static List<(int Species, int Form)> ReadIdentityMultiset(SaveEngineSession session)
+    {
+        var result = new List<(int, int)>();
+        for (var box = 0; box < 32; box++)
+        for (var slot = 0; slot < 30; slot++)
+        {
+            var detail = session.ReadEntity(box, slot);
+            if (!detail.IsEmpty) result.Add((detail.Species, detail.Form));
+        }
+        return result.OrderBy(x => x.Item1).ThenBy(x => x.Item2).ToList();
+    }
+
     [Fact]
     public void DexSortOrdersAndCompacts()
     {
@@ -83,6 +95,24 @@ public sealed class SortTests
         var placed = session.SortBoxes(Domain.SortCriteria.DexNumber, null);
         Assert.Equal(before, placed);
         Assert.Equal(before, CountAll());
+    }
+
+    [Theory]
+    [InlineData(Domain.SortCriteria.DexNumber)]
+    [InlineData(Domain.SortCriteria.Alphabetical)]
+    [InlineData(Domain.SortCriteria.LevelDesc)]
+    [InlineData(Domain.SortCriteria.IvTotalDesc)]
+    [InlineData(Domain.SortCriteria.Type)]
+    [InlineData(Domain.SortCriteria.AgeOldest)]
+    [InlineData(Domain.SortCriteria.ShinyFirst)]
+    public void GlobalSortPreservesEverySpeciesAndForm(Domain.SortCriteria criteria)
+    {
+        using var session = Open();
+        var before = ReadIdentityMultiset(session);
+
+        session.SortBoxes(criteria, null);
+
+        Assert.Equal(before, ReadIdentityMultiset(session));
     }
 
     [Fact]

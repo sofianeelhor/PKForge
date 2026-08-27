@@ -89,8 +89,9 @@ public interface ISaveEngineSession : IDisposable
     IReadOnlyList<BagPouch> GetBag();
     /// <summary>Item ids the pouch may legally contain (for the add-item picker).</summary>
     IReadOnlyList<int> GetPouchLegalItems(string pouchName);
-    /// <summary>Sets an item's count in a pouch (0 removes; adds when absent).</summary>
-    void SetItemCount(string pouchName, int itemId, int count);
+    /// <summary>Sets an item's count in a pouch (0 removes; adds when absent), clamped
+    /// to that game's per-item limit. Returns the count actually stored.</summary>
+    int SetItemCount(string pouchName, int itemId, int count);
 
     // ── Met / origin (the identity block behind legality) ──
     MetInfo GetMetInfo(int box, int slot);

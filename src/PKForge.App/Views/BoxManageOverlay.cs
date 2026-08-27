@@ -10,8 +10,8 @@ namespace PKForge.App.Views;
 /// <summary>
 /// The box-management MODE: the box grid becomes tiles (one per box, wallpaper-colored,
 /// with counts). Cursor moves between boxes; A grabs a box (breathing, ghost at origin);
-/// A on another box swaps their order live-previewed; X marks boxes for bulk actions;
-/// Start opens the action menu (swap / delete marked / clear marked). B exits.
+/// A on another box swaps their complete order (contents, name, wallpaper); Y removes
+/// the highlighted box from the order; X marks boxes for bulk actions. B exits.
 /// All writes go through the page's normal safe pipeline via the provided callbacks.
 /// </summary>
 public sealed class BoxManageOverlay : IPadHandler
@@ -30,6 +30,7 @@ public sealed class BoxManageOverlay : IPadHandler
     private int? _carryBox;
     private readonly HashSet<int> _marked = [];
     private bool _live;
+    private bool _busy;
 
     /// <summary>Wire-up for the host page: perform a swap of two boxes (safe write), report status.</summary>
     public required Func<int, int, Task<bool>> SwapBoxesAsync { get; init; }
@@ -58,7 +59,8 @@ public sealed class BoxManageOverlay : IPadHandler
         var hints = Kit.HintBar(
             ("A", "Grab / Swap", null),
             ("X", "Mark", null),
-            ("START", "Actions", null),
+            ("Y", "Delete", null),
+            ("START", "Bulk", null),
             ("B", "Done", null));
 
         var content = new Grid
@@ -92,12 +94,14 @@ public sealed class BoxManageOverlay : IPadHandler
 
     public static Task ShowAsync(Grid host, int boxCount, int slotsPerBox, Func<int, int> countFor,
         Func<int, string> nameFor, int startBox, Func<int, int, Task<bool>> swap,
-        Func<IReadOnlyList<int>, Task<bool>> clear, Func<IReadOnlyList<int>, Task<bool>> delete) =>
+        Func<IReadOnlyList<int>, Task<bool>> clear, Func<IReadOnlyList<int>, Task<bool>> delete,
+        Action<string>? status = null) =>
         new BoxManageOverlay(host, boxCount, slotsPerBox, countFor, nameFor, startBox)
         {
             SwapBoxesAsync = swap,
             ClearBoxesAsync = clear,
             DeleteBoxesAsync = delete,
+            Status = status,
         }.RunAsync();
 
     private Task RunAsync()
@@ -234,7 +238,7 @@ public sealed class BoxManageOverlay : IPadHandler
         {
             var (rect, _, _) = TileAt(info, i);
             if (!rect.Contains(args.Location.X, args.Location.Y)) continue;
-            if (i == _cursor) { Confirm(); return; }
+            if (i == _cursor) { _ = ConfirmAsync(); return; }
             _cursor = i;
             _canvas.InvalidateSurface();
             return;
@@ -243,6 +247,7 @@ public sealed class BoxManageOverlay : IPadHandler
 
     public bool OnPadButton(PadButton button)
     {
+        if (_busy) return true;
         var cols = Columns;
         switch (button)
         {
@@ -250,8 +255,9 @@ public sealed class BoxManageOverlay : IPadHandler
             case PadButton.Right: _cursor = (_cursor + 1) % _boxCount; break;
             case PadButton.Up: _cursor = (_cursor - cols + _boxCount) % _boxCount; break;
             case PadButton.Down: _cursor = (_cursor + cols) % _boxCount; break;
-            case PadButton.A: Confirm(); break;
+            case PadButton.A: _ = ConfirmAsync(); break;
             case PadButton.X: ToggleMark(); break;
+            case PadButton.Y: _ = DeleteCurrentAsync(); break;
             case PadButton.Start: _ = ShowActionsAsync(); break;
             case PadButton.B:
                 if (_carryBox is not null) { _carryBox = null; Status?.Invoke("Box released."); }
@@ -263,27 +269,56 @@ public sealed class BoxManageOverlay : IPadHandler
         return true;
     }
 
-    private void Confirm()
+    private async Task ConfirmAsync()
     {
+        if (_busy) return;
         if (_carryBox is { } source)
         {
             if (source == _cursor) { _carryBox = null; Status?.Invoke("Box released."); return; }
             var from = source;
             _carryBox = null;
-            _ = Task.Run(async () =>
+            _busy = true;
+            try
             {
                 var ok = await SwapBoxesAsync(from, _cursor);
-                await MainThread.InvokeOnMainThreadAsync(() =>
-                {
-                    Status?.Invoke(ok ? $"Boxes {from + 1:00} and {_cursor + 1:00} swapped." : "Swap failed.");
-                    _canvas.InvalidateSurface();
-                });
-            });
+                Status?.Invoke(ok ? $"Boxes {from + 1:00} and {_cursor + 1:00} swapped." : "Swap failed.");
+            }
+            finally
+            {
+                _busy = false;
+                _canvas.InvalidateSurface();
+            }
         }
         else
         {
             _carryBox = _cursor;
             Status?.Invoke($"Holding box {_cursor + 1:00} - aim with the pad, A swaps, B releases.");
+        }
+    }
+
+    private async Task DeleteCurrentAsync()
+    {
+        if (_carryBox is not null) return;
+        var box = _cursor;
+        var count = _countFor(box);
+        var confirmed = await PadMenu.ConfirmAsync(_host, $"DELETE BOX {box + 1:00}?",
+            count == 0
+                ? "This empty box is removed from the order. A blank box remains at the end."
+                : $"Its {count} Pokémon are rescued into free slots, then later boxes shift left. A restore point is created first.",
+            "Delete");
+        if (!confirmed) return;
+
+        _busy = true;
+        try
+        {
+            var ok = await DeleteBoxesAsync([box]);
+            _marked.Clear();
+            Status?.Invoke(ok ? $"Box {box + 1:00} removed; order closed." : "Delete failed.");
+        }
+        finally
+        {
+            _busy = false;
+            _canvas.InvalidateSurface();
         }
     }
 
@@ -327,11 +362,11 @@ public sealed class BoxManageOverlay : IPadHandler
             case var del when del?.StartsWith("Delete marked", StringComparison.Ordinal) == true:
             {
                 var confirmed = await PadMenu.ConfirmAsync(_host, "DELETE MARKED BOXES?",
-                    $"{markedList.Count} box(es) emptied; their Pokémon are rescued into other boxes.", "Delete");
+                    $"{markedList.Count} box(es) are removed from the order; their Pokémon are rescued first.", "Delete");
                 if (!confirmed) break;
                 var ok = await DeleteBoxesAsync(markedList);
                 _marked.Clear();
-                Status?.Invoke(ok ? "Marked boxes deleted, mons rescued." : "Delete failed.");
+                Status?.Invoke(ok ? "Marked boxes removed; order closed." : "Delete failed.");
                 break;
             }
         }

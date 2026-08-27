@@ -23,4 +23,18 @@ public sealed class AddItemProbe
             Assert.True(named.Count > 0, $"gen{generation} pouch {pouch.Name}: {legal.Count} legal, {named.Count} named");
         }
     }
+
+    [Fact]
+    public void ItemCountIsClampedToTheGamesRealLimit()
+    {
+        var engine = new SaveEngine();
+        using var session = engine.OpenBlankSession(1);
+        var pouch = session.GetBag().First();
+        var item = session.GetPouchLegalItems(pouch.Name).First(id => id > 0);
+
+        var stored = session.SetItemCount(pouch.Name, item, 999);
+
+        Assert.Equal(99, stored);
+        Assert.Equal(stored, session.GetBag().Single(p => p.Name == pouch.Name).Items.Single(i => i.Id == item).Count);
+    }
 }

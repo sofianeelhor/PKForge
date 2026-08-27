@@ -289,7 +289,10 @@ public sealed class SaveEngineSession : ISaveEngineSession
             for (var slot = 0; slot < slotsPerBox; slot++)
             {
                 var mon = GetEntityCore(box, slot);
-                if (mon.Species != 0) mons.Add(mon);
+                // PKHeX entities can be backed by the save's mutable storage. Sorting
+                // rewrites that same storage, so every source must be detached before
+                // the first destination write or later entries can turn into garbage.
+                if (mon.Species != 0) mons.Add(mon.Clone());
             }
 
         int TypeRank(PKM mon) => mon.PersonalInfo.Type1; // dex type order runs types 0..17
@@ -428,14 +431,9 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public void SwapBoxes(int a, int b)
     {
         ThrowIfDisposed();
-        if (a == b || (uint)a >= (uint)_save.BoxCount || (uint)b >= (uint)_save.BoxCount) return;
-        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
-        {
-            var first = GetEntityCore(a, slot);
-            var second = GetEntityCore(b, slot);
-            SetEntityCore(b, slot, first);
-            SetEntityCore(a, slot, second);
-        }
+        if (a == b) return;
+        if (!_save.SwapBox(a, b))
+            throw new InvalidOperationException("This save does not allow one of those boxes to move.");
     }
 
     public void DeleteBox(int box)
@@ -461,6 +459,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
             }
             SetEntityCore(box, slot, _save.BlankPKM);
         }
+
+        // Save formats have a fixed physical box count. Logical deletion closes the
+        // ordering gap and leaves one new empty box at the end, moving box metadata and
+        // slot pointers along with the contents through PKHeX's native operation.
+        if (box < _save.BoxCount - 1 && !_save.MoveBox(box, _save.BoxCount - 1))
+            throw new InvalidOperationException("This save does not allow that box to move.");
     }
 
     public void ClearBox(int box)
@@ -592,12 +596,13 @@ public sealed class SaveEngineSession : ISaveEngineSession
         return bag.Info.GetItems(pouch.Type).ToArray().Select(id => (int)id).ToList();
     }
 
-    public void SetItemCount(string pouchName, int itemId, int count)
+    public int SetItemCount(string pouchName, int itemId, int count)
     {
         ThrowIfDisposed();
         var bag = _save.Inventory;
         var pouch = bag.Pouches.FirstOrDefault(p => p.Type.ToString() == pouchName)
             ?? throw new InvalidOperationException($"No pouch named {pouchName}.");
+        count = bag.Clamp(pouch.Type, itemId, count);
 
         var existing = pouch.Items.FirstOrDefault(i => i.Index == itemId);
         if (existing is not null)
@@ -613,6 +618,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
             empty.Count = count;
         }
         bag.CopyTo(_save);
+        return count;
     }
 
     public MetInfo GetMetInfo(int box, int slot)

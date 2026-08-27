@@ -26,6 +26,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     private long _partyPulseStart = Environment.TickCount64;
     private int _lastAimSlot = -1;
     private IDispatcherTimer? _partyPulseTimer;
+    private IDispatcherTimer? _boxManagePulseTimer;
+    private bool _boxManageMode;
+    private bool _boxManageBusy;
+    private int _heldBox;
 
     /// <summary>The party cursor breathes: a light repaint loop that only runs on the party view.</summary>
     private void EnsurePartyPulse()
@@ -139,8 +143,17 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     {
         var canvas = args.Surface.Canvas;
         canvas.Clear(SKColors.Transparent);
-        using var font = new SKFont(PixelTypeface(), 20);
-        PksmPaint.BoxNameBar(canvas, new SKRect(0, 0, args.Info.Width, args.Info.Height),
+        var bounds = new SKRect(0, 0, args.Info.Width, args.Info.Height);
+        var fontSize = 20f;
+        if (_boxManageMode)
+        {
+            var phase = (Environment.TickCount64 % 900) / 900d * Math.PI * 2;
+            var breath = (float)((Math.Sin(phase) + 1) * 0.5);
+            bounds.Inflate(-2f - breath * 3f, -1f - breath);
+            fontSize += breath * 1.5f;
+        }
+        using var font = new SKFont(PixelTypeface(), fontSize);
+        PksmPaint.BoxNameBar(canvas, bounds,
             _viewModel.BoxIndex == -1 ? "PARTY" : $"BOX {_viewModel.BoxIndex + 1:00}", font,
             canPrev: _viewModel.BoxIndex > 0,
             canNext: _viewModel.BoxIndex < _viewModel.BoxCount - 1);
@@ -282,12 +295,103 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 await RunBatchEditorAsync();
                 return;
             case "Manage boxes…":
-                await ShowBoxManagerAsync();
+                EnterBoxManageMode();
                 return;
             case "Sort boxes…":
                 await ShowSortMenuAsync();
                 return;
         }
+    }
+
+    /// <summary>Game-style box ordering lives directly in storage: the current box is
+    /// picked up, breathes in the normal box bar, and L/R trades it with its neighbor.</summary>
+    private void EnterBoxManageMode()
+    {
+        if (_viewModel.BoxCount == 0) return;
+        if (_viewModel.BoxIndex < 0) _viewModel.BoxIndex = 0;
+        _boxManageMode = true;
+        _heldBox = _viewModel.BoxIndex;
+        _viewModel.CancelCarry();
+        _viewModel.Status = $"HOLDING BOX {_heldBox + 1:00} - L/R REORDER · Y DELETE · A/B DONE";
+        _boxManagePulseTimer ??= Dispatcher.CreateTimer();
+        _boxManagePulseTimer.Interval = TimeSpan.FromMilliseconds(60);
+        _boxManagePulseTimer.Tick += BoxManagePulse;
+        _boxManagePulseTimer.Start();
+        _boxBar.InvalidateSurface();
+    }
+
+    private void BoxManagePulse(object? sender, EventArgs args) => _boxBar.InvalidateSurface();
+
+    private void ExitBoxManageMode()
+    {
+        if (!_boxManageMode) return;
+        _boxManageMode = false;
+        _boxManagePulseTimer?.Stop();
+        _viewModel.Status = "READY";
+        _boxBar.InvalidateSurface();
+    }
+
+    private async Task ShiftHeldBoxAsync(int delta)
+    {
+        if (_boxManageBusy) return;
+        var target = _heldBox + delta;
+        if ((uint)target >= (uint)_viewModel.BoxCount)
+        {
+            _viewModel.Status = delta < 0 ? "BOX IS ALREADY FIRST" : "BOX IS ALREADY LAST";
+            return;
+        }
+
+        _boxManageBusy = true;
+        try
+        {
+            var from = _heldBox;
+            var ok = await _viewModel.RunMutationAsync(session =>
+            {
+                session.SwapBoxes(from, target);
+                return new GenerationOutcome(true, $"Box {from + 1:00} swapped with box {target + 1:00}.");
+            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+            if (!ok) return;
+            _heldBox = target;
+            _viewModel.BoxIndex = target;
+            _viewModel.RefreshAllSlots();
+            _viewModel.Status = $"HOLDING BOX {_heldBox + 1:00} - L/R REORDER · Y DELETE · A/B DONE";
+            _canvas.InvalidateSurface();
+            _boxBar.InvalidateSurface();
+        }
+        finally { _boxManageBusy = false; }
+    }
+
+    private async Task DeleteHeldBoxAsync()
+    {
+        if (_boxManageBusy) return;
+        _boxManageBusy = true;
+        try
+        {
+        var session = _sessionsFor();
+        if (session is null) return;
+        var count = Enumerable.Range(0, BoxGridRenderer.Rows * BoxGridRenderer.Columns)
+            .Count(slot => !session.ReadEntity(_heldBox, slot).IsEmpty);
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, $"DELETE BOX {_heldBox + 1:00}?",
+            count == 0
+                ? "This empty box is removed from the order. A blank box remains at the end."
+                : $"Its {count} Pokémon are rescued, later boxes shift left, and a restore point is created first.",
+            "Delete");
+        if (!confirmed) return;
+
+        var box = _heldBox;
+        var ok = await _viewModel.RunMutationAsync(s =>
+        {
+            s.DeleteBox(box);
+            return new GenerationOutcome(true, $"Box {box + 1:00} removed from the order.");
+        }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+        if (!ok) return;
+        _heldBox = Math.Min(box, _viewModel.BoxCount - 1);
+        _viewModel.BoxIndex = _heldBox;
+        _viewModel.RefreshAllSlots();
+        _viewModel.Status = $"HOLDING BOX {_heldBox + 1:00} - L/R REORDER · Y DELETE · A/B DONE";
+        _canvas.InvalidateSurface();
+        }
+        finally { _boxManageBusy = false; }
     }
 
     /// <summary>Bulk actions for the organizer's marked selection.</summary>
@@ -618,11 +722,13 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             "Sort");
         if (!confirmed) return;
 
-        await _viewModel.RunMutationAsync(session =>
+        var sorted = await _viewModel.RunMutationAsync(session =>
         {
             var placed = session.SortBoxes(criteria, boxes);
             return new GenerationOutcome(true, $"Sorted {placed} Pokémon.");
-        }, Math.Max(0, _viewModel.SelectedSlot));
+        }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+        if (sorted)
+            _viewModel.RefreshAllSlots();
         _canvas.InvalidateSurface();
     }
 
@@ -648,17 +754,19 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             {
                 session2.SwapBoxes(a, b);
                 return new GenerationOutcome(true, $"Boxes {a + 1:00} and {b + 1:00} swapped.");
-            }, Math.Max(0, _viewModel.SelectedSlot)),
+            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false),
             clear: async boxes => await _viewModel.RunMutationAsync(session2 =>
             {
                 foreach (var box in boxes) session2.ClearBox(box);
                 return new GenerationOutcome(true, $"{boxes.Count} box(es) cleared.");
-            }, Math.Max(0, _viewModel.SelectedSlot)),
+            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false),
             delete: async boxes => await _viewModel.RunMutationAsync(session2 =>
             {
-                foreach (var box in boxes) session2.DeleteBox(box);
-                return new GenerationOutcome(true, $"{boxes.Count} box(es) deleted.");
-            }, Math.Max(0, _viewModel.SelectedSlot)));
+                foreach (var box in boxes.OrderByDescending(x => x)) session2.DeleteBox(box);
+                return new GenerationOutcome(true, $"{boxes.Count} box(es) removed from the order.");
+            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false),
+            status: message => _viewModel.Status = message);
+        _viewModel.RefreshAllSlots();
         _canvas.InvalidateSurface();
     }
 
@@ -847,8 +955,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     /// <summary>
     /// The bag editor overlay: the navy inventory world. Pockets are bag pills (cyan;
     /// yellow-green rim and gold fill when active), items are white PixelUI rows with
-    /// round count discs. Tap a name for the exact-count sheet; L/R turn pockets,
-    /// up/down walk rows, A activates, B closes.
+    /// round count discs. Tap a name for the exact-count sheet; left/right adjust the
+    /// selected count, shoulder L/R turn pockets, up/down walk rows, A activates.
     /// </summary>
     private sealed class BagEditor : IPadHandler
     {
@@ -865,9 +973,14 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         private IReadOnlyList<BagPouch> _bag = [];
         private List<BagRow> _itemRows = [];
         private View _addRow = null!;
+        private View _presetRow = null!;
         private Grid _overlay = null!;
         private int _pouchIndex;
         private int _cursor;
+        private readonly Dictionary<(string Pouch, int Item), int> _pendingCounts = [];
+        private readonly SemaphoreSlim _pendingWriteGate = new(1, 1);
+        private int _pendingRevision;
+        private bool _closing;
 
         public static async Task ShowAsync(Grid host, ISaveEngineSession session, BoxBrowserViewModel viewModel, IGameDataService data)
         {
@@ -881,6 +994,9 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             _session = session;
             _viewModel = viewModel;
             _data = data;
+            // Resolve this once from the open save. Leaving it empty made every row
+            // render as #id and filtered every legal id out of ADD ITEM.
+            _itemNames = session.GetItemNames();
             _slotSeed = slotSeed;
 
             var title = new HorizontalStackLayout
@@ -904,7 +1020,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
             var hint = new Label
             {
-                Text = "TAP + OR - TO ADJUST · TAP THE NAME FOR AN EXACT COUNT",
+                Text = "LEFT / RIGHT ADJUST · L / R CHANGE POUCH · A OPENS EXACT COUNT",
                 FontFamily = DsChrome.PixelFont,
                 FontSize = 11,
                 TextColor = UiTokens.BagCyan,
@@ -945,7 +1061,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 VerticalOptions = LayoutOptions.Center,
                 Content = body,
             };
-            _overlay = Kit.AttachOverlay(host, window, Close);
+            _overlay = Kit.AttachOverlay(host, window, () => _ = CloseAsync());
             Kit.AnimateIn(window);
         }
 
@@ -955,7 +1071,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             if (_bag.Count == 0)
             {
                 _viewModel.Status = "This game exposes no editable bag.";
-                Close();
+                await CloseAsync();
                 return;
             }
             Rebuild();
@@ -979,13 +1095,14 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
         // The OPEN GAME's item table: Gen 1 Rare Candy lives at a different index than
         // in the modern list, which is what misnamed everything before.
-        private IReadOnlyList<string> _itemNames = [];
+        private readonly IReadOnlyList<string> _itemNames;
         private string ItemName(int id) =>
             id < _itemNames.Count && _itemNames[id].Length > 0 ? _itemNames[id] : $"#{id}";
 
-        private void CyclePouch(int delta)
+        private async Task CyclePouchAsync(int delta)
         {
             if (_bag.Count == 0) return;
+            await FlushPendingAsync();
             _pouchIndex = ((_pouchIndex + delta) % _bag.Count + _bag.Count) % _bag.Count;
             _cursor = 0;
             Rebuild();
@@ -1012,9 +1129,9 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             // name opens the full pouch list; L/R on the pad do the same.
             _pockets.Children.Clear();
             var prev = Kit.MiniCapsule("<", UiTokens.BagCyan);
-            prev.Clicked += (_, _) => CyclePouch(-1);
+            prev.Clicked += (_, _) => _ = CyclePouchAsync(-1);
             var next = Kit.MiniCapsule(">", UiTokens.BagCyan);
-            next.Clicked += (_, _) => CyclePouch(+1);
+            next.Clicked += (_, _) => _ = CyclePouchAsync(+1);
             var label = new Label
             {
                 Text = $" {_bag[_pouchIndex].Name.ToUpperInvariant()} ({pouch.Items.Count}) ",
@@ -1039,13 +1156,14 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             foreach (var item in pouch.Items)
             {
                 var captured = item;
+                var shownCount = _pendingCounts.GetValueOrDefault((pouch.Name, item.Id), item.Count);
                 var icon = new Image { WidthRequest = 24, HeightRequest = 24, VerticalOptions = LayoutOptions.Center, InputTransparent = true };
                 icons.Add(icon);
-                var row = new BagRow(icon, ItemName(item.Id), item.Count)
+                var row = new BagRow(icon, ItemName(item.Id), shownCount)
                 {
                     Tapped = () => _ = EditCountAsync(captured),
-                    Minus = () => _ = NudgeAsync(captured, -1),
-                    Plus = () => _ = NudgeAsync(captured, +1),
+                    Minus = () => QueueNudge(captured, -1),
+                    Plus = () => QueueNudge(captured, +1),
                 };
                 _itemRows.Add(row);
                 _rows.Children.Add(row);
@@ -1057,6 +1175,13 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             add.Clicked += (_, _) => _ = AddItemAsync();
             _addRow = add;
             _rows.Children.Add(_addRow);
+
+            var presets = Kit.Capsule("ITEM PRESETS", UiTokens.BagCyan);
+            presets.FontSize = 14;
+            presets.Margin = new Thickness(4, 2, 4, 2);
+            presets.Clicked += (_, _) => _ = ShowPresetsAsync();
+            _presetRow = presets;
+            _rows.Children.Add(_presetRow);
 
             Highlight(_cursor);
             _ = LoadIconsAsync(pouch.Items, icons);
@@ -1073,35 +1198,81 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
         private async Task EditCountAsync(BagItem item)
         {
+            await FlushPendingAsync();
             var name = ItemName(item.Id);
-            var count = await StatsPopup.ShowSingleAsync(_host, $"{name.ToUpperInvariant()} - QUANTITY", item.Count, 999);
+            var current = _session.GetBag().SelectMany(p => p.Items).FirstOrDefault(i => i.Id == item.Id)?.Count ?? item.Count;
+            var count = await StatsPopup.ShowSingleAsync(_host, $"{name.ToUpperInvariant()} - QUANTITY", current, 999);
             if (count is null) return;
             await WriteAsync(item.Id, count.Value);
         }
 
-        private async Task NudgeAsync(BagItem item, int delta)
+        /// <summary>Quantity changes feel immediate, but a quick run of pad presses becomes
+        /// one validation, restore point, and SAF write after the user pauses.</summary>
+        private void QueueNudge(BagItem item, int delta)
         {
-            var count = Math.Clamp(item.Count + delta, 0, 999);
-            if (count == item.Count) return;
-            await WriteAsync(item.Id, count);
+            if (_cursor >= _itemRows.Count) return;
+            var pouchName = _bag[_pouchIndex].Name;
+            var key = (pouchName, item.Id);
+            var current = _pendingCounts.GetValueOrDefault(key, item.Count);
+            var count = Math.Clamp(current + delta, 0, 999);
+            if (count == current) return;
+            _pendingCounts[key] = count;
+            _itemRows[_cursor].SetCount(count);
+            Report($"{ItemName(item.Id).ToUpperInvariant()} x{count} - SAVING...");
+            var revision = ++_pendingRevision;
+            _ = SaveAfterPauseAsync(revision);
+        }
+
+        private async Task SaveAfterPauseAsync(int revision)
+        {
+            await Task.Delay(550);
+            if (revision == _pendingRevision)
+                await FlushPendingAsync();
+        }
+
+        private async Task<bool> FlushPendingAsync()
+        {
+            await _pendingWriteGate.WaitAsync();
+            try
+            {
+                if (_pendingCounts.Count == 0) return true;
+                var changes = _pendingCounts.Select(x => (x.Key.Pouch, x.Key.Item, Count: x.Value)).ToArray();
+                _pendingCounts.Clear();
+                var outcome = await _viewModel.RunMutationAsync(s =>
+                {
+                    foreach (var change in changes)
+                        s.SetItemCount(change.Pouch, change.Item, change.Count);
+                    return new GenerationOutcome(true, $"Updated {changes.Length} item{(changes.Length == 1 ? "" : "s")}.");
+                }, _slotSeed, refreshSlot: false);
+                Report(outcome ? "ITEM QUANTITY SAVED" : "WRITE FAILED - SEE STATUS");
+                Rebuild();
+                return outcome;
+            }
+            finally
+            {
+                _pendingWriteGate.Release();
+            }
         }
 
         /// <summary>One safe write (backup + atomic), then a fresh read of the whole bag.</summary>
         private async Task WriteAsync(int itemId, int count)
         {
+            await FlushPendingAsync();
             var pouchName = _bag[_pouchIndex].Name;
             var name = ItemName(itemId);
+            var stored = count;
             var outcome = await _viewModel.RunMutationAsync(s =>
             {
-                s.SetItemCount(pouchName, itemId, count);
-                return new GenerationOutcome(true, count == 0 ? $"{name} removed." : $"{name} ×{count}");
-            }, _slotSeed);
-            Report(outcome ? $"SAVED: {(count == 0 ? $"{name} REMOVED" : $"{name} x{count}")}" : "WRITE FAILED - SEE STATUS");
+                stored = s.SetItemCount(pouchName, itemId, count);
+                return new GenerationOutcome(true, stored == 0 ? $"{name} removed." : $"{name} ×{stored}");
+            }, _slotSeed, refreshSlot: false);
+            Report(outcome ? $"SAVED: {(stored == 0 ? $"{name} REMOVED" : $"{name} x{stored}")}" : "WRITE FAILED - SEE STATUS");
             Rebuild();
         }
 
         private async Task AddItemAsync()
         {
+            await FlushPendingAsync();
             var pouchName = _bag[_pouchIndex].Name;
             var gameItems = _itemNames; // the open game's own table
             var legalIds = _session.GetPouchLegalItems(pouchName)
@@ -1145,14 +1316,103 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             await WriteAsync(picked.Id, count.Value);
         }
 
+        private static readonly HashSet<string> BallNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Poké Ball", "Great Ball", "Ultra Ball", "Master Ball", "Safari Ball", "Sport Ball",
+            "Fast Ball", "Level Ball", "Lure Ball", "Heavy Ball", "Love Ball", "Friend Ball", "Moon Ball",
+            "Net Ball", "Dive Ball", "Nest Ball", "Repeat Ball", "Timer Ball", "Luxury Ball", "Premier Ball",
+            "Dusk Ball", "Heal Ball", "Quick Ball", "Cherish Ball", "Park Ball", "Dream Ball", "Beast Ball",
+            "Strange Ball",
+        };
+
+        private static readonly HashSet<string> HealingNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Potion", "Super Potion", "Hyper Potion", "Max Potion", "Full Restore", "Fresh Water",
+            "Soda Pop", "Lemonade", "Moomoo Milk", "Energy Powder", "Energy Root", "Revive", "Max Revive",
+            "Antidote", "Burn Heal", "Ice Heal", "Awakening", "Paralyze Heal", "Full Heal",
+        };
+
+        private async Task ShowPresetsAsync()
+        {
+            await FlushPendingAsync();
+            var choice = await PadMenu.ShowAsync(_host, "ITEM PRESETS", "Only items legal in this game are changed.",
+                new PadOption("Refill this pouch to 99", IconPath: "bag"),
+                new PadOption("Give every Poké Ball x50", IconPath: "bag"),
+                new PadOption("Healing supplies x20", IconPath: "restore"),
+                new PadOption("Nuzlocke starter supplies", IconPath: "leaf"),
+                new PadOption("Remove every item in this pouch", IconPath: "release"));
+            if (choice is null) return;
+
+            if (choice == "Remove every item in this pouch")
+            {
+                var confirmed = await PadMenu.ConfirmAsync(_host, "EMPTY THIS POUCH?",
+                    $"Every item in {_bag[_pouchIndex].Name} is removed. A restore point is created first.", "Empty");
+                if (!confirmed) return;
+            }
+
+            var changes = BuildPreset(choice);
+            if (changes.Count == 0)
+            {
+                Report("NO COMPATIBLE ITEMS FOR THIS PRESET");
+                return;
+            }
+
+            var ok = await _viewModel.RunMutationAsync(s =>
+            {
+                foreach (var change in changes)
+                    s.SetItemCount(change.Pouch, change.Item, change.Count);
+                return new GenerationOutcome(true, $"Preset changed {changes.Count} items.");
+            }, _slotSeed, refreshSlot: false);
+            Report(ok ? $"PRESET APPLIED - {changes.Count} ITEMS" : "PRESET FAILED - SEE STATUS");
+            Rebuild();
+        }
+
+        private List<(string Pouch, int Item, int Count)> BuildPreset(string choice)
+        {
+            if (choice == "Refill this pouch to 99")
+                return _bag[_pouchIndex].Items.Select(i => (_bag[_pouchIndex].Name, i.Id, 99)).ToList();
+            if (choice == "Remove every item in this pouch")
+                return _bag[_pouchIndex].Items.Select(i => (_bag[_pouchIndex].Name, i.Id, 0)).ToList();
+
+            var desired = choice switch
+            {
+                "Give every Poké Ball x50" => BallNames.ToDictionary(name => name, _ => 50, StringComparer.OrdinalIgnoreCase),
+                "Healing supplies x20" => HealingNames.ToDictionary(name => name, _ => 20, StringComparer.OrdinalIgnoreCase),
+                "Nuzlocke starter supplies" => new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Poké Ball"] = 10,
+                    ["Potion"] = 10,
+                    ["Antidote"] = 3,
+                    ["Paralyze Heal"] = 3,
+                    ["Escape Rope"] = 2,
+                },
+                _ => [],
+            };
+
+            var result = new List<(string Pouch, int Item, int Count)>();
+            foreach (var pouch in _bag)
+            {
+                foreach (var id in _session.GetPouchLegalItems(pouch.Name))
+                {
+                    var name = ItemName(id);
+                    if (desired.TryGetValue(name, out var count))
+                        result.Add((pouch.Name, id, count));
+                }
+            }
+            return result;
+        }
+
         private void Highlight(int index)
         {
-            _cursor = Math.Clamp(index, 0, _itemRows.Count);
+            _cursor = Math.Clamp(index, 0, _itemRows.Count + 1);
             for (var i = 0; i < _itemRows.Count; i++)
                 _itemRows[i].Selected = i == _cursor;
             if (_addRow is Button capsule)
                 capsule.BackgroundColor = _cursor == _itemRows.Count ? UiTokens.ChoiceFillPress : UiTokens.ChoiceFill;
-            var target = _cursor < _itemRows.Count ? (View)_itemRows[_cursor] : _addRow;
+            if (_presetRow is Button preset)
+                preset.BackgroundColor = _cursor == _itemRows.Count + 1 ? UiTokens.ChoiceFillPress : UiTokens.ChoiceFill;
+            var target = _cursor < _itemRows.Count ? (View)_itemRows[_cursor]
+                : _cursor == _itemRows.Count ? _addRow : _presetRow;
             _ = _scroll.ScrollToAsync(target, ScrollToPosition.MakeVisible, false);
         }
 
@@ -1166,32 +1426,41 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 case PadButton.Down:
                     Highlight(_cursor + 1);
                     return true;
-                case PadButton.Left or PadButton.L:
-                    _pouchIndex = (_pouchIndex + _bag.Count - 1) % _bag.Count;
-                    _cursor = 0;
-                    Rebuild();
+                case PadButton.Left:
+                    if (_cursor < _itemRows.Count)
+                        QueueNudge(_bag[_pouchIndex].Items[_cursor], -1);
                     return true;
-                case PadButton.Right or PadButton.R:
-                    _pouchIndex = (_pouchIndex + 1) % _bag.Count;
-                    _cursor = 0;
-                    Rebuild();
+                case PadButton.Right:
+                    if (_cursor < _itemRows.Count)
+                        QueueNudge(_bag[_pouchIndex].Items[_cursor], +1);
+                    return true;
+                case PadButton.L:
+                    _ = CyclePouchAsync(-1);
+                    return true;
+                case PadButton.R:
+                    _ = CyclePouchAsync(+1);
                     return true;
                 case PadButton.A:
                     if (_cursor < _itemRows.Count)
                         _ = EditCountAsync(_bag[_pouchIndex].Items[_cursor]);
-                    else
+                    else if (_cursor == _itemRows.Count)
                         _ = AddItemAsync();
+                    else
+                        _ = ShowPresetsAsync();
                     return true;
                 case PadButton.B:
-                    Close();
+                    _ = CloseAsync();
                     return true;
                 default:
                     return true; // modal while open
             }
         }
 
-        private void Close()
+        private async Task CloseAsync()
         {
+            if (_closing) return;
+            _closing = true;
+            await FlushPendingAsync();
             _host.Remove(_overlay);
             _closed.TrySetResult();
         }
@@ -1245,6 +1514,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         private sealed class BagRow : Grid
         {
             private readonly SKCanvasView _bg;
+            private readonly Label _counter;
             private bool _selected;
 
             public Action? Tapped { get; set; }
@@ -1275,7 +1545,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                     LineBreakMode = LineBreakMode.TailTruncation,
                     InputTransparent = true,
                 };
-                var counter = new Label
+                _counter = new Label
                 {
                     Text = $"×{count}",
                     FontFamily = DsChrome.PixelFont,
@@ -1290,12 +1560,12 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 Grid.SetColumnSpan(_bg, 5);
                 Children.Add(icon);
                 Children.Add(label);
-                Children.Add(counter);
+                Children.Add(_counter);
                 Children.Add(CountDisc(minus: true, () => Minus?.Invoke()));
                 Children.Add(CountDisc(minus: false, () => Plus?.Invoke()));
                 Grid.SetColumn(icon, 0);
                 Grid.SetColumn(label, 1);
-                Grid.SetColumn(counter, 2);
+                Grid.SetColumn(_counter, 2);
                 SetColumn((Microsoft.Maui.Controls.BindableObject)Children[4], 3);
                 SetColumn((Microsoft.Maui.Controls.BindableObject)Children[5], 4);
 
@@ -1313,6 +1583,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                     _bg.InvalidateSurface();
                 }
             }
+
+            public void SetCount(int count) => _counter.Text = $"×{count}";
         }
 
         /// <summary>The add-item row: a plus disc and the cyan invitation.</summary>
@@ -1435,6 +1707,19 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     /// <summary>Every button on this screen, in one place.</summary>
     public bool OnPadButton(PadButton button)
     {
+        if (_boxManageMode)
+        {
+            switch (button)
+            {
+                case PadButton.L: _ = ShiftHeldBoxAsync(-1); return true;
+                case PadButton.R: _ = ShiftHeldBoxAsync(1); return true;
+                case PadButton.Y: _ = DeleteHeldBoxAsync(); return true;
+                case PadButton.A:
+                case PadButton.B: ExitBoxManageMode(); return true;
+                default: return true;
+            }
+        }
+
         switch (button)
         {
             case PadButton.Up: return _viewModel.MoveCursor(FocusDirection.Up);
@@ -1752,7 +2037,6 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     {
         base.OnAppearing();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Push(this);
-        StartSpritePrefetch();
         var host = IPlatformApplication.Current?.Services.GetService<ISecondaryDisplayHost>();
         if (host?.IsAvailable != true) return;
         try { _ = host.ShowAsync(); }
@@ -1761,54 +2045,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
     protected override void OnDisappearing()
     {
+        _boxManageMode = false;
+        _boxManagePulseTimer?.Stop();
         base.OnDisappearing();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
-        _prefetchCts?.Cancel();
-    }
-
-    private CancellationTokenSource? _prefetchCts;
-
-    /// <summary>
-    /// Warms the animated sprites for every mon in the open save in the background,
-    /// with friendly progress in the status strip - selections feel instant afterwards.
-    /// </summary>
-    private void StartSpritePrefetch()
-    {
-        _prefetchCts?.Cancel();
-        var save = _viewModel.Save;
-        if (save is null) return;
-        var pending = save.Slots
-            .Where(s => s.Species is not null)
-            .Select(s => (Species: s.Species!.Value, s.IsShiny))
-            .Distinct()
-            .Where(pair => !_sprites.TryGetShowdown(pair.Species, pair.IsShiny, out _))
-            .ToList();
-        if (pending.Count == 0) return;
-
-        var cts = new CancellationTokenSource();
-        _prefetchCts = cts;
-        _ = Task.Run(async () =>
-        {
-            var done = 0;
-            foreach (var (species, shiny) in pending)
-            {
-                if (cts.IsCancellationRequested) return;
-                var loaded = new TaskCompletionSource();
-                _sprites.WarmShowdown(species, shiny, () => loaded.TrySetResult());
-                await Task.WhenAny(loaded.Task, Task.Delay(4000, CancellationToken.None));
-                done++;
-                if (pending.Count > 3 && done % 3 == 0)
-                {
-                    var progress = $"Catching sprites… {done}/{pending.Count}";
-                    MainThread.BeginInvokeOnMainThread(() => _viewModel.Status = progress);
-                }
-            }
-            MainThread.BeginInvokeOnMainThread(() =>
-            {
-                if (_viewModel.Status.StartsWith("Catching sprites", StringComparison.Ordinal))
-                    _viewModel.Status = "READY";
-            });
-        }, cts.Token);
     }
 
     private View BuildEditor()

@@ -96,5 +96,9 @@ public sealed class BatchAndBoxTests
         // Every mon survives unless the entire storage was full.
         Assert.True(after >= before - 1 || before >= 30 * session.Snapshot.Slots.Max(s => s.Box) + 1,
             $"before={before} after={after}");
+
+        var lastBox = session.Snapshot.Slots.Max(s => s.Box);
+        for (var slot = 0; slot < 30; slot++)
+            Assert.True(session.ReadEntity(lastBox, slot).IsEmpty, "Logical deletion must leave the replacement blank box at the end.");
     }
 }

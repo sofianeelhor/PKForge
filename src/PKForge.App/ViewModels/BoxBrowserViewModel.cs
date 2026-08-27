@@ -253,7 +253,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     }
 
     /// <summary>Runs any slot mutation then commits it through the safe write path (validate → backup → atomic write).</summary>
-    public async Task<bool> RunMutationAsync(Func<ISaveEngineSession, GenerationOutcome> operation, int slot)
+    public async Task<bool> RunMutationAsync(Func<ISaveEngineSession, GenerationOutcome> operation, int slot, bool refreshSlot = true)
     {
         var engineSession = _sessions.CurrentSession;
         var session = _sessions.Current;
@@ -276,18 +276,21 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             var candidate = engineSession.Serialize();
             var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate);
 
-            var updated = engineSession.ReadEntity(BoxIndex, slot);
-            var index = Array.FindIndex(_slots, x => x.Box == BoxIndex && x.Slot == slot);
-            if (index >= 0)
-                _slots[index] = _slots[index] with
-                {
-                    Species = updated.IsEmpty ? null : updated.Species,
-                    Nickname = updated.IsEmpty ? null : updated.Nickname,
-                    IsShiny = updated.IsShiny,
-                    Form = updated.Form,
-                };
-            OnPropertyChanged(nameof(VisibleSlots));
-            SelectSlot(slot);
+            if (refreshSlot)
+            {
+                var updated = engineSession.ReadEntity(BoxIndex, slot);
+                var index = Array.FindIndex(_slots, x => x.Box == BoxIndex && x.Slot == slot);
+                if (index >= 0)
+                    _slots[index] = _slots[index] with
+                    {
+                        Species = updated.IsEmpty ? null : updated.Species,
+                        Nickname = updated.IsEmpty ? null : updated.Nickname,
+                        IsShiny = updated.IsShiny,
+                        Form = updated.Form,
+                    };
+                OnPropertyChanged(nameof(VisibleSlots));
+                SelectSlot(slot);
+            }
             Status = $"{outcome.Message} · backup {receipt.BackupId[..Math.Min(13, receipt.BackupId.Length)]}";
             return true;
         }
