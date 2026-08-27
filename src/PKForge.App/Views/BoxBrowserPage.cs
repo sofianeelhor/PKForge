@@ -976,10 +976,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
         private async Task LoadIconsAsync(IReadOnlyList<BagItem> items, IReadOnlyList<Image> targets)
         {
+            var placeholder = ItemArt.PlaceholderPath();
             var paths = await Task.WhenAll(items.Select(i => ItemArt.GetAsync(ItemName(i.Id))));
             for (var i = 0; i < targets.Count && i < paths.Length; i++)
-                if (paths[i] is { } path)
-                    targets[i].Source = ImageSource.FromFile(path);
+                targets[i].Source = ImageSource.FromFile(paths[i] ?? placeholder);
         }
 
         private async Task EditCountAsync(BagItem item)
@@ -1051,7 +1051,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             var legal = legalIds.Select(id =>
             {
                 var cached = System.IO.Path.Combine(itemDirectory, ItemArt.Slug(gameItems[id]) + ".png");
-                return new PickItem(id, gameItems[id], File.Exists(cached) ? cached : null);
+                return new PickItem(id, gameItems[id], File.Exists(cached) ? cached : ItemArt.PlaceholderPath());
             }).ToList();
             var picked = await PickerMenu.ShowAsync(_host, "ADD ITEM", legal);
             if (picked is null) return;
@@ -1932,7 +1932,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         {
             if (names[id].Length == 0) continue;
             var cached = System.IO.Path.Combine(directory, ItemArt.Slug(names[id]) + ".png");
-            items.Add(new PickItem(id, names[id], File.Exists(cached) ? cached : null));
+            items.Add(new PickItem(id, names[id], File.Exists(cached) ? cached : ItemArt.PlaceholderPath()));
         }
         return items;
     }

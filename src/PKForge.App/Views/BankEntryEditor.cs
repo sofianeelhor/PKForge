@@ -406,7 +406,9 @@ public static class BankEntryEditor
         }
 
         private string NameOf(IReadOnlyList<string> names, int id) =>
-            (uint)id < (uint)names.Count && names[id].Length > 0 ? names[id] : $"#{id}";
+            (uint)id < (uint)names.Count && names[id].Length > 0 ? names[id]
+            : (uint)id < (uint)_data.ItemNames.Count && _data.ItemNames[id].Length > 0 ? _data.ItemNames[id]
+            : $"#{id}";
 
         private void PaintSprite(object? sender, SKPaintSurfaceEventArgs args)
         {
