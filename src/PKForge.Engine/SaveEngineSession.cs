@@ -338,7 +338,14 @@ public sealed class SaveEngineSession : ISaveEngineSession
             {
                 var entity = GetEntityCore(box, slot);
                 if (entity.Species == 0) continue;
-                if (ApplyInstructions(entity, instructions)) touched++;
+                // Gen 3-5 box slots are stored encrypted: the entity we hold is a
+                // decrypted copy, so every touched mon must be written back (re-encrypted)
+                // or the batch edit lands raw plaintext into the save's storage bytes.
+                if (ApplyInstructions(entity, instructions))
+                {
+                    SetEntityCore(box, slot, entity);
+                    touched++;
+                }
             }
         }
         return touched;
@@ -354,9 +361,8 @@ public sealed class SaveEngineSession : ISaveEngineSession
             var line = raw.Trim();
             if (line.Length == 0) continue;
             var eq = line.IndexOf('=');
-            if (eq <= 0) continue;
-            var prop = line[..eq].Trim().TrimStart('.').ToLowerInvariant();
-            var value = line[(eq + 1)..].Trim();
+            var prop = (eq > 0 ? line[..eq] : line).Trim().TrimStart('.').ToLowerInvariant();
+            var value = eq > 0 ? line[(eq + 1)..].Trim() : "1";
 
             int ParseValue() => value switch
             {
@@ -369,7 +375,23 @@ public sealed class SaveEngineSession : ISaveEngineSession
             switch (prop)
             {
                 case "level" or "lv": entity.CurrentLevel = (byte)Math.Clamp(ParseValue(), 1, 100); changed = true; break;
-                case "nature": entity.Nature = (Nature)Math.Clamp(ParseValue(), 0, 24); changed = true; break;
+            case "nature":
+            {
+                // Same PID-derived rule as the single-mon editor: Gen 3/4 nature setters
+                // are empty, so the batch editor must roll the personality instead or the
+                // edit silently reverts on those games.
+                var wanted = (Nature)Math.Clamp(ParseValue(), 0, 24);
+                if (entity is G3PKM or G4PKM)
+                    entity.SetPIDNature(wanted);
+                else
+                    entity.Nature = wanted;
+                changed = true;
+                break;
+            }
+            case "hypertrain" when entity is IHyperTrain ht:
+                ht.HT_HP = ht.HT_ATK = ht.HT_DEF = ht.HT_SPA = ht.HT_SPD = ht.HT_SPE = true;
+                changed = true;
+                break;
                 case "friendship": entity.CurrentFriendship = (byte)Math.Clamp(ParseValue(), 0, 255); changed = true; break;
                 case "ball": entity.Ball = (byte)Math.Clamp(ParseValue(), 0, 100); changed = true; break;
                 case "helditem" or "item": entity.HeldItem = ParseValue(); changed = true; break;
@@ -510,6 +532,215 @@ public sealed class SaveEngineSession : ISaveEngineSession
         return ShowdownParsing.GetShowdownText(GetEntityCore(box, slot));
     }
 
+    public string ExportBoxShowdown(int box)
+    {
+        ThrowIfDisposed();
+        if ((uint)box >= (uint)_save.BoxCount) return string.Empty;
+        var sets = new List<string>();
+        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+        {
+            var entity = GetEntityCore(box, slot);
+            if (entity.Species != 0)
+                sets.Add(ShowdownParsing.GetShowdownText(entity));
+        }
+        return string.Join("\n\n", sets);
+    }
+
+    public RngInfo GetRngInfo(int box, int slot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var entity = GetEntityCore(box, slot);
+        Span<int> ivs = stackalloc int[6];
+        entity.GetIVs(ivs);
+        return new RngInfo(
+            entity.PID,
+            entity.Format >= 6 ? entity.EncryptionConstant : null,
+            (int)entity.Nature,
+            entity.IsShiny,
+            entity is not GBPKM,
+            ivs.ToArray(),
+            entity.Ability,
+            entity.Gender);
+    }
+
+    public bool RerollNatureKeepShiny(int box, int slot, int nature)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var wanted = (Nature)Math.Clamp(nature, 0, 24);
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0 || entity is GBPKM) return false;
+
+        if (entity is not (G3PKM or G4PKM))
+        {
+            // Gen 5+ store nature as its own byte: nothing to preserve.
+            entity.Nature = wanted;
+            entity.RefreshChecksum();
+            SetEntityCore(box, slot, entity);
+            return true;
+        }
+
+        // Gen 3/4: nature is PID % 25. Search a new PID that keeps the shiny state,
+        // ability bit, gender (and Unown letter on FR/LG) while landing on the nature.
+        var work = entity.Clone();
+        var wasShiny = work.IsShiny;
+        var abilityBit = work.PID & 1;
+        var gender = work.Gender;
+        var personal = PersonalTable.B2W2[work.Species];
+        var singleGender = PersonalInfo.IsSingleGender(personal.Gender);
+        var unown = work.Version is GameVersion.FR or GameVersion.LG && work.Species == (int)Species.Unown;
+        var rnd = Random.Shared;
+        for (var attempt = 0; attempt < 5_000_000; attempt++)
+        {
+            var pid = rnd.Rand32();
+            if (pid % 25 != (byte)wanted) continue;
+            if ((pid & 1) != abilityBit) continue;
+            if (unown && EntityPID.GetUnownForm3(pid) != work.Form) continue;
+            if (!singleGender && EntityGender.GetFromPIDAndRatio(pid, personal.Gender) != gender) continue;
+            work.PID = pid;
+            if (work.IsShiny != wasShiny) continue;
+            work.RefreshChecksum();
+            SetEntityCore(box, slot, work);
+            return true;
+        }
+        return false;
+    }
+
+    public IReadOnlyList<int> GetMissingSpecies()
+    {
+        ThrowIfDisposed();
+        var owned = new HashSet<int>();
+        for (var box = 0; box < _save.BoxCount; box++)
+        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+        {
+            var species = GetEntityCore(box, slot).Species;
+            if (species != 0) owned.Add(species);
+        }
+        var missing = new List<int>();
+        for (ushort species = 1; species <= _save.MaxSpeciesID; species++)
+            if (!owned.Contains(species)) missing.Add(species);
+        return missing;
+    }
+
+    public DexEntryState GetDexEntry(int species)
+    {
+        ThrowIfDisposed();
+        ArgumentOutOfRangeException.ThrowIfLessThan(species, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(species, _save.MaxSpeciesID);
+        var id = (ushort)species;
+        return new DexEntryState(_save.GetSeen(id), _save.GetCaught(id));
+    }
+
+    public void SetDexEntry(int species, bool seen, bool caught)
+    {
+        ThrowIfDisposed();
+        ArgumentOutOfRangeException.ThrowIfLessThan(species, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(species, _save.MaxSpeciesID);
+        var id = (ushort)species;
+        SetDexFlagsCore(id, seen, caught);
+    }
+
+    /// <summary>Dex setters only exist on SaveFile for Gen 1/2/3/6 — every other
+    /// generation writes its Zukan block directly or the edit silently no-ops.</summary>
+    private void SetDexFlagsCore(ushort species, bool seen, bool caught)
+    {
+        switch (_save)
+        {
+            case SAV5 { Zukan: { } z5 }:
+                if (seen)
+                {
+                    z5.SetSeen(species, 0, false, true);
+                    z5.SetSeen(species, 1, false, true);
+                }
+                else
+                {
+                    z5.ClearSeen(species);
+                }
+                z5.SetCaught(species, caught);
+                return;
+            case SAV7 { Zukan: { } z7 }:
+                z7.SetSeen(species, seen);
+                z7.SetCaught(species, caught);
+                return;
+            case SAV4 { Dex: { } z4 }:
+                z4.SetSeen(species, seen);
+                z4.SetCaught(species, caught);
+                return;
+            case SAV8SWSH { Zukan: { } z8 }:
+                for (var region = 0; region < 4; region++)
+                    z8.SetSeenRegion(species, 0, region, seen);
+                z8.SetCaught(species, caught);
+                return;
+            case SAV8BS { Zukan: { } z8b }:
+                z8b.SetState(species, caught ? ZukanState8b.Caught
+                    : seen ? ZukanState8b.Seen
+                    : ZukanState8b.None);
+                return;
+            case SAV9SV { Zukan: { } z9 }:
+            {
+                if (caught)
+                {
+                    z9.SetDexEntryAll(species);
+                }
+                else if (!seen)
+                {
+                    z9.ClearDexEntryAll(species);
+                }
+                else if (z9.GetRevision() == (int)DexBlockMode9.Kitakami)
+                {
+                    // 2.0+ saves only expose the combined entry API.
+                    z9.SetDexEntryAll(species);
+                }
+                else
+                {
+                    var entry = z9.DexPaldea.Get(species);
+                    entry.SetSeen(true);
+                    entry.SetCaught(false);
+                }
+                return;
+            }
+            default:
+                _save.SetSeen(species, seen);
+                _save.SetCaught(species, caught);
+                return;
+        }
+    }
+
+    public IReadOnlyList<NuzlockeCatch> GetNuzlockeReport()
+    {
+        ThrowIfDisposed();
+        var catches = new List<(PKM Mon, int Box, int Slot)>();
+        for (var box = 0; box < _save.BoxCount; box++)
+        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+        {
+            var entity = GetEntityCore(box, slot);
+            if (entity.Species != 0 && !entity.IsEgg && entity.MetLocation != 0)
+                catches.Add((entity.Clone(), box, slot));
+        }
+
+        var report = new List<NuzlockeCatch>();
+        foreach (var group in catches.GroupBy(c => c.Mon.MetLocation).OrderBy(g => g.Key))
+        {
+            var ordered = group
+                .OrderBy(c => c.Mon.MetDate?.DayNumber ?? int.MaxValue)
+                .ThenBy(c => c.Box).ThenBy(c => c.Slot).ToList();
+            var first = ordered[0].Mon;
+            var route = GameInfo.GetLocationName(false, first.MetLocation, first.Format, first.Generation, first.Version)
+                ?? $"#{first.MetLocation}";
+            for (var i = 0; i < ordered.Count; i++)
+            {
+                var mon = ordered[i].Mon;
+                report.Add(new NuzlockeCatch(
+                    route, mon.Species,
+                    mon.IsNicknamed ? mon.Nickname : SpeciesName.GetSpeciesName(mon.Species, (int)LanguageID.English),
+                    FirstCatch: i == 0,
+                    mon.MetDate?.ToString("yyyy-MM-dd")));
+            }
+        }
+        return report;
+    }
+
     public void ReleaseSlot(int box, int slot)
     {
         ThrowIfDisposed();
@@ -567,10 +798,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         ThrowIfDisposed();
         for (ushort species = 1; species <= _save.MaxSpeciesID; species++)
-        {
-            _save.SetSeen(species, true);
-            _save.SetCaught(species, true);
-        }
+            SetDexFlagsCore(species, seen: true, caught: true);
     }
 
     public IReadOnlyList<BagPouch> GetBag()

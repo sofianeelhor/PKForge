@@ -107,6 +107,41 @@ public sealed class LegalizerService : ILegalizerService
         return new GeneratedEntity(data, info);
     }
 
+    public GenerationOutcome FillSpecies(ISaveEngineSession session, IReadOnlyList<int> species, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
+    {
+        if (session is not SaveEngineSession engineSession)
+            return new GenerationOutcome(false, "Unsupported session type.");
+        var save = engineSession.SaveFile;
+
+        var placed = 0;
+        foreach (var id in species)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var slot = FindEmptySlot(save);
+            if (slot is null)
+                return placed > 0
+                    ? new GenerationOutcome(true, $"Generated {placed}; storage is now full.")
+                    : new GenerationOutcome(false, "No empty PC slots.");
+
+            var name = _strings.specieslist[Math.Clamp(id, 1, _strings.specieslist.Length - 1)];
+            var outcome = GenerateFromShowdown(session, slot.Value.Box, slot.Value.Slot, name);
+            if (outcome.Success) placed++;
+            onProgress?.Invoke(placed, species.Count);
+        }
+        return placed > 0
+            ? new GenerationOutcome(true, $"Generated {placed} legal Pokémon into empty slots.")
+            : new GenerationOutcome(false, "The legalizer could not generate any of those species in this game.");
+    }
+
+    private static (int Box, int Slot)? FindEmptySlot(SaveFile save)
+    {
+        for (var box = 0; box < save.BoxCount; box++)
+        for (var slot = 0; slot < save.BoxSlotCount; slot++)
+            if (save.GetBoxSlotAtIndex(box, slot).Species == 0)
+                return (box, slot);
+        return null;
+    }
+
     public GenerationOutcome FillLivingDex(ISaveEngineSession session, byte[] compressedBundle, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
     {
         if (session is not SaveEngineSession engineSession)

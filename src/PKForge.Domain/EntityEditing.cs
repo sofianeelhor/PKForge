@@ -37,6 +37,34 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Showdown-format text for the slot's mon.</summary>
     string GetShowdownText(int box, int slot);
 
+    /// <summary>Showdown text for every mon in a box, blank-line separated.</summary>
+    string ExportBoxShowdown(int box);
+
+    /// <summary>Raw RNG facts speedrunners care about: PID, EC, IVs, nature, shiny.</summary>
+    RngInfo GetRngInfo(int box, int slot);
+
+    /// <summary>
+    /// Changes a mon's nature without losing its shiny state, gender or ability slot.
+    /// Gen 3/4 reroll the PID (PID-derived nature); Gen 5+ write the nature byte.
+    /// False on Gen 1/2 (no natures) or empty slots.
+    /// </summary>
+    bool RerollNatureKeepShiny(int box, int slot, int nature);
+
+    /// <summary>Species ids (1..Max) with no copy anywhere in PC storage.</summary>
+    IReadOnlyList<int> GetMissingSpecies();
+
+    /// <summary>Reads one dex cell's state.</summary>
+    DexEntryState GetDexEntry(int species);
+
+    /// <summary>Sets one dex cell (seen/caught).</summary>
+    void SetDexEntry(int species, bool seen, bool caught);
+
+    /// <summary>
+    /// Rule-aware Nuzlocke view built from met data: first catch per route plus
+    /// later duplicates, so runs can be audited after the fact.
+    /// </summary>
+    IReadOnlyList<NuzlockeCatch> GetNuzlockeReport();
+
     /// <summary>Empties the slot (release). Irreversible except via restore points.</summary>
     void ReleaseSlot(int box, int slot);
 
@@ -197,6 +225,9 @@ public interface ILegalizerService
 
     /// <inheritdoc cref="GenerateData"/>
     GeneratedEntity? GenerateDataFromShowdown(ISaveEngineSession session, string showdownText);
+
+    /// <summary>Generates legal mons for the requested species into the first empty PC slots.</summary>
+    GenerationOutcome FillSpecies(ISaveEngineSession session, IReadOnlyList<int> species, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
 }
 
 public sealed record GeneratedEntity(byte[] Data, BankEntryInfo Info);
@@ -233,6 +264,20 @@ public sealed record SlotExport(byte[] Data, string FileName);
 public sealed record TrainerInfo(string Name, int TID, int SID, uint Money, int Gender);
 
 public sealed record DexProgress(int Seen, int Caught, int Total);
+
+public sealed record DexEntryState(bool Seen, bool Caught);
+
+public sealed record RngInfo(
+    uint Pid,
+    uint? EncryptionConstant,
+    int Nature,
+    bool Shiny,
+    bool NatureRerollSupported,
+    IReadOnlyList<int> IVs,
+    int Ability,
+    int Gender);
+
+public sealed record NuzlockeCatch(string Route, int Species, string Name, bool FirstCatch, string? MetDate);
 
 public sealed record BagPouch(string Name, IReadOnlyList<BagItem> Items);
 
