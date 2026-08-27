@@ -13,4 +13,8 @@
   <ItemGroup>
     <ProjectReference Include="../PKForge.AutoMod/PKForge.AutoMod.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="DexGen" />
+    <InternalsVisibleTo Include="PKForge.Engine.Tests" />
+  </ItemGroup>
 </Project>

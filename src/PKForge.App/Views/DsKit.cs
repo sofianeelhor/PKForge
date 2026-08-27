@@ -9,17 +9,18 @@ namespace PKForge.App.Views;
 
 /// <summary>
 /// A PKSM menu row: white surface, warm-grey hairline, indigo-light selected band with an
-/// indigo edge and the red glove pointer — the striped-list cursor of the 3DS language.
+/// indigo edge — the striped-list cursor of the 3DS language.
 /// Draws its own chrome in Skia; the label (and optional icon) ride on top.
 /// </summary>
 public sealed class DsFolderButton : Grid
 {
     private readonly SKCanvasView _bg;
     private readonly Label _label;
-    private readonly SKCanvasView? _pointer;
     private readonly Image? _icon;
+    private readonly Grid _labelViewport;
     private readonly string _iconName = "";
     private bool _selected;
+    private int _marqueeGeneration;
 
     public Action? Tapped { get; set; }
 
@@ -30,13 +31,6 @@ public sealed class DsFolderButton : Grid
 
         _bg = new SKCanvasView { InputTransparent = true };
         _bg.PaintSurface += (_, args) => DrawRow(args.Surface.Canvas, args.Info, _selected);
-
-        _pointer = new SKCanvasView { InputTransparent = true };
-        _pointer.PaintSurface += (_, args) =>
-        {
-            if (!_selected) return;
-            PksmPaint.Pointer(args.Surface.Canvas, new SKPoint(1, args.Info.Height * 0.22f), args.Info.Height * 0.46f);
-        };
 
         // The icon column: a bundled PKSM pixel icon when the option carries a semantic
         // name, else the accent glyph. White on blue buttons, indigo when selected.
@@ -80,16 +74,18 @@ public sealed class DsFolderButton : Grid
             FontSize = 15,
             TextColor = UiTokens.Paper,
             VerticalTextAlignment = TextAlignment.Center,
-            LineBreakMode = LineBreakMode.TailTruncation,
+            LineBreakMode = LineBreakMode.NoWrap,
+            HorizontalOptions = LayoutOptions.Start,
         };
+        _labelViewport = new Grid { IsClippedToBounds = true, Margin = new Thickness(0, 0, 8, 0) };
+        _labelViewport.Children.Add(_label);
 
         Children.Add(_bg);
         Grid.SetColumnSpan(_bg, 3);
         Children.Add(iconHost);
-        Children.Add(_label);
-        Grid.SetColumn(_pointer, 0);
+        Children.Add(_labelViewport);
         Grid.SetColumn(iconHost, 1);
-        Grid.SetColumn(_label, 2);
+        Grid.SetColumn(_labelViewport, 2);
 
         var tap = new TapGestureRecognizer();
         tap.Tapped += (_, _) => Tapped?.Invoke();
@@ -107,8 +103,41 @@ public sealed class DsFolderButton : Grid
             if (_icon is not null && _iconName is not ("retroarch" or "azahar" or "eden"))
                 _icon.Source = PksmIcons.Source(_iconName, value ? PksmIcons.Indigo : PksmIcons.White);
             _bg.InvalidateSurface();
-            _pointer?.InvalidateSurface();
+            if (value) StartMarquee();
+            else StopMarquee();
         }
+    }
+
+    /// <summary>Long selected labels pause, glide left at reading speed, pause, then
+    /// return. Short labels allocate no timer or animation.</summary>
+    private async void StartMarquee()
+    {
+        var generation = ++_marqueeGeneration;
+        _label.TranslationX = 0;
+        await Task.Delay(700);
+        if (!_selected || generation != _marqueeGeneration || _labelViewport.Width <= 0) return;
+
+        var measured = _label.Measure(double.PositiveInfinity, HeightRequest).Width;
+        var overflow = measured - _labelViewport.Width;
+        if (overflow <= 4) return;
+        _label.WidthRequest = measured;
+
+        while (_selected && generation == _marqueeGeneration)
+        {
+            var duration = (uint)Math.Clamp(overflow * 45, 1800, 6500);
+            await _label.TranslateToAsync(-overflow, 0, duration, Easing.Linear);
+            if (!_selected || generation != _marqueeGeneration) return;
+            await Task.Delay(900);
+            if (!_selected || generation != _marqueeGeneration) return;
+            _label.TranslationX = 0;
+            await Task.Delay(700);
+        }
+    }
+
+    private void StopMarquee()
+    {
+        _marqueeGeneration++;
+        _label.TranslationX = 0;
     }
 
     /// <summary>Draws the row chrome: glossy black idle, navy + light-blue border selected.</summary>

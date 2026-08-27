@@ -16,3 +16,4 @@ Additional icons from [game-icons.net](https://game-icons.net) (CC-BY 3.0,
 © Lorc, Delapouite, Guard13007, Carl Olsen and other contributing artists):
 music, play, pause, skip, shuffle, autostart, quit, restore, release,
 male, female, genderless and pokedex symbols.
+padlock (lorc), dice (delapouite), skull (lorc), gears (lorc) and heart (lorc) symbols.

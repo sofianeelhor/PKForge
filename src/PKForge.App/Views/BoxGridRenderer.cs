@@ -8,8 +8,8 @@ namespace PKForge.App.Views;
 
 /// <summary>
 /// Shared LCD box-grid painter (main browser + bank vault): the PKSM storage world.
-/// Saturated wallpaper flats with the dot lattice, white crosshair brackets around
-/// the grid, soft white slots, gold selection frames, dashed gold carry ghosts.
+/// Saturated wallpaper flats with the dot lattice, soft white slots, gold selection
+/// frames, and dashed gold carry ghosts.
 /// </summary>
 public static class BoxGridRenderer
 {
@@ -68,13 +68,10 @@ public static class BoxGridRenderer
 
     public static SKRect GridBounds(SKImageInfo info) => GridBounds(new SKSize(info.Width, info.Height));
 
-    /// <summary>The PKSM box backdrop: saturated wallpaper flat, faint dot lattice,
-    /// white corner brackets around the grid.</summary>
+    /// <summary>The PKSM box backdrop: saturated wallpaper flat and faint dot lattice.</summary>
     public static void PaintBackdrop(SKCanvas canvas, SKImageInfo info, int boxIndex)
     {
         PksmPaint.Wallpaper(canvas, new SKRect(0, 0, info.Width, info.Height), WallpaperAt(boxIndex));
-        var arm = Math.Clamp(GridMetrics(info).Cell * 0.22f, 12f, 24f);
-        PksmPaint.Crosshair(canvas, SKRect.Inflate(GridBounds(info), 8, 8), arm, 4f);
     }
 
     public static void Paint(
@@ -83,7 +80,8 @@ public static class BoxGridRenderer
         BoxBrowserViewModel viewModel,
         ISpriteService sprites,
         ThemeService theme,
-        Action invalidate)
+        Action invalidate,
+        IReadOnlySet<int>? lockedSlots = null)
     {
         var wallpaper = WallpaperAt(viewModel.BoxIndex);
         var cell = GridMetrics(info).Cell;
@@ -136,6 +134,9 @@ public static class BoxGridRenderer
                 DrawSparkle(canvas, rect.Right - rect.Width * 0.14f, rect.Top + rect.Height * 0.16f,
                     Math.Min(rect.Width, rect.Height) * 0.09f, SparklePaint);
 
+            if (occupied && lockedSlots is not null && lockedSlots.Contains(index))
+                DrawLockBadge(canvas, rect, Math.Min(rect.Width, rect.Height));
+
             if (viewModel.SelectMode && occupied && viewModel.IsMarked(viewModel.BoxIndex, index))
             {
                 using var badge = new SKPaint { Color = Pksm.SelectBorder, IsAntialias = true };
@@ -175,6 +176,22 @@ public static class BoxGridRenderer
             PksmPaint.CenterText(canvas, slot.Nickname ?? $"#{slot.Species}", rect.MidX, rect.MidY,
                 font, SKColors.White, shadow, SKTextAlign.Center);
         }
+    }
+
+    private static SKBitmap? _lockIcon;
+
+    /// <summary>The release-lock badge: gold plate with the padlock glyph, bottom-right.</summary>
+    private static void DrawLockBadge(SKCanvas canvas, SKRect rect, float cell)
+    {
+        _lockIcon ??= SKBitmap.Decode(PksmIcons.GetPng("padlock", PksmIcons.White));
+        if (_lockIcon is null) return;
+        var pad = cell * 0.05f;
+        var size = cell * 0.26f;
+        var dest = new SKRect(rect.Right - pad - size, rect.Bottom - pad - size, rect.Right - pad, rect.Bottom - pad);
+        using var gold = new SKPaint { Color = UiTokens.SkShinyGold, IsAntialias = true };
+        canvas.DrawRoundRect(SKRect.Inflate(dest, size * 0.16f, size * 0.16f), size * 0.22f, size * 0.22f, gold);
+        using var image = SKImage.FromBitmap(_lockIcon);
+        canvas.DrawImage(image, dest, SpriteSampling);
     }
 
     /// <summary>Four-point gold sparkle star for shinies - shared with the Bank grid.</summary>

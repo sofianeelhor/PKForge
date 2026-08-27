@@ -117,7 +117,14 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (edit.Level is { } level)
             entity.CurrentLevel = (byte)Math.Clamp(level, 1, 100);
         if (edit.Nature is { } nature)
-            entity.Nature = (Nature)nature;
+        {
+            // Gen 3/4/5 natures are PID-derived with an empty setter: the only way to
+            // change them is re-rolling the personality (PKHeX's own SetPIDNature).
+            if (entity is G3PKM or G4PKM)
+                entity.SetPIDNature((Nature)nature);
+            else
+                entity.Nature = (Nature)nature;
+        }
         if (edit.Ability is { } ability)
             entity.Ability = ability;
         if (edit.HeldItem is { } item)
@@ -238,6 +245,264 @@ public sealed class SaveEngineSession : ISaveEngineSession
         }
     }
 
+    public int Generation => _save.Generation;
+
+    public int PlaceLivingDex(byte[] compressedBundle)
+    {
+        ThrowIfDisposed();
+        using var input = new MemoryStream(compressedBundle);
+        using var inflate = new System.IO.Compression.GZipStream(input, System.IO.Compression.CompressionMode.Decompress);
+        using var raw = new MemoryStream();
+        inflate.CopyTo(raw);
+        raw.Position = 0;
+        using var reader = new BinaryReader(raw);
+        var capacity = _save.BoxCount * _save.BoxSlotCount;
+        var placed = 0;
+        var bundleGeneration = reader.ReadInt32(); // header: generation, then count
+        if (bundleGeneration != _save.Generation)
+            return 0; // wrong bundle for this game: refuse, write nothing
+        var count = reader.ReadInt32();
+        for (var i = 0; i < count; i++)
+        {
+            var species = reader.ReadUInt16();
+            var length = reader.ReadInt32();
+            var data = reader.ReadBytes(length);
+            if (placed >= capacity) break;
+            var mon = EntityFormat.GetFromBytes(data, _save.Context);
+            if (mon is null || mon.Species == 0 || mon.Species != species) continue;
+            _save.SetBoxSlotAtIndex(mon, placed / _save.BoxSlotCount, placed % _save.BoxSlotCount);
+            placed++;
+        }
+        return placed;
+    }
+
+    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null)
+    {
+        ThrowIfDisposed();
+        var targetBoxes = boxes ?? Enumerable.Range(0, _save.BoxCount).ToList();
+        var slotsPerBox = _save.BoxSlotCount;
+
+        // Read every mon from the target boxes once, in stable storage order.
+        var mons = new List<PKM>(targetBoxes.Count * slotsPerBox);
+        var orderedBoxes = targetBoxes.Where(b => (uint)b < (uint)_save.BoxCount).OrderBy(b => b).ToList();
+        foreach (var box in orderedBoxes)
+            for (var slot = 0; slot < slotsPerBox; slot++)
+            {
+                var mon = GetEntityCore(box, slot);
+                // PKHeX entities can be backed by the save's mutable storage. Sorting
+                // rewrites that same storage, so every source must be detached before
+                // the first destination write or later entries can turn into garbage.
+                if (mon.Species != 0) mons.Add(mon.Clone());
+            }
+
+        int TypeRank(PKM mon) => mon.PersonalInfo.Type1; // dex type order runs types 0..17
+        int MetAge(PKM mon) => mon.MetDate?.DayNumber is { } day ? int.MaxValue - Math.Min(day, int.MaxValue - 1) : int.MaxValue;
+
+        mons = criteria switch
+        {
+            SortCriteria.DexNumber => mons.OrderBy(m => m.Species).ThenBy(m => m.Form).ThenBy(m => m.TID16).ToList(),
+            SortCriteria.Alphabetical => mons.OrderBy(m => GameInfo.Strings.specieslist[m.Species], StringComparer.OrdinalIgnoreCase)
+                .ThenBy(m => m.Species).ToList(),
+            SortCriteria.LevelDesc => mons.OrderByDescending(m => m.CurrentLevel).ThenBy(m => m.Species).ToList(),
+            SortCriteria.IvTotalDesc => mons.OrderByDescending(m => m.IVTotal).ThenBy(m => m.Species).ToList(),
+            SortCriteria.Type => mons.OrderBy(TypeRank).ThenBy(m => m.Species).ThenBy(m => m.Form).ToList(),
+            SortCriteria.AgeOldest => mons.OrderBy(MetAge).ThenBy(m => m.Species).ToList(),
+            SortCriteria.ShinyFirst => mons.OrderByDescending(m => m.IsShiny ? 1 : 0).ThenBy(m => m.Species).ThenBy(m => m.Form).ToList(),
+            _ => mons,
+        };
+
+        // Compact: write back into the target boxes front-first, then blank the tails.
+        var placed = 0;
+        foreach (var box in orderedBoxes)
+        {
+            for (var slot = 0; slot < slotsPerBox; slot++)
+            {
+                if (placed < mons.Count)
+                    SetEntityCore(box, slot, mons[placed++]);
+                else
+                    SetEntityCore(box, slot, _save.BlankPKM);
+            }
+        }
+        return mons.Count;
+    }
+
+    public int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null)
+    {
+        ThrowIfDisposed();
+        var targetBoxes = boxes ?? Enumerable.Range(0, _save.BoxCount).ToList();
+        var touched = 0;
+        foreach (var box in targetBoxes)
+        {
+            if ((uint)box >= (uint)_save.BoxCount) continue;
+            for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+            {
+                var entity = GetEntityCore(box, slot);
+                if (entity.Species == 0) continue;
+                // Gen 3-5 box slots are stored encrypted: the entity we hold is a
+                // decrypted copy, so every touched mon must be written back (re-encrypted)
+                // or the batch edit lands raw plaintext into the save's storage bytes.
+                if (ApplyInstructions(entity, instructions))
+                {
+                    SetEntityCore(box, slot, entity);
+                    touched++;
+                }
+            }
+        }
+        return touched;
+    }
+
+    /// <summary>Parses ".Prop=Value" instructions against one entity, PKHeX batch-editor style.</summary>
+    private static bool ApplyInstructions(PKM entity, IReadOnlyList<string> instructions)
+    {
+        var changed = false;
+        var rnd = Random.Shared;
+        foreach (var raw in instructions)
+        {
+            var line = raw.Trim();
+            if (line.Length == 0) continue;
+            var eq = line.IndexOf('=');
+            var prop = (eq > 0 ? line[..eq] : line).Trim().TrimStart('.').ToLowerInvariant();
+            var value = eq > 0 ? line[(eq + 1)..].Trim() : "1";
+
+            int ParseValue() => value switch
+            {
+                "$rand" => rnd.Next(0, 32),
+                "$shiny" => 1,
+                "$suggest" => 0,
+                _ => int.TryParse(value, out var n) ? n : 0,
+            };
+
+            switch (prop)
+            {
+                case "level" or "lv": entity.CurrentLevel = (byte)Math.Clamp(ParseValue(), 1, 100); changed = true; break;
+            case "nature":
+            {
+                // Same PID-derived rule as the single-mon editor: Gen 3/4 nature setters
+                // are empty, so the batch editor must roll the personality instead or the
+                // edit silently reverts on those games.
+                var wanted = (Nature)Math.Clamp(ParseValue(), 0, 24);
+                if (entity is G3PKM or G4PKM)
+                    entity.SetPIDNature(wanted);
+                else
+                    entity.Nature = wanted;
+                changed = true;
+                break;
+            }
+            case "hypertrain" when entity is IHyperTrain ht:
+                ht.HT_HP = ht.HT_ATK = ht.HT_DEF = ht.HT_SPA = ht.HT_SPD = ht.HT_SPE = true;
+                changed = true;
+                break;
+                case "friendship": entity.CurrentFriendship = (byte)Math.Clamp(ParseValue(), 0, 255); changed = true; break;
+                case "ball": entity.Ball = (byte)Math.Clamp(ParseValue(), 0, 100); changed = true; break;
+                case "helditem" or "item": entity.HeldItem = ParseValue(); changed = true; break;
+                case "move1": entity.Move1 = (ushort)ParseValue(); changed = true; break;
+                case "move2": entity.Move2 = (ushort)ParseValue(); changed = true; break;
+                case "move3": entity.Move3 = (ushort)ParseValue(); changed = true; break;
+                case "move4": entity.Move4 = (ushort)ParseValue(); changed = true; break;
+                case "iv_hp": case "iv_atk": case "iv_def": case "iv_spa": case "iv_spd": case "iv_spe":
+                {
+                    Span<int> ivs = stackalloc int[6];
+                    entity.GetIVs(ivs);
+                    var index = prop switch { "iv_hp" => 0, "iv_atk" => 1, "iv_def" => 2, "iv_spa" => 3, "iv_spd" => 4, _ => 5 };
+                    ivs[index] = Math.Clamp(ParseValue(), 0, 31);
+                    entity.SetIVs(ivs);
+                    changed = true;
+                    break;
+                }
+                case "ev_hp": case "ev_atk": case "ev_def": case "ev_spa": case "ev_spd": case "ev_spe":
+                {
+                    Span<int> evs = stackalloc int[6];
+                    entity.GetEVs(evs);
+                    var index = prop switch { "ev_hp" => 0, "ev_atk" => 1, "ev_def" => 2, "ev_spa" => 3, "ev_spd" => 4, _ => 5 };
+                    evs[index] = Math.Clamp(ParseValue(), 0, 252);
+                    entity.SetEVs(evs);
+                    changed = true;
+                    break;
+                }
+                case "shiny":
+                {
+                    var want = value.Equals("yes", StringComparison.OrdinalIgnoreCase) || ParseValue() == 1;
+                    if (want && !entity.IsShiny) entity.SetShiny();
+                    else if (!want && entity.IsShiny) entity.SetUnshiny();
+                    changed = true;
+                    break;
+                }
+                case "nickname":
+                    entity.Nickname = value;
+                    entity.IsNicknamed = value.Length > 0;
+                    changed = true;
+                    break;
+                case "ot" or "trainer":
+                    entity.OriginalTrainerName = value;
+                    changed = true;
+                    break;
+            }
+        }
+        if (changed) entity.RefreshChecksum();
+        return changed;
+    }
+
+    public string GetBoxName(int box)
+    {
+        ThrowIfDisposed();
+        if ((uint)box >= (uint)_save.BoxCount) return $"BOX {box + 1:00}";
+        var name = _save is IBoxDetailName details ? details.GetBoxName(box) : null;
+        return string.IsNullOrWhiteSpace(name) ? $"BOX {box + 1:00}" : name;
+    }
+
+    public void SwapBoxes(int a, int b)
+    {
+        ThrowIfDisposed();
+        if (a == b) return;
+        if (!_save.SwapBox(a, b))
+            throw new InvalidOperationException("This save does not allow one of those boxes to move.");
+    }
+
+    public void DeleteBox(int box)
+    {
+        ThrowIfDisposed();
+        if ((uint)box >= (uint)_save.BoxCount) return;
+        // Merge into the first box with room; anything that fits nowhere is released.
+        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+        {
+            var mon = GetEntityCore(box, slot);
+            if (mon.Species == 0) continue;
+            var landed = false;
+            for (var targetBox = 0; targetBox < _save.BoxCount && !landed; targetBox++)
+            {
+                if (targetBox == box) continue;
+                for (var targetSlot = 0; targetSlot < _save.BoxSlotCount; targetSlot++)
+                {
+                    if (GetEntityCore(targetBox, targetSlot).Species != 0) continue;
+                    SetEntityCore(targetBox, targetSlot, mon);
+                    landed = true;
+                    break;
+                }
+            }
+            SetEntityCore(box, slot, _save.BlankPKM);
+        }
+
+        // Save formats have a fixed physical box count. Logical deletion closes the
+        // ordering gap and leaves one new empty box at the end. PKHeX's MoveBox assumes
+        // boxes are packed at exactly 30*SIZE_STORED bytes, but Gen 5 boxes carry a
+        // 16-byte gap (stride 4096 vs 4080), so MoveBox shears the storage and the
+        // written save reloads as invalid species. SwapBox uses each format's exact
+        // GetBoxOffset, so chaining adjacent swaps moves the box safely on every format.
+        for (var target = box; target < _save.BoxCount - 1; target++)
+        {
+            if (!_save.SwapBox(target, target + 1))
+                throw new InvalidOperationException("This save does not allow that box to move.");
+        }
+    }
+
+    public void ClearBox(int box)
+    {
+        ThrowIfDisposed();
+        if ((uint)box >= (uint)_save.BoxCount) return;
+        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+            SetEntityCore(box, slot, _save.BlankPKM);
+    }
+
     public IReadOnlyList<int> GetSpeciesTypes(int species)
     {
         ThrowIfDisposed();
@@ -265,6 +530,215 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         ThrowIfDisposed();
         return ShowdownParsing.GetShowdownText(GetEntityCore(box, slot));
+    }
+
+    public string ExportBoxShowdown(int box)
+    {
+        ThrowIfDisposed();
+        if ((uint)box >= (uint)_save.BoxCount) return string.Empty;
+        var sets = new List<string>();
+        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+        {
+            var entity = GetEntityCore(box, slot);
+            if (entity.Species != 0)
+                sets.Add(ShowdownParsing.GetShowdownText(entity));
+        }
+        return string.Join("\n\n", sets);
+    }
+
+    public RngInfo GetRngInfo(int box, int slot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var entity = GetEntityCore(box, slot);
+        Span<int> ivs = stackalloc int[6];
+        entity.GetIVs(ivs);
+        return new RngInfo(
+            entity.PID,
+            entity.Format >= 6 ? entity.EncryptionConstant : null,
+            (int)entity.Nature,
+            entity.IsShiny,
+            entity is not GBPKM,
+            ivs.ToArray(),
+            entity.Ability,
+            entity.Gender);
+    }
+
+    public bool RerollNatureKeepShiny(int box, int slot, int nature)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var wanted = (Nature)Math.Clamp(nature, 0, 24);
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0 || entity is GBPKM) return false;
+
+        if (entity is not (G3PKM or G4PKM))
+        {
+            // Gen 5+ store nature as its own byte: nothing to preserve.
+            entity.Nature = wanted;
+            entity.RefreshChecksum();
+            SetEntityCore(box, slot, entity);
+            return true;
+        }
+
+        // Gen 3/4: nature is PID % 25. Search a new PID that keeps the shiny state,
+        // ability bit, gender (and Unown letter on FR/LG) while landing on the nature.
+        var work = entity.Clone();
+        var wasShiny = work.IsShiny;
+        var abilityBit = work.PID & 1;
+        var gender = work.Gender;
+        var personal = PersonalTable.B2W2[work.Species];
+        var singleGender = PersonalInfo.IsSingleGender(personal.Gender);
+        var unown = work.Version is GameVersion.FR or GameVersion.LG && work.Species == (int)Species.Unown;
+        var rnd = Random.Shared;
+        for (var attempt = 0; attempt < 5_000_000; attempt++)
+        {
+            var pid = rnd.Rand32();
+            if (pid % 25 != (byte)wanted) continue;
+            if ((pid & 1) != abilityBit) continue;
+            if (unown && EntityPID.GetUnownForm3(pid) != work.Form) continue;
+            if (!singleGender && EntityGender.GetFromPIDAndRatio(pid, personal.Gender) != gender) continue;
+            work.PID = pid;
+            if (work.IsShiny != wasShiny) continue;
+            work.RefreshChecksum();
+            SetEntityCore(box, slot, work);
+            return true;
+        }
+        return false;
+    }
+
+    public IReadOnlyList<int> GetMissingSpecies()
+    {
+        ThrowIfDisposed();
+        var owned = new HashSet<int>();
+        for (var box = 0; box < _save.BoxCount; box++)
+        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+        {
+            var species = GetEntityCore(box, slot).Species;
+            if (species != 0) owned.Add(species);
+        }
+        var missing = new List<int>();
+        for (ushort species = 1; species <= _save.MaxSpeciesID; species++)
+            if (!owned.Contains(species)) missing.Add(species);
+        return missing;
+    }
+
+    public DexEntryState GetDexEntry(int species)
+    {
+        ThrowIfDisposed();
+        ArgumentOutOfRangeException.ThrowIfLessThan(species, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(species, _save.MaxSpeciesID);
+        var id = (ushort)species;
+        return new DexEntryState(_save.GetSeen(id), _save.GetCaught(id));
+    }
+
+    public void SetDexEntry(int species, bool seen, bool caught)
+    {
+        ThrowIfDisposed();
+        ArgumentOutOfRangeException.ThrowIfLessThan(species, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(species, _save.MaxSpeciesID);
+        var id = (ushort)species;
+        SetDexFlagsCore(id, seen, caught);
+    }
+
+    /// <summary>Dex setters only exist on SaveFile for Gen 1/2/3/6 — every other
+    /// generation writes its Zukan block directly or the edit silently no-ops.</summary>
+    private void SetDexFlagsCore(ushort species, bool seen, bool caught)
+    {
+        switch (_save)
+        {
+            case SAV5 { Zukan: { } z5 }:
+                if (seen)
+                {
+                    z5.SetSeen(species, 0, false, true);
+                    z5.SetSeen(species, 1, false, true);
+                }
+                else
+                {
+                    z5.ClearSeen(species);
+                }
+                z5.SetCaught(species, caught);
+                return;
+            case SAV7 { Zukan: { } z7 }:
+                z7.SetSeen(species, seen);
+                z7.SetCaught(species, caught);
+                return;
+            case SAV4 { Dex: { } z4 }:
+                z4.SetSeen(species, seen);
+                z4.SetCaught(species, caught);
+                return;
+            case SAV8SWSH { Zukan: { } z8 }:
+                for (var region = 0; region < 4; region++)
+                    z8.SetSeenRegion(species, 0, region, seen);
+                z8.SetCaught(species, caught);
+                return;
+            case SAV8BS { Zukan: { } z8b }:
+                z8b.SetState(species, caught ? ZukanState8b.Caught
+                    : seen ? ZukanState8b.Seen
+                    : ZukanState8b.None);
+                return;
+            case SAV9SV { Zukan: { } z9 }:
+            {
+                if (caught)
+                {
+                    z9.SetDexEntryAll(species);
+                }
+                else if (!seen)
+                {
+                    z9.ClearDexEntryAll(species);
+                }
+                else if (z9.GetRevision() == (int)DexBlockMode9.Kitakami)
+                {
+                    // 2.0+ saves only expose the combined entry API.
+                    z9.SetDexEntryAll(species);
+                }
+                else
+                {
+                    var entry = z9.DexPaldea.Get(species);
+                    entry.SetSeen(true);
+                    entry.SetCaught(false);
+                }
+                return;
+            }
+            default:
+                _save.SetSeen(species, seen);
+                _save.SetCaught(species, caught);
+                return;
+        }
+    }
+
+    public IReadOnlyList<NuzlockeCatch> GetNuzlockeReport()
+    {
+        ThrowIfDisposed();
+        var catches = new List<(PKM Mon, int Box, int Slot)>();
+        for (var box = 0; box < _save.BoxCount; box++)
+        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+        {
+            var entity = GetEntityCore(box, slot);
+            if (entity.Species != 0 && !entity.IsEgg && entity.MetLocation != 0)
+                catches.Add((entity.Clone(), box, slot));
+        }
+
+        var report = new List<NuzlockeCatch>();
+        foreach (var group in catches.GroupBy(c => c.Mon.MetLocation).OrderBy(g => g.Key))
+        {
+            var ordered = group
+                .OrderBy(c => c.Mon.MetDate?.DayNumber ?? int.MaxValue)
+                .ThenBy(c => c.Box).ThenBy(c => c.Slot).ToList();
+            var first = ordered[0].Mon;
+            var route = GameInfo.GetLocationName(false, first.MetLocation, first.Format, first.Generation, first.Version)
+                ?? $"#{first.MetLocation}";
+            for (var i = 0; i < ordered.Count; i++)
+            {
+                var mon = ordered[i].Mon;
+                report.Add(new NuzlockeCatch(
+                    route, mon.Species,
+                    mon.IsNicknamed ? mon.Nickname : SpeciesName.GetSpeciesName(mon.Species, (int)LanguageID.English),
+                    FirstCatch: i == 0,
+                    mon.MetDate?.ToString("yyyy-MM-dd")));
+            }
+        }
+        return report;
     }
 
     public void ReleaseSlot(int box, int slot)
@@ -324,10 +798,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         ThrowIfDisposed();
         for (ushort species = 1; species <= _save.MaxSpeciesID; species++)
-        {
-            _save.SetSeen(species, true);
-            _save.SetCaught(species, true);
-        }
+            SetDexFlagsCore(species, seen: true, caught: true);
     }
 
     public IReadOnlyList<BagPouch> GetBag()
@@ -341,6 +812,15 @@ public sealed class SaveEngineSession : ISaveEngineSession
             .ToList();
     }
 
+    /// <summary>Highest species id this game's dex supports (per its personal table).</summary>
+    public int MaxSpeciesID => _save.MaxSpeciesID;
+
+    public IReadOnlyList<string> GetItemNames()
+    {
+        ThrowIfDisposed();
+        return GameInfo.Strings.GetItemStrings(_save.Context, _save.Version);
+    }
+
     public IReadOnlyList<int> GetPouchLegalItems(string pouchName)
     {
         ThrowIfDisposed();
@@ -350,12 +830,13 @@ public sealed class SaveEngineSession : ISaveEngineSession
         return bag.Info.GetItems(pouch.Type).ToArray().Select(id => (int)id).ToList();
     }
 
-    public void SetItemCount(string pouchName, int itemId, int count)
+    public int SetItemCount(string pouchName, int itemId, int count)
     {
         ThrowIfDisposed();
         var bag = _save.Inventory;
         var pouch = bag.Pouches.FirstOrDefault(p => p.Type.ToString() == pouchName)
             ?? throw new InvalidOperationException($"No pouch named {pouchName}.");
+        count = bag.Clamp(pouch.Type, itemId, count);
 
         var existing = pouch.Items.FirstOrDefault(i => i.Index == itemId);
         if (existing is not null)
@@ -371,6 +852,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
             empty.Count = count;
         }
         bag.CopyTo(_save);
+        return count;
     }
 
     public MetInfo GetMetInfo(int box, int slot)

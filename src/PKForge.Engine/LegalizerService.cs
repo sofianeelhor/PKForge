@@ -107,25 +107,54 @@ public sealed class LegalizerService : ILegalizerService
         return new GeneratedEntity(data, info);
     }
 
-    public GenerationOutcome FillLivingDex(ISaveEngineSession session, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
+    public GenerationOutcome FillSpecies(ISaveEngineSession session, IReadOnlyList<int> species, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
     {
         if (session is not SaveEngineSession engineSession)
             return new GenerationOutcome(false, "Unsupported session type.");
         var save = engineSession.SaveFile;
 
-        var capacity = save.BoxCount * save.BoxSlotCount;
         var placed = 0;
-        foreach (var pk in save.GenerateLivingDex(save.Personal))
+        foreach (var id in species)
         {
-            if (cancellationToken.IsCancellationRequested)
-                return new GenerationOutcome(placed > 0, $"Living dex stopped at {placed} Pokémon.");
-            if (placed >= capacity) break;
-            save.SetBoxSlotAtIndex(pk, placed / save.BoxSlotCount, placed % save.BoxSlotCount);
-            placed++;
-            onProgress?.Invoke(placed, capacity);
+            cancellationToken.ThrowIfCancellationRequested();
+            var slot = FindEmptySlot(save);
+            if (slot is null)
+                return placed > 0
+                    ? new GenerationOutcome(true, $"Generated {placed}; storage is now full.")
+                    : new GenerationOutcome(false, "No empty PC slots.");
+
+            var name = _strings.specieslist[Math.Clamp(id, 1, _strings.specieslist.Length - 1)];
+            var outcome = GenerateFromShowdown(session, slot.Value.Box, slot.Value.Slot, name);
+            if (outcome.Success) placed++;
+            onProgress?.Invoke(placed, species.Count);
         }
+        return placed > 0
+            ? new GenerationOutcome(true, $"Generated {placed} legal Pokémon into empty slots.")
+            : new GenerationOutcome(false, "The legalizer could not generate any of those species in this game.");
+    }
+
+    private static (int Box, int Slot)? FindEmptySlot(SaveFile save)
+    {
+        for (var box = 0; box < save.BoxCount; box++)
+        for (var slot = 0; slot < save.BoxSlotCount; slot++)
+            if (save.GetBoxSlotAtIndex(box, slot).Species == 0)
+                return (box, slot);
+        return null;
+    }
+
+    public GenerationOutcome FillLivingDex(ISaveEngineSession session, byte[] compressedBundle, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
+    {
+        if (session is not SaveEngineSession engineSession)
+            return new GenerationOutcome(false, "Unsupported session type.");
+        if (compressedBundle is not { Length: > 0 })
+            return new GenerationOutcome(false, "No living dex bundle for this game - nothing written.");
+
+        var save = engineSession.SaveFile;
+        var capacity = save.BoxCount * save.BoxSlotCount;
+        var placed = engineSession.PlaceLivingDex(compressedBundle);
+        onProgress?.Invoke(placed, capacity);
         return placed == 0
-            ? new GenerationOutcome(false, "The living dex generator produced nothing for this game.")
+            ? new GenerationOutcome(false, "The bundle held no compatible Pokémon; nothing was written.")
             : new GenerationOutcome(true, $"Living dex: {placed} Pokémon placed.");
     }
 
@@ -134,6 +163,10 @@ public sealed class LegalizerService : ILegalizerService
     {
         var text = new StringBuilder();
         var speciesName = _strings.specieslist[request.Species];
+        // Showdown names spell the Nidoran pair with a suffix; the gender sign alone
+        // misparses as the wrong sibling.
+        if (request.Species is (int)PKHeX.Core.Species.NidoranM) speciesName = "Nidoran-M";
+        else if (request.Species is (int)PKHeX.Core.Species.NidoranF) speciesName = "Nidoran-F";
         if (request.Form > 0)
         {
             // "Rotom" + "-" + "Wash" => "Rotom-Wash"; the showdown parser matches form

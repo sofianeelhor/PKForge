@@ -11,6 +11,13 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Ability ids this species/form can legally have in the open save's game.</summary>
     IReadOnlyList<int> GetAbilityChoices(int species, int form);
 
+    /// <summary>Console generation of the open save (1-9): selects the living dex bundle.</summary>
+    int Generation { get; }
+
+    /// <summary>The open game's own item name table, indexed by its item ids. Modern
+    /// lists misname Gen 1-4 ids (Rare Candy et al); this is per-context truth.</summary>
+    IReadOnlyList<string> GetItemNames();
+
     /// <summary>Display names of every form this species has in the open save's game,
     /// indexed by form id. One entry (or an empty name at 0) means no form choice.</summary>
     IReadOnlyList<string> GetFormChoices(int species);
@@ -30,8 +37,69 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Showdown-format text for the slot's mon.</summary>
     string GetShowdownText(int box, int slot);
 
+    /// <summary>Showdown text for every mon in a box, blank-line separated.</summary>
+    string ExportBoxShowdown(int box);
+
+    /// <summary>Raw RNG facts speedrunners care about: PID, EC, IVs, nature, shiny.</summary>
+    RngInfo GetRngInfo(int box, int slot);
+
+    /// <summary>
+    /// Changes a mon's nature without losing its shiny state, gender or ability slot.
+    /// Gen 3/4 reroll the PID (PID-derived nature); Gen 5+ write the nature byte.
+    /// False on Gen 1/2 (no natures) or empty slots.
+    /// </summary>
+    bool RerollNatureKeepShiny(int box, int slot, int nature);
+
+    /// <summary>Species ids (1..Max) with no copy anywhere in PC storage.</summary>
+    IReadOnlyList<int> GetMissingSpecies();
+
+    /// <summary>Reads one dex cell's state.</summary>
+    DexEntryState GetDexEntry(int species);
+
+    /// <summary>Sets one dex cell (seen/caught).</summary>
+    void SetDexEntry(int species, bool seen, bool caught);
+
+    /// <summary>
+    /// Rule-aware Nuzlocke view built from met data: first catch per route plus
+    /// later duplicates, so runs can be audited after the fact.
+    /// </summary>
+    IReadOnlyList<NuzlockeCatch> GetNuzlockeReport();
+
     /// <summary>Empties the slot (release). Irreversible except via restore points.</summary>
     void ReleaseSlot(int box, int slot);
+
+    /// <summary>
+    /// Sorts the given boxes (null = every box). Mons compact to the front of the
+    /// FIRST target box, overflow continues into the next; empties pool at the end.
+    /// Party is untouched. One write on Save.
+    /// </summary>
+    /// <returns>How many mons were placed.</returns>
+    /// <summary>
+    /// Fills the storage with the pre-generated living dex bundle (built by tools/DexGen,
+    /// shipped as an asset): one of each species, copied byte-for-byte. Zero on-device
+    /// legalization. Returns how many mons were placed.
+    /// </summary>
+    int PlaceLivingDex(byte[] compressedBundle);
+
+    int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null);
+
+    /// <summary>Applies an instruction ("Prop=Value", $suggest/$rand/$shiny) to every non-empty
+    /// slot in the given boxes (null = all boxes). Returns how many mons were touched.</summary>
+    int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null);
+
+    /// <summary>Display name of a box (wallpaper names like HEAL, FOREST); "BOX" default.</summary>
+    string GetBoxName(int box);
+
+    /// <summary>Swaps two boxes' entire contents (order management: box 1 with box 2).</summary>
+    void SwapBoxes(int a, int b);
+
+    /// <summary>Deletes a box by merging: its mons move to the first box with room (or are
+    /// released when the storage is full). Box order closes the gap. Gen1-8 fixed-storage
+    /// formats fall back to clearing the box instead.</summary>
+    void DeleteBox(int box);
+
+    /// <summary>Deletes the box outright (mon loss possible) - the explicit destructive path.</summary>
+    void ClearBox(int box);
 
     /// <summary>Imports a .pk* file's bytes into the slot; false if the bytes are not a compatible entity.</summary>
     bool ImportSlot(int box, int slot, byte[] fileBytes);
@@ -49,8 +117,9 @@ public interface ISaveEngineSession : IDisposable
     IReadOnlyList<BagPouch> GetBag();
     /// <summary>Item ids the pouch may legally contain (for the add-item picker).</summary>
     IReadOnlyList<int> GetPouchLegalItems(string pouchName);
-    /// <summary>Sets an item's count in a pouch (0 removes; adds when absent).</summary>
-    void SetItemCount(string pouchName, int itemId, int count);
+    /// <summary>Sets an item's count in a pouch (0 removes; adds when absent), clamped
+    /// to that game's per-item limit. Returns the count actually stored.</summary>
+    int SetItemCount(string pouchName, int itemId, int count);
 
     // ── Met / origin (the identity block behind legality) ──
     MetInfo GetMetInfo(int box, int slot);
@@ -149,13 +218,16 @@ public interface ILegalizerService
     GenerationOutcome LegalizeSlot(ISaveEngineSession session, int box, int slot);
 
     /// <summary>Fills the PC from box 0 slot 0 with a legal living dex (overwrites; caller confirms + backs up).</summary>
-    GenerationOutcome FillLivingDex(ISaveEngineSession session, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
+    GenerationOutcome FillLivingDex(ISaveEngineSession session, byte[] compressedBundle, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
 
     /// <summary>Generates a legal mon as raw bytes + facts, without touching the save (bank deposits).</summary>
     GeneratedEntity? GenerateData(ISaveEngineSession session, GenerationRequest request);
 
     /// <inheritdoc cref="GenerateData"/>
     GeneratedEntity? GenerateDataFromShowdown(ISaveEngineSession session, string showdownText);
+
+    /// <summary>Generates legal mons for the requested species into the first empty PC slots.</summary>
+    GenerationOutcome FillSpecies(ISaveEngineSession session, IReadOnlyList<int> species, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
 }
 
 public sealed record GeneratedEntity(byte[] Data, BankEntryInfo Info);
@@ -193,11 +265,44 @@ public sealed record TrainerInfo(string Name, int TID, int SID, uint Money, int 
 
 public sealed record DexProgress(int Seen, int Caught, int Total);
 
+public sealed record DexEntryState(bool Seen, bool Caught);
+
+public sealed record RngInfo(
+    uint Pid,
+    uint? EncryptionConstant,
+    int Nature,
+    bool Shiny,
+    bool NatureRerollSupported,
+    IReadOnlyList<int> IVs,
+    int Ability,
+    int Gender);
+
+public sealed record NuzlockeCatch(string Route, int Species, string Name, bool FirstCatch, string? MetDate);
+
 public sealed record BagPouch(string Name, IReadOnlyList<BagItem> Items);
 
 public sealed record BagItem(int Id, int Count);
 
 /// <summary>Common editable fields of one Pokémon entity.</summary>
+public enum SortCriteria
+{
+    /// <summary>National dex number, then form.</summary>
+    DexNumber,
+    /// <summary>Species display name, A-Z.</summary>
+    Alphabetical,
+    /// <summary>Current level, strongest first.</summary>
+    LevelDesc,
+    /// <summary>IV total, best first.</summary>
+    IvTotalDesc,
+    /// <summary>Primary type (dex type order), then dex number: type-run boxes.</summary>
+    Type,
+    /// <summary>Met date, oldest team first (nulls last).</summary>
+    AgeOldest,
+    /// <summary>Shinies first, then dex number.</summary>
+    ShinyFirst,
+}
+
+
 public sealed record EntityDetail(
     int Box,
     int Slot,
