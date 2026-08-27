@@ -45,7 +45,7 @@ public sealed class PadMenu : IPadHandler
 
         // Menus columnize by size: 1-4 options stay a single column, 5-12 split in two,
         // bigger menus go three-wide. Long labels force the single column so text fits.
-        var longLabels = options.Any(o => o.Label.Length > 22);
+        var longLabels = options.Any(o => o.Label.Length > 30);
         _columns = options.Length switch
         {
             <= 4 => 1,

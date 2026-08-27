@@ -36,7 +36,7 @@ public static class PksmIcons
         "credits" => "icon_credits.png",
         "box" => "storagemenu_icon_box.png",
         "bank" => "pkf_bank.png",
-        "trainer" => "pkf_trainer.png",
+        "trainer" => "gi_trainer.png",
         "male" => "gi_male.png",
         "female" => "gi_female.png",
         "genderless" => "gi_genderless.png",
