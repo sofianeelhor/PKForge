@@ -840,16 +840,28 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 FontSize = 11,
                 TextColor = UiTokens.BagCyan,
             };
+            // Live status INSIDE the bag window: outcomes must be visible here, not on
+            // the page footer hidden behind this overlay. Every async action reports.
+            BagStatus = new Label
+            {
+                Text = "",
+                FontFamily = DsChrome.PixelFont,
+                FontSize = 11,
+                TextColor = UiTokens.Paper,
+                LineBreakMode = LineBreakMode.WordWrap,
+                MaxLines = 2,
+            };
 
             var body = new Grid
             {
                 RowSpacing = 10,
-                RowDefinitions = [new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto)],
-                Children = { title, _pockets, _scroll, hint },
+                RowDefinitions = [new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto)],
+                Children = { title, _pockets, _scroll, hint, BagStatus },
             };
             Grid.SetRow(_pockets, 1);
             Grid.SetRow(_scroll, 2);
             Grid.SetRow(hint, 3);
+            Grid.SetRow(BagStatus, 4);
 
             var window = new Border
             {
@@ -887,6 +899,13 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             {
                 IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
             }
+        }
+
+        internal Label BagStatus = null!;
+
+        private void Report(string message)
+        {
+            MainThread.BeginInvokeOnMainThread(() => BagStatus.Text = message);
         }
 
         // The OPEN GAME's item table: Gen 1 Rare Candy lives at a different index than
@@ -972,6 +991,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
             Highlight(_cursor);
             _ = LoadIconsAsync(pouch.Items, icons);
+            Report($"{pouch.Name.ToUpperInvariant()} - {pouch.Items.Count} KINDS - NAME TABLE {_itemNames.Count}");
         }
 
         private async Task LoadIconsAsync(IReadOnlyList<BagItem> items, IReadOnlyList<Image> targets)
@@ -1002,11 +1022,12 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         {
             var pouchName = _bag[_pouchIndex].Name;
             var name = ItemName(itemId);
-            await _viewModel.RunMutationAsync(s =>
+            var outcome = await _viewModel.RunMutationAsync(s =>
             {
                 s.SetItemCount(pouchName, itemId, count);
                 return new GenerationOutcome(true, count == 0 ? $"{name} removed." : $"{name} ×{count}");
             }, _slotSeed);
+            Report(outcome ? $"SAVED: {(count == 0 ? $"{name} REMOVED" : $"{name} x{count}")}" : "WRITE FAILED - SEE STATUS");
             Rebuild();
         }
 
@@ -1017,44 +1038,39 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             var legalIds = _session.GetPouchLegalItems(pouchName)
                 .Where(id => id < gameItems.Count && gameItems[id].Length > 0)
                 .ToList();
-            if (legalIds.Count == 0) { _viewModel.Status = "No item list for this pouch."; return; }
-
-            // Fetch icons up-front for reasonable lists; huge lists warm their tail in the background.
-            var itemDirectory = System.IO.Path.Combine(FileSystem.AppDataDirectory, "items");
-            var missing = legalIds.Where(id => !File.Exists(System.IO.Path.Combine(itemDirectory, ItemArt.Slug(gameItems[id]) + ".png"))).ToList();
-            if (missing.Count > 0)
+            if (legalIds.Count == 0)
             {
-                LoadingOverlay? fetchOverlay = missing.Count > 25
-                    ? LoadingOverlay.Show(_host, "FETCHING ITEM SPRITES…", "One time only for this pouch.")
-                    : null;
-                try
-                {
-                    var head = missing.Take(160).ToList();
-                    var fetched = 0;
-                    foreach (var chunk in head.Chunk(8))
-                    {
-                        if (fetchOverlay?.Cancellation.IsCancellationRequested == true) break;
-                        await Task.WhenAll(chunk.Select(id => ItemArt.GetAsync(gameItems[id])));
-                        fetched += chunk.Length;
-                        fetchOverlay?.Report(fetched, head.Count);
-                    }
-                    var tail = missing.Skip(160).ToList();
-                    if (tail.Count > 0)
-                        _ = Task.Run(async () => { foreach (var id in tail) await ItemArt.GetAsync(gameItems[id]); });
-                }
-                finally
-                {
-                    fetchOverlay?.Close();
-                }
+                Report($"NO ADDABLE ITEMS IN {pouchName.ToUpperInvariant()} - TAP THE POUCH NAME TO SWITCH");
+                return;
             }
 
+            // Open the picker IMMEDIATELY with cached-or-placeholder art. The old flow
+            // blocked on fetching every sprite first, which on a cold cache read as
+            // "the button does nothing" for the better part of a minute.
+            var itemDirectory = System.IO.Path.Combine(FileSystem.AppDataDirectory, "items");
+            var placeholder = ItemArt.PlaceholderPath();
             var legal = legalIds.Select(id =>
             {
                 var cached = System.IO.Path.Combine(itemDirectory, ItemArt.Slug(gameItems[id]) + ".png");
-                return new PickItem(id, gameItems[id], File.Exists(cached) ? cached : ItemArt.PlaceholderPath());
+                return new PickItem(id, gameItems[id], File.Exists(cached) ? cached : placeholder);
             }).ToList();
-            var picked = await PickerMenu.ShowAsync(_host, "ADD ITEM", legal);
-            if (picked is null) return;
+            Report($"ADDING TO {pouchName.ToUpperInvariant()} - {legal.Count} ITEMS");
+            _ = Task.Run(async () =>
+            {
+                foreach (var id in legalIds)
+                    await ItemArt.GetAsync(gameItems[id]);
+            });
+            PickItem? picked;
+            try
+            {
+                picked = await PickerMenu.ShowAsync(_host, $"ADD - {pouchName.ToUpperInvariant()}", legal);
+            }
+            catch (Exception ex)
+            {
+                Report($"PICKER FAILED: {ex.GetType().Name}: {ex.Message}");
+                return;
+            }
+            if (picked is null) { Report("CANCELLED"); return; }
             var count = await StatsPopup.ShowSingleAsync(_host, $"{ItemName(picked.Id).ToUpperInvariant()} - QUANTITY", 0, 999);
             if (count is null) return;
             await WriteAsync(picked.Id, count.Value);
