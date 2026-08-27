@@ -11,6 +11,10 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Ability ids this species/form can legally have in the open save's game.</summary>
     IReadOnlyList<int> GetAbilityChoices(int species, int form);
 
+    /// <summary>The open game's own item name table, indexed by its item ids. Modern
+    /// lists misname Gen 1-4 ids (Rare Candy et al); this is per-context truth.</summary>
+    IReadOnlyList<string> GetItemNames();
+
     /// <summary>Display names of every form this species has in the open save's game,
     /// indexed by form id. One entry (or an empty name at 0) means no form choice.</summary>
     IReadOnlyList<string> GetFormChoices(int species);

@@ -753,7 +753,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         private readonly IGameDataService _data;
         private readonly ScrollView _scroll;
         private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly FlexLayout _pockets = new() { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap };
+        private readonly HorizontalStackLayout _pockets = new() { Spacing = 12, HorizontalOptions = LayoutOptions.Center };
         private readonly VerticalStackLayout _rows = new() { Spacing = 4 };
         private readonly int _slotSeed;
 
@@ -853,27 +853,61 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             }
         }
 
+        // The OPEN GAME's item table: Gen 1 Rare Candy lives at a different index than
+        // in the modern list, which is what misnamed everything before.
+        private IReadOnlyList<string> _itemNames = [];
         private string ItemName(int id) =>
-            id < _data.ItemNames.Count && _data.ItemNames[id].Length > 0 ? _data.ItemNames[id] : $"#{id}";
+            id < _itemNames.Count && _itemNames[id].Length > 0 ? _itemNames[id] : $"#{id}";
 
-        /// <summary>Re-reads the bag and rebuilds pills + rows (after every write or pouch switch).</summary>
+        private void CyclePouch(int delta)
+        {
+            if (_bag.Count == 0) return;
+            _pouchIndex = ((_pouchIndex + delta) % _bag.Count + _bag.Count) % _bag.Count;
+            _cursor = 0;
+            Rebuild();
+        }
+
+        private async Task PickPouchAsync()
+        {
+            var pouches = _bag.Select((p, i) => new PadOption($"{p.Name.ToUpperInvariant()} ({p.Items.Count})", IconPath: "bag")).ToArray();
+            var choice = await PadMenu.ShowAsync(_host, "POUCH", null, pouches);
+            if (choice is null) return;
+            var index = Array.FindIndex(pouches, o => o.Label == choice);
+            if (index >= 0) { _pouchIndex = index; _cursor = 0; Rebuild(); }
+        }
+
+        /// <summary>Re-reads the bag and rebuilds the switcher + rows (after every write or pouch switch).</summary>
         private void Rebuild()
         {
             _bag = _session.GetBag();
             if (_pouchIndex >= _bag.Count) _pouchIndex = 0;
             var pouch = _bag[_pouchIndex];
 
+            // One compact switcher row instead of wrapping pills: Gen 4's eight pouches
+            // were eating half the window and hiding the bag. Arrows cycle; tapping the
+            // name opens the full pouch list; L/R on the pad do the same.
             _pockets.Children.Clear();
-            for (var i = 0; i < _bag.Count; i++)
+            var prev = Kit.MiniCapsule("<", UiTokens.BagCyan);
+            prev.Clicked += (_, _) => CyclePouch(-1);
+            var next = Kit.MiniCapsule(">", UiTokens.BagCyan);
+            next.Clicked += (_, _) => CyclePouch(+1);
+            var label = new Label
             {
-                var index = i;
-                var pill = new BagPillTab($"{_bag[i].Name.ToUpperInvariant()} ({_bag[i].Items.Count})")
-                {
-                    Tapped = () => { _pouchIndex = index; _cursor = 0; Rebuild(); },
-                };
-                pill.Selected = i == _pouchIndex;
-                _pockets.Children.Add(pill);
-            }
+                Text = $" {_bag[_pouchIndex].Name.ToUpperInvariant()} ({pouch.Items.Count}) ",
+                FontFamily = DsChrome.PixelFont,
+                FontSize = 17,
+                FontAttributes = FontAttributes.Bold,
+                TextColor = UiTokens.Paper,
+                HorizontalTextAlignment = TextAlignment.Center,
+                VerticalTextAlignment = TextAlignment.Center,
+                HorizontalOptions = LayoutOptions.Center,
+            };
+            var tapList = new TapGestureRecognizer();
+            tapList.Tapped += (_, _) => _ = PickPouchAsync();
+            label.GestureRecognizers.Add(tapList);
+            _pockets.Children.Add(prev);
+            _pockets.Children.Add(label);
+            _pockets.Children.Add(next);
 
             _rows.Children.Clear();
             _itemRows = [];
@@ -939,14 +973,15 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         private async Task AddItemAsync()
         {
             var pouchName = _bag[_pouchIndex].Name;
+            var gameItems = _itemNames; // the open game's own table
             var legalIds = _session.GetPouchLegalItems(pouchName)
-                .Where(id => id < _data.ItemNames.Count && _data.ItemNames[id].Length > 0)
+                .Where(id => id < gameItems.Count && gameItems[id].Length > 0)
                 .ToList();
             if (legalIds.Count == 0) { _viewModel.Status = "No item list for this pouch."; return; }
 
             // Fetch icons up-front for reasonable lists; huge lists warm their tail in the background.
             var itemDirectory = System.IO.Path.Combine(FileSystem.AppDataDirectory, "items");
-            var missing = legalIds.Where(id => !File.Exists(System.IO.Path.Combine(itemDirectory, ItemArt.Slug(_data.ItemNames[id]) + ".png"))).ToList();
+            var missing = legalIds.Where(id => !File.Exists(System.IO.Path.Combine(itemDirectory, ItemArt.Slug(gameItems[id]) + ".png"))).ToList();
             if (missing.Count > 0)
             {
                 LoadingOverlay? fetchOverlay = missing.Count > 25
@@ -959,13 +994,13 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                     foreach (var chunk in head.Chunk(8))
                     {
                         if (fetchOverlay?.Cancellation.IsCancellationRequested == true) break;
-                        await Task.WhenAll(chunk.Select(id => ItemArt.GetAsync(_data.ItemNames[id])));
+                        await Task.WhenAll(chunk.Select(id => ItemArt.GetAsync(gameItems[id])));
                         fetched += chunk.Length;
                         fetchOverlay?.Report(fetched, head.Count);
                     }
                     var tail = missing.Skip(160).ToList();
                     if (tail.Count > 0)
-                        _ = Task.Run(async () => { foreach (var id in tail) await ItemArt.GetAsync(_data.ItemNames[id]); });
+                        _ = Task.Run(async () => { foreach (var id in tail) await ItemArt.GetAsync(gameItems[id]); });
                 }
                 finally
                 {
@@ -975,8 +1010,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
             var legal = legalIds.Select(id =>
             {
-                var cached = System.IO.Path.Combine(itemDirectory, ItemArt.Slug(_data.ItemNames[id]) + ".png");
-                return new PickItem(id, _data.ItemNames[id], File.Exists(cached) ? cached : null);
+                var cached = System.IO.Path.Combine(itemDirectory, ItemArt.Slug(gameItems[id]) + ".png");
+                return new PickItem(id, gameItems[id], File.Exists(cached) ? cached : null);
             }).ToList();
             var picked = await PickerMenu.ShowAsync(_host, "ADD ITEM", legal);
             if (picked is null) return;

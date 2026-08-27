@@ -488,6 +488,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
             .ToList();
     }
 
+    public IReadOnlyList<string> GetItemNames()
+    {
+        ThrowIfDisposed();
+        return GameInfo.Strings.GetItemStrings(_save.Context, _save.Version);
+    }
+
     public IReadOnlyList<int> GetPouchLegalItems(string pouchName)
     {
         ThrowIfDisposed();
