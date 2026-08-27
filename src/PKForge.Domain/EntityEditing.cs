@@ -41,6 +41,9 @@ public interface ISaveEngineSession : IDisposable
     /// slot in the given boxes (null = all boxes). Returns how many mons were touched.</summary>
     int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null);
 
+    /// <summary>Display name of a box (wallpaper names like HEAL, FOREST); "BOX" default.</summary>
+    string GetBoxName(int box);
+
     /// <summary>Swaps two boxes' entire contents (order management: box 1 with box 2).</summary>
     void SwapBoxes(int a, int b);
 

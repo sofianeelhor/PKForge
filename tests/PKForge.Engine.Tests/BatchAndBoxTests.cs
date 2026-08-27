@@ -73,6 +73,15 @@ public sealed class BatchAndBoxTests
     }
 
     [Fact]
+    public void BoxNamesArePerBoxAndBounded()
+    {
+        using var session = Open();
+        var name = session.GetBoxName(0);
+        Assert.False(string.IsNullOrWhiteSpace(name));
+        Assert.Equal($"BOX 99", session.GetBoxName(98)); // out of range: no throw, stable label
+    }
+
+    [Fact]
     public void DeleteBoxRescuesMonsIntoOtherBoxes()
     {
         using var session = Open();

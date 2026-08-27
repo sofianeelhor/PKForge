@@ -339,6 +339,14 @@ public sealed class SaveEngineSession : ISaveEngineSession
         return changed;
     }
 
+    public string GetBoxName(int box)
+    {
+        ThrowIfDisposed();
+        if ((uint)box >= (uint)_save.BoxCount) return $"BOX {box + 1:00}";
+        var name = _save is IBoxDetailName details ? details.GetBoxName(box) : null;
+        return string.IsNullOrWhiteSpace(name) ? $"BOX {box + 1:00}" : name;
+    }
+
     public void SwapBoxes(int a, int b)
     {
         ThrowIfDisposed();

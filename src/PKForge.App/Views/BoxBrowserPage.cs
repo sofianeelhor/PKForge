@@ -557,8 +557,44 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         }
     }
 
-    /// <summary>Box order and lifecycle: swap, duplicate, clear, delete-with-rescue.</summary>
+    /// <summary>Box order and lifecycle: the manage-boxes MODE (grab, swap, mark, bulk).</summary>
     private async Task ShowBoxManagerAsync()
+    {
+        var session = _sessionsFor();
+        if (session is null) return;
+        var slotsPerBox = BoxGridRenderer.Rows * BoxGridRenderer.Columns;
+
+        int CountFor(int box)
+        {
+            var count = 0;
+            for (var slot = 0; slot < slotsPerBox; slot++)
+                if (!session.ReadEntity(box, slot).IsEmpty) count++;
+            return count;
+        }
+
+        await BoxManageOverlay.ShowAsync(
+            _hostGrid, _viewModel.BoxCount, slotsPerBox, CountFor,
+            box => session.GetBoxName(box), _viewModel.BoxIndex,
+            swap: async (a, b) => await _viewModel.RunMutationAsync(session2 =>
+            {
+                session2.SwapBoxes(a, b);
+                return new GenerationOutcome(true, $"Boxes {a + 1:00} and {b + 1:00} swapped.");
+            }, Math.Max(0, _viewModel.SelectedSlot)),
+            clear: async boxes => await _viewModel.RunMutationAsync(session2 =>
+            {
+                foreach (var box in boxes) session2.ClearBox(box);
+                return new GenerationOutcome(true, $"{boxes.Count} box(es) cleared.");
+            }, Math.Max(0, _viewModel.SelectedSlot)),
+            delete: async boxes => await _viewModel.RunMutationAsync(session2 =>
+            {
+                foreach (var box in boxes) session2.DeleteBox(box);
+                return new GenerationOutcome(true, $"{boxes.Count} box(es) deleted.");
+            }, Math.Max(0, _viewModel.SelectedSlot)));
+        _canvas.InvalidateSurface();
+    }
+
+    /// <summary>Legacy box menu (single-box ops still reachable): kept behind the mode.</summary>
+    private async Task ShowBoxManagerMenuAsync()
     {
         var current = _viewModel.BoxIndex;
         while (true)
@@ -759,7 +795,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
         private IReadOnlyList<BagPouch> _bag = [];
         private List<BagRow> _itemRows = [];
-        private AddRow _addRow = null!;
+        private View _addRow = null!;
         private Grid _overlay = null!;
         private int _pouchIndex;
         private int _cursor;
@@ -927,7 +963,11 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 _rows.Children.Add(row);
             }
 
-            _addRow = new AddRow { Tapped = () => _ = AddItemAsync() };
+            var add = Kit.Capsule("+  ADD ITEM", UiTokens.BagCyan);
+            add.FontSize = 14;
+            add.Margin = new Thickness(4, 6, 4, 2);
+            add.Clicked += (_, _) => _ = AddItemAsync();
+            _addRow = add;
             _rows.Children.Add(_addRow);
 
             Highlight(_cursor);
@@ -1025,7 +1065,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             _cursor = Math.Clamp(index, 0, _itemRows.Count);
             for (var i = 0; i < _itemRows.Count; i++)
                 _itemRows[i].Selected = i == _cursor;
-            _addRow.Selected = _cursor == _itemRows.Count;
+            if (_addRow is Button capsule)
+                capsule.BackgroundColor = _cursor == _itemRows.Count ? UiTokens.ChoiceFillPress : UiTokens.ChoiceFill;
             var target = _cursor < _itemRows.Count ? (View)_itemRows[_cursor] : _addRow;
             _ = _scroll.ScrollToAsync(target, ScrollToPosition.MakeVisible, false);
         }
