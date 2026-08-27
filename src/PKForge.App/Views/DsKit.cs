@@ -9,14 +9,13 @@ namespace PKForge.App.Views;
 
 /// <summary>
 /// A PKSM menu row: white surface, warm-grey hairline, indigo-light selected band with an
-/// indigo edge and the red glove pointer — the striped-list cursor of the 3DS language.
+/// indigo edge — the striped-list cursor of the 3DS language.
 /// Draws its own chrome in Skia; the label (and optional icon) ride on top.
 /// </summary>
 public sealed class DsFolderButton : Grid
 {
     private readonly SKCanvasView _bg;
     private readonly Label _label;
-    private readonly SKCanvasView? _pointer;
     private readonly Image? _icon;
     private readonly Grid _labelViewport;
     private readonly string _iconName = "";
@@ -32,13 +31,6 @@ public sealed class DsFolderButton : Grid
 
         _bg = new SKCanvasView { InputTransparent = true };
         _bg.PaintSurface += (_, args) => DrawRow(args.Surface.Canvas, args.Info, _selected);
-
-        _pointer = new SKCanvasView { InputTransparent = true };
-        _pointer.PaintSurface += (_, args) =>
-        {
-            if (!_selected) return;
-            PksmPaint.Pointer(args.Surface.Canvas, new SKPoint(1, args.Info.Height * 0.22f), args.Info.Height * 0.46f);
-        };
 
         // The icon column: a bundled PKSM pixel icon when the option carries a semantic
         // name, else the accent glyph. White on blue buttons, indigo when selected.
@@ -90,10 +82,8 @@ public sealed class DsFolderButton : Grid
 
         Children.Add(_bg);
         Grid.SetColumnSpan(_bg, 3);
-        Children.Add(_pointer);
         Children.Add(iconHost);
         Children.Add(_labelViewport);
-        Grid.SetColumn(_pointer, 0);
         Grid.SetColumn(iconHost, 1);
         Grid.SetColumn(_labelViewport, 2);
 
@@ -113,7 +103,6 @@ public sealed class DsFolderButton : Grid
             if (_icon is not null && _iconName is not ("retroarch" or "azahar" or "eden"))
                 _icon.Source = PksmIcons.Source(_iconName, value ? PksmIcons.Indigo : PksmIcons.White);
             _bg.InvalidateSurface();
-            _pointer?.InvalidateSurface();
             if (value) StartMarquee();
             else StopMarquee();
         }

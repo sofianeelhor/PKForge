@@ -35,6 +35,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IBankService>(_ =>
             new FileBankService(Path.Combine(FileSystem.AppDataDirectory, "bank")));
         builder.Services.AddSingleton<ISaveSessionService, SaveSessionService>();
+        builder.Services.AddSingleton<Services.ProtectionStore>();
         builder.Services.AddSingleton<ISafeSaveWriter, SafeSaveWriter>();
         builder.Services.AddSingleton<ILegalityService, LegalityService>();
         builder.Services.AddSingleton<ISpriteService, SpriteService>();

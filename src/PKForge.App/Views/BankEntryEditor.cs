@@ -711,12 +711,11 @@ public static class BankEntryEditor
 
         /// <summary>
         /// One fact row of the summary panels: PKSM pixel icon, PixelUI caption, right-set
-        /// value, and the striped-row cursor (indigo-light band + red glove pointer).
+        /// value, and the striped-row cursor (indigo-light band).
         /// </summary>
         private sealed class SummaryRow : Grid, IFocusTarget
         {
             private readonly SKCanvasView _bg;
-            private readonly SKCanvasView _pointer;
             private readonly Label _caption;
             private readonly Label _value;
             private readonly Image _icon;
@@ -730,12 +729,6 @@ public static class BankEntryEditor
                 ColumnDefinitions = [new(new GridLength(26)), new(new GridLength(26)), new(new GridLength(104)), new(GridLength.Star)];
                 _bg = new SKCanvasView { InputTransparent = true };
                 _bg.PaintSurface += (_, args) => DsFolderButton.DrawRow(args.Surface.Canvas, args.Info, _selected);
-                _pointer = new SKCanvasView { InputTransparent = true };
-                _pointer.PaintSurface += (_, args) =>
-                {
-                    if (_selected)
-                        PksmPaint.Pointer(args.Surface.Canvas, new SKPoint(2, args.Info.Height * 0.18f), args.Info.Height * 0.5f);
-                };
                 _icon = new Image
                 {
                     WidthRequest = 18,
@@ -764,7 +757,6 @@ public static class BankEntryEditor
                     MaxLines = 1,
                 };
                 Children.Add(_bg);
-                Children.Add(_pointer);
                 Children.Add(_icon);
                 Children.Add(_caption);
                 Children.Add(_value);
@@ -794,7 +786,6 @@ public static class BankEntryEditor
                 _selected = focused;
                 _caption.TextColor = focused ? UiTokens.IndigoInk : UiTokens.Ink0;
                 _bg.InvalidateSurface();
-                _pointer.InvalidateSurface();
             }
         }
 
