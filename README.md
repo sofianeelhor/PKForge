@@ -28,13 +28,6 @@ Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
 ![Events](docs/screenshots/events.png)
 ![Menus](docs/screenshots/menu.png)
 
-## Safety
-
-- Every write is validated, backed up, then written atomically. An invalid Pokémon never
-  reaches storage.
-- Open and re-save with no edits produces a byte-identical file. The tests prove it
-  against a real save corpus.
-- All file access goes through Android's Storage Access Framework.
 
 We do not support cheating at the expense of others. Do not use significantly edited
 Pokémon in battle or in trades with people who do not know they are edited.
