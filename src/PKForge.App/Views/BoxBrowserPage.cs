@@ -26,6 +26,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     private readonly ContentView _footerHost;
     private readonly Grid _storageContent;
     private readonly View _sidePanel;
+    private ScrollView? _editorScroll;
+    private EditorFocusTarget[] EditorFocusTargets = [];
     private Grid _hostGrid = null!;
     private long _partyPulseStart = Environment.TickCount64;
     private int _lastAimSlot = -1;
@@ -34,6 +36,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     private bool _boxManageMode;
     private bool _boxManageBusy;
     private bool _boxHeld;
+    private bool _editorFocusMode;
+    private int _editorFocusIndex;
     private int _heldBox;
     private int _slotBeforeBoxManage = -1;
     private readonly HashSet<int> _lockedSlots = [];
@@ -237,6 +241,12 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         ("X", "Tools", () => _ = ShowToolsAsync()), ("Y", "Save data", () => _ = ShowSaveDataAsync()),
         ("+", "Menu", () => OpenCursorMenu()));
 
+    private void SetEditorFooter() => _footerHost.Content = DsChrome.Footer(
+        ("↑↓", "Navigate", null),
+        ("A", "Use field", () => ActivateEditorFocus()),
+        ("B", "Box", ExitEditorFocusMode),
+        ("+", "Box", ExitEditorFocusMode));
+
     private void SetBoxManageFooter() => _footerHost.Content = DsChrome.Footer(
         ("A", _boxHeld ? "Drop box" : "Hold box", () => OnPadButton(PadButton.A)),
         ("B", "Done", ExitBoxManageMode),
@@ -315,7 +325,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             },
         };
 
-        var editor = new ScrollView { Content = BuildEditor(), IsVisible = false };
+        _editorScroll = new ScrollView { Content = BuildEditor(), IsVisible = false };
+        var editor = _editorScroll;
 
         void SwapPanels()
         {
@@ -341,6 +352,105 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         Grid.SetRow(body, 1);
         return Kit.DevicePanel(layout, padding: 10);
     }
+
+    private void EnterEditorFocusMode()
+    {
+        if (_viewModel.Selected is null) return;
+        _editorFocusMode = true;
+        _editorFocusIndex = 0;
+        SetEditorFooter();
+        UpdateEditorFocusVisuals();
+        _viewModel.Status = $"EDITOR FOCUS - {EditorFocusTargets[_editorFocusIndex].Caption} · A USE · B BOX";
+    }
+
+    private void ExitEditorFocusMode()
+    {
+        _editorFocusMode = false;
+        UpdateEditorFocusVisuals();
+        SetStorageFooter();
+        _viewModel.Status = "READY";
+    }
+
+    private void MoveEditorFocus(int delta)
+    {
+        var current = EditorFocusTargets[_editorFocusIndex];
+        if (current.Neighbors is { } neighbors)
+        {
+            _editorFocusIndex = delta < 0 ? neighbors.Up : neighbors.Down;
+        }
+        else
+        {
+            _editorFocusIndex = (_editorFocusIndex + delta + EditorFocusTargets.Length) % EditorFocusTargets.Length;
+        }
+        UpdateEditorFocusVisuals();
+        _viewModel.Status = $"EDITOR FOCUS - {EditorFocusTargets[_editorFocusIndex].Caption} · A USE · B BOX";
+    }
+
+    private void MoveEditorFocusHorizontal(int delta)
+    {
+        var current = EditorFocusTargets[_editorFocusIndex];
+        if (current.Neighbors is { } neighbors)
+        {
+            _editorFocusIndex = delta < 0 ? neighbors.Left : neighbors.Right;
+            UpdateEditorFocusVisuals();
+            _viewModel.Status = $"EDITOR FOCUS - {EditorFocusTargets[_editorFocusIndex].Caption} · A USE · B BOX";
+            return;
+        }
+
+        if (current.NumericBindingPath is { } bindingPath)
+        {
+            var value = int.TryParse(GetVmString(bindingPath), out var level) ? level : 0;
+            SetVmString(bindingPath, Math.Clamp(value + delta, 1, 100).ToString());
+        }
+    }
+
+    private void ActivateEditorFocus()
+    {
+        _ = EditorFocusTargets[_editorFocusIndex].Activate();
+    }
+
+    private void UpdateEditorFocusVisuals()
+    {
+        foreach (var target in EditorFocusTargets)
+        {
+            switch (target.View)
+            {
+                case Border border:
+                    border.Stroke = UiTokens.ShellEdge;
+                    border.StrokeThickness = 1.2;
+                    break;
+                case Button button:
+                    if (target.OriginalBackground is { } originalBackground)
+                        button.BackgroundColor = originalBackground;
+                    if (target.OriginalTextColor is { } originalTextColor)
+                        button.TextColor = originalTextColor;
+                    break;
+            }
+        }
+
+        if (!_editorFocusMode) return;
+        var focused = EditorFocusTargets[_editorFocusIndex];
+        switch (focused.View)
+        {
+            case Border border:
+                border.Stroke = UiTokens.MenuBlue;
+                border.StrokeThickness = 2.2;
+                break;
+            case Button button:
+                button.BackgroundColor = UiTokens.MenuBlue;
+                button.TextColor = UiTokens.Paper;
+                break;
+        }
+
+        if (_editorScroll is not null)
+            _ = _editorScroll.ScrollToAsync(focused.View, ScrollToPosition.MakeVisible, false);
+    }
+
+    private sealed record EditorFocusTarget(View View, string Caption, Func<Task> Activate,
+        string? NumericBindingPath = null, Color? OriginalBackground = null, Color? OriginalTextColor = null,
+        EditorFocusNeighbors? Neighbors = null);
+
+    private sealed record EditorFocusNeighbors(int Left, int Right, int Up, int Down);
 
     private async Task ShowToolsAsync()
     {
@@ -2192,6 +2302,28 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             }
         }
 
+        if (_editorFocusMode)
+        {
+            switch (button)
+            {
+                case PadButton.Up: MoveEditorFocus(-1); return true;
+                case PadButton.Down: MoveEditorFocus(1); return true;
+                case PadButton.Left: MoveEditorFocusHorizontal(-1); return true;
+                case PadButton.Right: MoveEditorFocusHorizontal(1); return true;
+                case PadButton.A:
+                case PadButton.X:
+                case PadButton.Y:
+                    ActivateEditorFocus();
+                    return true;
+                case PadButton.B:
+                case PadButton.Start:
+                    ExitEditorFocusMode();
+                    return true;
+                default:
+                    return true;
+            }
+        }
+
         switch (button)
         {
             case PadButton.Up: return _viewModel.MoveCursor(FocusDirection.Up);
@@ -2279,7 +2411,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     {
         var nickname = _viewModel.Selected?.Nickname is { Length: > 0 } nick ? nick : $"slot {slot + 1}";
         var choice = await PadMenu.ShowAsync(_hostGrid, nickname.ToUpperInvariant(), null,
-            new PadOption("Edit (side panel)", IconPath: "editor"),
+            new PadOption("Edit", IconPath: "editor"),
             new PadOption("Move", IconPath: "storage"),
             new PadOption("Duplicate", IconPath: "storage"),
             new PadOption("Send to Bank", IconPath: "bank"),
@@ -2294,6 +2426,9 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Release", IconPath: "release"));
         switch (choice)
         {
+            case "Edit":
+                EnterEditorFocusMode();
+                return;
             case "Move":
                 if (_viewModel.BeginCarry()) _canvas.InvalidateSurface();
                 return;
@@ -2552,43 +2687,114 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
     private View BuildEditor()
     {
-        // The mon's name lives in the side panel's maroon header now; the editor
-        // opens with the legality verdict, then the striped attribute rows.
+        EditorFocusTargets = [];
+        _editorFocusIndex = 0;
+
         var legality = new Label { FontSize = 11, TextColor = UiTokens.Ink1, MaximumHeightRequest = 90 };
         legality.SetBinding(Label.TextProperty, nameof(BoxBrowserViewModel.LegalityText));
+        var data = IPlatformApplication.Current!.Services.GetRequiredService<IGameDataService>();
 
-        var save = Kit.Capsule("SAVE CHANGES", UiTokens.Green);
-        save.Margin = new Thickness(0, 8, 0, 0);
-        save.SetBinding(Button.CommandProperty, nameof(BoxBrowserViewModel.SaveEditCommand));
+        View FocusBorder(View inner, string caption, Func<Task> activate, string? numericBindingPath = null)
+        {
+            var border = (Border)inner;
+            EditorFocusTargets = [.. EditorFocusTargets, new EditorFocusTarget(border, caption, activate, numericBindingPath)];
+            return border;
+        }
 
-        // Per-mon powers: LEGALIZE is live; the rest are staged.
-        var monActions = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap, Margin = new Thickness(0, 4, 0, 0) };
-        var legalize = Kit.Capsule("LEGALIZE", UiTokens.Green);
-        legalize.FontSize = 11;
-        legalize.Padding = new Thickness(10, 6);
-        legalize.Margin = new Thickness(0, 0, 6, 6);
+        Button FocusButton(Button button, string caption)
+        {
+            EditorFocusTargets = [.. EditorFocusTargets, new EditorFocusTarget(button, caption, () => { button.SendClicked(); return Task.CompletedTask; },
+                OriginalBackground: button.BackgroundColor, OriginalTextColor: button.TextColor)];
+            return button;
+        }
+
+        List<PickItem> AbilityItems()
+        {
+            var detail = _viewModel.Selected;
+            var session = _sessionsFor();
+            if (Services.HaXMode.IsOn) return AllItems(data.AbilityNames, includeZero: true);
+            if (detail is null || session is null) return [];
+            return session.GetAbilityChoices(detail.Species, detail.Form)
+                .Select(id => new PickItem(id, id < data.AbilityNames.Count ? data.AbilityNames[id] : $"#{id}"))
+                .ToList();
+        }
+        List<PickItem> MoveItems() => AllItems(data.MoveNames, includeZero: true, zeroLabel: "(none)");
+
+        View? nicknameRow = null;
+        View? levelRow = null;
+        View? otRow = null;
+
+        var species = FocusBorder(NamedPicker("SPECIES", nameof(BoxBrowserViewModel.EditSpecies), data.SpeciesNames, null,
+            openPokedex: true, shaded: false), "SPECIES", async () =>
+        {
+            var session = _sessionsFor();
+            if (session is null) return;
+            var picked = await PokedexPicker.ShowAsync(_hostGrid, data, session);
+            if (picked is not null) SetVmString(nameof(BoxBrowserViewModel.EditSpecies), picked.Id.ToString());
+        });
+        var nickname = FocusBorder(FieldRow("Nickname", nameof(BoxBrowserViewModel.EditNickname), shaded: true), "NICKNAME", () =>
+        {
+            if (nicknameRow is not null) FocusEntry(nicknameRow);
+            return Task.CompletedTask;
+        });
+        nicknameRow = nickname;
+        var level = FocusBorder(FieldRow("Level", nameof(BoxBrowserViewModel.EditLevel), shaded: false), "LEVEL", () =>
+        {
+            if (levelRow is not null) FocusEntry(levelRow);
+            return Task.CompletedTask;
+        }, nameof(BoxBrowserViewModel.EditLevel));
+        levelRow = level;
+        var nature = FocusBorder(NamedPicker("NATURE", nameof(BoxBrowserViewModel.EditNature), data.NatureNames,
+            () => AllItems(data.NatureNames, includeZero: true), shaded: true), "NATURE", async () => await OpenNamedPickerAsync("NATURE", nameof(BoxBrowserViewModel.EditNature), () => AllItems(data.NatureNames, includeZero: true)));
+        var ability = FocusBorder(NamedPicker("ABILITY", nameof(BoxBrowserViewModel.EditAbility), data.AbilityNames,
+            AbilityItems, shaded: false), "ABILITY", async () => await OpenNamedPickerAsync("ABILITY", nameof(BoxBrowserViewModel.EditAbility), AbilityItems));
+        var item = FocusBorder(NamedPicker("HELD ITEM", nameof(BoxBrowserViewModel.EditHeldItem), data.ItemNames,
+            () => ItemsWithIcons(data.ItemNames), shaded: true), "HELD ITEM", async () => await OpenNamedPickerAsync("HELD ITEM", nameof(BoxBrowserViewModel.EditHeldItem), () => ItemsWithIcons(data.ItemNames)));
+        var move1 = FocusBorder(NamedPicker("MOVE 1", nameof(BoxBrowserViewModel.EditMove1), data.MoveNames, MoveItems, shaded: false), "MOVE 1", async () => await OpenNamedPickerAsync("MOVE 1", nameof(BoxBrowserViewModel.EditMove1), MoveItems));
+        var move2 = FocusBorder(NamedPicker("MOVE 2", nameof(BoxBrowserViewModel.EditMove2), data.MoveNames, MoveItems, shaded: true), "MOVE 2", async () => await OpenNamedPickerAsync("MOVE 2", nameof(BoxBrowserViewModel.EditMove2), MoveItems));
+        var move3 = FocusBorder(NamedPicker("MOVE 3", nameof(BoxBrowserViewModel.EditMove3), data.MoveNames, MoveItems, shaded: false), "MOVE 3", async () => await OpenNamedPickerAsync("MOVE 3", nameof(BoxBrowserViewModel.EditMove3), MoveItems));
+        var move4 = FocusBorder(NamedPicker("MOVE 4", nameof(BoxBrowserViewModel.EditMove4), data.MoveNames, MoveItems, shaded: true), "MOVE 4", async () => await OpenNamedPickerAsync("MOVE 4", nameof(BoxBrowserViewModel.EditMove4), MoveItems));
+        var stats = StatsRow("STATS", nameof(BoxBrowserViewModel.EditStats), shaded: true);
+        var ivs = FocusBorder(StatsField("IVS", nameof(BoxBrowserViewModel.EditIvs), () => _sessionsFor()?.GetTrainingCaps().IvMax ?? 31, shaded: false), "IVS", async () => await OpenStatsEditorAsync("IVS", nameof(BoxBrowserViewModel.EditIvs), () => _sessionsFor()?.GetTrainingCaps().IvMax ?? 31));
+        var evs = FocusBorder(StatsField("EVS", nameof(BoxBrowserViewModel.EditEvs), () => _sessionsFor()?.GetTrainingCaps().EvMax ?? 252, shaded: true), "EVS", async () => await OpenStatsEditorAsync("EVS", nameof(BoxBrowserViewModel.EditEvs), () => _sessionsFor()?.GetTrainingCaps().EvMax ?? 252));
+        var ball = FocusBorder(NamedPicker("BALL", nameof(BoxBrowserViewModel.EditBall), data.BallNames, BallItems, shaded: false), "BALL", async () => await OpenNamedPickerAsync("BALL", nameof(BoxBrowserViewModel.EditBall), BallItems));
+        var ot = FocusBorder(FieldRow("OT", nameof(BoxBrowserViewModel.EditOt), shaded: true), "OT", () =>
+        {
+            if (otRow is not null) FocusEntry(otRow);
+            return Task.CompletedTask;
+        });
+        otRow = ot;
+        var shinyToggle = new Switch { OnColor = UiTokens.Gold };
+        shinyToggle.SetBinding(Switch.IsToggledProperty, nameof(BoxBrowserViewModel.EditShiny));
+        var shiny = FocusBorder(Striped(new HorizontalStackLayout
+        {
+            Spacing = 8,
+            Children =
+            {
+                new Label { Text = "Shiny", FontSize = 12, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center },
+                shinyToggle,
+            },
+        }, false), "SHINY", () =>
+        {
+            shinyToggle.IsToggled = !shinyToggle.IsToggled;
+            return Task.CompletedTask;
+        });
+
+        var legalize = FocusButton(Kit.Capsule("LEGALIZE", UiTokens.Green), "LEGALIZE");
         legalize.Clicked += async (_, _) =>
         {
             var slot = _viewModel.SelectedSlot;
             if (slot < 0) return;
-            var overlay = LoadingOverlay.Show(_hostGrid, "LEGALIZING…",
-                "Finding the closest real, legal version of this Pokémon.");
+            var overlay = LoadingOverlay.Show(_hostGrid, "LEGALIZING…", "Finding the closest real, legal version of this Pokémon.");
             try
             {
                 await _viewModel.RunLegalizerAsync((service, s) => service.LegalizeSlot(s, _viewModel.BoxIndex, slot), slot);
                 _canvas.InvalidateSurface();
             }
-            finally
-            {
-                overlay.Close();
-            }
+            finally { overlay.Close(); }
         };
-        monActions.Children.Add(legalize);
 
-        var makeMine = Kit.Capsule("MAKE MINE", UiTokens.Gold);
-        makeMine.FontSize = 11;
-        makeMine.Padding = new Thickness(10, 6);
-        makeMine.Margin = new Thickness(0, 0, 6, 6);
+        var makeMine = FocusButton(Kit.Capsule("MAKE MINE", UiTokens.Gold), "MAKE MINE");
         makeMine.Clicked += async (_, _) =>
         {
             var slot = _viewModel.SelectedSlot;
@@ -2596,126 +2802,61 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             await _viewModel.RunMutationAsync(s => s.MakeMine(_viewModel.BoxIndex, slot), slot);
             _canvas.InvalidateSurface();
         };
-        monActions.Children.Add(makeMine);
 
-        foreach (var (actionLabel, run) in new (string, Func<int, Task>)[]
-        {
-            ("SHOWDOWN", ShowShowdownAsync),
-            ("EXPORT .PK", ExportSlotAsync),
-            ("QR", ShowQrAsync),
-        })
-        {
-            var action = Kit.Capsule(actionLabel, UiTokens.Ink1);
-            action.FontSize = 11;
-            action.Padding = new Thickness(10, 6);
-            action.Margin = new Thickness(0, 0, 6, 6);
-            action.Clicked += async (_, _) =>
+        var showdown = FocusButton(Kit.Capsule("SHOWDOWN", UiTokens.Ink1), "SHOWDOWN");
+        showdown.Clicked += async (_, _) => { if (_viewModel.SelectedSlot >= 0) await ShowShowdownAsync(_viewModel.SelectedSlot); };
+        var exportPk = FocusButton(Kit.Capsule("EXPORT .PK", UiTokens.Ink1), "EXPORT .PK");
+        exportPk.Clicked += async (_, _) => { if (_viewModel.SelectedSlot >= 0) await ExportSlotAsync(_viewModel.SelectedSlot); };
+        var qr = FocusButton(Kit.Capsule("QR", UiTokens.Ink1), "QR");
+        qr.Clicked += async (_, _) => { if (_viewModel.SelectedSlot >= 0) await ShowQrAsync(_viewModel.SelectedSlot); };
+
+        var save = FocusButton(Kit.Capsule("SAVE CHANGES", UiTokens.Green), "SAVE CHANGES");
+        save.Margin = new Thickness(0, 8, 0, 0);
+        save.SetBinding(Button.CommandProperty, nameof(BoxBrowserViewModel.SaveEditCommand));
+
+        var met = FocusButton(Kit.Capsule("MET / ORIGIN", UiTokens.Cyan), "MET / ORIGIN");
+        met.Clicked += async (_, _) => await RunSubEditorAsync(MetOriginEditor.ShowAsync, "Met / origin updated");
+        var potential = FocusButton(Kit.Capsule("POTENTIAL", UiTokens.Cyan), "POTENTIAL");
+        potential.Clicked += async (_, _) => await RunSubEditorAsync(PotentialEditor.ShowAsync, "Potential updated");
+        var awards = FocusButton(Kit.Capsule("AWARDS", UiTokens.Cyan), "AWARDS");
+        awards.Clicked += async (_, _) => await RunSubEditorAsync(AwardsEditor.ShowAsync, "Awards updated");
+
+        var lastFieldIndex = Array.FindLastIndex(EditorFocusTargets, target => target.Neighbors is null && target.View is Border);
+        int IndexOfCaption(string caption) => Array.FindIndex(EditorFocusTargets, target => target.Caption == caption);
+        var saveIndex = IndexOfCaption("SAVE CHANGES");
+        var legalizeIndex = IndexOfCaption("LEGALIZE");
+        var makeMineIndex = IndexOfCaption("MAKE MINE");
+        var showdownIndex = IndexOfCaption("SHOWDOWN");
+        var exportIndex = IndexOfCaption("EXPORT .PK");
+        var qrIndex = IndexOfCaption("QR");
+        var metIndex = IndexOfCaption("MET / ORIGIN");
+        var potentialIndex = IndexOfCaption("POTENTIAL");
+        var awardsIndex = IndexOfCaption("AWARDS");
+
+        EditorFocusTargets = EditorFocusTargets
+            .Select((target, index) => target.Caption switch
             {
-                if (_viewModel.SelectedSlot >= 0)
-                    await run(_viewModel.SelectedSlot);
-            };
-            monActions.Children.Add(action);
+                "SAVE CHANGES" => target with { Neighbors = new EditorFocusNeighbors(index, index, lastFieldIndex, legalizeIndex) },
+                "LEGALIZE" => target with { Neighbors = new EditorFocusNeighbors(index, makeMineIndex, saveIndex, exportIndex) },
+                "MAKE MINE" => target with { Neighbors = new EditorFocusNeighbors(legalizeIndex, showdownIndex, saveIndex, qrIndex) },
+                "SHOWDOWN" => target with { Neighbors = new EditorFocusNeighbors(makeMineIndex, index, saveIndex, metIndex) },
+                "EXPORT .PK" => target with { Neighbors = new EditorFocusNeighbors(index, qrIndex, legalizeIndex, potentialIndex) },
+                "QR" => target with { Neighbors = new EditorFocusNeighbors(exportIndex, metIndex, makeMineIndex, awardsIndex) },
+                "MET / ORIGIN" => target with { Neighbors = new EditorFocusNeighbors(qrIndex, index, showdownIndex, awardsIndex) },
+                "POTENTIAL" => target with { Neighbors = new EditorFocusNeighbors(index, awardsIndex, exportIndex, index) },
+                "AWARDS" => target with { Neighbors = new EditorFocusNeighbors(potentialIndex, index, qrIndex, index) },
+                _ => target,
+            })
+            .ToArray();
+
+        var monActions = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap, Margin = new Thickness(0, 4, 0, 0) };
+        foreach (var button in new[] { legalize, makeMine, showdown, exportPk, qr, met, potential, awards })
+        {
+            button.FontSize = 11;
+            button.Padding = new Thickness(10, 6);
+            button.Margin = new Thickness(0, 0, 6, 6);
+            monActions.Children.Add(button);
         }
-
-        // One-tap spreads: fill the editor fields; SAVE CHANGES commits as usual.
-        int IvMaxNow() => _sessionsFor()?.GetTrainingCaps().IvMax ?? 31;
-        foreach (var (quickLabel, apply) in new (string, Action)[]
-        {
-            ("MAX IV", () => _viewModel.EditIvs = string.Join(' ', Enumerable.Repeat(IvMaxNow(), 6))),
-            ("0 EV", () => _viewModel.EditEvs = "0 0 0 0 0 0"),
-            ("LV 100", () => _viewModel.EditLevel = "100"),
-        })
-        {
-            var quick = Kit.Capsule(quickLabel, UiTokens.Blue);
-            quick.FontSize = 11;
-            quick.Padding = new Thickness(10, 6);
-            quick.Margin = new Thickness(0, 0, 6, 6);
-            quick.Clicked += (_, _) => { if (_viewModel.SelectedSlot >= 0) apply(); };
-            monActions.Children.Add(quick);
-        }
-
-        // Met / origin opens the identity sub-editor, then safely writes (backup + atomic).
-        var met = Kit.Capsule("MET / ORIGIN", UiTokens.Cyan);
-        met.FontSize = 11;
-        met.Padding = new Thickness(10, 6);
-        met.Margin = new Thickness(0, 0, 6, 6);
-        met.Clicked += async (_, _) =>
-        {
-            var slot = _viewModel.SelectedSlot;
-            var session = _sessionsFor();
-            if (slot < 0 || session is null) return;
-            var changed = await MetOriginEditor.ShowAsync(_hostGrid, session, _viewModel.BoxIndex, slot);
-            if (changed)
-                await _viewModel.RunMutationAsync(_ => new GenerationOutcome(true, "Met / origin updated"), slot);
-        };
-        monActions.Children.Add(met);
-
-        // Potential opens the Tera / Hyper Training / ability slot sub-editor (gen-gated).
-        var potential = Kit.Capsule("POTENTIAL", UiTokens.Cyan);
-        potential.FontSize = 11;
-        potential.Padding = new Thickness(10, 6);
-        potential.Margin = new Thickness(0, 0, 6, 6);
-        potential.Clicked += async (_, _) =>
-        {
-            var slot = _viewModel.SelectedSlot;
-            var session = _sessionsFor();
-            if (slot < 0 || session is null) return;
-            var changed = await PotentialEditor.ShowAsync(_hostGrid, session, _viewModel.BoxIndex, slot);
-            if (changed)
-                await _viewModel.RunMutationAsync(_ => new GenerationOutcome(true, "Potential updated"), slot);
-        };
-        monActions.Children.Add(potential);
-
-        // Awards opens the Pokérus / ribbons / marks editor and persists through the
-        // same backup + atomic-write path as every other direct sub-editor.
-        var awards = Kit.Capsule("AWARDS", UiTokens.Cyan);
-        awards.FontSize = 11;
-        awards.Padding = new Thickness(10, 6);
-        awards.Margin = new Thickness(0, 0, 6, 6);
-        awards.Clicked += async (_, _) =>
-        {
-            var slot = _viewModel.SelectedSlot;
-            var session = _sessionsFor();
-            if (slot < 0 || session is null) return;
-            var changed = await AwardsEditor.ShowAsync(_hostGrid, session, _viewModel.BoxIndex, slot);
-            if (changed)
-                await _viewModel.RunMutationAsync(_ => new GenerationOutcome(true, "Awards updated"), slot);
-        };
-        monActions.Children.Add(awards);
-
-        var shinyToggle = new Switch { OnColor = UiTokens.Gold };
-        shinyToggle.SetBinding(Switch.IsToggledProperty, nameof(BoxBrowserViewModel.EditShiny));
-
-        var data = IPlatformApplication.Current!.Services.GetRequiredService<IGameDataService>();
-
-        // Picker fields: the user always reads and chooses names, never ids.
-        // Species opens the floating Pokédex (sprites + type/gen filters), not a list.
-        var species = NamedPicker("SPECIES", nameof(BoxBrowserViewModel.EditSpecies), data.SpeciesNames, null,
-            openPokedex: true, shaded: false);
-        var nature = NamedPicker("NATURE", nameof(BoxBrowserViewModel.EditNature), data.NatureNames,
-            () => AllItems(data.NatureNames, includeZero: true), shaded: true);
-        var ability = NamedPicker("ABILITY", nameof(BoxBrowserViewModel.EditAbility), data.AbilityNames,
-            () =>
-            {
-                // Only the abilities this species can legally carry in the open game,
-                // unless HaX mode is on: then every ability is offerable.
-                var detail = _viewModel.Selected;
-                var session = _sessionsFor();
-                if (Services.HaXMode.IsOn) return AllItems(data.AbilityNames, includeZero: true);
-                if (detail is null || session is null) return [];
-                return session.GetAbilityChoices(detail.Species, detail.Form)
-                    .Select(id => new PickItem(id, id < data.AbilityNames.Count ? data.AbilityNames[id] : $"#{id}"))
-                    .ToList();
-            }, shaded: false);
-        var item = NamedPicker("HELD ITEM", nameof(BoxBrowserViewModel.EditHeldItem), data.ItemNames,
-            () => ItemsWithIcons(data.ItemNames), shaded: true);
-        var move1 = NamedPicker("MOVE 1", nameof(BoxBrowserViewModel.EditMove1), data.MoveNames, MoveItems, shaded: false);
-        var move2 = NamedPicker("MOVE 2", nameof(BoxBrowserViewModel.EditMove2), data.MoveNames, MoveItems, shaded: true);
-        var move3 = NamedPicker("MOVE 3", nameof(BoxBrowserViewModel.EditMove3), data.MoveNames, MoveItems, shaded: false);
-        var move4 = NamedPicker("MOVE 4", nameof(BoxBrowserViewModel.EditMove4), data.MoveNames, MoveItems, shaded: true);
-        var ball = NamedPicker("BALL", nameof(BoxBrowserViewModel.EditBall), data.BallNames, BallItems, shaded: false);
-
-        List<PickItem> MoveItems() => AllItems(data.MoveNames, includeZero: true, zeroLabel: "(none)");
 
         return new VerticalStackLayout
         {
@@ -2723,29 +2864,54 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             Children =
             {
                 legality,
-                species,
-                FieldRow("Nickname", nameof(BoxBrowserViewModel.EditNickname), shaded: true),
-                FieldRow("Level", nameof(BoxBrowserViewModel.EditLevel), shaded: false),
-                nature, ability, item,
+                species, nickname, level, nature, ability, item,
                 move1, move2, move3, move4,
-                StatsRow("STATS", nameof(BoxBrowserViewModel.EditStats), shaded: true),
-                StatsField("IVS", nameof(BoxBrowserViewModel.EditIvs), () => _sessionsFor()?.GetTrainingCaps().IvMax ?? 31, shaded: false),
-                StatsField("EVS", nameof(BoxBrowserViewModel.EditEvs), () => _sessionsFor()?.GetTrainingCaps().EvMax ?? 252, shaded: true),
-                ball,
-                FieldRow("OT", nameof(BoxBrowserViewModel.EditOt), shaded: true),
-                new HorizontalStackLayout
-                {
-                    Spacing = 8,
-                    Children =
-                    {
-                        new Label { Text = "Shiny", FontSize = 12, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink1, VerticalTextAlignment = TextAlignment.Center },
-                        shinyToggle,
-                    },
-                },
+                stats, ivs, evs, ball, ot, shiny,
                 save,
                 monActions,
             },
         };
+    }
+
+    private void FocusEntry(View row)
+    {
+        if (row is Border { Content: Grid grid })
+            foreach (var child in grid.Children)
+                if (child is Entry entry)
+                {
+                    entry.Focus();
+                    return;
+                }
+    }
+
+    private async Task OpenNamedPickerAsync(string caption, string vmProperty, Func<List<PickItem>> itemsFactory)
+    {
+        var items = itemsFactory();
+        if (items.Count == 0) return;
+        int? current = int.TryParse(GetVmString(vmProperty), out var id) ? id : null;
+        var picked = await PickerMenu.ShowAsync(_hostGrid, caption, items, current);
+        if (picked is not null)
+            SetVmString(vmProperty, picked.Id.ToString());
+    }
+
+    private async Task OpenStatsEditorAsync(string caption, string vmProperty, Func<int> max)
+    {
+        var current = (GetVmString(vmProperty) ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => int.TryParse(part, out var value) ? value : 0).ToArray();
+        if (current.Length != 6) current = new int[6];
+        var updated = await StatsPopup.ShowAsync(_hostGrid, caption, current, Math.Max(1, max()));
+        if (updated is not null)
+            SetVmString(vmProperty, string.Join(' ', updated));
+    }
+
+    private async Task RunSubEditorAsync(Func<Grid, Domain.ISaveEngineSession, int, int, Task<bool>> editor, string message)
+    {
+        var slot = _viewModel.SelectedSlot;
+        var session = _sessionsFor();
+        if (slot < 0 || session is null) return;
+        var changed = await editor(_hostGrid, session, _viewModel.BoxIndex, slot);
+        if (changed)
+            await _viewModel.RunMutationAsync(_ => new GenerationOutcome(true, message), slot);
     }
 
     /// <summary>A Kit.Field wrapped in the striped attribute-row plate.</summary>
