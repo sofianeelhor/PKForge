@@ -5,6 +5,7 @@ using PKForge.Domain;
 
 #if ANDROID
 [assembly: UsesPermission(Android.Manifest.Permission.RequestInstallPackages)]
+[assembly: UsesPermission(Android.Manifest.Permission.UpdatePackagesWithoutUserAction)]
 #endif
 
 namespace PKForge.App.Services;
@@ -15,9 +16,16 @@ public sealed class AppUpdateService
 {
     private const string LatestUrl = "https://api.github.com/repos/sofianeelhor/PKForge/releases/latest";
     private const string SkippedVersionKey = "update_skipped_version";
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(10) };
+    private static readonly HttpClient Http = new(new SocketsHttpHandler
+    {
+        ConnectTimeout = TimeSpan.FromSeconds(15),
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+    })
+    { Timeout = TimeSpan.FromMinutes(10) };
 
     public string SkippedVersion => Preferences.Default.Get(SkippedVersionKey, "");
+
+    public static bool CanInstallUpdates() => CanRequestInstalls();
 
     public async Task<AppUpdateCheck> CheckAsync(CancellationToken cancellationToken = default)
     {
@@ -146,12 +154,19 @@ public sealed class AppUpdateService
         var installer = context.PackageManager!.PackageInstaller!;
         var parameters = new Android.Content.PM.PackageInstaller.SessionParams(Android.Content.PM.PackageInstallMode.FullInstall);
         parameters.SetAppPackageName(context.PackageName!);
+        // Same-package, same-signature updates may install silently once the user has
+        // granted PKForge the Android install-unknown-apps switch.
+        if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.S)
+            parameters.SetRequireUserAction((int)Android.Content.PM.PackageInstallUserAction.NotRequired);
+        Android.Util.Log.Info("PKForgeUpdate", $"Creating install session for {context.PackageName}, APK {apkPath}");
         var sessionId = installer.CreateSession(parameters);
         using var session = installer.OpenSession(sessionId);
-        using var input = File.OpenRead(apkPath);
-        using var output = session.OpenWrite("pkforge-update", 0, input.Length);
-        input.CopyTo(output);
-        session.Fsync(output);
+        using (var input = File.OpenRead(apkPath))
+        using (var output = session.OpenWrite("pkforge-update", 0, input.Length))
+        {
+            input.CopyTo(output);
+            session.Fsync(output);
+        }
 
         var callback = new Android.Content.Intent(context, Java.Lang.Class.FromType(typeof(UpdateInstallReceiver)))
             .SetAction(UpdateInstallReceiver.ActionName);
@@ -165,6 +180,7 @@ public sealed class AppUpdateService
             flags);
         var sender = pending?.IntentSender ?? throw new InvalidOperationException("Android did not create the update callback.");
         session.Commit(sender);
+        Android.Util.Log.Info("PKForgeUpdate", $"Committed install session {sessionId}");
     }
 #pragma warning restore CA1416
 #endif
@@ -182,6 +198,25 @@ public sealed class UpdateInstallReceiver : Android.Content.BroadcastReceiver
         var failure = (int)Android.Content.PM.PackageInstallStatus.Failure;
         var status = intent?.GetIntExtra(Android.Content.PM.PackageInstaller.ExtraStatus, failure) ?? failure;
         var message = intent?.GetStringExtra(Android.Content.PM.PackageInstaller.ExtraStatusMessage);
+        Android.Content.Intent? userAction = null;
+        if (status == (int)Android.Content.PM.PackageInstallStatus.PendingUserAction && intent is not null)
+        {
+            if (Android.OS.Build.VERSION.SdkInt >= Android.OS.BuildVersionCodes.Tiramisu)
+#pragma warning disable CA1416 // Guarded by the API 33 check above.
+                userAction = intent.GetParcelableExtra(
+                    Android.Content.Intent.ExtraIntent,
+                    Java.Lang.Class.FromType(typeof(Android.Content.Intent))) as Android.Content.Intent;
+#pragma warning restore CA1416
+#pragma warning disable CA1422 // Pre-33 fallback is paired with the runtime version guard.
+            else
+                userAction = intent.GetParcelableExtra(Android.Content.Intent.ExtraIntent) as Android.Content.Intent;
+#pragma warning restore CA1422
+        }
+        if (userAction is not null && context is not null)
+        {
+            context.StartActivity(userAction);
+            return;
+        }
         Android.Util.Log.Info("PKForgeUpdate", status == (int)Android.Content.PM.PackageInstallStatus.Success
             ? "Update install confirmed."
             : $"Update install status {status}: {message}");

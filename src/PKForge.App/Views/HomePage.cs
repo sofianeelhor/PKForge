@@ -92,6 +92,7 @@ public sealed class HomePage : ContentPage, IPadHandler
 
         _hostGrid = new Grid { Children = { root } };
         Content = _hostGrid;
+        App.Resumed += OnAppResumed;
     }
 
     private Grid _hostGrid = null!;
@@ -100,6 +101,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     private bool _scannedOnce;
     private bool _updateCheckQueued;
     private bool _isAppearing;
+    private AvailableAppUpdate? _pendingAuthorizedUpdate;
 
     /// <summary>The Thor's lower screen is on from launch - the app *is* dual-screen.</summary>
     protected override void OnAppearing()
@@ -120,6 +122,15 @@ public sealed class HomePage : ContentPage, IPadHandler
         {
             try { _ = host.ShowAsync(); }
             catch { }
+        }
+
+        // Returning from Android's install-unknown-apps screen finishes an update the
+        // user already accepted with YES. No second question, no manual Check for update.
+        if (_pendingAuthorizedUpdate is { } authorized && AppUpdateService.CanInstallUpdates())
+        {
+            _pendingAuthorizedUpdate = null;
+            Dispatcher.DispatchAsync(async () => await InstallUpdateAsync(authorized));
+            return;
         }
 
         // First run: welcome as the same in-world menu everything else uses, no special panel.
@@ -165,6 +176,16 @@ public sealed class HomePage : ContentPage, IPadHandler
         base.OnDisappearing();
         _isAppearing = false;
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
+    }
+
+    /// <summary>Android settings do not trigger MAUI page appearing again; resume does.</summary>
+    private void OnAppResumed()
+    {
+        if (_pendingAuthorizedUpdate is not { } authorized || !AppUpdateService.CanInstallUpdates())
+            return;
+
+        _pendingAuthorizedUpdate = null;
+        Dispatcher.DispatchAsync(async () => await InstallUpdateAsync(authorized));
     }
 
     /// <summary>Every button on the home screen, in one place.</summary>
@@ -307,6 +328,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         }
         catch (Exception error)
         {
+            Android.Util.Log.Warn("PKForgeUpdate", $"Automatic update check failed: {error}");
             if (!automatic)
                 _viewModel.Status = $"Update check failed: {error.Message}";
             return;
@@ -323,14 +345,9 @@ public sealed class HomePage : ContentPage, IPadHandler
         if (automatic && !_isAppearing)
             return;
 
-        await DialogueBox.ShowSequenceAsync(_hostGrid,
-            "A new version of PKForge is available!",
-            $"Version {update.Version} is ready to install.",
-            "Would you like to update now?");
-        var choice = await PadMenu.ShowAsync(_hostGrid, "UPDATE PKFORGE?", null,
-            new PadOption("YES", IconPath: "restore", Accent: UiTokens.Green),
-            new PadOption("NO", IconPath: "cancel", Accent: UiTokens.Ink1),
-            new PadOption("DON'T REMIND ME", IconPath: "padlock", Accent: UiTokens.GiftRed));
+        var choice = await DialogueChoiceBox.ShowAsync(_hostGrid,
+            $"A new version of PKForge is available! Version {update.Version} is ready to install. Would you like to update now?",
+            "YES", "NO", "DON'T REMIND ME");
         switch (choice)
         {
             case "YES":
@@ -367,6 +384,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         }
         catch (Exception error)
         {
+            Android.Util.Log.Error("PKForgeUpdate", $"Download/install failed: {error}");
             _viewModel.Status = $"Update failed: {error.Message}";
             var openRelease = await PadMenu.ConfirmAsync(_hostGrid, "OPEN THE RELEASE PAGE?",
                 "The in-app installer could not finish. The GitHub release page has the same APK.", "Open");
@@ -388,11 +406,11 @@ public sealed class HomePage : ContentPage, IPadHandler
                 _viewModel.Status = "The PKForge release page is open.";
                 break;
             case AppUpdateInstallResult.InstallPermissionRequired:
-                await DialogueBox.ShowSequenceAsync(_hostGrid,
-                    "Android needs permission to install PKForge updates.",
-                    "Allow install unknown apps for PKForge, then press Check for update again.");
-                if (await PadMenu.ConfirmAsync(_hostGrid, "OPEN ANDROID SETTINGS?",
-                        "The switch only allows PKForge. It never allows other apps.", "Open"))
+                _pendingAuthorizedUpdate = update;
+                var permissionChoice = await DialogueChoiceBox.ShowAsync(_hostGrid,
+                    "Android needs permission to install PKForge updates. Allow install unknown apps for PKForge, then check again?",
+                    "OPEN SETTINGS", "NOT NOW");
+                if (permissionChoice == "OPEN SETTINGS")
                     AppUpdateService.OpenInstallPermissionSettings();
                 break;
         }
