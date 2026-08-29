@@ -288,10 +288,6 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var headerLabel = (Label)header.Content!;
         headerLabel.SetBinding(Label.TextProperty, new Binding(nameof(BoxBrowserViewModel.Selected), converter: new MonHeaderConverter()));
 
-        // Legality verdict rides the header: the verdict must never scroll or clip away.
-        var badge = new Label { FontFamily = DsChrome.PixelFont, FontSize = 16, VerticalTextAlignment = TextAlignment.Center };
-        badge.SetBinding(Label.TextProperty, nameof(BoxBrowserViewModel.LegalityBadge));
-        badge.SetBinding(Label.TextColorProperty, nameof(BoxBrowserViewModel.LegalityBadge), converter: new LegalityColorConverter());
 
         // Box paging beside the header (the box-name bar above the grid shows the number).
         var previous = Kit.MiniCapsule("<", UiTokens.Ink0);
@@ -304,12 +300,11 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var headerRow = new Grid
         {
             ColumnSpacing = 8,
-            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto)],
-            Children = { header, badge, previous, next },
+            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto)],
+            Children = { header, previous, next },
         };
-        Grid.SetColumn(badge, 1);
-        Grid.SetColumn(previous, 2);
-        Grid.SetColumn(next, 3);
+        Grid.SetColumn(previous, 1);
+        Grid.SetColumn(next, 2);
 
         // Idle card until a Pokémon is selected; the editor replaces it.
         var idle = new VerticalStackLayout
@@ -2690,8 +2685,34 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         EditorFocusTargets = [];
         _editorFocusIndex = 0;
 
-        var legality = new Label { FontSize = 11, TextColor = UiTokens.Ink1, MaximumHeightRequest = 90 };
-        legality.SetBinding(Label.TextProperty, nameof(BoxBrowserViewModel.LegalityText));
+        var legality = new Button
+        {
+            Text = "ILLEGAL - VIEW REPORT",
+            TextColor = UiTokens.Paper,
+            BackgroundColor = UiTokens.Bad,
+            FontFamily = DsChrome.PixelFont,
+            FontSize = 12,
+            HeightRequest = 34,
+            CornerRadius = 6,
+            IsVisible = false,
+        };
+        legality.Clicked += async (_, _) =>
+        {
+            var detail = string.IsNullOrWhiteSpace(_viewModel.LegalityText) ? "No legality details were reported." : _viewModel.LegalityText;
+            await ShowLegalityReportAsync(detail);
+        };
+
+        void UpdateLegalityAction()
+        {
+            legality.IsVisible = _viewModel.LegalityBadge == "✗";
+        }
+        _viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(BoxBrowserViewModel.LegalityBadge))
+                UpdateLegalityAction();
+        };
+        UpdateLegalityAction();
+
         var data = IPlatformApplication.Current!.Services.GetRequiredService<IGameDataService>();
 
         View FocusBorder(View inner, string caption, Func<Task> activate, string? numericBindingPath = null)
@@ -2871,6 +2892,45 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 monActions,
             },
         };
+    }
+
+    private Task ShowLegalityReportAsync(string detail)
+    {
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Grid overlay = null!;
+        PadOverlay pad = null!;
+        void Close()
+        {
+            _hostGrid.Remove(overlay);
+            pad?.Dispose();
+            done.TrySetResult();
+        }
+
+        var content = new VerticalStackLayout
+        {
+            Spacing = 10,
+            Children =
+            {
+                Kit.HeaderBar("ILLEGALITY REPORT"),
+                new ScrollView
+                {
+                    HeightRequest = 220,
+                    Content = new Label
+                    {
+                        Text = detail,
+                        TextColor = UiTokens.Ink0,
+                        FontSize = 12,
+                        LineBreakMode = LineBreakMode.WordWrap,
+                    },
+                },
+                Kit.HintBar(("B", "Back", Close)),
+            },
+        };
+
+        var window = Kit.OverlayWindow(_hostGrid, content, preferredMaxWidth: 340, padding: 14);
+        overlay = Kit.AttachOverlay(_hostGrid, window, Close);
+        pad = new PadOverlay(Close, Close);
+        return done.Task;
     }
 
     private void FocusEntry(View row)
