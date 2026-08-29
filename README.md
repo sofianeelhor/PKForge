@@ -1,5 +1,9 @@
 # PKForge
 
+Join the PKForge Discord for updates, support, bug reports, feature requests, and community chat.
+
+[![PKForge](https://discordapp.com/assets/07dca80a102d4149e9736d4b162cff6f.ico)](https://discord.gg/bMtzZmTDfu)
+
 A Pokémon save editor and bank for Android, built for dual-screen handhelds like the
 AYN Thor. The whole interface is drawn with SkiaSharp in the visual language of the
 DS-era games: box wallpapers, pixel sprites, gamepad controls, and a second screen that
