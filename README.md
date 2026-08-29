@@ -1,5 +1,9 @@
 # PKForge
 
+Join the PKForge Discord for updates, support, bug reports, feature requests, and community chat.
+
+[![PKForge](https://discordapp.com/assets/07dca80a102d4149e9736d4b162cff6f.ico)](https://discord.gg/bMtzZmTDfu)
+
 A Pokémon save editor and bank for Android, built for dual-screen handhelds like the
 AYN Thor. The whole interface is drawn with SkiaSharp in the visual language of the
 DS-era games: box wallpapers, pixel sprites, gamepad controls, and a second screen that
@@ -28,13 +32,6 @@ Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
 ![Events](docs/screenshots/events.png)
 ![Menus](docs/screenshots/menu.png)
 
-## Safety
-
-- Every write is validated, backed up, then written atomically. An invalid Pokémon never
-  reaches storage.
-- Open and re-save with no edits produces a byte-identical file. The tests prove it
-  against a real save corpus.
-- All file access goes through Android's Storage Access Framework.
 
 We do not support cheating at the expense of others. Do not use significantly edited
 Pokémon in battle or in trades with people who do not know they are edited.
@@ -43,6 +40,12 @@ Pokémon in battle or in trades with people who do not know they are edited.
 
 Download the APK from [Releases](https://github.com/sofianeelhor/PKForge/releases) and
 allow installs from unknown sources. First run walks you through linking an emulator.
+
+## Discord
+
+Join for updates, support, bug reports, feature requests, or just to chat about the project.
+
+👉 **[Join the PKForge Discord](https://discord.gg/bMtzZmTDfu)**
 
 ## Build
 
