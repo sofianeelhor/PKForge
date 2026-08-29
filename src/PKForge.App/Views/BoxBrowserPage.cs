@@ -355,8 +355,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Import Showdown team", IconPath: "script"),
             new PadOption("Export box to Showdown", IconPath: "script"),
             new PadOption("Generate Living Dex", IconPath: "pokedex"),
+            new PadOption("Egg factory…", IconPath: "pokedex"),
             new PadOption("Batch editor", IconPath: "script"),
             new PadOption("Presets…", IconPath: "gears"),
+            new PadOption("Trainer profiles…", IconPath: "trainer"),
             new PadOption("Nuzlocke report", IconPath: "skull"),
             new PadOption("Manage boxes…", IconPath: "storage"),
             new PadOption("Sort boxes…", IconPath: "restore"));
@@ -378,11 +380,17 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             case "Generate Living Dex":
                 await GenerateLivingDexAsync();
                 return;
+            case "Egg factory…":
+                await ShowEggFactoryAsync();
+                return;
             case "Batch editor":
                 await RunBatchEditorAsync();
                 return;
             case "Presets…":
                 await ShowPresetsMenuAsync();
+                return;
+            case "Trainer profiles…":
+                await ShowTrainerProfilesAsync();
                 return;
             case "Nuzlocke report":
                 await ShowNuzlockeReportAsync();
@@ -992,6 +1000,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     {
         var session = _sessionsFor();
         if (session is null) return;
+        var caps = session.GetTrainingCaps();
+        var perfectLabel = caps.IvMax == 15 ? "6DV (perfect DVs)" : "6IV (perfect IVs)";
         var scope = await PadMenu.ShowAsync(_hostGrid, "PRESETS", "Apply to which boxes?",
             new PadOption("This box", IconPath: "storage"),
             new PadOption("All unlocked boxes", IconPath: "storage"));
@@ -1010,7 +1020,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var choice = await PadMenu.ShowAsync(_hostGrid, "PRESETS", "One backed-up write applies everything.",
             new PadOption("Level 50 flat", IconPath: "sword"),
             new PadOption("Level 100", IconPath: "sword"),
-            new PadOption("6IV (perfect IVs)", IconPath: "spark"),
+            new PadOption(perfectLabel, IconPath: "spark"),
             new PadOption("0 Attack IV (special)", IconPath: "spark"),
             new PadOption("0 Speed IV (Trick Room)", IconPath: "spark"),
             new PadOption("Reset EVs", IconPath: "restore"),
@@ -1035,7 +1045,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         {
             "Level 50 flat" => ["Level=50"],
             "Level 100" => ["Level=100"],
-            "6IV (perfect IVs)" => ["IV_HP=31", "IV_ATK=31", "IV_DEF=31", "IV_SPA=31", "IV_SPD=31", "IV_SPE=31"],
+            var perfect when perfect == perfectLabel =>
+                [.. new[] { "HP", "ATK", "DEF", "SPA", "SPD", "SPE" }.Select(stat => $"IV_{stat}={caps.IvMax}")],
             "0 Attack IV (special)" => ["IV_ATK=0"],
             "0 Speed IV (Trick Room)" => ["IV_SPE=0"],
             "Reset EVs" => ["EV_HP=0", "EV_ATK=0", "EV_DEF=0", "EV_SPA=0", "EV_SPD=0", "EV_SPE=0"],
@@ -1213,19 +1224,68 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         await done.Task;
     }
 
+    /// <summary>Mass egg generation: living egg dex, or one species filling this box.</summary>
+    private async Task ShowEggFactoryAsync()
+    {
+        var session = _sessionsFor();
+        if (session is null) return;
+        var legalizer = IPlatformApplication.Current!.Services.GetRequiredService<ILegalizerService>();
+        var data = IPlatformApplication.Current!.Services.GetRequiredService<IGameDataService>();
+
+        var choice = await PadMenu.ShowAsync(_hostGrid, "EGG FACTORY", "Every egg fills an empty PC slot. One backed-up write.",
+            new PadOption("One egg of every species", IconPath: "pokedex"),
+            new PadOption("Pick a species…", IconPath: "pokedex"));
+        if (choice is null) return;
+
+        IReadOnlyList<int> species;
+        if (choice == "Pick a species…")
+        {
+            var picked = await PokedexPicker.ShowAsync(_hostGrid, data, session);
+            if (picked is null) return;
+            species = [picked.Id];
+        }
+        else
+        {
+            species = Enumerable.Range(1, Math.Min(data.SpeciesNames.Count - 1, session.GetDexProgress().Total))
+                .Where(id => data.SpeciesNames[id].Length > 0)
+                .ToList();
+        }
+
+        var caps = session.GetTrainingCaps();
+        var statKind = caps.IvMax == 15 ? "DVs" : "IVs";
+        var maxIv = await PadMenu.ConfirmAsync(_hostGrid, $"PERFECT {statKind.ToUpperInvariant()}?",
+            $"Every egg gets {caps.IvMax} {statKind} in all six stats.", $"Yes, 6{(caps.IvMax == 15 ? "DV" : "IV")}");
+        var shiny = await PadMenu.ConfirmAsync(_hostGrid, "SHINY EGGS?", "Every egg hatches shiny.", "Yes, shiny");
+
+        var options = new Domain.EggOptions(maxIv, shiny);
+        var overlay = LoadingOverlay.Show(_hostGrid, "GENERATING EGGS…", "The legalizer builds and egg-ifies each species offline.");
+        try
+        {
+            var list = species;
+            await _viewModel.RunMutationAsync(s => legalizer.GenerateEggs(s, list, options,
+                (done, total) => overlay.Report(done, total)), Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+            _viewModel.RefreshAllSlots();
+            _canvas.InvalidateSurface();
+        }
+        finally { overlay.Close(); }
+    }
+
     /// <summary>
     /// The batch editor: instructions like "Level=100", "IV_HP=31", "Shiny=Yes" applied to
     /// every mon in the current box (or all boxes), one safe write. PKHeX syntax.
     /// </summary>
     private async Task RunBatchEditorAsync()
     {
+        var session = _sessionsFor();
+        if (session is null) return;
+        var caps = session.GetTrainingCaps();
         var scope = await PadMenu.ShowAsync(_hostGrid, "BATCH EDITOR", "Apply to which boxes?",
             new PadOption("This box", IconPath: "storage"),
             new PadOption("All boxes", IconPath: "storage"));
         if (scope is null) return;
 
         var text = await TextPopup.ShowAsync(_hostGrid, "INSTRUCTIONS",
-            "One per line, PKHeX style:\nLevel=100\nIV_HP=31\nShiny=Yes\nEV_ATK=252");
+            $"One per line, PKHeX style:\nLevel=100\nIV_HP={caps.IvMax}\nShiny=Yes\nEV_ATK={caps.EvMax}");
         if (string.IsNullOrWhiteSpace(text)) return;
 
         var instructions = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -1264,6 +1324,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             {
                 var session = _sessionsFor();
                 if (session is null) return;
+                Services.EventArchive.EnsureLoaded(session.Generation);
                 await EventGallery.ShowAsync(_hostGrid, _viewModel, session, targetSlot: null, () => _canvas.InvalidateSurface());
                 return;
             }
@@ -1287,6 +1348,69 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             return new GenerationOutcome(true, "Trainer card updated.");
         }, Math.Max(0, _viewModel.SelectedSlot));
     }
+
+    private async Task ShowTrainerProfilesAsync()
+    {
+        var session = _sessionsFor();
+        if (session is null) return;
+        var store = IPlatformApplication.Current!.Services.GetRequiredService<TrainerProfileStore>();
+
+        while (true)
+        {
+            var profiles = store.Profiles;
+            var options = new List<PadOption>
+            {
+                new("Save current trainer as profile", IconPath: "trainer"),
+            };
+            if (_viewModel.SelectedSlot >= 0 && profiles.Count > 0)
+                options.Add(new("Apply profile to selected Pokémon", IconPath: "editor"));
+            if (profiles.Count > 0)
+                options.Add(new("Delete a profile", IconPath: "restore"));
+            options.Add(new(store.UseCurrentTrainerForGeneration
+                ? "Generated Pokémon obey trainer: ON"
+                : "Generated Pokémon obey trainer: OFF", IconPath: "gears"));
+
+            var choice = await PadMenu.ShowAsync(_hostGrid, "TRAINER PROFILES",
+                profiles.Count == 0 ? "No named profiles yet." : string.Join('\n', profiles.Select(ProfileSummary)),
+                options.ToArray());
+            if (choice is null) return;
+
+            if (choice == "Save current trainer as profile")
+            {
+                var name = await TextPopup.ShowLineAsync(_hostGrid, "PROFILE NAME", "Profile name");
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                store.Save(name, session.GetTrainer());
+                _viewModel.Status = $"Trainer profile '{name.Trim()}' saved.";
+                continue;
+            }
+            if (choice.StartsWith("Generated Pokémon obey trainer:", StringComparison.Ordinal))
+            {
+                store.SetUseCurrentTrainerForGeneration(!store.UseCurrentTrainerForGeneration);
+                continue;
+            }
+
+            var labels = profiles.Select(ProfileSummary).ToArray();
+            var selected = await PadMenu.ShowAsync(_hostGrid,
+                choice == "Delete a profile" ? "DELETE PROFILE" : "APPLY TRAINER PROFILE", null, labels);
+            var index = Array.IndexOf(labels, selected);
+            if (index < 0) continue;
+            var profile = profiles[index];
+            if (choice == "Delete a profile")
+            {
+                var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "DELETE PROFILE?", profile.DisplayName, "Delete");
+                if (confirmed) store.Delete(profile.Id);
+                continue;
+            }
+
+            var slot = _viewModel.SelectedSlot;
+            await _viewModel.RunMutationAsync(s => s.MakeMine(_viewModel.BoxIndex, slot, profile), slot);
+            _canvas.InvalidateSurface();
+            return;
+        }
+    }
+
+    private static string ProfileSummary(TrainerProfile profile) =>
+        $"{profile.DisplayName} · {profile.OriginalTrainer} · {profile.TID}/{profile.SID} · {(profile.Gender == 1 ? "F" : "M")}";
 
     /// <summary>Bag: the navy inventory editor - pocket pills, item rows with count discs.</summary>
     private async Task ShowBagAsync()
@@ -2460,6 +2584,20 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             }
         };
         monActions.Children.Add(legalize);
+
+        var makeMine = Kit.Capsule("MAKE MINE", UiTokens.Gold);
+        makeMine.FontSize = 11;
+        makeMine.Padding = new Thickness(10, 6);
+        makeMine.Margin = new Thickness(0, 0, 6, 6);
+        makeMine.Clicked += async (_, _) =>
+        {
+            var slot = _viewModel.SelectedSlot;
+            if (slot < 0) return;
+            await _viewModel.RunMutationAsync(s => s.MakeMine(_viewModel.BoxIndex, slot), slot);
+            _canvas.InvalidateSurface();
+        };
+        monActions.Children.Add(makeMine);
+
         foreach (var (actionLabel, run) in new (string, Func<int, Task>)[]
         {
             ("SHOWDOWN", ShowShowdownAsync),
@@ -2480,9 +2618,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         }
 
         // One-tap spreads: fill the editor fields; SAVE CHANGES commits as usual.
+        int IvMaxNow() => _sessionsFor()?.GetTrainingCaps().IvMax ?? 31;
         foreach (var (quickLabel, apply) in new (string, Action)[]
         {
-            ("MAX IV", () => _viewModel.EditIvs = "31 31 31 31 31 31"),
+            ("MAX IV", () => _viewModel.EditIvs = string.Join(' ', Enumerable.Repeat(IvMaxNow(), 6))),
             ("0 EV", () => _viewModel.EditEvs = "0 0 0 0 0 0"),
             ("LV 100", () => _viewModel.EditLevel = "100"),
         })
@@ -2573,8 +2712,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 nature, ability, item,
                 move1, move2, move3, move4,
                 StatsRow("STATS", nameof(BoxBrowserViewModel.EditStats), shaded: true),
-                StatsField("IVS", nameof(BoxBrowserViewModel.EditIvs), 31, shaded: false),
-                StatsField("EVS", nameof(BoxBrowserViewModel.EditEvs), 252, shaded: true),
+                StatsField("IVS", nameof(BoxBrowserViewModel.EditIvs), () => _sessionsFor()?.GetTrainingCaps().IvMax ?? 31, shaded: false),
+                StatsField("EVS", nameof(BoxBrowserViewModel.EditEvs), () => _sessionsFor()?.GetTrainingCaps().EvMax ?? 252, shaded: true),
                 ball,
                 FieldRow("OT", nameof(BoxBrowserViewModel.EditOt), shaded: true),
                 new HorizontalStackLayout
@@ -2866,7 +3005,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     }
 
     /// <summary>Read-only stat row with an explicit EDIT button for manual (expert) input.</summary>
-    private View StatsField(string caption, string vmProperty, int max, bool shaded = false)
+    private View StatsField(string caption, string vmProperty, Func<int> max, bool shaded = false)
     {
         var value = Kit.BlueprintValue(12);
         value.SetBinding(Label.TextProperty, vmProperty);
@@ -2879,7 +3018,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             var current = (GetVmString(vmProperty) ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries)
                 .Select(part => int.TryParse(part, out var v) ? v : 0).ToArray();
             if (current.Length != 6) current = new int[6];
-            var updated = await StatsPopup.ShowAsync(_hostGrid, caption, current, max);
+            var updated = await StatsPopup.ShowAsync(_hostGrid, caption, current, Math.Max(1, max()));
             if (updated is not null)
                 SetVmString(vmProperty, string.Join(' ', updated));
         };
@@ -3052,6 +3191,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             {
                 var session = _sessionsFor();
                 if (session is null) return;
+                Services.EventArchive.EnsureLoaded(session.Generation);
                 await EventGallery.ShowAsync(_hostGrid, _viewModel, session, slot, () => _canvas.InvalidateSurface());
                 return;
             }

@@ -43,6 +43,10 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Raw RNG facts speedrunners care about: PID, EC, IVs, nature, shiny.</summary>
     RngInfo GetRngInfo(int box, int slot);
 
+    /// <summary>Per-format training caps: Gen 1/2 DVs max 15 with 65535 stat
+    /// experience; Gen 3-5 EVs max 255; Gen 6+ EVs max 252. IVs cap at 31 elsewhere.</summary>
+    TrainingCaps GetTrainingCaps();
+
     /// <summary>
     /// Changes a mon's nature without losing its shiny state, gender or ability slot.
     /// Gen 3/4 reroll the PID (PID-derived nature); Gen 5+ write the nature byte.
@@ -107,6 +111,9 @@ public interface ISaveEngineSession : IDisposable
     // ── Trainer card ──
     TrainerInfo GetTrainer();
     void SetTrainer(TrainerInfo trainer);
+    /// <summary>Makes a Pokémon owned by the current save or a named trainer profile.
+    /// Fixed-OT encounters are refused and the edit is committed only when it remains legal.</summary>
+    GenerationOutcome MakeMine(int box, int slot, TrainerProfile? profile = null);
 
     // ── Pokédex ──
     DexProgress GetDexProgress();
@@ -228,6 +235,9 @@ public interface ILegalizerService
 
     /// <summary>Generates legal mons for the requested species into the first empty PC slots.</summary>
     GenerationOutcome FillSpecies(ISaveEngineSession session, IReadOnlyList<int> species, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Generates hatchable eggs for the requested species into the first empty PC slots.</summary>
+    GenerationOutcome GenerateEggs(ISaveEngineSession session, IReadOnlyList<int> species, EggOptions options, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
 }
 
 public sealed record GeneratedEntity(byte[] Data, BankEntryInfo Info);
@@ -263,6 +273,15 @@ public sealed record SlotExport(byte[] Data, string FileName);
 
 public sealed record TrainerInfo(string Name, int TID, int SID, uint Money, int Gender);
 
+/// <summary>A reusable ownership identity. DisplayName labels the preset and is never written into a save.</summary>
+public sealed record TrainerProfile(string Id, string DisplayName, string OriginalTrainer, int TID, int SID, int Gender);
+
+/// <summary>App-owned generation preference consumed by the engine without depending on MAUI.</summary>
+public interface IGenerationOwnershipSettings
+{
+    bool UseCurrentTrainerForGeneration { get; }
+}
+
 public sealed record DexProgress(int Seen, int Caught, int Total);
 
 public sealed record DexEntryState(bool Seen, bool Caught);
@@ -273,9 +292,13 @@ public sealed record RngInfo(
     int Nature,
     bool Shiny,
     bool NatureRerollSupported,
-    IReadOnlyList<int> IVs,
+    IReadOnlyList<int> IVs, // HP, Atk, Def, SpA, SpD, Spe
     int Ability,
     int Gender);
+
+public sealed record TrainingCaps(int IvMax, int EvMax);
+
+public sealed record EggOptions(bool MaxIv, bool Shiny);
 
 public sealed record NuzlockeCatch(string Route, int Species, string Name, bool FirstCatch, string? MetDate);
 
@@ -319,8 +342,8 @@ public sealed record EntityDetail(
     int Move2,
     int Move3,
     int Move4,
-    IReadOnlyList<int> IVs,
-    IReadOnlyList<int> EVs,
+    IReadOnlyList<int> IVs, // HP, Atk, Def, SpA, SpD, Spe
+    IReadOnlyList<int> EVs, // HP, Atk, Def, SpA, SpD, Spe
     bool IsShiny,
     int Ball,
     string OriginalTrainer,

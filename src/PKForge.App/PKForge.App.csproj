@@ -10,9 +10,15 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationId>org.pkforge.app</ApplicationId>
     <ApplicationTitle>PKForge</ApplicationTitle>
-    <ApplicationVersion>130</ApplicationVersion>
-    <ApplicationDisplayVersion>1.3.0</ApplicationDisplayVersion>
+    <ApplicationVersion>140</ApplicationVersion>
+    <ApplicationDisplayVersion>1.4.0</ApplicationDisplayVersion>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(DiagnosticBuild)' == 'true'">
+    <!-- Diagnostic builds install beside production and cannot overwrite its app-private data. -->
+    <ApplicationId>org.pkforge.app.debug</ApplicationId>
+    <ApplicationTitle>PKForge Diagnostics</ApplicationTitle>
+    <DefineConstants>$(DefineConstants);DIAGNOSTIC</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
@@ -29,6 +35,7 @@
   <ItemGroup>
     <!-- Bundled fallback sprites from pristine PKHeX submodule (always offline-available). -->
     <MauiAsset Include="Resources/UI/dex/*.bin.gz" LogicalName="dex/%(Filename)%(Extension)" />
+    <MauiAsset Include="Resources/Events/*.tar.gz" LogicalName="events/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Big Pokemon Sprites/*.png" LogicalName="sprites/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Big Shiny Sprites/*.png" LogicalName="sprites/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/ball/*.png" LogicalName="balls/%(Filename)%(Extension)" />

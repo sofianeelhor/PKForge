@@ -92,17 +92,22 @@ public sealed class HomePage : ContentPage, IPadHandler
 
         _hostGrid = new Grid { Children = { root } };
         Content = _hostGrid;
+        App.Resumed += OnAppResumed;
     }
 
     private Grid _hostGrid = null!;
 
     private bool _welcomeShown;
     private bool _scannedOnce;
+    private bool _updateCheckQueued;
+    private bool _isAppearing;
+    private AvailableAppUpdate? _pendingAuthorizedUpdate;
 
     /// <summary>The Thor's lower screen is on from launch - the app *is* dual-screen.</summary>
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        _isAppearing = true;
         _zone = 0;
         ClearCardFocus();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Push(this);
@@ -117,6 +122,15 @@ public sealed class HomePage : ContentPage, IPadHandler
         {
             try { _ = host.ShowAsync(); }
             catch { }
+        }
+
+        // Returning from Android's install-unknown-apps screen finishes an update the
+        // user already accepted with YES. No second question, no manual Check for update.
+        if (_pendingAuthorizedUpdate is { } authorized && AppUpdateService.CanInstallUpdates())
+        {
+            _pendingAuthorizedUpdate = null;
+            Dispatcher.DispatchAsync(async () => await InstallUpdateAsync(authorized));
+            return;
         }
 
         // First run: welcome as the same in-world menu everything else uses, no special panel.
@@ -147,14 +161,31 @@ public sealed class HomePage : ContentPage, IPadHandler
                         break;
                 }
                 _viewModel.CompleteSetup();
+                await CheckForUpdateAsync(automatic: true);
             });
+        }
+        else if (!_updateCheckQueued)
+        {
+            _updateCheckQueued = true;
+            Dispatcher.Dispatch(async () => await CheckForUpdateAsync(automatic: true));
         }
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        _isAppearing = false;
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
+    }
+
+    /// <summary>Android settings do not trigger MAUI page appearing again; resume does.</summary>
+    private void OnAppResumed()
+    {
+        if (_pendingAuthorizedUpdate is not { } authorized || !AppUpdateService.CanInstallUpdates())
+            return;
+
+        _pendingAuthorizedUpdate = null;
+        Dispatcher.DispatchAsync(async () => await InstallUpdateAsync(authorized));
     }
 
     /// <summary>Every button on the home screen, in one place.</summary>
@@ -264,6 +295,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             new PadOption("Open a save file", IconPath: "search"),
             new PadOption("Restore points", IconPath: "restore"),
             new PadOption("About PKForge", IconPath: "settings"),
+            new PadOption("Check for update", IconPath: "restore"),
             new PadOption("Music", IconPath: "music"),
             new PadOption("Misc", IconPath: "script"),
             new PadOption("Quit PKForge", IconPath: "quit"));
@@ -273,11 +305,113 @@ public sealed class HomePage : ContentPage, IPadHandler
             case "Open a save file": await LinkFileAsync(); break;
             case "Restore points": await PushAsync<BackupHistoryPage>(); break;
             case "About PKForge": _viewModel.Status = "PKForge - open-source save manager & bank. GPLv3."; break;
+            case "Check for update": await CheckForUpdateAsync(automatic: false); break;
             case "Music": await ShowMusicAsync(); break;
             case "Misc": await ShowMiscAsync(); break;
             case "Quit PKForge":
                 if (await PadMenu.ConfirmAsync(_hostGrid, "QUIT PKFORGE?", "Unsaved edits in open menus are already backed up per write.", "Quit"))
                     Microsoft.Maui.Controls.Application.Current?.Quit();
+                break;
+        }
+    }
+
+    /// <summary>Release checks: automatic failures stay quiet, manual failures explain themselves.</summary>
+    private async Task CheckForUpdateAsync(bool automatic)
+    {
+        var service = IPlatformApplication.Current?.Services.GetService<AppUpdateService>();
+        if (service is null) return;
+
+        AppUpdateCheck check;
+        try
+        {
+            check = await service.CheckAsync();
+        }
+        catch (Exception error)
+        {
+            Android.Util.Log.Warn("PKForgeUpdate", $"Automatic update check failed: {error}");
+            if (!automatic)
+                _viewModel.Status = $"Update check failed: {error.Message}";
+            return;
+        }
+
+        if (check.Update is not { } update || !check.IsAvailable)
+        {
+            if (!automatic)
+                await DialogueBox.ShowSequenceAsync(_hostGrid, check.Message);
+            return;
+        }
+        if (automatic && !service.ShouldPromptAutomatically(update))
+            return;
+        if (automatic && !_isAppearing)
+            return;
+
+        var choice = await DialogueChoiceBox.ShowAsync(_hostGrid,
+            $"A new version of PKForge is available! Version {update.Version} is ready to install. Would you like to update now?",
+            "YES", "NO", "DON'T REMIND ME");
+        switch (choice)
+        {
+            case "YES":
+                await InstallUpdateAsync(update);
+                break;
+            case "NO":
+                _viewModel.Status = $"Version {update.Version} will be offered again next launch.";
+                break;
+            case "DON'T REMIND ME":
+                service.DontRemindMe(update);
+                _viewModel.Status = $"I won't remind you about version {update.Version} again.";
+                break;
+        }
+    }
+
+    private async Task InstallUpdateAsync(AvailableAppUpdate update)
+    {
+        var service = IPlatformApplication.Current!.Services.GetRequiredService<AppUpdateService>();
+        var overlay = LoadingOverlay.Show(_hostGrid, "DOWNLOADING THE UPDATE!",
+            $"PKForge {update.Version} is on its way. Android will confirm the installation.");
+        AppUpdateInstallResult result;
+        try
+        {
+            result = await service.DownloadAndInstallAsync(update, (done, total) =>
+            {
+                var percent = total <= 0 ? 0 : (int)Math.Clamp(done * 100 / total, 0, 100);
+                overlay.Report(percent, 100);
+            }, overlay.Cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            _viewModel.Status = "Update paused. You can start it again from Settings.";
+            return;
+        }
+        catch (Exception error)
+        {
+            Android.Util.Log.Error("PKForgeUpdate", $"Download/install failed: {error}");
+            _viewModel.Status = $"Update failed: {error.Message}";
+            var openRelease = await PadMenu.ConfirmAsync(_hostGrid, "OPEN THE RELEASE PAGE?",
+                "The in-app installer could not finish. The GitHub release page has the same APK.", "Open");
+            if (openRelease)
+                await Launcher.OpenAsync(update.ReleaseUrl);
+            return;
+        }
+        finally
+        {
+            overlay.Close();
+        }
+
+        switch (result)
+        {
+            case AppUpdateInstallResult.InstallerOpened:
+                _viewModel.Status = "Android is installing the update.";
+                break;
+            case AppUpdateInstallResult.ReleasePageOpened:
+                _viewModel.Status = "The PKForge release page is open.";
+                break;
+            case AppUpdateInstallResult.InstallPermissionRequired:
+                _pendingAuthorizedUpdate = update;
+                var permissionChoice = await DialogueChoiceBox.ShowAsync(_hostGrid,
+                    "Android needs permission to install PKForge updates. Allow install unknown apps for PKForge, then check again?",
+                    "OPEN SETTINGS", "NOT NOW");
+                if (permissionChoice == "OPEN SETTINGS")
+                    AppUpdateService.OpenInstallPermissionSettings();
                 break;
         }
     }
@@ -340,18 +474,37 @@ public sealed class HomePage : ContentPage, IPadHandler
     /// <summary>Maintenance actions: the sprite pack, the rescan, and the scan report.</summary>
     private async Task ShowMiscAsync()
     {
+        var trainerProfiles = IPlatformApplication.Current!.Services.GetRequiredService<TrainerProfileStore>();
         var choice = await PadMenu.ShowAsync(_hostGrid, "MISC", null,
+            new PadOption(trainerProfiles.UseCurrentTrainerForGeneration
+                ? "Generated Pokémon obey trainer: ON"
+                : "Generated Pokémon obey trainer: OFF", IconPath: "trainer"),
             new PadOption($"Download full sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "storage"),
             new PadOption("Rescan games", IconPath: "hex"),
             new PadOption("Scan report", IconPath: "script"),
             new PadOption(Services.HaXMode.IsOn ? "HaX mode: ON" : "HaX mode: OFF", IconPath: "editor"));
         switch (choice)
         {
+            case var ownership when ownership?.StartsWith("Generated Pokémon obey trainer:", StringComparison.Ordinal) == true:
+                trainerProfiles.SetUseCurrentTrainerForGeneration(!trainerProfiles.UseCurrentTrainerForGeneration);
+                _viewModel.Status = trainerProfiles.UseCurrentTrainerForGeneration
+                    ? "Generated Pokémon will be owned by the open save's trainer."
+                    : "Generated Pokémon may use Auto-Legality trainer data.";
+                break;
             case var pack when pack?.StartsWith("Download full sprite pack", StringComparison.Ordinal) == true:
                 await DownloadSpritePackAsync();
                 break;
             case "Rescan games": await _viewModel.RescanCommand.ExecuteAsync(null); break;
-            case "Scan report": await PadMenu.ShowAsync(_hostGrid, "SCAN REPORT", _viewModel.ScanReport, "OK"); break;
+            case "Scan report":
+            {
+                var action = await PadMenu.ShowAsync(_hostGrid, "SCAN REPORT", _viewModel.ScanReport, "Copy report", "Close");
+                if (action == "Copy report")
+                {
+                    await Clipboard.Default.SetTextAsync(_viewModel.ScanReport);
+                    _viewModel.Status = "SCAN REPORT COPIED";
+                }
+                break;
+            }
             case "HaX mode: OFF":
                 var on = await PadMenu.ConfirmAsync(_hostGrid, "TURN ON HAX MODE?",
                     "Pickers will offer every option instead of the legal subset (any ability on any mon). " +

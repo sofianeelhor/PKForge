@@ -2,12 +2,21 @@ namespace PKForge.App;
 
 public sealed class App : Application
 {
+    /// <summary>Raised when Android resumes the app (including after the install-permission screen).</summary>
+    public static event Action? Resumed;
+
     /// <summary>The user's optional default background music starts with the app, once.</summary>
     protected override void OnStart()
     {
         base.OnStart();
         var music = IPlatformApplication.Current?.Services.GetService<Domain.IMusicPlayer>() as Platforms.Android.MusicPlayer;
         music?.MaybeAutostart();
+    }
+
+    protected override void OnResume()
+    {
+        base.OnResume();
+        Resumed?.Invoke();
     }
 
     public App()

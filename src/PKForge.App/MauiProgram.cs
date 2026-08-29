@@ -28,6 +28,8 @@ public static class MauiProgram
             });
         builder.Services.AddSingleton<ISaveEngine, SaveEngine>();
         builder.Services.AddSingleton<IGameDataService, GameDataService>();
+        builder.Services.AddSingleton<TrainerProfileStore>();
+        builder.Services.AddSingleton<IGenerationOwnershipSettings>(sp => sp.GetRequiredService<TrainerProfileStore>());
         builder.Services.AddSingleton<ILegalizerService, LegalizerService>();
         builder.Services.AddSingleton<IEventDatabaseService, EventDatabaseService>();
         builder.Services.AddSingleton<IBackupService>(_ =>
@@ -43,6 +45,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<GamepadRouter>();
         builder.Services.AddSingleton<SecondScreenState>();
         builder.Services.AddSingleton<SpritePackDownloader>();
+        builder.Services.AddSingleton<AppUpdateService>();
         builder.Services.AddSingleton<TransferService>();
 #if ANDROID
         builder.Services.AddSingleton<ISaveFileAccess, AndroidSafFileAccess>();

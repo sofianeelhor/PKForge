@@ -46,11 +46,12 @@ public partial class SavePickerViewModel : ObservableObject
     public ObservableCollection<SaveGroup> Groups { get; } = [];
 
     private readonly List<string> _rejectedCandidates = [];
+    private readonly List<string> _scanDiagnostics = [];
 
-    /// <summary>Evidence for "why wasn't my save found?" - candidate files that failed to parse.</summary>
-    public string ScanReport => _rejectedCandidates.Count == 0
-        ? "Every save-like file parsed, or none were found. Check that the linked folder actually contains the emulator's save files (not ROMs or states)."
-        : string.Join("\n", _rejectedCandidates.Take(14)) + (_rejectedCandidates.Count > 14 ? $"\n… and {_rejectedCandidates.Count - 14} more" : "");
+    /// <summary>Copyable evidence for folder grants, traversal, candidate bytes and parser outcomes.</summary>
+    public string ScanReport => _scanDiagnostics.Count == 0
+        ? "No diagnostic scan has run yet. Use Rescan games, then open Scan report again."
+        : string.Join("\n", _scanDiagnostics);
 
     [ObservableProperty] private string _status = "Link an emulator's storage to begin.";
     [ObservableProperty] private bool _isBusy;
@@ -99,21 +100,31 @@ public partial class SavePickerViewModel : ObservableObject
             Saves.Clear();
             var filesSeen = 0;
             _rejectedCandidates.Clear();
+            _scanDiagnostics.Clear();
+            _scanDiagnostics.Add($"PKForge scan report · {DateTimeOffset.Now:O}");
+            _scanDiagnostics.Add($"Linked roots: {roots.Count}");
             foreach (var root in roots)
             {
+                _scanDiagnostics.Add(string.Empty);
+                _scanDiagnostics.Add($"ROOT kind={root.Kind} name={root.DisplayName}");
+                _scanDiagnostics.Add($"TREE URI {root.TreeId}");
                 Status = $"Scanning {root.Kind} unit · {root.DisplayName}…";
                 try
                 {
                     var result = await _detection.ScanAsync(root.TreeId, root.Kind);
                     filesSeen += result.FilesSeen;
+                    if (result.Diagnostics is { } diagnostics)
+                        _scanDiagnostics.AddRange(diagnostics);
                     foreach (var rejected in result.RejectedCandidates)
                         _rejectedCandidates.Add($"{root.Kind}: {rejected}");
+                    _scanDiagnostics.Add($"RESULT files={result.FilesSeen} saves={result.Saves.Count} rejected={result.RejectedCandidates.Count}");
                     foreach (var save in result.Saves)
                         if (!Saves.Any(x => x.DocumentId == save.DocumentId))
                             Saves.Add(save);
                 }
                 catch (Exception error)
                 {
+                    _scanDiagnostics.Add($"ROOT FAILED {error}");
                     Status = $"Scan of {root.Kind} failed: {error.Message}";
                 }
             }

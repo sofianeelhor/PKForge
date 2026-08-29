@@ -1,5 +1,6 @@
 using PKForge.Domain;
 using PKHeX.Core;
+using PKHeX.Core.AutoMod;
 
 namespace PKForge.Engine;
 
@@ -59,10 +60,8 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (entity.Species == 0)
             return new EntityDetail(box, slot, true, 0, string.Empty, 0, string.Empty, 0, 0, 0, 0, 0, 0, 0, 0, [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], false, 0, string.Empty);
 
-        Span<int> ivs = stackalloc int[6];
-        Span<int> evs = stackalloc int[6];
-        entity.GetIVs(ivs);
-        entity.GetEVs(evs);
+        var ivs = GetIVsInAppOrder(entity);
+        var evs = GetEVsInAppOrder(entity);
         return new EntityDetail(
             box, slot, false,
             entity.Species,
@@ -74,7 +73,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
             entity.Ability,
             entity.HeldItem,
             entity.Move1, entity.Move2, entity.Move3, entity.Move4,
-            ivs.ToArray(), evs.ToArray(),
+            ivs, evs,
             entity.IsShiny,
             entity.Ball,
             entity.OriginalTrainerName,
@@ -104,52 +103,94 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (entity.Species == 0)
             throw new InvalidOperationException("Cannot edit an empty slot.");
 
-        if (edit.Species is { } species)
+        var changed = false;
+        if (edit.Species is { } species && entity.Species != species)
         {
             entity.Species = (ushort)species;
             entity.Form = 0;
+            changed = true;
         }
-        if (edit.Nickname is { } nickname)
+        if (edit.Nickname is { } nickname && !string.Equals(entity.Nickname, nickname, StringComparison.Ordinal))
         {
             entity.Nickname = nickname;
             entity.IsNicknamed = true;
+            changed = true;
         }
-        if (edit.Level is { } level)
-            entity.CurrentLevel = (byte)Math.Clamp(level, 1, 100);
-        if (edit.Nature is { } nature)
+        if (edit.Level is { } level && entity.CurrentLevel != Math.Clamp(level, 1, 100))
         {
-            // Gen 3/4/5 natures are PID-derived with an empty setter: the only way to
+            entity.CurrentLevel = (byte)Math.Clamp(level, 1, 100);
+            changed = true;
+        }
+        if (edit.Nature is { } nature && (int)entity.Nature != nature)
+        {
+            // Gen 3/4 natures are PID-derived with an empty setter: the only way to
             // change them is re-rolling the personality (PKHeX's own SetPIDNature).
             if (entity is G3PKM or G4PKM)
                 entity.SetPIDNature((Nature)nature);
             else
                 entity.Nature = (Nature)nature;
+            changed = true;
         }
-        if (edit.Ability is { } ability)
+        if (edit.Ability is { } ability && entity.Ability != ability)
+        {
             entity.Ability = ability;
-        if (edit.HeldItem is { } item)
+            changed = true;
+        }
+        if (edit.HeldItem is { } item && entity.HeldItem != item)
+        {
             entity.HeldItem = item;
-        if (edit.Move1 is { } m1) entity.Move1 = (ushort)m1;
-        if (edit.Move2 is { } m2) entity.Move2 = (ushort)m2;
-        if (edit.Move3 is { } m3) entity.Move3 = (ushort)m3;
-        if (edit.Move4 is { } m4) entity.Move4 = (ushort)m4;
+            changed = true;
+        }
+        if (edit.Move1 is { } m1 && entity.Move1 != m1) { entity.Move1 = (ushort)m1; changed = true; }
+        if (edit.Move2 is { } m2 && entity.Move2 != m2) { entity.Move2 = (ushort)m2; changed = true; }
+        if (edit.Move3 is { } m3 && entity.Move3 != m3) { entity.Move3 = (ushort)m3; changed = true; }
+        if (edit.Move4 is { } m4 && entity.Move4 != m4) { entity.Move4 = (ushort)m4; changed = true; }
         if (edit.IVs is { Count: 6 } ivs)
-            entity.SetIVs(ivs.ToArray());
+        {
+            var values = ClampAll(ivs.ToArray(), TrainingCapsOf(entity).IvMax);
+            if (!values.SequenceEqual(GetIVsInAppOrder(entity)))
+            {
+                SetIVsFromAppOrder(entity, values);
+                changed = true;
+            }
+        }
         if (edit.EVs is { Count: 6 } evs)
-            entity.SetEVs(evs.ToArray());
+        {
+            var values = ClampAll(evs.ToArray(), TrainingCapsOf(entity).EvMax);
+            if (!values.SequenceEqual(GetEVsInAppOrder(entity)))
+            {
+                SetEVsFromAppOrder(entity, values);
+                changed = true;
+            }
+        }
         if (edit.IsShiny is { } shiny)
         {
-            if (shiny && !entity.IsShiny) entity.SetShiny();
-            else if (!shiny && entity.IsShiny) entity.SetUnshiny();
+            if (shiny && !entity.IsShiny) { entity.SetShiny(); changed = true; }
+            else if (!shiny && entity.IsShiny) { entity.SetUnshiny(); changed = true; }
         }
-        if (edit.Ball is { } ball)
+        if (edit.Ball is { } ball && entity.Ball != ball)
+        {
             entity.Ball = (byte)ball;
-        if (edit.OriginalTrainer is { } ot)
+            changed = true;
+        }
+        if (edit.OriginalTrainer is { } ot && !string.Equals(entity.OriginalTrainerName, ot, StringComparison.Ordinal))
+        {
             entity.OriginalTrainerName = ot;
-        if (edit.Gender is { } gender)
+            changed = true;
+        }
+        if (edit.Gender is { } gender && entity.Gender != Math.Clamp(gender, 0, 2))
+        {
             entity.Gender = (byte)Math.Clamp(gender, 0, 2);
-        if (edit.Friendship is { } friendship)
+            changed = true;
+        }
+        if (edit.Friendship is { } friendship && entity.CurrentFriendship != Math.Clamp(friendship, 0, 255))
+        {
             entity.CurrentFriendship = (byte)Math.Clamp(friendship, 0, 255);
+            changed = true;
+        }
+
+        if (!changed)
+            return;
 
         entity.RefreshChecksum();
         if (box == -1)
@@ -401,21 +442,19 @@ public sealed class SaveEngineSession : ISaveEngineSession
                 case "move4": entity.Move4 = (ushort)ParseValue(); changed = true; break;
                 case "iv_hp": case "iv_atk": case "iv_def": case "iv_spa": case "iv_spd": case "iv_spe":
                 {
-                    Span<int> ivs = stackalloc int[6];
-                    entity.GetIVs(ivs);
+                    var ivs = GetIVsInAppOrder(entity);
                     var index = prop switch { "iv_hp" => 0, "iv_atk" => 1, "iv_def" => 2, "iv_spa" => 3, "iv_spd" => 4, _ => 5 };
-                    ivs[index] = Math.Clamp(ParseValue(), 0, 31);
-                    entity.SetIVs(ivs);
+                    ivs[index] = Math.Clamp(ParseValue(), 0, TrainingCapsOf(entity).IvMax);
+                    SetIVsFromAppOrder(entity, ivs);
                     changed = true;
                     break;
                 }
                 case "ev_hp": case "ev_atk": case "ev_def": case "ev_spa": case "ev_spd": case "ev_spe":
                 {
-                    Span<int> evs = stackalloc int[6];
-                    entity.GetEVs(evs);
+                    var evs = GetEVsInAppOrder(entity);
                     var index = prop switch { "ev_hp" => 0, "ev_atk" => 1, "ev_def" => 2, "ev_spa" => 3, "ev_spd" => 4, _ => 5 };
-                    evs[index] = Math.Clamp(ParseValue(), 0, 252);
-                    entity.SetEVs(evs);
+                    evs[index] = Math.Clamp(ParseValue(), 0, TrainingCapsOf(entity).EvMax);
+                    SetEVsFromAppOrder(entity, evs);
                     changed = true;
                     break;
                 }
@@ -551,18 +590,55 @@ public sealed class SaveEngineSession : ISaveEngineSession
         ThrowIfDisposed();
         ValidateCoordinates(box, slot);
         var entity = GetEntityCore(box, slot);
-        Span<int> ivs = stackalloc int[6];
-        entity.GetIVs(ivs);
         return new RngInfo(
             entity.PID,
             entity.Format >= 6 ? entity.EncryptionConstant : null,
             (int)entity.Nature,
             entity.IsShiny,
             entity is not GBPKM,
-            ivs.ToArray(),
+            GetIVsInAppOrder(entity),
             entity.Ability,
             entity.Gender);
     }
+
+    public TrainingCaps GetTrainingCaps() => _save.Context switch
+    {
+        EntityContext.Gen1 or EntityContext.Gen2 => new TrainingCaps(15, 65535),
+        _ when _save.Generation <= 5 => new TrainingCaps(31, 255),
+        _ => new TrainingCaps(31, 252),
+    };
+
+    /// <summary>Format truth: Gen 1/2 store 4-bit DVs and 16-bit stat experience;
+    /// Gen 3-5 allow 255 EVs per stat; Gen 6+ enforce 252. Writing a bigger raw
+    /// value would wrap the underlying storage, so every writer clamps to these.</summary>
+    private static TrainingCaps TrainingCapsOf(PKM entity) => entity switch
+    {
+        GBPKM => new(15, 65535),
+        _ when entity.Format is <= 5 => new(31, 255),
+        _ => new(31, 252),
+    };
+
+    private static int[] ClampAll(int[] values, int max)
+    {
+        for (var i = 0; i < values.Length; i++)
+            values[i] = Math.Clamp(values[i], 0, max);
+        return values;
+    }
+
+    // PKHeX's array APIs use HP/ATK/DEF/SPE/SPA/SPD. PKForge's UI and domain use
+    // the conventional display order HP/ATK/DEF/SPA/SPD/SPE. Keep that translation
+    // at the engine boundary so every editor, preset and summary agrees on identity.
+    private static int[] GetIVsInAppOrder(PKM entity) =>
+        [entity.IV_HP, entity.IV_ATK, entity.IV_DEF, entity.IV_SPA, entity.IV_SPD, entity.IV_SPE];
+
+    private static int[] GetEVsInAppOrder(PKM entity) =>
+        [entity.EV_HP, entity.EV_ATK, entity.EV_DEF, entity.EV_SPA, entity.EV_SPD, entity.EV_SPE];
+
+    private static void SetIVsFromAppOrder(PKM entity, IReadOnlyList<int> values) =>
+        entity.SetIVs([values[0], values[1], values[2], values[5], values[3], values[4]]);
+
+    private static void SetEVsFromAppOrder(PKM entity, IReadOnlyList<int> values) =>
+        entity.SetEVs([values[0], values[1], values[2], values[5], values[3], values[4]]);
 
     public bool RerollNatureKeepShiny(int box, int slot, int nature)
     {
@@ -768,18 +844,117 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public TrainerInfo GetTrainer()
     {
         ThrowIfDisposed();
-        return new TrainerInfo(_save.OT, _save.TID16, _save.SID16, _save.Money, _save.Gender);
+        return new TrainerInfo(_save.OT, _save.TID16, _save.SID16, ReadMoneySafe(), _save.Gender);
     }
 
     public void SetTrainer(TrainerInfo trainer)
     {
         ThrowIfDisposed();
         _save.OT = trainer.Name;
+        if (!string.Equals(_save.OT, trainer.Name, StringComparison.Ordinal))
+            throw new InvalidOperationException("This save's character set cannot store that trainer name.");
         _save.TID16 = (ushort)Math.Clamp(trainer.TID, 0, ushort.MaxValue);
         _save.SID16 = (ushort)Math.Clamp(trainer.SID, 0, ushort.MaxValue);
-        _save.Money = trainer.Money;
+        // Some contexts (SV blanks, for example) do not carry a typed money block;
+        // identity edits must still work there.
+        if (ReadMoneySafe() != trainer.Money)
+        {
+            try { _save.Money = trainer.Money; }
+            catch (ArgumentOutOfRangeException) { }
+        }
         _save.Gender = (byte)Math.Clamp(trainer.Gender, 0, 1);
     }
+
+    private uint ReadMoneySafe()
+    {
+        try { return _save.Money; }
+        catch (ArgumentOutOfRangeException) { return 0; }
+    }
+
+    public GenerationOutcome MakeMine(int box, int slot, TrainerProfile? profile = null)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var source = GetEntity(box, slot);
+        if (source.Species == 0)
+            return new GenerationOutcome(false, "Empty slot.");
+
+        var entity = source.Clone();
+        if (!MakeOwned(entity, profile, out var failure))
+            return new GenerationOutcome(false, failure ?? "That ownership change is not legal, so nothing was changed.");
+
+        if (box == -1)
+            _save.SetPartySlotAtIndex(entity, slot);
+        else
+            _save.SetBoxSlotAtIndex(entity, box, slot);
+        var ownerName = profile?.DisplayName ?? _save.OT;
+        return new GenerationOutcome(true, $"Made yours using {ownerName}.");
+    }
+
+    /// <summary>Rewrites one entity's ownership in place. The caller must clone first
+    /// when the source bytes must remain untouched on failure.</summary>
+    internal bool MakeOwned(PKM entity, TrainerProfile? profile, out string? failure)
+    {
+        failure = null;
+        var before = new LegalityAnalysis(entity);
+        if (!IsPlayerOriginalTrainer(before.EncounterOriginal))
+        {
+            failure = "This Pokémon has a fixed event or in-game-trade OT and cannot be made yours legally.";
+            return false;
+        }
+
+        var wasShiny = entity.IsShiny;
+        entity.OriginalTrainerName = profile?.OriginalTrainer ?? _save.OT;
+        entity.TID16 = (ushort)Math.Clamp(profile?.TID ?? _save.TID16, 0, ushort.MaxValue);
+        entity.SID16 = entity.Format < 3 || entity.VC
+            ? (ushort)0
+            : (ushort)Math.Clamp(profile?.SID ?? _save.SID16, 0, ushort.MaxValue);
+        entity.OriginalTrainerGender = (byte)Math.Clamp(profile?.Gender ?? _save.Gender, 0, 1);
+        var ownerInfo = new SimpleTrainerInfo(_save)
+        {
+            OT = entity.OriginalTrainerName,
+            TID16 = entity.TID16,
+            SID16 = entity.SID16,
+            Gender = entity.OriginalTrainerGender,
+        };
+        entity.SetHandlerAndMemory(ownerInfo, before.EncounterOriginal);
+        // Handler repair follows PKHeX transfer rules (VC entities cannot store a SID,
+        // for example); ownership is reapplied within those format limits.
+        entity.OriginalTrainerName = ownerInfo.OT;
+        entity.TID16 = ownerInfo.TID16;
+        entity.SID16 = entity.Format < 3 || entity.VC ? (ushort)0 : ownerInfo.SID16;
+        entity.OriginalTrainerGender = ownerInfo.Gender;
+
+        if (entity.IsShiny != wasShiny)
+        {
+            if (wasShiny) entity.SetShiny();
+            else entity.SetUnshiny();
+        }
+        if (entity is IObedienceLevel obedience)
+            obedience.ObedienceLevel = obedience.GetSuggestedObedienceLevel(entity, (byte)entity.MetLevel);
+
+        entity.RefreshChecksum();
+        var after = new LegalityAnalysis(entity);
+        if (!after.Valid)
+        {
+            var first = after.Report(verbose: false)
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault() ?? "no legal combination";
+            failure = $"That ownership change would make this Pokémon illegal ({first}), so nothing was changed.";
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>Mirrors PKHeX's trainer-name verifier: fixed-OT trades, event gifts,
+    /// and fixed-ID encounters cannot be rewritten as a player catch.</summary>
+    private static bool IsPlayerOriginalTrainer(IEncounterTemplate encounter) => encounter switch
+    {
+        IFixedTrainer { IsFixedTrainer: true } => false,
+        MysteryGift { IsEgg: false } => false,
+        ITrainerID16ReadOnly => false,
+        _ => true,
+    };
 
     public DexProgress GetDexProgress()
     {

@@ -15,6 +15,16 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
 
     private int _filesSeen;
     private readonly List<string> _rejected = [];
+    private readonly List<string> _diagnostics = [];
+
+    private void Trace(string message)
+    {
+        const int maxLines = 2000;
+        if (_diagnostics.Count < maxLines)
+            _diagnostics.Add(message);
+        else if (_diagnostics.Count == maxLines)
+            _diagnostics.Add("DIAGNOSTICS TRUNCATED after 2000 lines");
+    }
 
     public ValueTask<EmulatorScanResult> ScanAsync(string treeId, EmulatorKind kind, CancellationToken cancellationToken = default)
     {
@@ -26,14 +36,28 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
 
             _filesSeen = 0;
             _rejected.Clear();
-            var found = kind switch
+            _diagnostics.Clear();
+            Trace($"Scanner={nameof(AndroidEmulatorScanner)} kind={kind}");
+            Trace($"TreeUri={treeUri}");
+            Trace($"RootDocId={rootDocId}");
+            List<DetectedSave> found;
+            try
             {
-                EmulatorKind.RetroArch or EmulatorKind.MelonDS or EmulatorKind.Linkboy => ScanFlatFolder(treeUri, rootDocId, kind, cancellationToken),
-                EmulatorKind.Eden => ScanEden(treeUri, rootDocId, cancellationToken),
-                EmulatorKind.Azahar => ScanAzahar(treeUri, rootDocId, cancellationToken),
-                _ => [],
-            };
-            return new EmulatorScanResult(EmulatorSaveHeuristics.Normalize(found), _filesSeen, [.. _rejected]);
+                found = kind switch
+                {
+                    EmulatorKind.RetroArch or EmulatorKind.MelonDS or EmulatorKind.Linkboy => ScanFlatFolder(treeUri, rootDocId, kind, cancellationToken),
+                    EmulatorKind.Eden => ScanEden(treeUri, rootDocId, cancellationToken),
+                    EmulatorKind.Azahar => ScanAzahar(treeUri, rootDocId, cancellationToken),
+                    _ => [],
+                };
+            }
+            catch (Exception error)
+            {
+                Trace($"SCAN EXCEPTION {error}");
+                found = [];
+            }
+            Trace($"Scanner complete files={_filesSeen} saves={found.Count} rejected={_rejected.Count}");
+            return new EmulatorScanResult(EmulatorSaveHeuristics.Normalize(found), _filesSeen, [.. _rejected], [.. _diagnostics]);
         }, cancellationToken));
     }
 
@@ -90,19 +114,34 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
         string? saveDirDocId = null;
         foreach (var prefix in prefixes)
         {
-            saveDirDocId = NavigatePath(treeUri, rootDocId, prefix);
-            if (saveDirDocId is not null) break;
+            Trace($"Trying Eden prefix {string.Join('/', prefix)}");
+            saveDirDocId = NavigatePath(treeUri, rootDocId, prefix, Trace);
+            Trace(saveDirDocId is null ? "Prefix not found" : $"Save root found: {saveDirDocId}");
+            if (saveDirDocId is not null)
+                break;
         }
-        if (saveDirDocId is null) return [];
+        if (saveDirDocId is null)
+        {
+            Trace("EDEN FAILURE: none of nand/user/save, user/save, or save exists under the granted root");
+            return [];
+        }
 
         var results = new List<DetectedSave>();
         FindFilesRecursive(treeUri, saveDirDocId, EdenMaxDepth, cancellationToken, child =>
         {
-            if (!EmulatorSaveHeuristics.IsEdenSaveFileName(child.Name)) return;
+            _filesSeen++;
+            if (!EmulatorSaveHeuristics.IsEdenSaveFileName(child.Name))
+            {
+                Trace($"SKIP file name={child.Name} docId={child.DocId}");
+                return;
+            }
+            Trace($"CANDIDATE name={child.Name} modified={child.LastModified?.ToString("O") ?? "unknown"} docId={child.DocId}");
             var label = EmulatorSaveHeuristics.GuessSwitchGameLabel(child.DocId);
             if (TryDetect(treeUri, child, EmulatorKind.Eden, label) is { } save)
                 results.Add(save);
-        });
+            else
+                _rejected.Add(child.Name);
+        }, diagnostic: true);
         return results;
     }
 
@@ -139,16 +178,29 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
         try
         {
             var documentUri = DocumentsContract.BuildDocumentUriUsingTree(treeUri, child.DocId);
-            if (documentUri is null) return null;
+            if (documentUri is null)
+            {
+                Trace("REJECT document URI could not be built");
+                return null;
+            }
+            Trace($"DocumentUri={documentUri}");
 
             // A file already parsed at this modification time never gets re-read: rescans are instant.
             var cacheKey = documentUri.ToString()!;
             var modifiedTicks = child.LastModified?.UtcTicks ?? 0;
+#if !DEBUG && !DIAGNOSTIC
             if (ScanCache.TryGet(cacheKey, modifiedTicks, out var cached))
                 return cached;
+#else
+            Trace("Diagnostic build: parse cache bypassed");
+#endif
 
             using var stream = Platform.AppContext.ContentResolver?.OpenInputStream(documentUri);
-            if (stream is null) return null;
+            if (stream is null)
+            {
+                Trace("REJECT ContentResolver.OpenInputStream returned null");
+                return null;
+            }
             // Saves are small; a matching extension on a ROM/archive must not stall the scan.
             const long maxSaveBytes = 32 * 1024 * 1024;
             using var buffer = new MemoryStream();
@@ -157,17 +209,32 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
             while ((read = stream.Read(chunk, 0, chunk.Length)) > 0)
             {
                 buffer.Write(chunk, 0, read);
-                if (buffer.Length > maxSaveBytes) return null;
+                if (buffer.Length > maxSaveBytes)
+                {
+                    Trace($"REJECT larger than {maxSaveBytes} bytes");
+                    return null;
+                }
             }
-            if (buffer.Length == 0) return null;
+            if (buffer.Length == 0)
+            {
+                Trace("REJECT zero-byte file");
+                return null;
+            }
+
+            var bytes = buffer.ToArray();
+            var headerLength = Math.Min(16, bytes.Length);
+            var bdspSize = bytes.Length is 956456 or 973856 or 978316 or 979108;
+            Trace($"BYTES length={bytes.Length} header16={Convert.ToHexString(bytes.AsSpan(0, headerLength))} knownBdspSize={bdspSize}");
 
             // Describe consumes a copy: the engine decrypts Switch saves in place during parsing.
-            var description = engine.TryDescribe(buffer.ToArray());
+            var description = engine.TryDescribe(bytes);
             if (description is null)
             {
+                Trace("PARSER REJECTED: ISaveEngine.TryDescribe returned null");
                 ScanCache.Store(cacheKey, modifiedTicks, null);
                 return null;
             }
+            Trace($"PARSER ACCEPTED game={description.GameName} generation={description.Generation} trainer={description.TrainerName} playTime={description.PlayTime}");
 
             var detected = new DetectedSave(
                 documentUri.ToString()!,
@@ -184,8 +251,9 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
             ScanCache.Store(cacheKey, modifiedTicks, detected);
             return detected;
         }
-        catch
+        catch (Exception error)
         {
+            Trace($"CANDIDATE EXCEPTION {error}");
             return null; // unreadable candidates are simply not saves
         }
     }
@@ -250,16 +318,28 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
         }
     }
 
-    private void FindFilesRecursive(AndroidUri treeUri, string parentDocId, int maxDepth, CancellationToken cancellationToken, Action<ChildDocument> onFile)
+    private void FindFilesRecursive(AndroidUri treeUri, string parentDocId, int maxDepth,
+        CancellationToken cancellationToken, Action<ChildDocument> onFile, bool diagnostic = false)
     {
-        if (maxDepth <= 0) return;
-        foreach (var child in ListChildren(treeUri, parentDocId))
+        if (maxDepth <= 0)
+        {
+            if (diagnostic) Trace($"DEPTH LIMIT reached at {parentDocId}");
+            return;
+        }
+        var children = ListChildren(treeUri, parentDocId);
+        if (diagnostic) Trace($"WALK depthRemaining={maxDepth} parent={parentDocId} children={children.Count}");
+        foreach (var child in children)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (child.IsDirectory)
             {
-                if (PrunedDirectories.Contains(child.Name)) continue;
-                FindFilesRecursive(treeUri, child.DocId, maxDepth - 1, cancellationToken, onFile);
+                if (diagnostic) Trace($"DIR name={child.Name} docId={child.DocId}");
+                if (PrunedDirectories.Contains(child.Name))
+                {
+                    if (diagnostic) Trace($"PRUNED directory {child.Name}");
+                    continue;
+                }
+                FindFilesRecursive(treeUri, child.DocId, maxDepth - 1, cancellationToken, onFile, diagnostic);
             }
             else
             {
@@ -268,13 +348,20 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
         }
     }
 
-    private static string? NavigatePath(AndroidUri treeUri, string fromDocId, string[] segments)
+    private static string? NavigatePath(AndroidUri treeUri, string fromDocId, string[] segments, Action<string>? trace = null)
     {
         var current = fromDocId;
         foreach (var segment in segments)
         {
-            var next = ListChildren(treeUri, current).FirstOrDefault(x => x.IsDirectory && x.Name == segment);
-            if (next is null) return null;
+            var children = ListChildren(treeUri, current);
+            trace?.Invoke($"At {current}: {children.Count} children [{string.Join(", ", children.Select(x => x.IsDirectory ? x.Name + "/" : x.Name))}]");
+            var next = children.FirstOrDefault(x => x.IsDirectory && x.Name == segment);
+            if (next is null)
+            {
+                trace?.Invoke($"Missing directory segment '{segment}'");
+                return null;
+            }
+            trace?.Invoke($"Matched '{segment}' -> {next.DocId}");
             current = next.DocId;
         }
         return current;

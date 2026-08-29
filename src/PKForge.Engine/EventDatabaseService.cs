@@ -48,15 +48,17 @@ public sealed class EventDatabaseService : IEventDatabaseService
     /// <summary>The context-correct gift table, in a stable order (indices are gift ids).</summary>
     private static IReadOnlyList<MysteryGift> GetRawGifts(SaveFile save) => save.Context switch
     {
-        EntityContext.Gen4 => EncounterEvent.MGDB_G4,
-        EntityContext.Gen5 => EncounterEvent.MGDB_G5,
-        EntityContext.Gen6 => EncounterEvent.MGDB_G6,
-        EntityContext.Gen7 => EncounterEvent.MGDB_G7,
-        EntityContext.Gen7b => EncounterEvent.MGDB_G7GG,
-        EntityContext.Gen8 => EncounterEvent.MGDB_G8,
-        EntityContext.Gen8a => EncounterEvent.MGDB_G8A,
-        EntityContext.Gen8b => EncounterEvent.MGDB_G8B,
-        EntityContext.Gen9 => EncounterEvent.MGDB_G9,
+        // MGDB is PKHeX's embedded database; EGDB holds the EventsGallery folders loaded
+        // at runtime (EventArchive), which carry every language and later additions.
+        EntityContext.Gen4 => [.. EncounterEvent.MGDB_G4, .. EncounterEvent.EGDB_G4],
+        EntityContext.Gen5 => [.. EncounterEvent.MGDB_G5, .. EncounterEvent.EGDB_G5],
+        EntityContext.Gen6 => [.. EncounterEvent.MGDB_G6, .. EncounterEvent.EGDB_G6],
+        EntityContext.Gen7 => [.. EncounterEvent.MGDB_G7, .. EncounterEvent.EGDB_G7],
+        EntityContext.Gen7b => [.. EncounterEvent.MGDB_G7GG, .. EncounterEvent.EGDB_G7GG],
+        EntityContext.Gen8 => [.. EncounterEvent.MGDB_G8, .. EncounterEvent.EGDB_G8],
+        EntityContext.Gen8a => [.. EncounterEvent.MGDB_G8A, .. EncounterEvent.EGDB_G8A],
+        EntityContext.Gen8b => [.. EncounterEvent.MGDB_G8B, .. EncounterEvent.EGDB_G8B],
+        EntityContext.Gen9 => [.. EncounterEvent.MGDB_G9, .. EncounterEvent.EGDB_G9],
         _ => [],
     };
 }

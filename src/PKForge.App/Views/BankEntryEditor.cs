@@ -177,6 +177,8 @@ public static class BankEntryEditor
             _sprites = sprites;
             _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
             _detail = session.ReadEntity(0, 0);
+            var caps = session.GetTrainingCaps();
+            var classicTraining = caps.IvMax == 15;
 
             // ── Identity panel: sprite hero over the editable fact rows.
             _spriteView = new SKCanvasView
@@ -242,15 +244,15 @@ public static class BankEntryEditor
 
             // ── Stats panel: the IV · EV · value table plus the spread editors.
             var stats = new VerticalStackLayout { Spacing = 4 };
-            stats.Add(StatHeader());
+            stats.Add(StatHeader(classicTraining));
             for (var i = 0; i < _statRows.Length; i++)
             {
                 _statRows[i] = new StatRow(i, StatNames[i]);
                 stats.Add(_statRows[i]);
             }
             stats.Add(new BoxView { HeightRequest = 6 });
-            AddRow(stats, "ivs", "IVS", null, EditIvsAsync);
-            AddRow(stats, "evs", "EVS", null, EditEvsAsync);
+            AddRow(stats, "ivs", classicTraining ? "DVS" : "IVS", null, EditIvsAsync);
+            AddRow(stats, "evs", classicTraining ? "STAT EXP" : "EVS", null, EditEvsAsync);
             var statsPanel = Kit.DevicePanel(stats, padding: 10);
 
             // ── Quick actions: the little blue stack buttons on the summary surface.
@@ -259,9 +261,10 @@ public static class BankEntryEditor
                 Spacing = 8,
                 Children =
                 {
-                    QuickButton("MAX IV", MaxIvsAsync),
-                    QuickButton("0 EV", ClearEvsAsync),
+                    QuickButton(classicTraining ? "MAX DV" : "MAX IV", MaxIvsAsync),
+                    QuickButton(classicTraining ? "0 EXP" : "0 EV", ClearEvsAsync),
                     QuickButton("LV 100", Level100Async),
+                    QuickButton("MAKE MINE", MakeMineAsync),
                 },
             };
 
@@ -321,7 +324,7 @@ public static class BankEntryEditor
 
         private static ColumnDefinitionCollection StatColumns() => [new(new GridLength(64)), new(GridLength.Star), new(GridLength.Star), new(GridLength.Star)];
 
-        private static View StatHeader()
+        private static View StatHeader(bool classicTraining)
         {
             var grid = new Grid { ColumnDefinitions = StatColumns(), HeightRequest = 20 };
             void Cap(string text, int column)
@@ -339,8 +342,8 @@ public static class BankEntryEditor
                 Grid.SetColumn(label, column);
             }
             Cap("STAT", 0);
-            Cap("IV", 1);
-            Cap("EV", 2);
+            Cap(classicTraining ? "DV" : "IV", 1);
+            Cap(classicTraining ? "EXP" : "EV", 2);
             Cap("VALUE", 3);
             return grid;
         }
@@ -400,8 +403,11 @@ public static class BankEntryEditor
             _rows["shiny"].Value = d.IsShiny ? "yes" : "no";
             for (var i = 0; i < _statRows.Length; i++)
                 _statRows[i].Set(d.IVs[i], d.EVs[i], d.Stats is { } values && i < values.Count ? values[i] : null);
+            var caps = _session.GetTrainingCaps();
             _rows["ivs"].Value = $"TOTAL {d.IVs.Sum()}";
-            _rows["evs"].Value = $"TOTAL {d.EVs.Sum()}/510";
+            _rows["evs"].Value = caps.EvMax == 65535
+                ? "MAX 65535 PER STAT"
+                : $"TOTAL {d.EVs.Sum()}/510";
             _spriteView.InvalidateSurface();
         }
 
@@ -610,21 +616,63 @@ public static class BankEntryEditor
 
         private async Task EditIvsAsync()
         {
-            var ivs = await StatsPopup.ShowAsync(_host, "IVS (0-31)", _detail.IVs, 31);
+            var caps = _session.GetTrainingCaps();
+            var title = caps.IvMax == 15 ? "DVS (0-15)" : $"IVS (0-{caps.IvMax})";
+            var ivs = await StatsPopup.ShowAsync(_host, title, _detail.IVs, caps.IvMax);
             if (ivs is not null) { _session.ApplyEdit(0, 0, new EntityEdit(IVs: ivs)); _dirty = true; }
         }
 
         private async Task EditEvsAsync()
         {
-            var evs = await StatsPopup.ShowAsync(_host, "EVS (0-252)", _detail.EVs, 252);
+            var caps = _session.GetTrainingCaps();
+            var title = caps.EvMax == 65535 ? "STAT EXP (0-65535)" : $"EVS (0-{caps.EvMax})";
+            var evs = await StatsPopup.ShowAsync(_host, title, _detail.EVs, caps.EvMax);
             if (evs is not null) { _session.ApplyEdit(0, 0, new EntityEdit(EVs: evs)); _dirty = true; }
         }
 
         private Task MaxIvsAsync()
         {
-            _session.ApplyEdit(0, 0, new EntityEdit(IVs: [31, 31, 31, 31, 31, 31]));
+            var max = _session.GetTrainingCaps().IvMax;
+            _session.ApplyEdit(0, 0, new EntityEdit(IVs: Enumerable.Repeat(max, 6).ToArray()));
             _dirty = true;
             return Task.CompletedTask;
+        }
+
+        private async Task MakeMineAsync()
+        {
+            var services = IPlatformApplication.Current!.Services;
+            var profiles = services.GetRequiredService<TrainerProfileStore>().Profiles;
+            TrainerInfo? current = null;
+            try { current = services.GetService<ISaveSessionService>()?.CurrentSession?.GetTrainer(); }
+            catch { current = null; }
+
+            var labels = new List<string>();
+            if (current is not null)
+                labels.Add($"Current trainer · {current.Name} · {current.TID}/{current.SID}");
+            labels.AddRange(profiles.Select(p => $"{p.DisplayName} · {p.OriginalTrainer} · {p.TID}/{p.SID}"));
+            if (labels.Count == 0)
+            {
+                await EditorMenu.ShowAsync(_host, "MAKE MINE",
+                    "Open a game and save its trainer as a profile first.", "OK");
+                return;
+            }
+
+            var choice = await PadMenu.ShowAsync(_host, "MAKE MINE", null, labels.ToArray());
+            if (choice is null) return;
+            var index = labels.IndexOf(choice);
+            var profile = index == 0 && current is not null
+                ? new TrainerProfile("current", "Current trainer", current.Name, current.TID, current.SID, current.Gender)
+                : profiles[index - (current is not null ? 1 : 0)];
+            var outcome = _session.MakeMine(0, 0, profile);
+            if (!outcome.Success)
+            {
+                await EditorMenu.ShowAsync(_host, "MAKE MINE", outcome.Message, "OK");
+                return;
+            }
+
+            _detail = _session.ReadEntity(0, 0);
+            ApplyValues();
+            _dirty = true;
         }
 
         private Task ClearEvsAsync()
