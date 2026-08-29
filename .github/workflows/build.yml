@@ -26,14 +26,51 @@ jobs:
         run: |
           dotnet test tests/PKForge.Domain.Tests/PKForge.Domain.Tests.csproj --no-restore --configuration Release
           dotnet test tests/PKForge.Engine.Tests/PKForge.Engine.Tests.csproj --no-restore --configuration Release
+      - name: Decode permanent release signing key
+        if: github.ref_type == 'tag'
+        env:
+          PKFORGE_ANDROID_KEYSTORE_BASE64: ${{ secrets.PKFORGE_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [[ -z "$PKFORGE_ANDROID_KEYSTORE_BASE64" ]]; then
+            echo "Permanent release signing secret is missing."
+            exit 1
+          fi
+          printf '%s' "$PKFORGE_ANDROID_KEYSTORE_BASE64" | base64 --decode > "${RUNNER_TEMP}/pkforge-release.p12"
       - name: Build Android APK
-        run: dotnet build src/PKForge.App/PKForge.App.csproj --no-restore --configuration ${{ github.ref_type == 'tag' && 'Release' || 'Debug' }} -f net10.0-android -p:AndroidKeyStore=false
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/pkforge-release.p12
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.PKFORGE_ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.PKFORGE_ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.PKFORGE_ANDROID_KEY_PASSWORD }}
+        run: |
+          configuration="Debug"
+          signing_args=(-p:AndroidKeyStore=false)
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            configuration="Release"
+            signing_args=(
+              -p:AndroidKeyStore=true
+              -p:AndroidSigningKeyStore="$ANDROID_KEYSTORE_PATH"
+              -p:AndroidSigningStorePass="$ANDROID_KEYSTORE_PASSWORD"
+              -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS"
+              -p:AndroidSigningKeyPass="$ANDROID_KEY_PASSWORD"
+            )
+          fi
+          dotnet build src/PKForge.App/PKForge.App.csproj --no-restore \
+            --configuration "$configuration" -f net10.0-android "${signing_args[@]}"
       - name: Locate APK
         id: apk
         run: |
           apk=$(find src/PKForge.App/bin -name '*-Signed.apk' | head -1)
           echo "path=$apk" >> "$GITHUB_OUTPUT"
           echo "name=PKForge-${GITHUB_REF_NAME}.apk" >> "$GITHUB_OUTPUT"
+      - name: Verify permanent release signature
+        if: github.ref_type == 'tag'
+        run: |
+          expected="E2:6F:3F:FF:8A:89:00:D8:5E:D8:EF:72:E1:CA:7F:50:33:D2:A5:57:98:0B:26:19:F1:1D:6D:E2:10:09:BF:D8"
+          actual=$(keytool -printcert -jarfile "${{ steps.apk.outputs.path }}" | tr -d '\r' | grep -m1 'SHA256:')
+          echo "$actual"
+          echo "$actual" | grep -Fq "$expected"
       - uses: actions/upload-artifact@v4
         if: github.ref_type != 'tag'
         with:

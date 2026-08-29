@@ -98,11 +98,14 @@ public sealed class HomePage : ContentPage, IPadHandler
 
     private bool _welcomeShown;
     private bool _scannedOnce;
+    private bool _updateCheckQueued;
+    private bool _isAppearing;
 
     /// <summary>The Thor's lower screen is on from launch - the app *is* dual-screen.</summary>
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        _isAppearing = true;
         _zone = 0;
         ClearCardFocus();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Push(this);
@@ -147,13 +150,20 @@ public sealed class HomePage : ContentPage, IPadHandler
                         break;
                 }
                 _viewModel.CompleteSetup();
+                await CheckForUpdateAsync(automatic: true);
             });
+        }
+        else if (!_updateCheckQueued)
+        {
+            _updateCheckQueued = true;
+            Dispatcher.Dispatch(async () => await CheckForUpdateAsync(automatic: true));
         }
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        _isAppearing = false;
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
     }
 
@@ -264,6 +274,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             new PadOption("Open a save file", IconPath: "search"),
             new PadOption("Restore points", IconPath: "restore"),
             new PadOption("About PKForge", IconPath: "settings"),
+            new PadOption("Check for update", IconPath: "restore"),
             new PadOption("Music", IconPath: "music"),
             new PadOption("Misc", IconPath: "script"),
             new PadOption("Quit PKForge", IconPath: "quit"));
@@ -273,11 +284,116 @@ public sealed class HomePage : ContentPage, IPadHandler
             case "Open a save file": await LinkFileAsync(); break;
             case "Restore points": await PushAsync<BackupHistoryPage>(); break;
             case "About PKForge": _viewModel.Status = "PKForge - open-source save manager & bank. GPLv3."; break;
+            case "Check for update": await CheckForUpdateAsync(automatic: false); break;
             case "Music": await ShowMusicAsync(); break;
             case "Misc": await ShowMiscAsync(); break;
             case "Quit PKForge":
                 if (await PadMenu.ConfirmAsync(_hostGrid, "QUIT PKFORGE?", "Unsaved edits in open menus are already backed up per write.", "Quit"))
                     Microsoft.Maui.Controls.Application.Current?.Quit();
+                break;
+        }
+    }
+
+    /// <summary>Release checks: automatic failures stay quiet, manual failures explain themselves.</summary>
+    private async Task CheckForUpdateAsync(bool automatic)
+    {
+        var service = IPlatformApplication.Current?.Services.GetService<AppUpdateService>();
+        if (service is null) return;
+
+        AppUpdateCheck check;
+        try
+        {
+            check = await service.CheckAsync();
+        }
+        catch (Exception error)
+        {
+            if (!automatic)
+                _viewModel.Status = $"Update check failed: {error.Message}";
+            return;
+        }
+
+        if (check.Update is not { } update || !check.IsAvailable)
+        {
+            if (!automatic)
+                await DialogueBox.ShowSequenceAsync(_hostGrid, check.Message);
+            return;
+        }
+        if (automatic && !service.ShouldPromptAutomatically(update))
+            return;
+        if (automatic && !_isAppearing)
+            return;
+
+        await DialogueBox.ShowSequenceAsync(_hostGrid,
+            "A new version of PKForge is available!",
+            $"Version {update.Version} is ready to install.",
+            "Would you like to update now?");
+        var choice = await PadMenu.ShowAsync(_hostGrid, "UPDATE PKFORGE?", null,
+            new PadOption("YES", IconPath: "restore", Accent: UiTokens.Green),
+            new PadOption("NO", IconPath: "cancel", Accent: UiTokens.Ink1),
+            new PadOption("DON'T REMIND ME", IconPath: "padlock", Accent: UiTokens.GiftRed));
+        switch (choice)
+        {
+            case "YES":
+                await InstallUpdateAsync(update);
+                break;
+            case "NO":
+                _viewModel.Status = $"Version {update.Version} will be offered again next launch.";
+                break;
+            case "DON'T REMIND ME":
+                service.DontRemindMe(update);
+                _viewModel.Status = $"I won't remind you about version {update.Version} again.";
+                break;
+        }
+    }
+
+    private async Task InstallUpdateAsync(AvailableAppUpdate update)
+    {
+        var service = IPlatformApplication.Current!.Services.GetRequiredService<AppUpdateService>();
+        var overlay = LoadingOverlay.Show(_hostGrid, "DOWNLOADING THE UPDATE!",
+            $"PKForge {update.Version} is on its way. Android will confirm the installation.");
+        AppUpdateInstallResult result;
+        try
+        {
+            result = await service.DownloadAndInstallAsync(update, (done, total) =>
+            {
+                var percent = total <= 0 ? 0 : (int)Math.Clamp(done * 100 / total, 0, 100);
+                overlay.Report(percent, 100);
+            }, overlay.Cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            _viewModel.Status = "Update paused. You can start it again from Settings.";
+            return;
+        }
+        catch (Exception error)
+        {
+            _viewModel.Status = $"Update failed: {error.Message}";
+            var openRelease = await PadMenu.ConfirmAsync(_hostGrid, "OPEN THE RELEASE PAGE?",
+                "The in-app installer could not finish. The GitHub release page has the same APK.", "Open");
+            if (openRelease)
+                await Launcher.OpenAsync(update.ReleaseUrl);
+            return;
+        }
+        finally
+        {
+            overlay.Close();
+        }
+
+        switch (result)
+        {
+            case AppUpdateInstallResult.InstallerOpened:
+                _viewModel.Status = "Android is installing the update.";
+                break;
+            case AppUpdateInstallResult.ReleasePageOpened:
+                _viewModel.Status = "The PKForge release page is open.";
+                break;
+            case AppUpdateInstallResult.InstallPermissionRequired:
+                await DialogueBox.ShowSequenceAsync(_hostGrid,
+                    "Android needs permission to install PKForge updates.",
+                    "Allow install unknown apps for PKForge, then press Check for update again.");
+                if (await PadMenu.ConfirmAsync(_hostGrid, "OPEN ANDROID SETTINGS?",
+                        "The switch only allows PKForge. It never allows other apps.", "Open"))
+                    AppUpdateService.OpenInstallPermissionSettings();
                 break;
         }
     }

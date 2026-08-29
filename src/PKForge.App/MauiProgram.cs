@@ -45,6 +45,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<GamepadRouter>();
         builder.Services.AddSingleton<SecondScreenState>();
         builder.Services.AddSingleton<SpritePackDownloader>();
+        builder.Services.AddSingleton<AppUpdateService>();
         builder.Services.AddSingleton<TransferService>();
 #if ANDROID
         builder.Services.AddSingleton<ISaveFileAccess, AndroidSafFileAccess>();
