@@ -75,6 +75,11 @@ public sealed class EntitySessionCorpusTests
                         session.ApplyPotentialEdit(0, 0, new PotentialEdit(AbilitySlot: 0));
                     _ = session.GetPotential(0, 0);
 
+                    // Awards are also format-gated and must be inspectable for every
+                    // loose entity accepted by the bank editor.
+                    _ = session.GetPokerus(0, 0);
+                    _ = session.GetRibbons(0, 0);
+
                     _ = session.ExportSlot(0, 0);
                     opened++;
                 }

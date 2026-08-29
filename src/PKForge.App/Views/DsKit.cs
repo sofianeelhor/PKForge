@@ -38,7 +38,7 @@ public sealed class DsFolderButton : Grid
         if (!string.IsNullOrEmpty(option.IconPath) && !option.IconPath.Contains('/'))
         {
             _iconName = option.IconPath;
-            var native = _iconName is "retroarch" or "azahar" or "eden";
+            var native = PksmIcons.IsNative(_iconName);
             _icon = new Image
             {
                 Source = PksmIcons.Source(option.IconPath, native ? PksmIcons.Native : PksmIcons.White),
@@ -100,7 +100,7 @@ public sealed class DsFolderButton : Grid
             if (_selected == value) return;
             _selected = value;
             _label.TextColor = value ? UiTokens.SelectInk : UiTokens.Paper;
-            if (_icon is not null && _iconName is not ("retroarch" or "azahar" or "eden"))
+            if (_icon is not null && !PksmIcons.IsNative(_iconName))
                 _icon.Source = PksmIcons.Source(_iconName, value ? PksmIcons.Indigo : PksmIcons.White);
             _bg.InvalidateSurface();
             if (value) StartMarquee();

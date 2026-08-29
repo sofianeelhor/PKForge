@@ -2666,6 +2666,23 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         };
         monActions.Children.Add(potential);
 
+        // Awards opens the Pokérus / ribbons / marks editor and persists through the
+        // same backup + atomic-write path as every other direct sub-editor.
+        var awards = Kit.Capsule("AWARDS", UiTokens.Cyan);
+        awards.FontSize = 11;
+        awards.Padding = new Thickness(10, 6);
+        awards.Margin = new Thickness(0, 0, 6, 6);
+        awards.Clicked += async (_, _) =>
+        {
+            var slot = _viewModel.SelectedSlot;
+            var session = _sessionsFor();
+            if (slot < 0 || session is null) return;
+            var changed = await AwardsEditor.ShowAsync(_hostGrid, session, _viewModel.BoxIndex, slot);
+            if (changed)
+                await _viewModel.RunMutationAsync(_ => new GenerationOutcome(true, "Awards updated"), slot);
+        };
+        monActions.Children.Add(awards);
+
         var shinyToggle = new Switch { OnColor = UiTokens.Gold };
         shinyToggle.SetBinding(Switch.IsToggledProperty, nameof(BoxBrowserViewModel.EditShiny));
 

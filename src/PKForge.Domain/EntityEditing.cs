@@ -143,6 +143,13 @@ public interface ISaveEngineSession : IDisposable
     void ApplyPotentialEdit(int box, int slot, PotentialEdit edit);
     /// <summary>Tera type choices (0-17 elemental, 99 Stellar), for the picker.</summary>
     IReadOnlyList<NamedChoice> GetTeraTypeChoices();
+
+    // ── Awards: Pokérus, ribbons, and marks ──
+    PokerusInfo GetPokerus(int box, int slot);
+    void SetPokerus(int box, int slot, PokerusStatus status);
+    IReadOnlyList<RibbonEntry> GetRibbons(int box, int slot);
+    /// <summary>Sets a boolean ribbon/mark to 0 or 1, or a counted ribbon to its format-specific range.</summary>
+    void SetRibbon(int box, int slot, string id, int value);
 }
 
 /// <summary>A pick-list entry the engine hands the UI: stable id + display name.</summary>
@@ -192,6 +199,28 @@ public sealed record PotentialEdit(
     int? TeraType = null,
     IReadOnlyList<bool>? HyperTrained = null,
     int? AbilitySlot = null);
+
+/// <summary>Pokérus lifecycle stored by games that support the mechanic.</summary>
+public enum PokerusStatus
+{
+    Susceptible,
+    Infectious,
+    Cured,
+}
+
+public sealed record PokerusInfo(
+    bool Supported,
+    PokerusStatus Status,
+    int Strain,
+    int Days);
+
+/// <summary>A format-supported ribbon, mark, or counted legacy ribbon.</summary>
+public sealed record RibbonEntry(
+    string Id,
+    string Name,
+    int Value,
+    int MaxValue,
+    bool IsMark);
 
 /// <summary>
 /// The engine's own display-name tables (indexed by id), so the UI always speaks
