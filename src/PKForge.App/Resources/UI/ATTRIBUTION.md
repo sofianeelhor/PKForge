@@ -9,6 +9,11 @@ Pokémon species sprites are bundled from [PKHeX](https://github.com/kwsch/PKHeX
 (PKHeX.Drawing.PokeSprite, GPL-3.0). Item art is fetched at runtime from
 [PokeAPI](https://pokeapi.co) and cached on device.
 
+Ribbon and mark artwork is bundled from
+[PKHeX.Drawing.Misc](https://github.com/kwsch/PKHeX/tree/master/PKHeX.Drawing.Misc/Resources/img/ribbons)
+under PKHeX's GPL-3.0 license. The Generation VIII infected and cured Pokérus status
+sprites are sourced from the [Bulbagarden Archives](https://archives.bulbagarden.net/wiki/Category:Pok%C3%A9rus).
+
 Pokémon and Pokémon character names are trademarks of Nintendo, Creatures Inc., and GAME FREAK Inc.
 PKForge is not affiliated with Nintendo, Creatures Inc., GAME FREAK Inc., or The Pokémon Company.
 

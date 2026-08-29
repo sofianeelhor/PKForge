@@ -287,6 +287,7 @@ public static class BankEntryEditor
                     ActionButton("MOVES", EditMovesAsync),
                     ActionButton("MET / ORIGIN", EditMetAsync),
                     ActionButton("POTENTIAL", EditPotentialAsync),
+                    ActionButton("AWARDS", EditAwardsAsync),
                     ActionButton("LEGALIZE", LegalizeAsync),
                     ActionButton("SAVE", SaveAsync, UiTokens.Green),
                 },
@@ -724,6 +725,11 @@ public static class BankEntryEditor
         private async Task EditPotentialAsync()
         {
             if (await PotentialEditor.ShowAsync(_host, _session, 0, 0)) _dirty = true;
+        }
+
+        private async Task EditAwardsAsync()
+        {
+            if (await AwardsEditor.ShowAsync(_host, _session, 0, 0)) _dirty = true;
         }
 
         private async Task LegalizeAsync()

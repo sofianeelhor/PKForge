@@ -1,6 +1,7 @@
 using PKForge.Domain;
 using PKHeX.Core;
 using PKHeX.Core.AutoMod;
+using System.Diagnostics.CodeAnalysis;
 
 namespace PKForge.Engine;
 
@@ -192,6 +193,138 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (!changed)
             return;
 
+        entity.RefreshChecksum();
+        if (box == -1)
+            _save.SetPartySlotAtIndex(entity, slot);
+        else
+            _save.SetBoxSlotAtIndex(entity, box, slot);
+    }
+
+    // ── Awards: Pokérus, ribbons, and marks ──
+
+    public PokerusInfo GetPokerus(int box, int slot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0)
+            throw new InvalidOperationException("Cannot inspect an empty slot.");
+
+        var supported = SupportsPokerus(entity);
+        var status = entity.PokerusDays > 0
+            ? PokerusStatus.Infectious
+            : entity.PokerusStrain > 0 ? PokerusStatus.Cured : PokerusStatus.Susceptible;
+        return new PokerusInfo(supported, status, entity.PokerusStrain, entity.PokerusDays);
+    }
+
+    public void SetPokerus(int box, int slot, PokerusStatus status)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0)
+            throw new InvalidOperationException("Cannot edit an empty slot.");
+        if (!SupportsPokerus(entity) && entity.PokerusStrain == 0 && entity.PokerusDays == 0)
+            throw new NotSupportedException("This Pokémon format cannot carry Pokérus.");
+
+        switch (status)
+        {
+            case PokerusStatus.Susceptible:
+                entity.PokerusStrain = 0;
+                entity.PokerusDays = 0;
+                break;
+            case PokerusStatus.Infectious:
+                var strain = IsValidPokerusStrain(entity, entity.PokerusStrain) ? entity.PokerusStrain : 1;
+                entity.PokerusStrain = strain;
+                entity.PokerusDays = Pokerus.GetMaxDuration(strain);
+                break;
+            case PokerusStatus.Cured:
+                entity.PokerusStrain = IsValidPokerusStrain(entity, entity.PokerusStrain) ? entity.PokerusStrain : 1;
+                entity.PokerusDays = 0;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(status), status, null);
+        }
+
+        StoreEntity(box, slot, entity);
+    }
+
+    private static bool IsValidPokerusStrain(PKM entity, int strain) =>
+        strain > 0 && (entity.Format <= 2 ? Pokerus.IsStrainValid2(strain) : Pokerus.IsStrainValid(strain));
+
+    private static bool SupportsPokerus(PKM entity)
+    {
+        if (entity.Format <= 1 || entity.Context is EntityContext.Gen7b or EntityContext.Gen9 or EntityContext.Gen9a)
+            return false;
+
+        // Legends: Arceus can retain Pokérus only on a legitimately transferred entity.
+        if (entity.Context != EntityContext.Gen8a)
+            return true;
+        var analysis = new LegalityAnalysis(entity);
+        return Pokerus.IsObtainable(entity, analysis.EncounterMatch);
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "PKHeX.Core is preserve=all in the Android linker descriptor; RibbonInfo is its canonical cross-format ribbon inventory.")]
+    public IReadOnlyList<RibbonEntry> GetRibbons(int box, int slot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0)
+            throw new InvalidOperationException("Cannot inspect an empty slot.");
+
+        var strings = GameInfo.Strings.Ribbons;
+        return RibbonInfo.GetRibbonInfo(entity)
+            .Select(r => new RibbonEntry(
+                r.Name,
+                strings.GetNameSafe(r.Name, out var name) ? name : HumanizeRibbonName(r.Name),
+                r.Type == RibbonValueType.Boolean ? (r.HasRibbon ? 1 : 0) : r.RibbonCount,
+                r.Type == RibbonValueType.Boolean ? 1 : r.MaxCount,
+                r.Name.StartsWith("RibbonMark", StringComparison.Ordinal)))
+            .OrderBy(r => r.IsMark)
+            .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "PKHeX.Core is preserve=all in the Android linker descriptor; ribbon properties are retained.")]
+    public void SetRibbon(int box, int slot, string id, int value)
+    {
+        ThrowIfDisposed();
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        ValidateCoordinates(box, slot);
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0)
+            throw new InvalidOperationException("Cannot edit an empty slot.");
+
+        var ribbon = RibbonInfo.GetRibbonInfo(entity).SingleOrDefault(r => r.Name == id)
+            ?? throw new ArgumentException($"Ribbon '{id}' is not stored by this Pokémon format.", nameof(id));
+        var max = ribbon.Type == RibbonValueType.Boolean ? 1 : ribbon.MaxCount;
+        value = Math.Clamp(value, 0, max);
+        if (!ReflectUtil.SetValue(entity, id, ribbon.Type == RibbonValueType.Boolean ? value != 0 : (byte)value))
+            throw new InvalidOperationException($"Ribbon '{id}' is read-only in this Pokémon format.");
+
+        // Memory ribbons have a separate presence bit in Gen 6+.
+        if (entity is IRibbonSetMemory6 memory)
+        {
+            if (id == nameof(IRibbonSetMemory6.RibbonCountMemoryContest))
+                memory.HasContestMemoryRibbon = value != 0;
+            else if (id == nameof(IRibbonSetMemory6.RibbonCountMemoryBattle))
+                memory.HasBattleMemoryRibbon = value != 0;
+        }
+
+        StoreEntity(box, slot, entity);
+    }
+
+    private static string HumanizeRibbonName(string id)
+    {
+        var text = id.StartsWith("Ribbon", StringComparison.Ordinal) ? id[6..] : id;
+        return System.Text.RegularExpressions.Regex.Replace(text, "([a-z0-9])([A-Z])", "$1 $2");
+    }
+
+    private void StoreEntity(int box, int slot, PKM entity)
+    {
         entity.RefreshChecksum();
         if (box == -1)
             _save.SetPartySlotAtIndex(entity, slot);
