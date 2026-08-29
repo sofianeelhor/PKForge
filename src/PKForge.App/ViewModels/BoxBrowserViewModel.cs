@@ -56,6 +56,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     [ObservableProperty] private string _editEvs = string.Empty;
     [ObservableProperty] private string _editBall = string.Empty;
     [ObservableProperty] private string _editOt = string.Empty;
+    [ObservableProperty] private string _editGender = "2";
     [ObservableProperty] private bool _editShiny;
 
     public IReadOnlyList<SlotSummary> VisibleSlots =>
@@ -142,6 +143,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         EditStats = detail.Stats is { Count: 6 } ? string.Join(' ', detail.Stats) : string.Empty;
         EditBall = detail.Ball.ToString();
         EditOt = detail.OriginalTrainer;
+        EditGender = detail.Gender.ToString();
         EditShiny = detail.IsShiny;
 
         // No transient "analyzing" flash: stay blank until the verdict is ready.
@@ -190,7 +192,8 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
                 EVs: ParseIntList(EditEvs),
                 IsShiny: EditShiny != detail.IsShiny ? EditShiny : null,
                 Ball: ParseInt(EditBall),
-                OriginalTrainer: EditOt.Length == 0 ? null : EditOt);
+                OriginalTrainer: EditOt.Length == 0 ? null : EditOt,
+                Gender: ParseInt(EditGender));
 
             Status = "Applying edit…";
             engineSession.ApplyEdit(detail.Box, detail.Slot, edit);
