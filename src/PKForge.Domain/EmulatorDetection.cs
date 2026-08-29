@@ -46,7 +46,8 @@ public interface IEmulatorDetectionService
 public sealed record EmulatorScanResult(
     IReadOnlyList<DetectedSave> Saves,
     int FilesSeen,
-    IReadOnlyList<string> RejectedCandidates);
+    IReadOnlyList<string> RejectedCandidates,
+    IReadOnlyList<string>? Diagnostics = null);
 
 /// <summary>Remembers granted emulator roots across launches so detection reruns automatically.</summary>
 public interface IWatchedRootStore

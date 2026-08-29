@@ -340,18 +340,37 @@ public sealed class HomePage : ContentPage, IPadHandler
     /// <summary>Maintenance actions: the sprite pack, the rescan, and the scan report.</summary>
     private async Task ShowMiscAsync()
     {
+        var trainerProfiles = IPlatformApplication.Current!.Services.GetRequiredService<TrainerProfileStore>();
         var choice = await PadMenu.ShowAsync(_hostGrid, "MISC", null,
+            new PadOption(trainerProfiles.UseCurrentTrainerForGeneration
+                ? "Generated Pokémon obey trainer: ON"
+                : "Generated Pokémon obey trainer: OFF", IconPath: "trainer"),
             new PadOption($"Download full sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "storage"),
             new PadOption("Rescan games", IconPath: "hex"),
             new PadOption("Scan report", IconPath: "script"),
             new PadOption(Services.HaXMode.IsOn ? "HaX mode: ON" : "HaX mode: OFF", IconPath: "editor"));
         switch (choice)
         {
+            case var ownership when ownership?.StartsWith("Generated Pokémon obey trainer:", StringComparison.Ordinal) == true:
+                trainerProfiles.SetUseCurrentTrainerForGeneration(!trainerProfiles.UseCurrentTrainerForGeneration);
+                _viewModel.Status = trainerProfiles.UseCurrentTrainerForGeneration
+                    ? "Generated Pokémon will be owned by the open save's trainer."
+                    : "Generated Pokémon may use Auto-Legality trainer data.";
+                break;
             case var pack when pack?.StartsWith("Download full sprite pack", StringComparison.Ordinal) == true:
                 await DownloadSpritePackAsync();
                 break;
             case "Rescan games": await _viewModel.RescanCommand.ExecuteAsync(null); break;
-            case "Scan report": await PadMenu.ShowAsync(_hostGrid, "SCAN REPORT", _viewModel.ScanReport, "OK"); break;
+            case "Scan report":
+            {
+                var action = await PadMenu.ShowAsync(_hostGrid, "SCAN REPORT", _viewModel.ScanReport, "Copy report", "Close");
+                if (action == "Copy report")
+                {
+                    await Clipboard.Default.SetTextAsync(_viewModel.ScanReport);
+                    _viewModel.Status = "SCAN REPORT COPIED";
+                }
+                break;
+            }
             case "HaX mode: OFF":
                 var on = await PadMenu.ConfirmAsync(_hostGrid, "TURN ON HAX MODE?",
                     "Pickers will offer every option instead of the legal subset (any ability on any mon). " +

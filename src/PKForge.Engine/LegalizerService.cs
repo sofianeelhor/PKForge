@@ -12,7 +12,12 @@ namespace PKForge.Engine;
 /// </summary>
 public sealed class LegalizerService : ILegalizerService
 {
+    private static readonly object TrainerGenerationLock = new();
     private readonly GameStrings _strings = GameInfo.GetStrings("en");
+    private readonly IGenerationOwnershipSettings? _ownershipSettings;
+
+    public LegalizerService(IGenerationOwnershipSettings? ownershipSettings = null) =>
+        _ownershipSettings = ownershipSettings;
 
     static LegalizerService()
     {
@@ -37,7 +42,7 @@ public sealed class LegalizerService : ILegalizerService
         if (set.Species == 0)
             return new GenerationOutcome(false, "Could not read the set (no species).");
 
-        var result = save.GetLegalFromSet(set);
+        var result = GenerateLegal(engineSession, set);
         if (result.Status is not LegalizationResult.Regenerated)
             return new GenerationOutcome(false, result.Status switch
             {
@@ -94,7 +99,7 @@ public sealed class LegalizerService : ILegalizerService
 
         var set = new ShowdownSet(showdownText);
         if (set.Species == 0) return null;
-        var result = save.GetLegalFromSet(set);
+        var result = GenerateLegal(engineSession, set);
         if (result.Status is not LegalizationResult.Regenerated) return null;
 
         var created = result.Created;
@@ -133,6 +138,60 @@ public sealed class LegalizerService : ILegalizerService
             : new GenerationOutcome(false, "The legalizer could not generate any of those species in this game.");
     }
 
+    /// <summary>Mass egg factory in the spirit of CDNRae's PKHeX bulk egg generator:
+    /// a legal template per species, converted to an authentic egg state for the
+    /// target generation, then placed into the first empty PC slots.</summary>
+    public GenerationOutcome GenerateEggs(ISaveEngineSession session, IReadOnlyList<int> species, EggOptions options, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
+    {
+        if (session is not SaveEngineSession engineSession)
+            return new GenerationOutcome(false, "Unsupported session type.");
+        var save = engineSession.SaveFile;
+        if (save.Generation is < 3)
+            return new GenerationOutcome(false, "Eggs are only supported from Gen 3 onward here.");
+
+        var placed = 0;
+        foreach (var id in species)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var slot = FindEmptySlot(save);
+            if (slot is null)
+                return placed > 0
+                    ? new GenerationOutcome(true, $"Generated {placed} eggs; storage is now full.")
+                    : new GenerationOutcome(false, "No empty PC slots.");
+
+            var name = _strings.specieslist[Math.Clamp(id, 1, _strings.specieslist.Length - 1)];
+            var result = GenerateLegal(engineSession, new ShowdownSet(name));
+            if (result.Status is not LegalizationResult.Regenerated)
+                continue;
+            var egg = result.Created;
+            if (options.MaxIv)
+            {
+                egg.SetIVs(0x7FFF_FFFF); // six 31s in the 30-bit packed representation
+            }
+            if (options.Shiny && !egg.IsShiny)
+                egg.SetShiny();
+
+            egg.Nickname = "Egg";
+            egg.IsNicknamed = true;
+            egg.OriginalTrainerFriendship = (byte)EggStateLegality.GetMinimumEggHatchCycles(egg);
+            egg.MetLocation = 0;
+            if (save.Generation == 4)
+            {
+                egg.IsNicknamed = false;
+                egg.Version = save.Context.GetSingleGameVersion();
+                egg.EggLocation = 2000; // Daycare
+            }
+            egg.IsEgg = true;
+            egg.RefreshChecksum();
+            save.SetBoxSlotAtIndex(egg, slot.Value.Box, slot.Value.Slot);
+            placed++;
+            onProgress?.Invoke(placed, species.Count);
+        }
+        return placed > 0
+            ? new GenerationOutcome(true, $"Generated {placed} eggs into empty slots.")
+            : new GenerationOutcome(false, "The legalizer could not generate any of those species in this game.");
+    }
+
     private static (int Box, int Slot)? FindEmptySlot(SaveFile save)
     {
         for (var box = 0; box < save.BoxCount; box++)
@@ -141,6 +200,55 @@ public sealed class LegalizerService : ILegalizerService
                 return (box, slot);
         return null;
     }
+
+    private APILegality.AsyncLegalizationResult GenerateLegal(SaveEngineSession session, ShowdownSet set)
+    {
+        lock (TrainerGenerationLock)
+        {
+            var save = session.SaveFile;
+            var previousPriority = APILegality.GameVersionPriority;
+            var previousOrder = APILegality.PriorityOrder;
+            var useOwner = _ownershipSettings?.UseCurrentTrainerForGeneration ?? true;
+            try
+            {
+                if (!useOwner)
+                    return save.GetLegalFromSet(set);
+
+                APILegality.GameVersionPriority = GameVersionPriorityType.PriorityOrder;
+
+                var eligible = GameUtil.GameVersions
+                    .Where(z => save.Generation < 3 || z.Generation >= 3)
+                    .ToList();
+
+                // Try the open game first: common species get a native encounter and an
+                // exact trainer/version match. Some species are transfer-only, so keep a
+                // legal fallback that still carries the full modern trainer identity.
+                APILegality.PriorityOrder = [save.Version, .. eligible.Where(z => z != save.Version)];
+                var native = save.GetLegalFromSet(set);
+                var nativeOwned = TryOwn(session, native);
+                if (nativeOwned && save.IsFromTrainer(native.Created))
+                    return native;
+
+                // A Gen 1/2 origin cannot carry a modern SID, and oldest-first search
+                // steers transfer species toward ordinary catchable encounters instead
+                // of fixed-OT distributions.
+                APILegality.PriorityOrder = [.. eligible.OrderBy(z => z)];
+                var transfer = save.GetLegalFromSet(set);
+                if (TryOwn(session, transfer))
+                    return transfer;
+                return nativeOwned ? native : native with { Status = LegalizationResult.Failed };
+            }
+            finally
+            {
+                APILegality.GameVersionPriority = previousPriority;
+                APILegality.PriorityOrder = previousOrder;
+            }
+        }
+    }
+
+    private static bool TryOwn(SaveEngineSession session, APILegality.AsyncLegalizationResult result) =>
+        result.Status is LegalizationResult.Regenerated && session.MakeOwned(result.Created, null, out _);
+
 
     public GenerationOutcome FillLivingDex(ISaveEngineSession session, byte[] compressedBundle, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
     {

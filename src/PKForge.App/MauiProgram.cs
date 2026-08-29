@@ -28,6 +28,8 @@ public static class MauiProgram
             });
         builder.Services.AddSingleton<ISaveEngine, SaveEngine>();
         builder.Services.AddSingleton<IGameDataService, GameDataService>();
+        builder.Services.AddSingleton<TrainerProfileStore>();
+        builder.Services.AddSingleton<IGenerationOwnershipSettings>(sp => sp.GetRequiredService<TrainerProfileStore>());
         builder.Services.AddSingleton<ILegalizerService, LegalizerService>();
         builder.Services.AddSingleton<IEventDatabaseService, EventDatabaseService>();
         builder.Services.AddSingleton<IBackupService>(_ =>

@@ -17,6 +17,23 @@ namespace PKForge.App;
     ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation | ConfigChanges.UiMode | ConfigChanges.ScreenLayout | ConfigChanges.SmallestScreenSize | ConfigChanges.Density)]
 public sealed class MainActivity : MauiAppCompatActivity
 {
+    protected override void OnPause()
+    {
+        // A Presentation owns a separate window, so Android does not reliably hide it
+        // when the launcher backgrounds the main activity (notably on the AYN Thor).
+        SecondaryDisplayHost()?.SuspendForActivityPause();
+        base.OnPause();
+    }
+
+    protected override void OnResume()
+    {
+        base.OnResume();
+        SecondaryDisplayHost()?.ResumeAfterActivityPause();
+    }
+
+    private static AndroidSecondaryDisplayHost? SecondaryDisplayHost() =>
+        IPlatformApplication.Current?.Services.GetService<ISecondaryDisplayHost>() as AndroidSecondaryDisplayHost;
+
     /// <summary>Console apps are fullscreen: hide status/navigation bars (swipe reveals them transiently).</summary>
     public override void OnWindowFocusChanged(bool hasFocus)
     {
@@ -86,6 +103,7 @@ public sealed class AndroidSecondaryDisplayHost(IServiceProvider services) : ISe
 {
     private PagePresentation? _presentation;
     private Views.SecondScreenBoxPage? _page;
+    private bool _resumeAfterActivityPause;
 
     public bool IsAvailable => ResolveDisplay() is not null;
 
@@ -110,11 +128,33 @@ public sealed class AndroidSecondaryDisplayHost(IServiceProvider services) : ISe
     public ValueTask DismissAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        Dismiss();
+        _resumeAfterActivityPause = false;
+        return ValueTask.CompletedTask;
+    }
+
+    internal void SuspendForActivityPause()
+    {
+        _resumeAfterActivityPause |= _presentation?.IsShowing == true;
+        Dismiss();
+    }
+
+    internal void ResumeAfterActivityPause()
+    {
+        if (!_resumeAfterActivityPause)
+            return;
+
+        _resumeAfterActivityPause = false;
+        try { _ = ShowAsync(); }
+        catch { /* A removed or unavailable secondary display must not break resume. */ }
+    }
+
+    private void Dismiss()
+    {
         _presentation?.Dismiss();
         _presentation = null;
         _page?.Cleanup();
         _page = null;
-        return ValueTask.CompletedTask;
     }
 
     private static Display? ResolveDisplay()
