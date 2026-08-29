@@ -10,8 +10,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationId>org.pkforge.app</ApplicationId>
     <ApplicationTitle>PKForge</ApplicationTitle>
-    <ApplicationVersion>142</ApplicationVersion>
-    <ApplicationDisplayVersion>1.4.2</ApplicationDisplayVersion>
+    <ApplicationVersion>143</ApplicationVersion>
+    <ApplicationDisplayVersion>1.4.3</ApplicationDisplayVersion>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
   </PropertyGroup>
   <PropertyGroup Condition="'$(DiagnosticBuild)' == 'true'">

@@ -292,6 +292,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     {
         var choice = await PadMenu.ShowAsync(_hostGrid, "SETTINGS", null,
             new PadOption("Link an emulator", IconPath: "folder"),
+            new PadOption("Manage linked storage", IconPath: "storage"),
             new PadOption("Open a save file", IconPath: "search"),
             new PadOption("Restore points", IconPath: "restore"),
             new PadOption("About PKForge", IconPath: "settings"),
@@ -302,6 +303,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         switch (choice)
         {
             case "Link an emulator": await ShowLinkMenuAsync(); break;
+            case "Manage linked storage": await ShowManageLinkedStorageAsync(); break;
             case "Open a save file": await LinkFileAsync(); break;
             case "Restore points": await PushAsync<BackupHistoryPage>(); break;
             case "About PKForge": _viewModel.Status = "PKForge - open-source save manager & bank. GPLv3."; break;
@@ -313,6 +315,58 @@ public sealed class HomePage : ContentPage, IPadHandler
                     Microsoft.Maui.Controls.Application.Current?.Quit();
                 break;
         }
+    }
+
+    private static string IconFor(EmulatorKind kind) => kind switch
+    {
+        EmulatorKind.RetroArch => "retroarch",
+        EmulatorKind.MelonDS => "melonds",
+        EmulatorKind.Linkboy => "linkboy",
+        EmulatorKind.Azahar => "azahar",
+        EmulatorKind.Eden => "eden",
+        _ => "storage",
+    };
+
+    private async Task ShowManageLinkedStorageAsync()
+    {
+        var roots = IPlatformApplication.Current!.Services.GetRequiredService<IWatchedRootStore>().GetRoots();
+        if (roots.Count == 0)
+        {
+            _viewModel.Status = "No linked storage units.";
+            return;
+        }
+
+        var options = roots
+            .Select(root => new PadOption($"Unlink {root.Kind} · {root.DisplayName}", IconPath: IconFor(root.Kind)))
+            .Append(new PadOption("Unlink all storage units", IconPath: "release"))
+            .Append(new PadOption("Cancel", IconPath: "quit"))
+            .ToArray();
+        var choice = await PadMenu.ShowAsync(_hostGrid, "LINKED STORAGE", "Remove a linked emulator folder without resetting the app.", options);
+        if (choice is null or "Cancel") return;
+
+        var store = IPlatformApplication.Current!.Services.GetRequiredService<IWatchedRootStore>();
+        if (choice == "Unlink all storage units")
+        {
+            var confirmedAll = await PadMenu.ConfirmAsync(_hostGrid, "UNLINK ALL STORAGE?",
+                "Every linked emulator folder will be removed from PKForge. Your files stay on the device.", "Unlink all");
+            if (!confirmedAll) return;
+            foreach (var root in roots)
+                store.RemoveRoot(root);
+            _viewModel.Status = "All linked storage units removed.";
+        }
+        else
+        {
+            var index = Array.FindIndex(options, option => option.Label == choice);
+            if (index < 0 || index >= roots.Count) return;
+            var root = roots[index];
+            var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "UNLINK STORAGE?",
+                $"Remove {root.Kind} · {root.DisplayName} from PKForge? Your files stay on the device.", "Unlink");
+            if (!confirmed) return;
+            store.RemoveRoot(root);
+            _viewModel.Status = $"{root.Kind} unlinked.";
+        }
+
+        await _viewModel.RescanCommand.ExecuteAsync(null);
     }
 
     /// <summary>Release checks: automatic failures stay quiet, manual failures explain themselves.</summary>

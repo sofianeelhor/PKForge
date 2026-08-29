@@ -2779,6 +2779,14 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var ivs = FocusBorder(StatsField("IVS", nameof(BoxBrowserViewModel.EditIvs), () => _sessionsFor()?.GetTrainingCaps().IvMax ?? 31, shaded: false), "IVS", async () => await OpenStatsEditorAsync("IVS", nameof(BoxBrowserViewModel.EditIvs), () => _sessionsFor()?.GetTrainingCaps().IvMax ?? 31));
         var evs = FocusBorder(StatsField("EVS", nameof(BoxBrowserViewModel.EditEvs), () => _sessionsFor()?.GetTrainingCaps().EvMax ?? 252, shaded: true), "EVS", async () => await OpenStatsEditorAsync("EVS", nameof(BoxBrowserViewModel.EditEvs), () => _sessionsFor()?.GetTrainingCaps().EvMax ?? 252));
         var ball = FocusBorder(NamedPicker("BALL", nameof(BoxBrowserViewModel.EditBall), data.BallNames, BallItems, shaded: false), "BALL", async () => await OpenNamedPickerAsync("BALL", nameof(BoxBrowserViewModel.EditBall), BallItems));
+        var genderValue = Kit.BlueprintValue(13);
+        var gender = FocusBorder(RowChrome("GENDER", genderValue, false), "GENDER", async () => await OpenGenderPickerAsync());
+        genderValue.Text = _viewModel.EditGender switch { "0" => "Male", "1" => "Female", _ => "Genderless" };
+        _viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is nameof(BoxBrowserViewModel.EditGender) or nameof(BoxBrowserViewModel.Selected))
+                genderValue.Text = _viewModel.EditGender switch { "0" => "Male", "1" => "Female", _ => "Genderless" };
+        };
         var ot = FocusBorder(FieldRow("OT", nameof(BoxBrowserViewModel.EditOt), shaded: true), "OT", () =>
         {
             if (otRow is not null) FocusEntry(otRow);
@@ -2887,7 +2895,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 legality,
                 species, nickname, level, nature, ability, item,
                 move1, move2, move3, move4,
-                stats, ivs, evs, ball, ot, shiny,
+                stats, ivs, evs, ball, gender, ot, shiny,
                 save,
                 monActions,
             },
@@ -2942,6 +2950,39 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                     entry.Focus();
                     return;
                 }
+    }
+
+    private async Task OpenGenderPickerAsync()
+    {
+        var choice = await PadMenu.ShowAsync(_hostGrid, "GENDER", null,
+            new PadOption("Male", Accent: UiTokens.MenuBlue),
+            new PadOption("Female", Accent: UiTokens.GiftRed),
+            new PadOption("Genderless", Accent: UiTokens.Ink1));
+        var gender = choice switch { "Male" => 0, "Female" => 1, "Genderless" => 2, _ => (int?)null };
+        if (gender is { } value)
+        {
+            SetVmString(nameof(BoxBrowserViewModel.EditGender), value.ToString());
+            UpdateGenderRow();
+        }
+    }
+
+    private void UpdateGenderRow()
+    {
+        foreach (var target in EditorFocusTargets)
+        {
+            if (target.Caption != "GENDER" || target.View is not Border { Content: Grid grid }) continue;
+            foreach (var child in grid.Children)
+                if (child is Label { Text: not "GENDER" } label)
+                {
+                    label.Text = GetVmString(nameof(BoxBrowserViewModel.EditGender)) switch
+                    {
+                        "0" => "Male",
+                        "1" => "Female",
+                        _ => "Genderless",
+                    };
+                    return;
+                }
+        }
     }
 
     private async Task OpenNamedPickerAsync(string caption, string vmProperty, Func<List<PickItem>> itemsFactory)
