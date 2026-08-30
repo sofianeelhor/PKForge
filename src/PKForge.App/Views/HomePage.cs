@@ -306,7 +306,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             case "Manage linked storage": await ShowManageLinkedStorageAsync(); break;
             case "Open a save file": await LinkFileAsync(); break;
             case "Restore points": await PushAsync<BackupHistoryPage>(); break;
-            case "About PKForge": _viewModel.Status = "PKForge - open-source save manager & bank. GPLv3."; break;
+            case "About PKForge": await AboutPopup.ShowAsync(_hostGrid); break;
             case "Check for update": await CheckForUpdateAsync(automatic: false); break;
             case "Music": await ShowMusicAsync(); break;
             case "Misc": await ShowMiscAsync(); break;

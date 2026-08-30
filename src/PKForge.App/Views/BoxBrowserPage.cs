@@ -2723,7 +2723,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         {
             case "Close save (back to games)": await Navigation.PopAsync(); break;
             case "Restore points": await PushAsync<BackupHistoryPage>(); break;
-            case "About PKForge": _viewModel.Status = "PKForge - open-source save manager. GPLv3."; break;
+            case "About PKForge": await AboutPopup.ShowAsync(_hostGrid); break;
         }
     }
 

@@ -42,6 +42,7 @@
   <ItemGroup>
     <!-- Bundled fallback sprites from pristine PKHeX submodule (always offline-available). -->
     <MauiAsset Include="Resources/UI/dex/*.bin.gz" LogicalName="dex/%(Filename)%(Extension)" />
+    <MauiAsset Include="Resources/AppIcon/pkforge.png" LogicalName="ui/logo.png" />
     <MauiAsset Include="Resources/Events/*.tar.gz" LogicalName="events/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Big Pokemon Sprites/*.png" LogicalName="sprites/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Big Shiny Sprites/*.png" LogicalName="sprites/%(Filename)%(Extension)" />
