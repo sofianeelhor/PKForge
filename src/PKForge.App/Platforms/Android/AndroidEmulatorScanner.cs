@@ -266,7 +266,9 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
     /// </summary>
     private static class ScanCache
     {
-        private const string Key = "scan_cache_v1";
+        // Detection support can expand between releases. Keep cached negative
+        // results versioned so a newly supported save is always retried once.
+        private const string Key = "scan_cache_v2";
         private const int MaxEntries = 512;
         private static Dictionary<string, CacheEntry>? _entries;
         private static readonly Lock Gate = new();
