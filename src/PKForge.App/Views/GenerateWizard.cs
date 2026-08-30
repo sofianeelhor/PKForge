@@ -51,15 +51,29 @@ public static class GenerateWizard
         if (File.Exists(target)) return target;
         try
         {
-            using var asset = FileSystem.OpenAppPackageFileAsync(source).GetAwaiter().GetResult();
-            using var output = File.Create(target);
-            asset.CopyTo(output);
+            var asset = TryOpen(source);
+            if (asset is null)
+            {
+                // Gen 9 forms: PKHeX ships artwork, not pixel sprites.
+                var artwork = form == 0 ? $"artwork/a_{species}.png" : $"artwork/a_{species}-{form}.png";
+                asset = TryOpen(artwork);
+            }
+            if (asset is null) return null;
+            using (asset)
+            using (var output = File.Create(target))
+                asset.CopyTo(output);
             return target;
         }
         catch
         {
             return null; // sprite not bundled for this form; the label still carries it
         }
+    }
+
+    private static Stream? TryOpen(string source)
+    {
+        try { return FileSystem.OpenAppPackageFileAsync(source).GetAwaiter().GetResult(); }
+        catch (FileNotFoundException) { return null; }
     }
 
     private static Task<GenerationRequest?> ShowFeaturesFormAsync(Grid host, IGameDataService data, ISaveEngineSession session, PickItem species, int form = 0)

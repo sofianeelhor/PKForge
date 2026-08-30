@@ -45,6 +45,11 @@
     <MauiAsset Include="Resources/Events/*.tar.gz" LogicalName="events/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Big Pokemon Sprites/*.png" LogicalName="sprites/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Big Shiny Sprites/*.png" LogicalName="sprites/%(Filename)%(Extension)" />
+    <!-- PKHeX ships no pixel sprites past species 905 (Legends: Arceus); for Gen 9 it
+         displays official artwork. Bundle that artwork block (base + forms, ~1MB) as
+         the offline Gen 9 fallback, exactly what PKHeX itself shows. -->
+    <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Artwork Pokemon Sprites/a_9*.png" LogicalName="artwork/%(Filename)%(Extension)" />
+    <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Artwork Pokemon Sprites/a_10*.png" LogicalName="artwork/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/ball/*.png" LogicalName="balls/%(Filename)%(Extension)" />
     <!-- PKHeX's complete, format-accurate ribbon/mark artwork (GPL-3). -->
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.Misc/Resources/img/ribbons/*.png" LogicalName="ribbons/%(Filename)%(Extension)" />
