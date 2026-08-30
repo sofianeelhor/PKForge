@@ -253,7 +253,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         }
         var options = group.Saves.Select(SaveOption).ToArray();
         var choice = await PadMenu.ShowAsync(_hostGrid, group.GameLabel.ToUpperInvariant(),
-            $"{group.Saves.Count} saves for this game", options);
+            $"{group.Saves.Count} saves of this game were found. Pick the one whose date changes when you save in game.", options);
         if (choice is null) return;
         var index = Array.FindIndex(options, o => o.Label == choice);
         if (index >= 0) await OpenSaveAsync(group.Saves[index]);

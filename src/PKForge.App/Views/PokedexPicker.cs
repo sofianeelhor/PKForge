@@ -66,9 +66,20 @@ public sealed class PokedexPicker : IPadHandler
                 {
                     try
                     {
-                        await using var asset = await FileSystem.OpenAppPackageFileAsync($"sprites/b_{id}.png");
-                        await using var output = File.Create(IconCachePath(id));
-                        await asset.CopyToAsync(output);
+                        var target = IconCachePath(id);
+                        try
+                        {
+                            await using var asset = await FileSystem.OpenAppPackageFileAsync($"sprites/b_{id}.png");
+                            await using var output = File.Create(target);
+                            await asset.CopyToAsync(output);
+                        }
+                        catch (FileNotFoundException)
+                        {
+                            // Gen 9 has no pixel sprites; PKHeX shows official artwork.
+                            await using var asset = await FileSystem.OpenAppPackageFileAsync($"artwork/a_{id}.png");
+                            await using var output = File.Create(target);
+                            await asset.CopyToAsync(output);
+                        }
                     }
                     catch { /* no bundled sprite for this id */ }
                 }));

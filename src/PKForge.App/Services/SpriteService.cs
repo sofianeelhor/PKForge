@@ -289,9 +289,14 @@ public sealed class SpriteService : ISpriteService
     {
         // Naming from the pinned PKHeX resource tree: b_<species>[-form][s].png;
         // shiny variants live under the same logical folder with an 's' suffix.
+        // Past species 905 PKHeX ships no pixel sprites; it shows official artwork
+        // (a_<species>[-form].png) instead, with no shiny variants for Gen 9, so
+        // shiny requests fall through to the regular artwork like PKHeX does.
         string[] candidates = shiny
-            ? [$"sprites/b_{species}-{form}s.png", $"sprites/b_{species}s.png", $"sprites/b_{species}-{form}.png", $"sprites/b_{species}.png"]
-            : [$"sprites/b_{species}-{form}.png", $"sprites/b_{species}.png"];
+            ? [$"sprites/b_{species}-{form}s.png", $"sprites/b_{species}s.png", $"sprites/b_{species}-{form}.png", $"sprites/b_{species}.png",
+               $"artwork/a_{species}-{form}.png", $"artwork/a_{species}.png"]
+            : [$"sprites/b_{species}-{form}.png", $"sprites/b_{species}.png",
+               $"artwork/a_{species}-{form}.png", $"artwork/a_{species}.png"];
 
         foreach (var candidate in candidates)
         {

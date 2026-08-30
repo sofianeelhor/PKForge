@@ -14,7 +14,28 @@ public static class SavePickerSheet
         var candidates = saves.Where(s => s.DocumentId != excludeDocumentId).ToArray();
         if (candidates.Length == 0) return null;
 
-        var options = candidates.Select(s => new PadOption(s.GameLabel, IconPath: IconFor(s.Emulator))).ToArray();
+        // When one game exists as several saves (an emulator reinstall orphans the old
+        // console identity), bare game labels are a coin flip: disambiguate with the
+        // trainer and the last-modified date, and number any residual twins.
+        var labels = candidates.Select(s =>
+        {
+            var label = s.GameLabel;
+            if (candidates.Count(x => x.GameLabel == s.GameLabel) > 1)
+            {
+                if (!string.IsNullOrEmpty(s.TrainerName)) label += $" · {s.TrainerName}";
+                if (s.LastModified is { } modified) label += $" · {modified:yyyy-MM-dd}";
+            }
+            return label;
+        }).ToArray();
+        for (var i = 0; i < labels.Length; i++)
+        {
+            // Number identical labels against the pristine list; suffixing in place
+            // would shift the comparisons as we go.
+            if (labels.Count(label => label == labels[i]) <= 1) continue;
+            var ordinal = Enumerable.Range(0, i + 1).Count(j => labels[j] == labels[i]);
+            labels[i] += $" (#{ordinal})";
+        }
+        var options = candidates.Select((s, i) => new PadOption(labels[i], IconPath: IconFor(s.Emulator))).ToArray();
         var choice = await PadMenu.ShowAsync(host, title, message, options);
         if (choice is null) return null;
         var index = Array.FindIndex(options, o => o.Label == choice);
