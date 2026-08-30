@@ -461,6 +461,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Export box to Showdown", IconPath: "script"),
             new PadOption("Generate Living Dex", IconPath: "pokedex"),
             new PadOption("Egg factory…", IconPath: "pokedex"),
+            new PadOption("Day Care / Nursery", IconPath: "pokedex"),
             new PadOption("Batch editor", IconPath: "script"),
             new PadOption("Presets…", IconPath: "gears"),
             new PadOption("Trainer profiles…", IconPath: "trainer"),
@@ -488,6 +489,13 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             case "Egg factory…":
                 await ShowEggFactoryAsync();
                 return;
+            case "Day Care / Nursery":
+                {
+                    var session = _sessionsFor();
+                    if (session is not null)
+                        await DaycareEditor.ShowAsync(_hostGrid, session, _viewModel);
+                    return;
+                }
             case "Batch editor":
                 await RunBatchEditorAsync();
                 return;
@@ -1414,21 +1422,40 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
     private async Task ShowSaveDataAsync()
     {
-        var choice = await PadMenu.ShowAsync(_hostGrid, "SAVE DATA", null,
+        var session = _sessionsFor();
+        if (session is null) return;
+        var options = new List<PadOption>
+        {
             new PadOption("Trainer card", IconPath: "trainer"),
             new PadOption("Bag & items", IconPath: "bag"),
             new PadOption("Pokédex", IconPath: "pokedex"),
+            new PadOption("Fashion", IconPath: "trainer"),
+            new PadOption("Trainer records", IconPath: "trainer"),
             new PadOption("Wonder cards", IconPath: "events"),
-            new PadOption("Restore points", IconPath: "credits"));
+            new PadOption("Restore points", IconPath: "credits"),
+        };
+        if (session.GetGrandUndergroundItems().Count != 0)
+            options.Insert(2, new PadOption("Grand Underground", IconPath: "bag"));
+        var choice = await PadMenu.ShowAsync(_hostGrid, "SAVE DATA", null, options.ToArray());
         switch (choice)
         {
             case "Trainer card": await ShowTrainerCardAsync(); return;
             case "Bag & items": await ShowBagAsync(); return;
+            case "Grand Underground": await GrandUndergroundEditor.ShowAsync(_hostGrid, session, _viewModel); return;
             case "Pokédex": await ShowDexMenuAsync(); return;
+            case "Fashion": await ShowFashionAsync(); return;
+            case "Trainer records": await ShowTrainerRecordsAsync(); return;
             case "Wonder cards":
             {
-                var session = _sessionsFor();
-                if (session is null) return;
+                var wonderChoice = await PadMenu.ShowAsync(_hostGrid, "WONDER CARDS", null,
+                    new PadOption("Event gallery", IconPath: "events"),
+                    new PadOption("In-save inbox", IconPath: "events"));
+                if (wonderChoice == "In-save inbox")
+                {
+                    await MysteryGiftInboxEditor.ShowAsync(_hostGrid, session);
+                    return;
+                }
+                if (wonderChoice != "Event gallery") return;
                 Services.EventArchive.EnsureLoaded(session.Generation);
                 await EventGallery.ShowAsync(_hostGrid, _viewModel, session, targetSlot: null, () => _canvas.InvalidateSurface());
                 return;
@@ -1452,6 +1479,32 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             s.SetTrainer(updated);
             return new GenerationOutcome(true, "Trainer card updated.");
         }, Math.Max(0, _viewModel.SelectedSlot));
+    }
+
+    private async Task ShowFashionAsync()
+    {
+        var session = _sessionsFor();
+        if (session is null) return;
+        if (!session.SupportsLegalFashionUnlock)
+        {
+            await EditorMenu.ShowAsync(_hostGrid, "FASHION",
+                "Legal wardrobe unlocks are currently available for Pokémon Sword and Shield only.", "OK");
+            return;
+        }
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "UNLOCK LEGAL FASHION?",
+            "Unlock every outfit this Sword or Shield save can legitimately own. A restore point is created first.", "Unlock");
+        if (!confirmed) return;
+        await _viewModel.RunMutationAsync(s =>
+        {
+            s.UnlockAllLegalFashion();
+            return new GenerationOutcome(true, "All legal fashion items unlocked.");
+        }, Math.Max(0, _viewModel.SelectedSlot));
+    }
+
+    private async Task ShowTrainerRecordsAsync()
+    {
+        var session = _sessionsFor();
+        if (session is not null) await TrainerRecordsEditor.ShowAsync(_hostGrid, session);
     }
 
     private async Task ShowTrainerProfilesAsync()
@@ -1523,6 +1576,18 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var session = _sessionsFor();
         if (session is null) return;
         var data = IPlatformApplication.Current!.Services.GetRequiredService<IGameDataService>();
+        if (session.GetPokeBeans().Count != 0)
+        {
+            var choice = await PadMenu.ShowAsync(_hostGrid, "BAG & ITEMS", null,
+                new PadOption("Bag", IconPath: "bag"),
+                new PadOption("Poké Beans", Accent: UiTokens.GiftRed));
+            if (choice is null) return;
+            if (choice == "Poké Beans")
+            {
+                await PokeBeansEditor.ShowAsync(_hostGrid, session, _viewModel);
+                return;
+            }
+        }
         await BagEditor.ShowAsync(_hostGrid, session, _viewModel, data);
     }
 
@@ -1818,7 +1883,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                         s.SetItemCount(change.Pouch, change.Item, change.Count);
                     return new GenerationOutcome(true, $"Updated {changes.Length} item{(changes.Length == 1 ? "" : "s")}.");
                 }, _slotSeed, refreshSlot: false);
-                Report(outcome ? "ITEM QUANTITY SAVED" : "WRITE FAILED - SEE STATUS");
+                Report(outcome ? "ITEM QUANTITY SAVED TO FILE - RESTART THE GAME TO LOAD IT" : "WRITE FAILED - SEE STATUS");
                 Rebuild();
                 return outcome;
             }
@@ -1840,7 +1905,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 stored = s.SetItemCount(pouchName, itemId, count);
                 return new GenerationOutcome(true, stored == 0 ? $"{name} removed." : $"{name} ×{stored}");
             }, _slotSeed, refreshSlot: false);
-            Report(outcome ? $"SAVED: {(stored == 0 ? $"{name} REMOVED" : $"{name} x{stored}")}" : "WRITE FAILED - SEE STATUS");
+            Report(outcome ? $"SAVED TO FILE: {(stored == 0 ? $"{name} REMOVED" : $"{name} x{stored}")} - RESTART GAME" : "WRITE FAILED - SEE STATUS");
             Rebuild();
         }
 
@@ -2845,8 +2910,14 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
         var met = FocusButton(Kit.Capsule("MET / ORIGIN", UiTokens.Cyan), "MET / ORIGIN");
         met.Clicked += async (_, _) => await RunSubEditorAsync(MetOriginEditor.ShowAsync, "Met / origin updated");
+        var moveDetails = FocusButton(Kit.Capsule("MOVE DETAILS", UiTokens.Cyan), "MOVE DETAILS");
+        moveDetails.Clicked += async (_, _) => await RunSubEditorAsync(MoveDetailsEditor.ShowAsync, "Move details updated");
+        var moveShop = FocusButton(Kit.Capsule("MOVE SHOP", UiTokens.Cyan), "MOVE SHOP");
+        moveShop.Clicked += async (_, _) => await RunSubEditorAsync(MoveShopEditor.ShowAsync, "Move Shop updated");
         var potential = FocusButton(Kit.Capsule("POTENTIAL", UiTokens.Cyan), "POTENTIAL");
         potential.Clicked += async (_, _) => await RunSubEditorAsync(PotentialEditor.ShowAsync, "Potential updated");
+        var cosmetics = FocusButton(Kit.Capsule("COSMETICS", UiTokens.Cyan), "COSMETICS");
+        cosmetics.Clicked += async (_, _) => await RunSubEditorAsync(CosmeticsEditor.ShowAsync, "Cosmetics updated");
         var awards = FocusButton(Kit.Capsule("AWARDS", UiTokens.Cyan), "AWARDS");
         awards.Clicked += async (_, _) => await RunSubEditorAsync(AwardsEditor.ShowAsync, "Awards updated");
 
@@ -2859,7 +2930,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var exportIndex = IndexOfCaption("EXPORT .PK");
         var qrIndex = IndexOfCaption("QR");
         var metIndex = IndexOfCaption("MET / ORIGIN");
+        var moveDetailsIndex = IndexOfCaption("MOVE DETAILS");
+        var moveShopIndex = IndexOfCaption("MOVE SHOP");
         var potentialIndex = IndexOfCaption("POTENTIAL");
+        var cosmeticsIndex = IndexOfCaption("COSMETICS");
         var awardsIndex = IndexOfCaption("AWARDS");
 
         EditorFocusTargets = EditorFocusTargets
@@ -2869,17 +2943,20 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 "LEGALIZE" => target with { Neighbors = new EditorFocusNeighbors(index, makeMineIndex, saveIndex, exportIndex) },
                 "MAKE MINE" => target with { Neighbors = new EditorFocusNeighbors(legalizeIndex, showdownIndex, saveIndex, qrIndex) },
                 "SHOWDOWN" => target with { Neighbors = new EditorFocusNeighbors(makeMineIndex, index, saveIndex, metIndex) },
-                "EXPORT .PK" => target with { Neighbors = new EditorFocusNeighbors(index, qrIndex, legalizeIndex, potentialIndex) },
+                "EXPORT .PK" => target with { Neighbors = new EditorFocusNeighbors(index, qrIndex, legalizeIndex, moveDetailsIndex) },
                 "QR" => target with { Neighbors = new EditorFocusNeighbors(exportIndex, metIndex, makeMineIndex, awardsIndex) },
-                "MET / ORIGIN" => target with { Neighbors = new EditorFocusNeighbors(qrIndex, index, showdownIndex, awardsIndex) },
-                "POTENTIAL" => target with { Neighbors = new EditorFocusNeighbors(index, awardsIndex, exportIndex, index) },
-                "AWARDS" => target with { Neighbors = new EditorFocusNeighbors(potentialIndex, index, qrIndex, index) },
+                "MET / ORIGIN" => target with { Neighbors = new EditorFocusNeighbors(qrIndex, moveDetailsIndex, showdownIndex, awardsIndex) },
+                "MOVE DETAILS" => target with { Neighbors = new EditorFocusNeighbors(metIndex, moveShopIndex, exportIndex, index) },
+                "MOVE SHOP" => target with { Neighbors = new EditorFocusNeighbors(moveDetailsIndex, potentialIndex, exportIndex, index) },
+                "POTENTIAL" => target with { Neighbors = new EditorFocusNeighbors(moveShopIndex, cosmeticsIndex, exportIndex, index) },
+                "COSMETICS" => target with { Neighbors = new EditorFocusNeighbors(potentialIndex, awardsIndex, exportIndex, index) },
+                "AWARDS" => target with { Neighbors = new EditorFocusNeighbors(cosmeticsIndex, index, qrIndex, index) },
                 _ => target,
             })
             .ToArray();
 
         var monActions = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap, Margin = new Thickness(0, 4, 0, 0) };
-        foreach (var button in new[] { legalize, makeMine, showdown, exportPk, qr, met, potential, awards })
+        foreach (var button in new[] { legalize, makeMine, showdown, exportPk, qr, met, moveDetails, moveShop, potential, cosmetics, awards })
         {
             button.FontSize = 11;
             button.Padding = new Thickness(10, 6);

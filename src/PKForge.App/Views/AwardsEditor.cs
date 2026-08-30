@@ -16,12 +16,15 @@ public static class AwardsEditor
         {
             var pokerus = session.GetPokerus(box, slot);
             var ribbons = session.GetRibbons(box, slot);
+            var affixed = session.GetAffixedRibbon(box, slot);
             var selected = ribbons.Count(r => r.Value != 0);
             var options = new List<PadOption>();
             if (pokerus.Supported || pokerus.Status != PokerusStatus.Susceptible)
                 options.Add(new PadOption($"Pokérus · {PokerusLabel(pokerus)}", IconPath: PokerusIcon(pokerus.Status)));
             if (ribbons.Count != 0)
                 options.Add(new PadOption($"Ribbons · {selected}/{ribbons.Count}", IconPath: "ribbons"));
+            if (affixed.Supported)
+                options.Add(new PadOption($"Title · {affixed.SelectedName}", IconPath: "ribbons"));
 
             if (options.Count == 0)
             {
@@ -38,6 +41,10 @@ public static class AwardsEditor
             else if (choice.StartsWith("Ribbons", StringComparison.Ordinal))
             {
                 if (await EditRibbonsAsync(host, session, box, slot)) dirty = true;
+            }
+            else if (choice.StartsWith("Title", StringComparison.Ordinal))
+            {
+                if (await EditAffixedRibbonAsync(host, session, box, slot)) dirty = true;
             }
         }
     }
@@ -91,6 +98,18 @@ public static class AwardsEditor
             session.SetRibbon(box, slot, ribbon.Id, value);
             dirty = true;
         }
+    }
+
+    private static async Task<bool> EditAffixedRibbonAsync(Grid host, ISaveEngineSession session, int box, int slot)
+    {
+        var info = session.GetAffixedRibbon(box, slot);
+        var items = new List<PickItem> { new(-1, "□ No title", "ribbons/none.png") };
+        items.AddRange(info.Choices.Select(r => new PickItem(r.Id, $"{(r.Id == info.SelectedIndex ? "✓" : "□")} {r.Name}", "ribbons/ribbon.png")));
+        var picked = await PickerMenu.ShowAsync(host, "SELECT TITLE", items);
+        if (picked is null || picked.Id == info.SelectedIndex) return false;
+
+        session.SetAffixedRibbon(box, slot, picked.Id);
+        return true;
     }
 
     private static string PokerusLabel(PokerusInfo info) => info.Status switch
