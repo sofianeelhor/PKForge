@@ -49,9 +49,16 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     private void SetEntityCore(int box, int slot, PKM pk)
     {
-        if (box == -1) _save.SetPartySlotAtIndex(pk, slot);
-        else _save.SetBoxSlotAtIndex(pk, box, slot);
+        if (box == -1) _save.SetPartySlotAtIndex(pk, slot, ImportNone);
+        else _save.SetBoxSlotAtIndex(pk, box, slot, ImportNone);
     }
+
+    /// <summary>PKHeX's slot setters are import pipelines in disguise: with their
+    /// default settings they also mark the dex seen/caught, bump trainer records, and
+    /// rewrite handler data as if the mon were traded in. PKForge writes are surgical
+    /// by contract, so every slot write disables all three; the dex, records, and
+    /// handler state change only through their explicit editors and flows.</summary>
+    private static readonly EntityImportSettings ImportNone = EntityImportSettings.None;
 
     public EntityDetail ReadEntity(int box, int slot)
     {
@@ -125,17 +132,57 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (edit.Nature is { } nature && (int)entity.Nature != nature)
         {
             // Gen 3/4 natures are PID-derived with an empty setter: the only way to
-            // change them is re-rolling the personality (PKHeX's own SetPIDNature).
+            // change them is re-rolling the personality. The roll keeps the shiny
+            // state, gender, and ability slot intact (SetPIDNature alone un-shinies).
             if (entity is G3PKM or G4PKM)
-                entity.SetPIDNature((Nature)nature);
+                changed |= TrySetPidDerived(entity, (Nature)nature, null);
             else
+            {
                 entity.Nature = (Nature)nature;
-            changed = true;
+                changed = true;
+            }
         }
         if (edit.Ability is { } ability && entity.Ability != ability)
         {
-            entity.Ability = ability;
-            changed = true;
+            // Gen 3 stores the ability slot in the IV word (the Ability cache getter
+            // is read-only) and Gen 4 derives it from the PID: both need their own
+            // write path or the edit silently reverts (3) or desyncs the PID (4).
+            if (entity is G3PKM or G4PKM)
+            {
+                var personal = _save.Personal.GetFormEntry(entity.Species, entity.Form);
+                var slotIndex = -1;
+                for (var i = 0; i < personal.AbilityCount; i++)
+                {
+                    if (personal.GetAbilityAtIndex(i) == ability)
+                    {
+                        slotIndex = i;
+                        break;
+                    }
+                }
+                if (slotIndex >= 0 && entity is G3PKM)
+                {
+                    entity.AbilityNumber = 1 << slotIndex;
+                    changed = true;
+                }
+                else if (slotIndex >= 0 && TrySetPidDerived(entity, null, null, 1 << slotIndex))
+                {
+                    entity.Ability = ability;
+                    changed = true;
+                }
+                else if (slotIndex < 0 && entity is G4PKM)
+                {
+                    // HaX: an off-table ability is written raw into the stored ability
+                    // byte. Gen 3 computes its ability from the PID and the personal
+                    // table, so there is nothing there to write.
+                    entity.Ability = ability;
+                    changed = true;
+                }
+            }
+            else
+            {
+                entity.Ability = ability;
+                changed = true;
+            }
         }
         if (edit.HeldItem is { } item && entity.HeldItem != item)
         {
@@ -181,8 +228,18 @@ public sealed class SaveEngineSession : ISaveEngineSession
         }
         if (edit.Gender is { } gender && entity.Gender != Math.Clamp(gender, 0, 2))
         {
-            entity.Gender = (byte)Math.Clamp(gender, 0, 2);
-            changed = true;
+            var wanted = (byte)Math.Clamp(gender, 0, 2);
+            // Gen 3-5 couple gender to the PID: writing the byte alone either no-ops
+            // (Gen 3 derives it) or desyncs the stored bits from the personality
+            // (Gen 4/5 legality flags the mismatch). Roll a PID that lands the
+            // request and keeps everything else; Gen 6+ store gender directly.
+            if (entity is G3PKM or G4PKM or PK5)
+                changed |= TrySetPidDerived(entity, null, wanted);
+            else
+            {
+                entity.Gender = wanted;
+                changed = true;
+            }
         }
         if (edit.Friendship is { } friendship && entity.CurrentFriendship != Math.Clamp(friendship, 0, 255))
         {
@@ -194,10 +251,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
             return;
 
         entity.RefreshChecksum();
-        if (box == -1)
-            _save.SetPartySlotAtIndex(entity, slot);
-        else
-            _save.SetBoxSlotAtIndex(entity, box, slot);
+        SetEntityCore(box, slot, entity);
     }
 
     // ── Awards: Pokérus, ribbons, and marks ──
@@ -377,9 +431,9 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         entity.RefreshChecksum();
         if (box == -1)
-            _save.SetPartySlotAtIndex(entity, slot);
+            _save.SetPartySlotAtIndex(entity, slot, ImportNone);
         else
-            _save.SetBoxSlotAtIndex(entity, box, slot);
+            _save.SetBoxSlotAtIndex(entity, box, slot, ImportNone);
     }
 
     /// <summary>Engine-internal access for sibling adapters (legalizer); never leaves the assembly.</summary>
@@ -411,7 +465,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
             party.RemoveAt(fromSlot);
             toSlot = Math.Min(toSlot, party.Count);
             party.Insert(toSlot, moving);
-            _save.PartyData = party;
+            WriteParty(party);
             return;
         }
 
@@ -434,7 +488,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
             // the party (swap), refused when the party is full.
             if (target.Species != 0 && _save.PartyCount >= 6) return;
             var srcClone = source.Clone();
-            _save.SetBoxSlotAtIndex(srcClone, toBox, toSlot);
+            _save.SetBoxSlotAtIndex(srcClone, toBox, toSlot, ImportNone);
             DeleteEntityCore(-1, fromSlot);
             if (target.Species != 0)
                 InsertParty(EntityConverter.ConvertToType(target, _save.PKMType, out _) ?? target.Clone());
@@ -442,16 +496,25 @@ public sealed class SaveEngineSession : ISaveEngineSession
         }
 
         // Box to box: plain swap.
-        _save.SetBoxSlotAtIndex(source, toBox, toSlot);
-        _save.SetBoxSlotAtIndex(target, fromBox, fromSlot);
+        _save.SetBoxSlotAtIndex(source, toBox, toSlot, ImportNone);
+        _save.SetBoxSlotAtIndex(target, fromBox, fromSlot, ImportNone);
+    }
+
+    /// <summary>Rewrites the whole party with surgical writes. The PartyData setter
+    /// routes every element through PKHeX's import pipeline (dex, records, handler
+    /// rewrites); PKForge reorders slots, it does not re-import them.</summary>
+    private void WriteParty(IReadOnlyList<PKM> party)
+    {
+        for (var i = 0; i < party.Count; i++)
+            _save.SetPartySlotAtIndex(party[i], i, ImportNone);
+        for (var i = party.Count; i < 6; i++)
+            _save.SetPartySlotAtIndex(_save.BlankPKM, i, ImportNone);
     }
 
     /// <summary>Appends a mon to the party (compacting, like the games).</summary>
     private void InsertParty(PKM pk)
     {
-        var party = _save.PartyData.ToList();
-        party.Add(pk);
-        _save.PartyData = party;
+        _save.SetPartySlotAtIndex(pk, Math.Min(_save.PartyCount, 5), ImportNone);
     }
 
     /// <summary>Empties a slot; party slots compact instead of leaving a hole.</summary>
@@ -461,11 +524,11 @@ public sealed class SaveEngineSession : ISaveEngineSession
         {
             var party = _save.PartyData.ToList();
             party.RemoveAt(slot);
-            _save.PartyData = party;
+            WriteParty(party);
         }
         else
         {
-            _save.SetBoxSlotAtIndex(_save.BlankPKM, box, slot);
+            _save.SetBoxSlotAtIndex(_save.BlankPKM, box, slot, ImportNone);
         }
     }
 
@@ -494,7 +557,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
             if (placed >= capacity) break;
             var mon = EntityFormat.GetFromBytes(data, _save.Context);
             if (mon is null || mon.Species == 0 || mon.Species != species) continue;
-            _save.SetBoxSlotAtIndex(mon, placed / _save.BoxSlotCount, placed % _save.BoxSlotCount);
+            _save.SetBoxSlotAtIndex(mon, placed / _save.BoxSlotCount, placed % _save.BoxSlotCount, ImportNone);
             placed++;
         }
         return placed;
@@ -602,14 +665,17 @@ public sealed class SaveEngineSession : ISaveEngineSession
             case "nature":
             {
                 // Same PID-derived rule as the single-mon editor: Gen 3/4 nature setters
-                // are empty, so the batch editor must roll the personality instead or the
-                // edit silently reverts on those games.
+                // are empty, so the batch editor must roll the personality instead or
+                // the edit silently reverts on those games. The roll keeps the shiny
+                // state, gender, and ability slot intact.
                 var wanted = (Nature)Math.Clamp(ParseValue(), 0, 24);
                 if (entity is G3PKM or G4PKM)
-                    entity.SetPIDNature(wanted);
+                    changed |= TrySetPidDerived(entity, wanted, null);
                 else
+                {
                     entity.Nature = wanted;
-                changed = true;
+                    changed = true;
+                }
                 break;
             }
             case "hypertrain" when entity is IHyperTrain ht:
@@ -849,31 +915,59 @@ public sealed class SaveEngineSession : ISaveEngineSession
             return true;
         }
 
-        // Gen 3/4: nature is PID % 25. Search a new PID that keeps the shiny state,
-        // ability bit, gender (and Unown letter on FR/LG) while landing on the nature.
+        // Gen 3/4: nature is PID % 25. Roll a personality that lands the nature and
+        // keeps the shiny state, gender, ability slot, and FR/LG Unown letter.
+        if (!TrySetPidDerived(entity, wanted, null))
+            return false;
+        entity.RefreshChecksum();
+        SetEntityCore(box, slot, entity);
+        return true;
+    }
+
+    /// <summary>Gen 3-5 PID-coupled edits: rolls a personality that lands the
+    /// requested nature and/or gender (and optionally a specific ability slot) while
+    /// keeping the shiny state and every other PID-derived field. Gen 3 ability bits
+    /// live in the IV word and Gen 5 hidden abilities in their own byte, so both
+    /// survive untouched. Returns false without touching the entity when the request
+    /// is impossible (a fixed-gender species asking for the other gender, etc.).</summary>
+    internal static bool TrySetPidDerived(PKM entity, Nature? nature, byte? gender, int? abilityNumber = null)
+    {
+        if (entity is GBPKM) return false;
+        var personal = PersonalTable.B2W2[entity.Species];
+        var ratio = personal.Gender;
+        if (gender is { } wantedGender && (PersonalInfo.IsSingleGender(ratio) || ratio == PersonalInfo.RatioMagicGenderless))
+        {
+            // One-gender and genderless species: the request either already holds or
+            // no personality can satisfy it.
+            if (EntityGender.GetFromPIDAndRatio(entity.PID, ratio) != wantedGender)
+                return false;
+            gender = null; // nothing to search for
+        }
+        if (nature is null && gender is null && abilityNumber is null)
+            return true;
+
         var work = entity.Clone();
         var wasShiny = work.IsShiny;
-        var abilityBit = work.PID & 1;
-        var gender = work.Gender;
-        var personal = PersonalTable.B2W2[work.Species];
-        var singleGender = PersonalInfo.IsSingleGender(personal.Gender);
+        var targetNature = nature ?? (work.Format <= 4 ? work.Nature : (Nature?)null);
+        var targetGender = gender ?? work.Gender;
+        var targetAbility = abilityNumber ?? work.AbilityNumber;
         var unown = work.Version is GameVersion.FR or GameVersion.LG && work.Species == (int)Species.Unown;
         var rnd = Random.Shared;
         for (var attempt = 0; attempt < 5_000_000; attempt++)
         {
             var pid = rnd.Rand32();
-            // Sample straight from the wanted nature's residue class: the shiny
-            // constraint (1/8192) is then the only rare condition left, so a shiny
-            // Gen 3/4 mon can never exhaust the budget by pure chance.
-            while (pid % 25 != (byte)wanted)
-                pid = rnd.Rand32();
-            if ((pid & 1) != abilityBit) continue;
+            if (targetNature is { } n && pid % 25 != (byte)n) continue;
+            if (EntityGender.GetFromPIDAndRatio(pid, ratio) != targetGender) continue;
             if (unown && EntityPID.GetUnownForm3(pid) != work.Form) continue;
-            if (!singleGender && EntityGender.GetFromPIDAndRatio(pid, personal.Gender) != gender) continue;
             work.PID = pid;
+            if (work.AbilityNumber != targetAbility) continue;
             if (work.IsShiny != wasShiny) continue;
-            work.RefreshChecksum();
-            SetEntityCore(box, slot, work);
+
+            entity.PID = pid;
+            // Gen 4/5 cache the gender in their own bits: mirror the new personality.
+            if (gender is { } landed && entity is G4PKM or PK5)
+                entity.Gender = landed;
+            entity.RefreshChecksum();
             return true;
         }
         return false;
@@ -1036,7 +1130,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
             InsertParty(converted);
             return true;
         }
-        _save.SetBoxSlotAtIndex(converted, box, slot);
+        _save.SetBoxSlotAtIndex(converted, box, slot, ImportNone);
         return true;
     }
 
@@ -1083,9 +1177,9 @@ public sealed class SaveEngineSession : ISaveEngineSession
             return new GenerationOutcome(false, failure ?? "That ownership change is not legal, so nothing was changed.");
 
         if (box == -1)
-            _save.SetPartySlotAtIndex(entity, slot);
+            _save.SetPartySlotAtIndex(entity, slot, ImportNone);
         else
-            _save.SetBoxSlotAtIndex(entity, box, slot);
+            _save.SetBoxSlotAtIndex(entity, box, slot, ImportNone);
         var ownerName = profile?.DisplayName ?? _save.OT;
         return new GenerationOutcome(true, $"Made yours using {ownerName}.");
     }

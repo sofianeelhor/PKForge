@@ -86,13 +86,13 @@ public sealed class LegalizerService : ILegalizerService
         {
             if (save.PartyCount >= 6)
                 return "The party is full.";
-            var party = save.PartyData.ToList();
-            party.Add(created);
-            save.PartyData = party;
+            // Surgical append: the PartyData setter would also dex-mark, bump records,
+            // and rewrite handler data for every party member.
+            save.SetPartySlotAtIndex(created, Math.Min(save.PartyCount, 5), EntityImportSettings.None);
         }
         else
         {
-            save.SetBoxSlotAtIndex(created, box, slot);
+            save.SetBoxSlotAtIndex(created, box, slot, EntityImportSettings.None);
         }
         return null;
     }
@@ -136,7 +136,7 @@ public sealed class LegalizerService : ILegalizerService
         if (!new LegalityAnalysis(repaired).Valid)
             return new GenerationOutcome(false, "Could not find a legal repair for this mon.");
 
-        save.SetBoxSlotAtIndex(repaired, box, slot);
+        save.SetBoxSlotAtIndex(repaired, box, slot, EntityImportSettings.None);
         return new GenerationOutcome(true, "Legalized.");
     }
 
@@ -246,7 +246,7 @@ public sealed class LegalizerService : ILegalizerService
             }
             egg.IsEgg = true;
             egg.RefreshChecksum();
-            save.SetBoxSlotAtIndex(egg, slot.Value.Box, slot.Value.Slot);
+            save.SetBoxSlotAtIndex(egg, slot.Value.Box, slot.Value.Slot, EntityImportSettings.None);
             placed++;
             onProgress?.Invoke(placed, species.Count);
         }

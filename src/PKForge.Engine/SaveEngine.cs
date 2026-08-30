@@ -68,7 +68,9 @@ public sealed class SaveEngine : ISaveEngine
         if (converted is null)
             throw new InvalidOperationException($"This {entity.Context} Pokémon could not be loaded into a {blank.Version} editor ({result}).");
         converted.RefreshChecksum();
-        blank.SetBoxSlotAtIndex(converted, 0, 0);
+        // Surgical: seeding the editor must not dex-mark or rewrite handler data on
+        // the loose entity being edited.
+        blank.SetBoxSlotAtIndex(converted, 0, 0, EntityImportSettings.None);
         return new SaveEngineSession(blank, displayName);
     }
 
