@@ -27,10 +27,7 @@ Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
 - Bag editor, trainer card, Pokédex, restore points
 <img width="952" height="908" alt="image" src="https://github.com/user-attachments/assets/5c1db1a7-fe74-4799-9f82-8f1e39352f06" />
 
-![Storage](docs/screenshots/storage.png)
-![Editor](docs/screenshots/editor.png)
-![Events](docs/screenshots/events.png)
-![Menus](docs/screenshots/menu.png)
+<img width="1312" height="1062" alt="image" src="https://github.com/user-attachments/assets/060bd9f5-b163-45a2-bd13-9aa48f5879b6" />
 
 
 We do not support cheating at the expense of others. Do not use significantly edited
