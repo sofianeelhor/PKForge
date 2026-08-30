@@ -8,7 +8,7 @@ public sealed class SaveEngine : ISaveEngine
 {
     public SaveSnapshot Open(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
-        if (!SaveUtil.TryGetSaveFile(bytes.ToArray(), out var save) || save is null)
+        if (!SaveParser.TryGetSaveFile(bytes.ToArray(), out var save) || save is null)
             throw new InvalidDataException("The selected bytes are not a recognized save file.");
 
         var slots = new List<SlotSummary>(save.BoxCount * save.BoxSlotCount);
@@ -31,7 +31,7 @@ public sealed class SaveEngine : ISaveEngine
 
     public ReadOnlyMemory<byte> Serialize(SaveSnapshot snapshot) => snapshot.OriginalBytes.ToArray();
 
-    public bool Validate(ReadOnlyMemory<byte> bytes) => SaveUtil.TryGetSaveFile(bytes.ToArray(), out _);
+    public bool Validate(ReadOnlyMemory<byte> bytes) => SaveParser.TryGetSaveFile(bytes.ToArray(), out _);
 
     public BankEntryInfo? TryDescribeEntity(byte[] bytes, string sourceName)
     {
@@ -97,8 +97,12 @@ public sealed class SaveEngine : ISaveEngine
 
     public SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes)
     {
-        if (!SaveUtil.TryGetSaveFile(bytes.ToArray(), out var save) || save is null)
+        var raw = bytes.ToArray();
+        if (!SaveParser.TryGetSaveFile(raw, out var save) || save is null)
             return null;
+
+        if (SaveParser.IsLuminescentPlatinum(raw))
+            return new SaveDescription("Luminescent Platinum", save.Generation, save.OT, save.PlayTimeString);
 
         var strings = GameInfo.GetStrings("en");
         var versionIndex = (int)save.Version;

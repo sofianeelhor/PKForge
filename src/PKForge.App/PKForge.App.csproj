@@ -10,8 +10,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationId>org.pkforge.app</ApplicationId>
     <ApplicationTitle>PKForge</ApplicationTitle>
-    <ApplicationVersion>143</ApplicationVersion>
-    <ApplicationDisplayVersion>1.4.3</ApplicationDisplayVersion>
+    <ApplicationVersion>150</ApplicationVersion>
+    <ApplicationDisplayVersion>1.5.0</ApplicationDisplayVersion>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
   </PropertyGroup>
   <PropertyGroup Condition="'$(DiagnosticBuild)' == 'true'">
@@ -19,6 +19,13 @@
     <ApplicationId>org.pkforge.app.debug</ApplicationId>
     <ApplicationTitle>PKForge Diagnostics</ApplicationTitle>
     <DefineConstants>$(DefineConstants);DIAGNOSTIC</DefineConstants>
+    <!-- Diagnostic APKs are sideloaded, not deployed by an IDE. Fast Deployment
+         otherwise expects assemblies in an app-private override directory and
+         aborts before MAUI can start. -->
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+    <!-- Android's Mono loader can mmap these embedded assembly DSOs only when
+         APK entries are stored, never ZIP-compressed. -->
+    <AndroidStoreUncompressedFileExtensions>.so;$(AndroidStoreUncompressedFileExtensions)</AndroidStoreUncompressedFileExtensions>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />

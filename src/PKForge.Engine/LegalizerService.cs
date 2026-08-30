@@ -51,7 +51,7 @@ public sealed class LegalizerService : ILegalizerService
                 _ => "No legal combination found for this request in this game.",
             });
 
-        var created = result.Created;
+        var created = ConvertForSave(save, result.Created);
         var analysis = new LegalityAnalysis(created);
         if (box == -1)
         {
@@ -102,7 +102,7 @@ public sealed class LegalizerService : ILegalizerService
         var result = GenerateLegal(engineSession, set);
         if (result.Status is not LegalizationResult.Regenerated) return null;
 
-        var created = result.Created;
+        var created = ConvertForSave(save, result.Created);
         var data = new byte[created.SIZE_PARTY];
         created.WriteDecryptedDataParty(data);
         var info = new BankEntryInfo(
@@ -206,25 +206,36 @@ public sealed class LegalizerService : ILegalizerService
         lock (TrainerGenerationLock)
         {
             var save = session.SaveFile;
+            // Auto-Legality has no encounter/evolution tables for Luminescent's
+            // distinct context yet. Its save layout and trainer identity are BDSP,
+            // so generate through an isolated retail-BDSP view and place the result
+            // back into the real Luminescent session. This keeps the generator usable
+            // without teaching AutoMod that mod-specific encounters are official.
+            var generationSave = save is SAV8BSLuminescent
+                ? new SAV8BS(save.Data.ToArray())
+                : save;
             var previousPriority = APILegality.GameVersionPriority;
             var previousOrder = APILegality.PriorityOrder;
             var useOwner = _ownershipSettings?.UseCurrentTrainerForGeneration ?? true;
             try
             {
+                if (save is SAV8BSLuminescent)
+                    return generationSave.GetLegalFromSet(set);
+
                 if (!useOwner)
                     return save.GetLegalFromSet(set);
 
                 APILegality.GameVersionPriority = GameVersionPriorityType.PriorityOrder;
 
                 var eligible = GameUtil.GameVersions
-                    .Where(z => save.Generation < 3 || z.Generation >= 3)
+                    .Where(z => generationSave.Generation < 3 || z.Generation >= 3)
                     .ToList();
 
                 // Try the open game first: common species get a native encounter and an
                 // exact trainer/version match. Some species are transfer-only, so keep a
                 // legal fallback that still carries the full modern trainer identity.
-                APILegality.PriorityOrder = [save.Version, .. eligible.Where(z => z != save.Version)];
-                var native = save.GetLegalFromSet(set);
+                APILegality.PriorityOrder = [generationSave.Version, .. eligible.Where(z => z != generationSave.Version)];
+                var native = generationSave.GetLegalFromSet(set);
                 var nativeOwned = TryOwn(session, native);
                 if (nativeOwned && save.IsFromTrainer(native.Created))
                     return native;
@@ -233,7 +244,7 @@ public sealed class LegalizerService : ILegalizerService
                 // steers transfer species toward ordinary catchable encounters instead
                 // of fixed-OT distributions.
                 APILegality.PriorityOrder = [.. eligible.OrderBy(z => z)];
-                var transfer = save.GetLegalFromSet(set);
+                var transfer = generationSave.GetLegalFromSet(set);
                 if (TryOwn(session, transfer))
                     return transfer;
                 return nativeOwned ? native : native with { Status = LegalizationResult.Failed };
@@ -248,6 +259,16 @@ public sealed class LegalizerService : ILegalizerService
 
     private static bool TryOwn(SaveEngineSession session, APILegality.AsyncLegalizationResult result) =>
         result.Status is LegalizationResult.Regenerated && session.MakeOwned(result.Created, null, out _);
+
+    private static PKM ConvertForSave(SaveFile save, PKM created)
+    {
+        if (save is not SAV8BSLuminescent || created is PB8LUMI)
+            return created;
+
+        var data = new byte[created.SIZE_PARTY];
+        created.WriteDecryptedDataParty(data);
+        return new PB8LUMI(data);
+    }
 
 
     public GenerationOutcome FillLivingDex(ISaveEngineSession session, byte[] compressedBundle, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
