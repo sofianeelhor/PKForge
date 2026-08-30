@@ -17,7 +17,20 @@ internal static class SaveParser
 
     internal static bool TryGetSaveFile(byte[] data, out SaveFile? save)
     {
-        return SaveUtil.TryGetSaveFile(data, out save);
+        if (SaveUtil.TryGetSaveFile(data, out save))
+            return true;
+
+        // Keep the app's Luminescent entry point independent from the upstream
+        // detector. This protects Android trimmed builds if a detector branch is
+        // removed while the explicitly referenced save type remains available.
+        if (IsLuminescentPlatinum(data))
+        {
+            save = new SAV8BSLuminescent(data);
+            return true;
+        }
+
+        save = null;
+        return false;
     }
 
     internal static bool IsLuminescentPlatinum(ReadOnlySpan<byte> data)
