@@ -161,7 +161,7 @@ public static class GenerateWizard
             int? parsedLevel = int.TryParse(level.Text?.Trim(), out var lv) ? lv : null;
             var pickedMoves = moves.Where(m => m is > 0).Select(m => m!.Value).ToList();
             Close(new GenerationRequest(species.Id, parsedLevel, shiny.IsToggled, nature, ability, ball,
-                pickedMoves.Count > 0 ? pickedMoves : null, form));
+                pickedMoves.Count > 0 ? pickedMoves : null, form, Services.HaXMode.IsOn));
         }
 
         var generate = Kit.Capsule("GENERATE", UiTokens.Green);

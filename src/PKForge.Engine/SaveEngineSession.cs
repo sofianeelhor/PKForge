@@ -731,6 +731,15 @@ public sealed class SaveEngineSession : ISaveEngineSession
         return GetTypes((ushort)species, 0);
     }
 
+    public int MaxSpeciesId
+    {
+        get
+        {
+            ThrowIfDisposed();
+            return _save.MaxSpeciesID;
+        }
+    }
+
     public BaseStats GetBaseStats(int species)
     {
         ThrowIfDisposed();

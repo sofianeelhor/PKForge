@@ -972,7 +972,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             {
                 if (empties.Count == 0 || overlay.Cancellation.IsCancellationRequested) break;
                 var slot = empties.Dequeue();
-                var ok = await _viewModel.RunLegalizerAsync((legalizer, s) => legalizer.GenerateFromShowdown(s, _viewModel.BoxIndex, slot, set), slot);
+                var ok = await _viewModel.RunLegalizerAsync((legalizer, s) => legalizer.GenerateFromShowdown(s, _viewModel.BoxIndex, slot, set, Services.HaXMode.IsOn), slot);
                 if (!ok) empties.Enqueue(slot); // slot stays free for the next set
                 done++;
                 overlay.Report(done, sets.Length);
@@ -1221,7 +1221,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                     for (var slot = 0; slot < BoxGridRenderer.Rows * BoxGridRenderer.Columns; slot++)
                     {
                         if (!s.ReadEntity(box, slot).IsEmpty) continue;
-                        if (legalizer.GenerateFromShowdown(s, box, slot, set).Success) { placed++; break; }
+                        if (legalizer.GenerateFromShowdown(s, box, slot, set, Services.HaXMode.IsOn).Success) { placed++; break; }
                     }
                 }
                 return placed > 0
@@ -3596,7 +3596,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             "The offline legalizer is building a legal Pokémon from your set.");
         try
         {
-            await _viewModel.RunLegalizerAsync((legalizer, s) => legalizer.GenerateFromShowdown(s, _viewModel.BoxIndex, slot, text), slot);
+            await _viewModel.RunLegalizerAsync((legalizer, s) => legalizer.GenerateFromShowdown(s, _viewModel.BoxIndex, slot, text, Services.HaXMode.IsOn), slot);
             _canvas.InvalidateSurface();
         }
         finally

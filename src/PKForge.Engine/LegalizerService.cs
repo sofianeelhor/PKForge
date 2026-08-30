@@ -29,10 +29,11 @@ public sealed class LegalizerService : ILegalizerService
     public GenerationOutcome Generate(ISaveEngineSession session, int box, int slot, GenerationRequest request)
     {
         var text = BuildShowdownText(request, ((SaveEngineSession)session).SaveFile.Context);
-        return GenerateFromShowdown(session, box, slot, text);
+        return GenerateFromShowdown(session, box, slot, text, request.AllowUnsupportedSpecies);
     }
 
-    public GenerationOutcome GenerateFromShowdown(ISaveEngineSession session, int box, int slot, string showdownText)
+    public GenerationOutcome GenerateFromShowdown(ISaveEngineSession session, int box, int slot, string showdownText,
+        bool allowUnsupportedSpecies = false)
     {
         if (session is not SaveEngineSession engineSession)
             return new GenerationOutcome(false, "Unsupported session type.");
@@ -41,23 +42,50 @@ public sealed class LegalizerService : ILegalizerService
         var set = new ShowdownSet(showdownText);
         if (set.Species == 0)
             return new GenerationOutcome(false, "Could not read the set (no species).");
+        // No ROM hack can extend a save format's species table; reject with the real
+        // reason instead of a misleading legalizer failure.
+        if (set.Species > save.MaxSpeciesID)
+        {
+            if (!allowUnsupportedSpecies)
+                return new GenerationOutcome(false,
+                    $"{GameName(save)} cannot store this Pokémon; its species does not exist in this generation.");
+
+            var forced = BuildUnsupportedMon(save, set);
+            var forcedPlaced = PlaceGenerated(save, forced, box, slot);
+            return forcedPlaced is not null
+                ? new GenerationOutcome(false, forcedPlaced)
+                : new GenerationOutcome(true,
+                    "Generated (HaX): this species is unsupported in this game; no guarantee it works.");
+        }
 
         var result = GenerateLegal(engineSession, set);
         if (result.Status is not LegalizationResult.Regenerated)
-            return new GenerationOutcome(false, result.Status switch
-            {
-                LegalizationResult.Timeout => "The legalizer timed out for this request.",
-                LegalizationResult.VersionMismatch => "Engine version mismatch.",
-                _ => "No legal combination found for this request in this game.",
-            });
+            return new GenerationOutcome(false,
+                result.Status switch
+                {
+                    LegalizationResult.Timeout => "The legalizer timed out for this request.",
+                    LegalizationResult.VersionMismatch => "Engine version mismatch.",
+                    _ => "No legal combination found for this request in this game.",
+                });
 
         var created = ConvertForSave(save, result.Created);
         var analysis = new LegalityAnalysis(created);
+        var placed = PlaceGenerated(save, created, box, slot);
+        if (placed is not null)
+            return new GenerationOutcome(false, placed);
+        return new GenerationOutcome(true, analysis.Valid
+            ? save.IsFromTrainer(created) ? "Generated - legal." : "Generated - legal (event OT)."
+            : "Generated (legality imperfect).");
+    }
+
+    /// <summary>Places a generated mon: boxes overwrite the slot; the party appends
+    /// (capped at six, compact like the games). Null on success, else the failure.</summary>
+    private static string? PlaceGenerated(SaveFile save, PKM created, int box, int slot)
+    {
         if (box == -1)
         {
-            // The party is not a box: it appends (capped at six, compact like the games).
             if (save.PartyCount >= 6)
-                return new GenerationOutcome(false, "The party is full.");
+                return "The party is full.";
             var party = save.PartyData.ToList();
             party.Add(created);
             save.PartyData = party;
@@ -66,7 +94,30 @@ public sealed class LegalizerService : ILegalizerService
         {
             save.SetBoxSlotAtIndex(created, box, slot);
         }
-        return new GenerationOutcome(true, analysis.Valid ? "Generated - legal." : "Generated (legality imperfect).");
+        return null;
+    }
+
+    /// <summary>HaX generation for species beyond the save's table: a plain mon of the
+    /// save's own format carrying the set details, no encounter, no legality. The games
+    /// have no data for the species, so behavior is explicitly not guaranteed.</summary>
+    private static PKM BuildUnsupportedMon(SaveFile save, ShowdownSet set)
+    {
+        var template = EntityBlank.GetBlank(save);
+        if (template.Version == 0)
+            template.Version = save.Version;
+        // ApplySetDetails clamps the species to the format maximum; it still fills
+        // level, moves, IVs, EVs, nature (PID-aware on Gen 3/4), shiny and EC.
+        template.ApplySetDetails(set);
+        template.Species = (ushort)set.Species; // the actual override
+        if (template.Format >= 3)
+            template.Ball = (byte)Ball.Poke;
+        template.OriginalTrainerName = save.OT;
+        template.TID16 = save.TID16;
+        if (template is not GBPKM)
+            template.SID16 = save.SID16;
+        template.OriginalTrainerGender = (byte)Math.Clamp((int)save.Gender, 0, 1);
+        template.RefreshChecksum();
+        return template;
     }
 
     public GenerationOutcome LegalizeSlot(ISaveEngineSession session, int box, int slot)
@@ -90,19 +141,31 @@ public sealed class LegalizerService : ILegalizerService
     }
 
     public GeneratedEntity? GenerateData(ISaveEngineSession session, GenerationRequest request) =>
-        GenerateDataFromShowdown(session, BuildShowdownText(request, ((SaveEngineSession)session).SaveFile.Context));
+        GenerateDataFromShowdown(session, BuildShowdownText(request, ((SaveEngineSession)session).SaveFile.Context),
+            request.AllowUnsupportedSpecies);
 
-    public GeneratedEntity? GenerateDataFromShowdown(ISaveEngineSession session, string showdownText)
+    public GeneratedEntity? GenerateDataFromShowdown(ISaveEngineSession session, string showdownText,
+        bool allowUnsupportedSpecies = false)
     {
         if (session is not SaveEngineSession engineSession) return null;
         var save = engineSession.SaveFile;
 
         var set = new ShowdownSet(showdownText);
         if (set.Species == 0) return null;
+        if (set.Species > save.MaxSpeciesID)
+        {
+            if (!allowUnsupportedSpecies) return null;
+            return BuildGeneratedEntity(BuildUnsupportedMon(save, set));
+        }
         var result = GenerateLegal(engineSession, set);
         if (result.Status is not LegalizationResult.Regenerated) return null;
 
         var created = ConvertForSave(save, result.Created);
+        return BuildGeneratedEntity(created);
+    }
+
+    private GeneratedEntity BuildGeneratedEntity(PKM created)
+    {
         var data = new byte[created.SIZE_PARTY];
         created.WriteDecryptedDataParty(data);
         var info = new BankEntryInfo(
@@ -236,18 +299,29 @@ public sealed class LegalizerService : ILegalizerService
                 // legal fallback that still carries the full modern trainer identity.
                 APILegality.PriorityOrder = [generationSave.Version, .. eligible.Where(z => z != generationSave.Version)];
                 var native = generationSave.GetLegalFromSet(set);
-                var nativeOwned = TryOwn(session, native);
-                if (nativeOwned && save.IsFromTrainer(native.Created))
-                    return native;
+                var nativeOwned = TryOwn(session, native, out var ownedNative);
+                if (nativeOwned && save.IsFromTrainer(ownedNative.Created))
+                    return ownedNative;
 
                 // A Gen 1/2 origin cannot carry a modern SID, and oldest-first search
                 // steers transfer species toward ordinary catchable encounters instead
                 // of fixed-OT distributions.
                 APILegality.PriorityOrder = [.. eligible.OrderBy(z => z)];
                 var transfer = generationSave.GetLegalFromSet(set);
-                if (TryOwn(session, transfer))
+                if (TryOwn(session, transfer, out var ownedTransfer))
+                    return ownedTransfer;
+
+                // Event-only species (Marshadow, Zeraora, Diancie...) have no
+                // player-OT origin in any version: their only legal form is the
+                // distribution itself. Keep the authentic event OT rather than
+                // failing a request the legalizer actually satisfied.
+                if (nativeOwned)
+                    return ownedNative;
+                if (native.Status is LegalizationResult.Regenerated)
+                    return native;
+                if (transfer.Status is LegalizationResult.Regenerated)
                     return transfer;
-                return nativeOwned ? native : native with { Status = LegalizationResult.Failed };
+                return native with { Status = LegalizationResult.Failed };
             }
             finally
             {
@@ -257,8 +331,22 @@ public sealed class LegalizerService : ILegalizerService
         }
     }
 
-    private static bool TryOwn(SaveEngineSession session, APILegality.AsyncLegalizationResult result) =>
-        result.Status is LegalizationResult.Regenerated && session.MakeOwned(result.Created, null, out _);
+    private static bool TryOwn(SaveEngineSession session, APILegality.AsyncLegalizationResult result,
+        out APILegality.AsyncLegalizationResult owned)
+    {
+        // The stamp mutates in place; work on a clone so a rejected stamp (fixed-OT
+        // event mon, or a rewrite that turns out illegal) leaves the pristine
+        // legal result usable for the event-OT fallback above.
+        owned = result with { Created = result.Created.Clone() };
+        return owned.Status is LegalizationResult.Regenerated && session.MakeOwned(owned.Created, null, out _);
+    }
+
+    private static string GameName(SaveFile save)
+    {
+        var index = (int)save.Version;
+        var names = GameInfo.GetStrings("en").gamelist;
+        return index > 0 && index < names.Length && names[index].Length > 0 ? names[index] : save.Version.ToString();
+    }
 
     private static PKM ConvertForSave(SaveFile save, PKM created)
     {

@@ -28,6 +28,10 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Type ids (0-17) of a species' base form in the open save's game.</summary>
     IReadOnlyList<int> GetSpeciesTypes(int species);
 
+    /// <summary>Highest species id this save format can store. Species pickers stay
+    /// inside it: no mod extends a save's species table.</summary>
+    int MaxSpeciesId { get; }
+
     /// <summary>Base stats of a species' base form (HP/Atk/Def/SpA/SpD/Spe).</summary>
     BaseStats GetBaseStats(int species);
 
@@ -382,7 +386,9 @@ public interface ILegalityService
 public interface ILegalizerService
 {
     GenerationOutcome Generate(ISaveEngineSession session, int box, int slot, GenerationRequest request);
-    GenerationOutcome GenerateFromShowdown(ISaveEngineSession session, int box, int slot, string showdownText);
+    /// <param name="allowUnsupportedSpecies">HaX mode: build species beyond the save's
+    /// table directly, without legality and without guarantees.</param>
+    GenerationOutcome GenerateFromShowdown(ISaveEngineSession session, int box, int slot, string showdownText, bool allowUnsupportedSpecies = false);
     GenerationOutcome LegalizeSlot(ISaveEngineSession session, int box, int slot);
 
     /// <summary>Fills the PC from box 0 slot 0 with a legal living dex (overwrites; caller confirms + backs up).</summary>
@@ -392,7 +398,7 @@ public interface ILegalizerService
     GeneratedEntity? GenerateData(ISaveEngineSession session, GenerationRequest request);
 
     /// <inheritdoc cref="GenerateData"/>
-    GeneratedEntity? GenerateDataFromShowdown(ISaveEngineSession session, string showdownText);
+    GeneratedEntity? GenerateDataFromShowdown(ISaveEngineSession session, string showdownText, bool allowUnsupportedSpecies = false);
 
     /// <summary>Generates legal mons for the requested species into the first empty PC slots.</summary>
     GenerationOutcome FillSpecies(ISaveEngineSession session, IReadOnlyList<int> species, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
@@ -424,7 +430,8 @@ public sealed record GenerationRequest(
     int? Ability,
     int? Ball,
     IReadOnlyList<int>? Moves,
-    int Form = 0);
+    int Form = 0,
+    bool AllowUnsupportedSpecies = false);
 
 public sealed record GenerationOutcome(bool Success, string Message);
 
