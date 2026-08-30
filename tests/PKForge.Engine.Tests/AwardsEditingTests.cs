@@ -92,6 +92,37 @@ public sealed class AwardsEditingTests
     }
 
     [Fact]
+    public void ModernPokemonCanAffixOnlyAnOwnedRibbonOrMark()
+    {
+        using var session = Seed(8, new PK8 { Version = GameVersion.SW });
+        session.SetRibbon(0, 0, "RibbonEffort", 1);
+
+        var initial = session.GetAffixedRibbon(0, 0);
+        Assert.True(initial.Supported);
+        Assert.Equal(AffixedRibbon.None, initial.SelectedIndex);
+        var effort = Assert.Single(initial.Choices, choice => choice.Id == (int)RibbonIndex.Effort);
+        Assert.Equal("Effort", effort.Name);
+
+        session.SetAffixedRibbon(0, 0, effort.Id);
+        var selected = session.GetAffixedRibbon(0, 0);
+        Assert.Equal((int)RibbonIndex.Effort, selected.SelectedIndex);
+        Assert.Equal("Effort", selected.SelectedName);
+        Assert.Equal((sbyte)RibbonIndex.Effort, Assert.IsAssignableFrom<IRibbonSetAffixed>(session.GetEntity(0, 0)).AffixedRibbon);
+
+        Assert.Throws<ArgumentException>(() => session.SetAffixedRibbon(0, 0, (int)RibbonIndex.ChampionKalos));
+        session.SetAffixedRibbon(0, 0, AffixedRibbon.None);
+        Assert.Equal(AffixedRibbon.None, session.GetAffixedRibbon(0, 0).SelectedIndex);
+    }
+
+    [Fact]
+    public void OlderFormatsDoNotOfferAnAffixedRibbonTitle()
+    {
+        using var session = Seed(7, new PK7 { Version = GameVersion.UM });
+        Assert.False(session.GetAffixedRibbon(0, 0).Supported);
+        Assert.Throws<NotSupportedException>(() => session.SetAffixedRibbon(0, 0, AffixedRibbon.None));
+    }
+
+    [Fact]
     public void ModernValidPokerusStrainIsPreservedWhenCured()
     {
         var mon = new PK7 { Version = GameVersion.UM, PokerusStrain = 15, PokerusDays = 1 };

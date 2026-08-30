@@ -73,12 +73,32 @@ public sealed class EntitySessionCorpusTests
                         session.ApplyPotentialEdit(0, 0, new PotentialEdit(HyperTrained: [true, false, false, false, false, false]));
                     if (p.SupportsAbilitySlot)
                         session.ApplyPotentialEdit(0, 0, new PotentialEdit(AbilitySlot: 0));
+                    if (p.SupportsAwakening)
+                        session.ApplyPotentialEdit(0, 0, new PotentialEdit(Awakening: [0, 0, 0, 0, 0, 0]));
+                    if (p.SupportsGanbaru)
+                        session.ApplyPotentialEdit(0, 0, new PotentialEdit(Ganbaru: [0, 0, 0, 0, 0, 0]));
                     _ = session.GetPotential(0, 0);
+
+                    // PP metadata is universal; relearn slots are format-gated by the
+                    // session and therefore always safe to inspect.
+                    _ = session.GetMoveDetails(0, 0);
+
+                    // Legends: Arceus Move Shop is a PA8-only surface; unsupported
+                    // entity formats intentionally report an empty, false capability.
+                    _ = session.GetMoveShop(0, 0);
 
                     // Awards are also format-gated and must be inspectable for every
                     // loose entity accepted by the bank editor.
                     _ = session.GetPokerus(0, 0);
                     _ = session.GetRibbons(0, 0);
+
+                    // Cosmetic data is format-gated as well. Every entity the bank can
+                    // open must at least describe its supported cosmetic surfaces.
+                    _ = session.GetCosmetics(0, 0);
+
+                    // Mystery Gift storage is save-level and read-only, but must remain
+                    // safe to inspect for every save-backed entity session.
+                    _ = session.GetMysteryGiftInbox();
 
                     _ = session.ExportSlot(0, 0);
                     opened++;

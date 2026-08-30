@@ -1,6 +1,7 @@
 using PKForge.App.Services;
 using PKForge.App.Theme;
 using PKForge.Domain;
+using PKHeX.Core;
 
 namespace PKForge.App.Views;
 
@@ -28,6 +29,10 @@ public static class PotentialEditor
                 options.Add(new PadOption($"Tera type · {p.TeraTypeName}{(p.TeraLocked ? " (fixed)" : "")}"));
             if (p.SupportsHyperTrain)
                 options.Add(new PadOption($"Hyper Training · {p.HyperTrained.Count(t => t)}/6"));
+            if (p.SupportsAwakening)
+                options.Add(new PadOption($"Awakening Values · {p.Awakening.Sum()}/1200"));
+            if (p.SupportsGanbaru)
+                options.Add(new PadOption($"Grit Effort Levels · {p.Ganbaru.Sum()}/{p.GanbaruMaximums.Sum()}"));
             if (p.SupportsAbilitySlot)
                 options.Add(new PadOption($"Ability slot · {p.AbilitySlots[p.AbilitySlot].Name}"));
 
@@ -56,12 +61,47 @@ public static class PotentialEditor
             {
                 if (await EditHyperTrainingAsync(host, session, box, slot)) dirty = true;
             }
+            else if (choice.StartsWith("Awakening Values", StringComparison.Ordinal))
+            {
+                if (await EditTrainingAsync(host, session, box, slot, awakening: true)) dirty = true;
+            }
+            else if (choice.StartsWith("Grit Effort Levels", StringComparison.Ordinal))
+            {
+                if (await EditTrainingAsync(host, session, box, slot, awakening: false)) dirty = true;
+            }
             else if (choice.StartsWith("Ability slot", StringComparison.Ordinal))
             {
                 var pick = await PickChoiceAsync(host, "ABILITY SLOT (CAPSULE / PATCH)", p.AbilitySlots, p.AbilitySlot);
                 if (pick is { } v) { session.ApplyPotentialEdit(box, slot, new PotentialEdit(AbilitySlot: v)); dirty = true; }
             }
         }
+    }
+
+    private static async Task<bool> EditTrainingAsync(Grid host, ISaveEngineSession session, int box, int slot, bool awakening)
+    {
+        var p = session.GetPotential(box, slot);
+        var values = (awakening ? p.Awakening : p.Ganbaru).ToArray();
+        var maximums = awakening ? Enumerable.Repeat((int)AwakeningUtil.AwakeningMax, 6).ToArray() : p.GanbaruMaximums.ToArray();
+        var title = awakening ? "AWAKENING VALUES" : "GRIT EFFORT LEVELS";
+        var options = StatNames.Select((name, i) => new PadOption($"{name} · {values[i]}/{maximums[i]}"))
+            .Append(new PadOption("Max all"))
+            .Append(new PadOption("Clear all"))
+            .ToArray();
+        var choice = await EditorMenu.ShowAsync(host, title, null, options);
+        if (choice is null) return false;
+        if (choice == "Max all") values = maximums;
+        else if (choice == "Clear all") values = new int[6];
+        else
+        {
+            var index = Array.FindIndex(StatNames, name => choice.StartsWith(name, StringComparison.Ordinal));
+            if (index < 0) return false;
+            var picked = await StatsPopup.ShowSingleAsync(host, StatNames[index], values[index], maximums[index]);
+            if (picked is not { } value || value == values[index]) return false;
+            values[index] = value;
+        }
+        if (values.SequenceEqual(awakening ? p.Awakening : p.Ganbaru)) return false;
+        session.ApplyPotentialEdit(box, slot, awakening ? new PotentialEdit(Awakening: values) : new PotentialEdit(Ganbaru: values));
+        return true;
     }
 
     /// <summary>Per-stat Hyper Training toggles, plus train-all / clear-all.</summary>

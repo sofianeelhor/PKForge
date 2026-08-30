@@ -1,5 +1,6 @@
 using PKForge.Domain;
 using PKForge.Engine;
+using PKHeX.Core;
 using Xunit;
 
 namespace PKForge.Engine.Tests;
@@ -11,6 +12,28 @@ namespace PKForge.Engine.Tests;
 /// </summary>
 public sealed class PotentialTests
 {
+    [Fact]
+    public void LgpeAwakeningValuesClampAndPersist()
+    {
+        using var session = Seed(new PB7 { Version = GameVersion.GP });
+        Assert.True(session.GetPotential(0, 0).SupportsAwakening);
+
+        session.ApplyPotentialEdit(0, 0, new PotentialEdit(Awakening: [250, 100, -1, 2, 3, 4]));
+        Assert.Equal([200, 100, 0, 2, 3, 4], session.GetPotential(0, 0).Awakening);
+    }
+
+    [Fact]
+    public void LegendsArceusGritValuesUsePerStatLegalMaximums()
+    {
+        using var session = Seed(new PA8 { Version = GameVersion.PLA });
+        var before = session.GetPotential(0, 0);
+        Assert.True(before.SupportsGanbaru);
+
+        session.ApplyPotentialEdit(0, 0, new PotentialEdit(Ganbaru: [99, 99, 99, 99, 99, 99]));
+        var after = session.GetPotential(0, 0);
+        Assert.Equal(after.GanbaruMaximums, after.Ganbaru);
+    }
+
     private static string TestsRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -116,5 +139,15 @@ public sealed class PotentialTests
             break;
         }
         Assert.True(found, "No three-ability-slot entity found in the corpus.");
+    }
+
+    private static SaveEngineSession Seed(PKM mon)
+    {
+        mon.Species = 25;
+        mon.CurrentLevel = 20;
+        mon.RefreshChecksum();
+        var bytes = new byte[mon.SIZE_STORED];
+        mon.WriteDecryptedDataStored(bytes);
+        return (SaveEngineSession)new SaveEngine().OpenEntitySession(bytes)!;
     }
 }

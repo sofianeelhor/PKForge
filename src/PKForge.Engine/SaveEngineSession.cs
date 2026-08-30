@@ -317,6 +317,56 @@ public sealed class SaveEngineSession : ISaveEngineSession
         StoreEntity(box, slot, entity);
     }
 
+    public AffixedRibbonInfo GetAffixedRibbon(int box, int slot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0)
+            throw new InvalidOperationException("Cannot inspect an empty slot.");
+        if (entity is not (IRibbonSetAffixed affixed and IRibbonIndex ribbons))
+            return new AffixedRibbonInfo(false, AffixedRibbon.None, "None", []);
+
+        var strings = GameInfo.Strings.Ribbons;
+        var choices = new List<NamedChoice>();
+        for (var i = 0; i <= AffixedRibbon.Max; i++)
+        {
+            if (!ribbons.GetRibbon(i))
+                continue;
+            choices.Add(new NamedChoice(i, GetRibbonDisplayName(strings, (RibbonIndex)i)));
+        }
+
+        var selected = affixed.AffixedRibbon;
+        var selectedName = selected is >= 0 and <= AffixedRibbon.Max
+            ? GetRibbonDisplayName(strings, (RibbonIndex)selected)
+            : "None";
+        return new AffixedRibbonInfo(true, selected, selectedName, choices);
+    }
+
+    public void SetAffixedRibbon(int box, int slot, int ribbonIndex)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0)
+            throw new InvalidOperationException("Cannot edit an empty slot.");
+        if (entity is not (IRibbonSetAffixed affixed and IRibbonIndex ribbons))
+            throw new NotSupportedException("This Pokémon format cannot display an affixed ribbon or mark.");
+        if (ribbonIndex < AffixedRibbon.None || ribbonIndex > AffixedRibbon.Max)
+            throw new ArgumentOutOfRangeException(nameof(ribbonIndex));
+        if (ribbonIndex != AffixedRibbon.None && !ribbons.GetRibbon(ribbonIndex))
+            throw new ArgumentException("A Pokémon can only display a ribbon or mark it already owns.", nameof(ribbonIndex));
+
+        affixed.AffixedRibbon = (sbyte)ribbonIndex;
+        StoreEntity(box, slot, entity);
+    }
+
+    private static string GetRibbonDisplayName(RibbonStrings strings, RibbonIndex index)
+    {
+        var id = $"Ribbon{index}";
+        return strings.GetNameSafe(id, out var name) ? name : HumanizeRibbonName(id);
+    }
+
     private static string HumanizeRibbonName(string id)
     {
         var text = id.StartsWith("Ribbon", StringComparison.Ordinal) ? id[6..] : id;
@@ -1166,6 +1216,212 @@ public sealed class SaveEngineSession : ISaveEngineSession
         return count;
     }
 
+    public IReadOnlyList<CountedEntry> GetPokeBeans()
+    {
+        ThrowIfDisposed();
+        if (_save is not SAV7 sav) return [];
+
+        var names = ResortSave7.GetBeanIndexNames();
+        var beans = new List<CountedEntry>(names.Length);
+        for (var i = 0; i < names.Length; i++)
+            beans.Add(new CountedEntry(i, names[i], sav.ResortSave.GetPokebeanCount(i), byte.MaxValue));
+        return beans;
+    }
+
+    public int SetPokeBeanCount(int index, int count)
+    {
+        ThrowIfDisposed();
+        if (_save is not SAV7 sav)
+            throw new NotSupportedException("This game has no Poké Pelago Bean storage.");
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)index, (uint)ResortSave7.BEANS_MAX);
+
+        sav.ResortSave.SetPokebeanCount(index, count);
+        return sav.ResortSave.GetPokebeanCount(index);
+    }
+
+    public IReadOnlyList<UndergroundItem> GetGrandUndergroundItems()
+    {
+        ThrowIfDisposed();
+        if (_save is not SAV8BS sav) return [];
+
+        // This BDSP-specific table includes spheres, statues, and pedestals, which do
+        // not exist in the normal Bag item-name table.
+        var names = Util.GetStringList("text_ug_item_en");
+        return sav.Underground.ReadItems()
+            .Where(item => item.Type != UgItemType.None)
+            .Select(item => new UndergroundItem(
+                item.Index,
+                (uint)item.Index < (uint)names.Length && !string.IsNullOrWhiteSpace(names[item.Index])
+                    ? names[item.Index]
+                    : $"Underground item {item.Index}",
+                item.Type.ToString(),
+                Math.Clamp(item.Count, 0, item.MaxValue),
+                item.MaxValue))
+            .ToList();
+    }
+
+    public int SetGrandUndergroundItemCount(int itemId, int count)
+    {
+        ThrowIfDisposed();
+        if (_save is not SAV8BS sav)
+            throw new NotSupportedException("This game has no Grand Underground inventory.");
+
+        var items = sav.Underground.ReadItems();
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)itemId, (uint)items.Count);
+        var item = items[itemId];
+        if (item.Type == UgItemType.None)
+            throw new ArgumentOutOfRangeException(nameof(itemId), "This is not a Grand Underground item.");
+
+        item.Count = Math.Clamp(count, 0, item.MaxValue);
+        sav.Underground.WriteItems(items);
+        return item.Count;
+    }
+
+    // ── Day Care / Nursery ─────────────────────────────────────────────────
+
+    public DaycareInfo GetDaycare()
+    {
+        ThrowIfDisposed();
+        var facilities = GetDaycareFacilities();
+        if (facilities.Count == 0)
+            return new DaycareInfo(false, []);
+
+        var result = new List<DaycareFacility>(facilities.Count);
+        for (var facilityIndex = 0; facilityIndex < facilities.Count; facilityIndex++)
+        {
+            var facility = facilities[facilityIndex];
+            var slots = new List<DaycareSlot>(facility.DaycareSlotCount);
+            for (var slot = 0; slot < facility.DaycareSlotCount; slot++)
+            {
+                var occupied = facility.IsDaycareOccupied(slot);
+                if (!occupied)
+                {
+                    slots.Add(new DaycareSlot(slot, false, string.Empty, string.Empty, 0, null));
+                    continue;
+                }
+
+                var entity = _save.GetStoredSlot(facility.GetDaycareSlot(slot).Span);
+                slots.Add(new DaycareSlot(slot, entity.Species != 0,
+                    entity.Species == 0 ? string.Empty : SpeciesName.GetSpeciesName(entity.Species, (int)LanguageID.English),
+                    entity.Species == 0 ? string.Empty : entity.Nickname,
+                    entity.Species == 0 ? 0 : entity.CurrentLevel,
+                    facility is IDaycareExperience experience ? experience.GetDaycareEXP(slot) : null));
+            }
+
+            result.Add(new DaycareFacility(
+                facilities.Count == 1 ? "Day Care" : $"Day Care {facilityIndex + 1}",
+                facility is IDaycareEggState egg && egg.IsEggAvailable,
+                slots));
+        }
+        return new DaycareInfo(true, result);
+    }
+
+    public DaycareWithdrawal WithdrawDaycareToFirstEmptyBox(int facilityIndex, int slot)
+    {
+        ThrowIfDisposed();
+        var facilities = GetDaycareFacilities();
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)facilityIndex, (uint)facilities.Count);
+        var facility = facilities[facilityIndex];
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)slot, (uint)facility.DaycareSlotCount);
+        if (!facility.IsDaycareOccupied(slot))
+            throw new InvalidOperationException("That Day Care slot is empty.");
+
+        var entity = _save.GetStoredSlot(facility.GetDaycareSlot(slot).Span);
+        if (entity.Species == 0)
+            throw new InvalidOperationException("That Day Care slot contains no valid Pokémon.");
+        if (!TryGetFirstEmptyBoxSlot(out var destinationBox, out var destinationSlot))
+            throw new InvalidOperationException("Every PC box is full. Free a box slot before withdrawing this Pokémon.");
+
+        // The entity is already native to this save. Suppress import-side dex, record,
+        // and handler changes; this is the same operation as withdrawing in-game.
+        _save.SetBoxSlotAtIndex(entity, destinationBox, destinationSlot, EntityImportSettings.None);
+
+        // Implementations differ: some have an occupied flag, some infer it from the
+        // entity, and some retain party-format padding. Clearing the supplied slot first
+        // is the common invariant, then the format-specific flag is safely cleared.
+        facility.GetDaycareSlot(slot).Span.Clear();
+        facility.SetDaycareOccupied(slot, false);
+        return new DaycareWithdrawal(destinationBox, destinationSlot,
+            SpeciesName.GetSpeciesName(entity.Species, (int)LanguageID.English));
+    }
+
+    private List<IDaycareStorage> GetDaycareFacilities() => _save switch
+    {
+        IDaycareMulti multi => Enumerable.Range(0, multi.DaycareCount).Select(index => multi[index]).ToList(),
+        IDaycareStorage storage => [storage],
+        _ => [],
+    };
+
+    private bool TryGetFirstEmptyBoxSlot(out int box, out int slot)
+    {
+        for (box = 0; box < _save.BoxCount; box++)
+        {
+            for (slot = 0; slot < _save.BoxSlotCount; slot++)
+            {
+                if (_save.GetBoxSlotAtIndex(box, slot).Species == 0)
+                    return true;
+            }
+        }
+        box = slot = -1;
+        return false;
+    }
+
+    // ── Fashion ────────────────────────────────────────────────────────────
+
+    public bool SupportsLegalFashionUnlock => _save is SAV8SWSH;
+
+    public void UnlockAllLegalFashion()
+    {
+        ThrowIfDisposed();
+        if (_save is not SAV8SWSH save)
+            throw new NotSupportedException("Legal wardrobe unlocks are currently supported for Pokémon Sword and Shield only.");
+        save.Fashion.UnlockAllLegal();
+    }
+
+    // ── Mystery Gift inbox ────────────────────────────────────────────────
+
+    public MysteryGiftInbox GetMysteryGiftInbox()
+    {
+        ThrowIfDisposed();
+        if (_save is not IMysteryGiftStorageProvider provider)
+            return new MysteryGiftInbox(false, []);
+
+        var storage = provider.MysteryGiftStorage;
+        var cards = new List<MysteryGiftCard>(storage.GiftCountMax);
+        for (var slot = 0; slot < storage.GiftCountMax; slot++)
+        {
+            var gift = storage.GetMysteryGift(slot);
+            if (gift.IsEmpty)
+                continue;
+
+            var title = gift.CardTitle.Replace('\u3000', ' ').Trim();
+            if (string.IsNullOrWhiteSpace(title))
+                title = $"Card {slot + 1}";
+            cards.Add(new MysteryGiftCard(
+                slot,
+                gift.CardID,
+                title,
+                gift.Type,
+                gift.IsEntity,
+                gift.Species,
+                gift.LevelMin,
+                gift.GiftUsed,
+                gift is WR7));
+        }
+        return new MysteryGiftInbox(true, cards);
+    }
+
+    public TrainerRecordsInfo GetTrainerRecords()
+    {
+        ThrowIfDisposed();
+        if (_save is not ITrainerStatRecord records)
+            return new TrainerRecordsInfo(false, []);
+        var entries = new TrainerRecordEntry[records.RecordCount];
+        for (var i = 0; i < entries.Length; i++)
+            entries[i] = new TrainerRecordEntry(i, records.GetRecord(i), records.GetRecordMax(i));
+        return new TrainerRecordsInfo(true, entries);
+    }
+
     public MetInfo GetMetInfo(int box, int slot)
     {
         ThrowIfDisposed();
@@ -1335,9 +1591,20 @@ public sealed class SaveEngineSession : ISaveEngineSession
             slots.Add(new NamedChoice(i, $"{label} · {name}"));
         }
 
+        IReadOnlyList<int> awakening = e is IAwakened av
+            ? [av.AV_HP, av.AV_ATK, av.AV_DEF, av.AV_SPA, av.AV_SPD, av.AV_SPE]
+            : [];
+        IReadOnlyList<int> ganbaru = e is IGanbaru gv
+            ? [gv.GV_HP, gv.GV_ATK, gv.GV_DEF, gv.GV_SPA, gv.GV_SPD, gv.GV_SPE]
+            : [];
+        IReadOnlyList<int> ganbaruMaximums = e is IGanbaru
+            ? Enumerable.Range(0, 6).Select(e.GetMaxGanbaru).Select(value => (int)value).ToArray()
+            : [];
+
         return new PotentialInfo(
             supportsTera, teraType, TypeName(teraType), supportsTera ? TypeName((int)((ITeraType)e).TeraTypeOriginal) : "",
-            teraLocked, supportsHt, trained, personal.AbilityCount > 1, abilitySlot, slots);
+            teraLocked, supportsHt, trained, personal.AbilityCount > 1, abilitySlot, slots,
+            e is IAwakened, awakening, e is IGanbaru, ganbaru, ganbaruMaximums);
     }
 
     public void ApplyPotentialEdit(int box, int slot, PotentialEdit edit)
@@ -1377,6 +1644,28 @@ public sealed class SaveEngineSession : ISaveEngineSession
                 throw new InvalidOperationException("This species has no ability in that slot.");
             e.RefreshAbility(abilitySlot);
         }
+        if (edit.Awakening is { } awakening)
+        {
+            if (e is not IAwakened av || awakening.Count != 6)
+                throw new InvalidOperationException("This format has no Awakening Value data.");
+            av.AV_HP = ClampByte(Math.Min(awakening[0], AwakeningUtil.AwakeningMax));
+            av.AV_ATK = ClampByte(Math.Min(awakening[1], AwakeningUtil.AwakeningMax));
+            av.AV_DEF = ClampByte(Math.Min(awakening[2], AwakeningUtil.AwakeningMax));
+            av.AV_SPA = ClampByte(Math.Min(awakening[3], AwakeningUtil.AwakeningMax));
+            av.AV_SPD = ClampByte(Math.Min(awakening[4], AwakeningUtil.AwakeningMax));
+            av.AV_SPE = ClampByte(Math.Min(awakening[5], AwakeningUtil.AwakeningMax));
+        }
+        if (edit.Ganbaru is { } ganbaru)
+        {
+            if (e is not IGanbaru gv || ganbaru.Count != 6)
+                throw new InvalidOperationException("This format has no Grit Effort Level data.");
+            gv.GV_HP = (byte)Math.Clamp(ganbaru[0], 0, e.GetMaxGanbaru(0));
+            gv.GV_ATK = (byte)Math.Clamp(ganbaru[1], 0, e.GetMaxGanbaru(1));
+            gv.GV_DEF = (byte)Math.Clamp(ganbaru[2], 0, e.GetMaxGanbaru(2));
+            gv.GV_SPA = (byte)Math.Clamp(ganbaru[3], 0, e.GetMaxGanbaru(3));
+            gv.GV_SPD = (byte)Math.Clamp(ganbaru[4], 0, e.GetMaxGanbaru(4));
+            gv.GV_SPE = (byte)Math.Clamp(ganbaru[5], 0, e.GetMaxGanbaru(5));
+        }
 
         e.RefreshChecksum();
         SetEntityCore(box, slot, e);
@@ -1392,6 +1681,279 @@ public sealed class SaveEngineSession : ISaveEngineSession
         choices.Add(new NamedChoice(TeraTypeUtil.Stellar, types[TeraTypeUtil.StellarTypeDisplayStringIndex]));
         return choices;
     }
+
+    // ── Move details: PP, PP Ups, and relearn slots ──
+
+    public MoveDetails GetMoveDetails(int box, int slot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var e = GetEntityCore(box, slot);
+        if (e.Species == 0) throw new InvalidOperationException("Cannot edit an empty slot.");
+
+        ReadOnlySpan<ushort> moves = [e.Move1, e.Move2, e.Move3, e.Move4];
+        ReadOnlySpan<int> pp = [e.Move1_PP, e.Move2_PP, e.Move3_PP, e.Move4_PP];
+        ReadOnlySpan<int> ups = [e.Move1_PPUps, e.Move2_PPUps, e.Move3_PPUps, e.Move4_PPUps];
+        var details = new MoveSlotDetail[4];
+        for (var i = 0; i < details.Length; i++)
+        {
+            var ppUps = Math.Clamp(ups[i], 0, 3);
+            var max = moves[i] == 0 ? 0 : e.GetMovePP(moves[i], ppUps);
+            details[i] = new MoveSlotDetail(moves[i], Math.Clamp(pp[i], 0, max), max, ppUps);
+        }
+
+        // Relearn slots were introduced in Gen 6. PKM exposes virtual no-op properties
+        // for older formats, therefore the format gate prevents a misleading editor there.
+        var supportsRelearn = e.Format >= 6;
+        return new MoveDetails(details, supportsRelearn,
+            supportsRelearn ? e.RelearnMoves.Select(move => (int)move).ToArray() : []);
+    }
+
+    public void ApplyMoveDetails(int box, int slot, MoveDetailsEdit edit)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(edit);
+        ValidateCoordinates(box, slot);
+        var e = GetEntityCore(box, slot);
+        if (e.Species == 0) throw new InvalidOperationException("Cannot edit an empty slot.");
+
+        if (edit.PPUps is { } ppUps)
+        {
+            if (ppUps.Count != 4) throw new ArgumentException("PP Ups must contain four move slots.", nameof(edit));
+            SetPPUps(e, ppUps);
+        }
+        if (edit.PP is { } pp)
+        {
+            if (pp.Count != 4) throw new ArgumentException("PP must contain four move slots.", nameof(edit));
+            SetPP(e, pp);
+        }
+        if (edit.RelearnMoves is { } relearn)
+        {
+            if (relearn.Count != 4) throw new ArgumentException("Relearn moves must contain four slots.", nameof(edit));
+            if (e.Format < 6) throw new InvalidOperationException("This format has no relearn move data.");
+            e.SetRelearnMoves(relearn.Select(move => (ushort)Math.Clamp(move, 0, _save.MaxMoveID)).ToArray());
+        }
+
+        e.RefreshChecksum();
+        SetEntityCore(box, slot, e);
+    }
+
+    private static void SetPPUps(PKM e, IReadOnlyList<int> values)
+    {
+        var ups = values.Select(value => Math.Clamp(value, 0, 3)).ToArray();
+        if (e.Move1 == 0) ups[0] = 0;
+        if (e.Move2 == 0) ups[1] = 0;
+        if (e.Move3 == 0) ups[2] = 0;
+        if (e.Move4 == 0) ups[3] = 0;
+        e.Move1_PPUps = ups[0]; e.Move2_PPUps = ups[1]; e.Move3_PPUps = ups[2]; e.Move4_PPUps = ups[3];
+    }
+
+    private static void SetPP(PKM e, IReadOnlyList<int> values)
+    {
+        e.Move1_PP = ClampPP(e, e.Move1, values[0], e.Move1_PPUps);
+        e.Move2_PP = ClampPP(e, e.Move2, values[1], e.Move2_PPUps);
+        e.Move3_PP = ClampPP(e, e.Move3, values[2], e.Move3_PPUps);
+        e.Move4_PP = ClampPP(e, e.Move4, values[3], e.Move4_PPUps);
+    }
+
+    private static int ClampPP(PKM e, ushort move, int value, int ppUps) => move == 0
+        ? 0
+        : Math.Clamp(value, 0, e.GetMovePP(move, Math.Clamp(ppUps, 0, 3)));
+
+    // ── Legends: Arceus Move Shop ──
+
+    public MoveShopInfo GetMoveShop(int box, int slot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var e = GetEntityCore(box, slot);
+        if (e.Species == 0) throw new InvalidOperationException("Cannot edit an empty slot.");
+        if (e is not PA8 shop)
+            return new MoveShopInfo(false, []);
+
+        var permit = shop.Permit;
+        var entries = new List<MoveShopEntry>(permit.RecordCountUsed);
+        for (var index = 0; index < permit.RecordCountUsed; index++)
+        {
+            if (!permit.IsRecordPermitted(index))
+                continue;
+            entries.Add(new MoveShopEntry(index, permit.RecordPermitIndexes[index],
+                shop.GetPurchasedRecordFlag(index), shop.GetMasteredRecordFlag(index)));
+        }
+        return new MoveShopInfo(true, entries);
+    }
+
+    public void ApplyMoveShopEdit(int box, int slot, MoveShopEdit edit)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(edit);
+        ValidateCoordinates(box, slot);
+        var e = GetEntityCore(box, slot);
+        if (e.Species == 0) throw new InvalidOperationException("Cannot edit an empty slot.");
+        if (e is not PA8 shop)
+            throw new InvalidOperationException("This format has no Legends: Arceus Move Shop data.");
+
+        var permit = shop.Permit;
+        if ((uint)edit.Index >= (uint)permit.RecordCountUsed || !permit.IsRecordPermitted(edit.Index))
+            throw new ArgumentOutOfRangeException(nameof(edit), "The requested move is not available from this Pokémon's Move Shop list.");
+
+        if (edit.Purchased is { } purchased)
+            shop.SetPurchasedRecordFlag(edit.Index, purchased);
+        if (edit.Mastered is { } mastered)
+            shop.SetMasteredRecordFlag(edit.Index, mastered);
+
+        e.RefreshChecksum();
+        SetEntityCore(box, slot, e);
+    }
+
+    // ── Cosmetics: visual, care, and display metadata (format-gated) ──
+
+    private static readonly string[] MarkingNames = ["Circle", "Triangle", "Square", "Heart", "Star", "Diamond"];
+
+    public CosmeticInfo GetCosmetics(int box, int slot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var e = GetEntityCore(box, slot);
+        if (e.Species == 0) throw new InvalidOperationException("Cannot edit an empty slot.");
+
+        var markings = new List<CosmeticMarking>();
+        switch (e)
+        {
+            case IAppliedMarkings<bool> binary:
+                for (var i = 0; i < binary.MarkingCount; i++)
+                    markings.Add(new CosmeticMarking(MarkingName(i), binary.GetMarking(i) ? 1 : 0, 1));
+                break;
+            case IAppliedMarkings<MarkingColor> colored:
+                for (var i = 0; i < colored.MarkingCount; i++)
+                    markings.Add(new CosmeticMarking(MarkingName(i), (int)colored.GetMarking(i), 2));
+                break;
+        }
+
+        IReadOnlyList<int> contests = e is IContestStats contest
+            ? [contest.ContestCool, contest.ContestBeauty, contest.ContestCute, contest.ContestSmart, contest.ContestTough, contest.ContestSheen]
+            : [];
+        var size = e as IScaledSize;
+        var scale = e as IScaledSize3;
+        var affection = e as IAffection;
+        var food = e as IFullnessEnjoyment;
+        var favorite = e as IFavorite;
+        var dynamax = e as IDynamaxLevel;
+        var alpha = e as IAlpha;
+        var sociability = e as ISociability;
+
+        return new CosmeticInfo(
+            markings,
+            contests,
+            size is not null, size?.HeightScalar ?? 0, size?.WeightScalar ?? 0, scale is not null, scale?.Scale ?? 0,
+            affection is not null, affection?.OriginalTrainerAffection ?? 0, affection?.HandlingTrainerAffection ?? 0,
+            food is not null, food?.Fullness ?? 0, food?.Enjoyment ?? 0,
+            favorite is not null, favorite?.IsFavorite ?? false,
+            dynamax is not null, dynamax?.DynamaxLevel ?? 0, (e as IGigantamax)?.CanGigantamax ?? false,
+            alpha is not null, alpha?.IsAlpha ?? false,
+            sociability is not null, sociability?.Sociability ?? 0);
+    }
+
+    public void ApplyCosmeticEdit(int box, int slot, CosmeticEdit edit)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(edit);
+        ValidateCoordinates(box, slot);
+        var e = GetEntityCore(box, slot);
+        if (e.Species == 0) throw new InvalidOperationException("Cannot edit an empty slot.");
+
+        if (edit.Markings is { } markings)
+        {
+            switch (e)
+            {
+                case IAppliedMarkings<bool> binary when markings.Count == binary.MarkingCount:
+                    for (var i = 0; i < markings.Count; i++) binary.SetMarking(i, markings[i] != 0);
+                    break;
+                case IAppliedMarkings<MarkingColor> colored when markings.Count == colored.MarkingCount:
+                    for (var i = 0; i < markings.Count; i++) colored.SetMarking(i, (MarkingColor)Math.Clamp(markings[i], 0, 2));
+                    break;
+                default:
+                    throw new InvalidOperationException("These markings do not match this Pokémon format.");
+            }
+        }
+        if (edit.ContestStats is { } contests)
+        {
+            if (e is not IContestStats contest || contests.Count != 6)
+                throw new InvalidOperationException("This format has no contest stat data.");
+            contest.ContestCool = ClampByte(contests[0]);
+            contest.ContestBeauty = ClampByte(contests[1]);
+            contest.ContestCute = ClampByte(contests[2]);
+            contest.ContestSmart = ClampByte(contests[3]);
+            contest.ContestTough = ClampByte(contests[4]);
+            contest.ContestSheen = ClampByte(contests[5]);
+        }
+        if (edit.HeightScalar is { } height)
+        {
+            if (e is not IScaledSize size) throw new InvalidOperationException("This format has no size data.");
+            size.HeightScalar = ClampByte(height);
+        }
+        if (edit.WeightScalar is { } weight)
+        {
+            if (e is not IScaledSize size) throw new InvalidOperationException("This format has no size data.");
+            size.WeightScalar = ClampByte(weight);
+        }
+        if (edit.Scale is { } scale)
+        {
+            if (e is not IScaledSize3 sized) throw new InvalidOperationException("This format has no scale data.");
+            sized.Scale = ClampByte(scale);
+        }
+        if (edit.OriginalTrainerAffection is { } otAffection)
+        {
+            if (e is not IAffection affection) throw new InvalidOperationException("This format has no affection data.");
+            affection.OriginalTrainerAffection = ClampByte(otAffection);
+        }
+        if (edit.HandlingTrainerAffection is { } htAffection)
+        {
+            if (e is not IAffection affection) throw new InvalidOperationException("This format has no affection data.");
+            affection.HandlingTrainerAffection = ClampByte(htAffection);
+        }
+        if (edit.Fullness is { } fullness)
+        {
+            if (e is not IFullnessEnjoyment food) throw new InvalidOperationException("This format has no care data.");
+            food.Fullness = ClampByte(fullness);
+        }
+        if (edit.Enjoyment is { } enjoyment)
+        {
+            if (e is not IFullnessEnjoyment food) throw new InvalidOperationException("This format has no care data.");
+            food.Enjoyment = ClampByte(enjoyment);
+        }
+        if (edit.IsFavorite is { } isFavorite)
+        {
+            if (e is not IFavorite favorite) throw new InvalidOperationException("This format has no favorite marker.");
+            favorite.IsFavorite = isFavorite;
+        }
+        if (edit.DynamaxLevel is { } dynamaxLevel)
+        {
+            if (e is not IDynamaxLevel dynamax) throw new InvalidOperationException("This format has no Dynamax data.");
+            dynamax.DynamaxLevel = (byte)Math.Clamp(dynamaxLevel, 0, 10);
+        }
+        if (edit.CanGigantamax is { } gigantamax)
+        {
+            if (e is not IGigantamax gmax) throw new InvalidOperationException("This format has no Gigantamax data.");
+            gmax.CanGigantamax = gigantamax;
+        }
+        if (edit.IsAlpha is { } isAlpha)
+        {
+            if (e is not IAlpha alpha) throw new InvalidOperationException("This format has no Alpha data.");
+            alpha.IsAlpha = isAlpha;
+        }
+        if (edit.Sociability is { } sociability)
+        {
+            if (e is not ISociability social) throw new InvalidOperationException("This format has no sociability data.");
+            social.Sociability = sociability;
+        }
+
+        e.RefreshChecksum();
+        SetEntityCore(box, slot, e);
+    }
+
+    private static string MarkingName(int index) => (uint)index < (uint)MarkingNames.Length ? MarkingNames[index] : $"Mark {index + 1}";
+    private static byte ClampByte(int value) => (byte)Math.Clamp(value, byte.MinValue, byte.MaxValue);
 
     private int[] GetTypes(ushort species, byte form)
     {
