@@ -323,7 +323,7 @@ public sealed class BankPage : ContentPage, IPadHandler
                 var overlay = LoadingOverlay.Show(_hostGrid, "READING THE SET…", "The offline legalizer is at work.");
                 try
                 {
-                    var generated = await Task.Run(() => legalizer.GenerateDataFromShowdown(session!, text));
+                    var generated = await Task.Run(() => legalizer.GenerateDataFromShowdown(session!, text, Services.HaXMode.IsOn));
                     if (generated is null) { _boxViewModel.Status = "Could not build a legal mon from that set."; return; }
                     Deposit(generated);
                 }
