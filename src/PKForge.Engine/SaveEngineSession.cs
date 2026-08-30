@@ -15,7 +15,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public SaveEngineSession(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
         _originalBytes = bytes.ToArray();
-        if (!SaveUtil.TryGetSaveFile(_originalBytes, out var save) || save is null)
+        if (!SaveParser.TryGetSaveFile(_originalBytes, out var save) || save is null)
             throw new InvalidDataException("The selected bytes are not a recognized save file.");
         _save = save;
         Snapshot = BuildSnapshot(displayName);
@@ -856,6 +856,9 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         switch (_save)
         {
+            case SAV8BSLuminescent lumi:
+                lumi.LumiZukan.SetEntry(species, seen, caught);
+                return;
             case SAV5 { Zukan: { } z5 }:
                 if (seen)
                 {

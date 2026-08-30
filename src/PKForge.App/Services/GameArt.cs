@@ -13,7 +13,7 @@ public static class GameArt
     {
         const string prefix = "Pokémon ";
         var name = gameLabel.StartsWith(prefix, StringComparison.Ordinal) ? gameLabel[prefix.Length..] : gameLabel;
-        var slug = string.Concat(name.ToLowerInvariant().Select(c => char.IsAscii(c) && char.IsLetterOrDigit(c) ? c : '-'));
+        var slug = GetAssetSlug(name);
         var cache = Path.Combine(FileSystem.CacheDirectory, $"{folder}-{slug}.png");
         if (File.Exists(cache)) return cache;
         try
@@ -28,6 +28,11 @@ public static class GameArt
             return null; // no bundled art for this game
         }
     }
+
+    private static string GetAssetSlug(string name) => name switch
+    {
+        _ => string.Concat(name.ToLowerInvariant().Select(c => char.IsAscii(c) && char.IsLetterOrDigit(c) ? c : '-')),
+    };
 }
 
 /// <summary>
