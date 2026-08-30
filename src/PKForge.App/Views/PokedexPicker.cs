@@ -95,6 +95,9 @@ public sealed class PokedexPicker : IPadHandler
         _all = new List<DexEntry>(data.SpeciesNames.Count);
         for (var id = 1; id < data.SpeciesNames.Count; id++)
         {
+            // Only what this save format can hold: a Gen 7 game never gains Gen 8+
+            // species, whatever the cartridge mod advertises.
+            if (id > session.MaxSpeciesId) break;
             if (data.SpeciesNames[id].Length == 0) continue;
             var icon = IconCachePath(id);
             var genIndex = Array.FindIndex(GenRanges, r => id >= r.First && id <= r.Last);

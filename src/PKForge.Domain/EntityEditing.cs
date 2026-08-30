@@ -28,6 +28,10 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Type ids (0-17) of a species' base form in the open save's game.</summary>
     IReadOnlyList<int> GetSpeciesTypes(int species);
 
+    /// <summary>Highest species id this save format can store. Species pickers stay
+    /// inside it: no mod extends a save's species table.</summary>
+    int MaxSpeciesId { get; }
+
     /// <summary>Base stats of a species' base form (HP/Atk/Def/SpA/SpD/Spe).</summary>
     BaseStats GetBaseStats(int species);
 

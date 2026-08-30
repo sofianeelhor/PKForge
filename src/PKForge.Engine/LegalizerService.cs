@@ -41,6 +41,11 @@ public sealed class LegalizerService : ILegalizerService
         var set = new ShowdownSet(showdownText);
         if (set.Species == 0)
             return new GenerationOutcome(false, "Could not read the set (no species).");
+        // No ROM hack can extend a save format's species table; reject with the real
+        // reason instead of a misleading legalizer failure.
+        if (set.Species > save.MaxSpeciesID)
+            return new GenerationOutcome(false,
+                $"{GameName(save)} cannot store this Pokémon; its species does not exist in this generation.");
 
         var result = GenerateLegal(engineSession, set);
         if (result.Status is not LegalizationResult.Regenerated)
@@ -66,7 +71,9 @@ public sealed class LegalizerService : ILegalizerService
         {
             save.SetBoxSlotAtIndex(created, box, slot);
         }
-        return new GenerationOutcome(true, analysis.Valid ? "Generated - legal." : "Generated (legality imperfect).");
+        return new GenerationOutcome(true, analysis.Valid
+            ? save.IsFromTrainer(created) ? "Generated - legal." : "Generated - legal (event OT)."
+            : "Generated (legality imperfect).");
     }
 
     public GenerationOutcome LegalizeSlot(ISaveEngineSession session, int box, int slot)
@@ -236,18 +243,29 @@ public sealed class LegalizerService : ILegalizerService
                 // legal fallback that still carries the full modern trainer identity.
                 APILegality.PriorityOrder = [generationSave.Version, .. eligible.Where(z => z != generationSave.Version)];
                 var native = generationSave.GetLegalFromSet(set);
-                var nativeOwned = TryOwn(session, native);
-                if (nativeOwned && save.IsFromTrainer(native.Created))
-                    return native;
+                var nativeOwned = TryOwn(session, native, out var ownedNative);
+                if (nativeOwned && save.IsFromTrainer(ownedNative.Created))
+                    return ownedNative;
 
                 // A Gen 1/2 origin cannot carry a modern SID, and oldest-first search
                 // steers transfer species toward ordinary catchable encounters instead
                 // of fixed-OT distributions.
                 APILegality.PriorityOrder = [.. eligible.OrderBy(z => z)];
                 var transfer = generationSave.GetLegalFromSet(set);
-                if (TryOwn(session, transfer))
+                if (TryOwn(session, transfer, out var ownedTransfer))
+                    return ownedTransfer;
+
+                // Event-only species (Marshadow, Zeraora, Diancie...) have no
+                // player-OT origin in any version: their only legal form is the
+                // distribution itself. Keep the authentic event OT rather than
+                // failing a request the legalizer actually satisfied.
+                if (nativeOwned)
+                    return ownedNative;
+                if (native.Status is LegalizationResult.Regenerated)
+                    return native;
+                if (transfer.Status is LegalizationResult.Regenerated)
                     return transfer;
-                return nativeOwned ? native : native with { Status = LegalizationResult.Failed };
+                return native with { Status = LegalizationResult.Failed };
             }
             finally
             {
@@ -257,8 +275,22 @@ public sealed class LegalizerService : ILegalizerService
         }
     }
 
-    private static bool TryOwn(SaveEngineSession session, APILegality.AsyncLegalizationResult result) =>
-        result.Status is LegalizationResult.Regenerated && session.MakeOwned(result.Created, null, out _);
+    private static bool TryOwn(SaveEngineSession session, APILegality.AsyncLegalizationResult result,
+        out APILegality.AsyncLegalizationResult owned)
+    {
+        // The stamp mutates in place; work on a clone so a rejected stamp (fixed-OT
+        // event mon, or a rewrite that turns out illegal) leaves the pristine
+        // legal result usable for the event-OT fallback above.
+        owned = result with { Created = result.Created.Clone() };
+        return owned.Status is LegalizationResult.Regenerated && session.MakeOwned(owned.Created, null, out _);
+    }
+
+    private static string GameName(SaveFile save)
+    {
+        var index = (int)save.Version;
+        var names = GameInfo.GetStrings("en").gamelist;
+        return index > 0 && index < names.Length && names[index].Length > 0 ? names[index] : save.Version.ToString();
+    }
 
     private static PKM ConvertForSave(SaveFile save, PKM created)
     {
