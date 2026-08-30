@@ -68,7 +68,7 @@ public static class AboutPopup
             {
                 Kit.HeaderBar("ABOUT PKFORGE"),
                 new Label { Text = "PKFORGE", FontSize = 20, FontAttributes = FontAttributes.Bold, FontFamily = DsChrome.PixelFont, TextColor = UiTokens.Ink0, HorizontalTextAlignment = TextAlignment.Center },
-                Small("OPEN-SOURCE SAVE MANAGER & BANK"),
+                Small("Pokémon save manager and bank"),
                 Row("VERSION", diagnostic ? $"v{version} · DIAGNOSTIC" : $"v{version}"),
                 Row("DEVELOPED BY", "@22sh"),
                 Row("LOGO BY", "@spritedmistery"),
