@@ -862,7 +862,11 @@ public sealed class SaveEngineSession : ISaveEngineSession
         for (var attempt = 0; attempt < 5_000_000; attempt++)
         {
             var pid = rnd.Rand32();
-            if (pid % 25 != (byte)wanted) continue;
+            // Sample straight from the wanted nature's residue class: the shiny
+            // constraint (1/8192) is then the only rare condition left, so a shiny
+            // Gen 3/4 mon can never exhaust the budget by pure chance.
+            while (pid % 25 != (byte)wanted)
+                pid = rnd.Rand32();
             if ((pid & 1) != abilityBit) continue;
             if (unown && EntityPID.GetUnownForm3(pid) != work.Form) continue;
             if (!singleGender && EntityGender.GetFromPIDAndRatio(pid, personal.Gender) != gender) continue;
