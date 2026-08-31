@@ -6,15 +6,19 @@ namespace PKForge.App.Services;
 /// <summary>Bundled SteamGridDB art (fetched at build time), keyed by PKHeX game-name slug.</summary>
 public static class GameArt
 {
+    // Bumped whenever bundled art changes so on-device caches never serve stale images.
+    private const string AssetVersion = "v5";
+
     public static Task<string?> GetIconAsync(string gameLabel) => GetAsync("gameart", gameLabel);
     public static Task<string?> GetHeroAsync(string gameLabel) => GetAsync("gamehero", gameLabel);
+    public static Task<string?> GetLogoAsync(string gameLabel) => GetAsync("gamelogo", gameLabel);
 
     private static async Task<string?> GetAsync(string folder, string gameLabel)
     {
         const string prefix = "Pokémon ";
         var name = gameLabel.StartsWith(prefix, StringComparison.Ordinal) ? gameLabel[prefix.Length..] : gameLabel;
         var slug = GetAssetSlug(name);
-        var cache = Path.Combine(FileSystem.CacheDirectory, $"{folder}-{slug}.png");
+        var cache = Path.Combine(FileSystem.CacheDirectory, $"{folder}-{AssetVersion}-{slug}.png");
         if (File.Exists(cache)) return cache;
         try
         {

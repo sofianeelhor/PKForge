@@ -10,8 +10,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationId>org.pkforge.app</ApplicationId>
     <ApplicationTitle>PKForge</ApplicationTitle>
-    <ApplicationVersion>163</ApplicationVersion>
-    <ApplicationDisplayVersion>1.6.3</ApplicationDisplayVersion>
+    <ApplicationVersion>200</ApplicationVersion>
+    <ApplicationDisplayVersion>2.0.0</ApplicationDisplayVersion>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
   </PropertyGroup>
   <PropertyGroup Condition="'$(DiagnosticBuild)' == 'true'">
@@ -35,8 +35,8 @@
   </ItemGroup>
   <ItemGroup>
     <AndroidLinkDescription Include="Platforms/Android/linker.xml" />
-    <MauiIcon Include="Resources/AppIcon/pkforge.png" Color="#E9ECF6" />
-    <MauiSplashScreen Include="Resources/Splash/splash.png" Color="#E9ECF6" BaseSize="192,192" />
+    <MauiIcon Include="Resources/AppIcon/pkforge.png" Color="#14121D" />
+    <MauiSplashScreen Include="Resources/Splash/splash.png" Color="#14121D" BaseSize="180,180" />
     <MauiFont Include="Resources/Fonts/*.ttf" />
   </ItemGroup>
   <ItemGroup>
@@ -58,6 +58,7 @@
     <!-- Game icons + hero art fetched once at build time from SteamGridDB (no key ships in the app). -->
     <MauiAsset Include="Resources/GameArt/*.png" LogicalName="gameart/%(Filename)%(Extension)" />
     <MauiAsset Include="Resources/GameHero/*.png" LogicalName="gamehero/%(Filename)%(Extension)" />
+    <MauiAsset Include="Resources/GameLogo/*.png" LogicalName="gamelogo/%(Filename)%(Extension)" />
     <!-- PKSM-derived pixel chrome (GPL-3, see Resources/UI/ATTRIBUTION.md). -->
     <MauiAsset Include="Resources/UI/pksm/*.png" LogicalName="ui/pksm/%(Filename)%(Extension)" />
   </ItemGroup>

@@ -56,10 +56,15 @@ public partial class BackupHistoryViewModel : ObservableObject
             IsBusy = true;
             Status = $"Restoring {backup.BackupId[..13]}…";
             var bytes = await _backups.ReadAsync(backup.BackupId);
-            var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, bytes);
+            var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, bytes,
+                "Safety copy: the state right before this restore");
+            if (receipt.Changed)
+                _sessions.MarkWritten(session.Document.DocumentId, bytes);
             await _sessions.OpenAsync(session.Document);
             _boxBrowser.RefreshFromCurrentSession();
-            Status = $"Restored. Previous state kept as backup {receipt.BackupId[..13]}…";
+            Status = receipt.Changed
+                ? $"Restored. Previous state kept as restore point {receipt.BackupId[..13]}…"
+                : "This restore point matches the current state - nothing was written.";
             await LoadAsync();
         }
         catch (Exception error)

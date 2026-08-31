@@ -89,7 +89,7 @@ public sealed class DialogueBox : IPadHandler
         {
             var canvas = args.Surface.Canvas;
             canvas.Clear(SKColors.Transparent);
-            using var paint = new SKPaint { Color = Pksm.Paper, IsAntialias = false };
+            using var paint = new SKPaint { Color = Pksm.Ink, IsAntialias = false };
             using var path = new SKPath();
             var w = args.Info.Width;
             var h = args.Info.Height;

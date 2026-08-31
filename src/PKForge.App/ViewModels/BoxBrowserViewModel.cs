@@ -200,7 +200,10 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             var candidate = engineSession.Serialize();
 
             Status = "Validating, backing up, writing…";
-            var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate);
+            var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate,
+                $"Edit {EditorSubject(detail)} ({SlotLabel(detail.Box, detail.Slot)})");
+            if (receipt.Changed)
+                _sessions.MarkWritten(session.Document.DocumentId, candidate);
 
             var updated = engineSession.ReadEntity(detail.Box, detail.Slot);
             var askedAbility = ParseInt(EditAbility);
@@ -212,7 +215,9 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             OnPropertyChanged(nameof(VisibleSlots));
             SelectSlot(detail.Slot);
 
-            Status = $"Saved. Backup {receipt.BackupId[..Math.Min(13, receipt.BackupId.Length)]}… · {receipt.WrittenSha256[..8]}…";
+            Status = receipt.Changed
+                ? $"Saved. Restore point {ShortBackupId(receipt)} · {receipt.WrittenSha256[..8]}…"
+                : "Nothing changed - no write, no restore point.";
         }
         catch (Exception error)
         {
@@ -252,11 +257,14 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             Status = "Legalizer unavailable.";
             return Task.FromResult(false);
         }
-        return RunMutationAsync(session => operation(legalizer, session), slot);
+        var description = Selected is { IsEmpty: false } detail
+            ? $"Legalize {EditorSubject(detail)} ({SlotLabel(BoxIndex, slot)})"
+            : null;
+        return RunMutationAsync(session => operation(legalizer, session), slot, changeDescription: description);
     }
 
     /// <summary>Runs any slot mutation then commits it through the safe write path (validate → backup → atomic write).</summary>
-    public async Task<bool> RunMutationAsync(Func<ISaveEngineSession, GenerationOutcome> operation, int slot, bool refreshSlot = true)
+    public async Task<bool> RunMutationAsync(Func<ISaveEngineSession, GenerationOutcome> operation, int slot, bool refreshSlot = true, string? changeDescription = null)
     {
         var engineSession = _sessions.CurrentSession;
         var session = _sessions.Current;
@@ -277,7 +285,10 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             }
 
             var candidate = engineSession.Serialize();
-            var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate);
+            var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate,
+                changeDescription ?? outcome.Message);
+            if (receipt.Changed)
+                _sessions.MarkWritten(session.Document.DocumentId, candidate);
 
             if (refreshSlot)
             {
@@ -294,7 +305,9 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
                 OnPropertyChanged(nameof(VisibleSlots));
                 SelectSlot(slot);
             }
-            Status = $"{outcome.Message} · backup {receipt.BackupId[..Math.Min(13, receipt.BackupId.Length)]}";
+            Status = receipt.Changed
+                ? $"{outcome.Message} · restore point {ShortBackupId(receipt)}"
+                : $"{outcome.Message} Nothing changed - no write, no restore point.";
             return true;
         }
         catch (Exception error)
@@ -461,6 +474,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         var engineSession = _sessions.CurrentSession;
         var session = _sessions.Current;
         if (CarrySource is not { } source || engineSession is null || session is null) return;
+        var carried = CarriedSummary;
         var target = (Box: BoxIndex, Slot: SelectedSlot < 0 ? 0 : SelectedSlot);
         CarrySource = null;
         CarriedSummary = null;
@@ -475,7 +489,10 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             IsBusy = true;
             engineSession.MoveSlot(source.Box, source.Slot, target.Box, target.Slot);
             var candidate = engineSession.Serialize();
-            var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate);
+            var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate,
+                $"Move {(carried is { } summary ? summary.Nickname ?? $"#{summary.Species}" : "Pokémon")}: {SlotLabel(source.Box, source.Slot)} -> {SlotLabel(target.Box, target.Slot)}");
+            if (receipt.Changed)
+                _sessions.MarkWritten(session.Document.DocumentId, candidate);
 
             // Refresh both touched slots in the grid model.
             foreach (var (box, slot) in new[] { (source.Box, source.Slot), (target.Box, target.Slot) })
@@ -493,7 +510,9 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             }
             OnPropertyChanged(nameof(VisibleSlots));
             SelectSlot(target.Slot);
-            Status = $"MOVED · backup {receipt.BackupId[..Math.Min(13, receipt.BackupId.Length)]}";
+            Status = receipt.Changed
+                ? $"MOVED · restore point {ShortBackupId(receipt)}"
+                : "Nothing changed - no write, no restore point.";
         }
         catch (Exception error)
         {
@@ -543,6 +562,14 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
 
     private static int? ParseInt(string text) =>
         int.TryParse(text.Trim(), out var value) ? value : null;
+
+    private static string SlotLabel(int box, int slot) => box == -1 ? $"Party {slot + 1}" : $"Box {box + 1}, Slot {slot + 1}";
+
+    private static string EditorSubject(Domain.EntityDetail detail) =>
+        string.IsNullOrWhiteSpace(detail.Nickname) ? "Pokémon" : detail.Nickname;
+
+    private static string ShortBackupId(Domain.SaveWriteReceipt receipt) =>
+        receipt.BackupId.Length == 0 ? "(none)" : $"{receipt.BackupId[..Math.Min(13, receipt.BackupId.Length)]}…";
 
     private static int[]? ParseIntList(string text)
     {

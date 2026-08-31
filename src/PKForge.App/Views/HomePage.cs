@@ -13,9 +13,9 @@ namespace PKForge.App.Views;
 public sealed class HomePage : ContentPage, IPadHandler
 {
     private readonly SavePickerViewModel _viewModel;
-    private CollectionView _shelf = null!;
+    private ScrollView _shelf = null!;
+    private HorizontalStackLayout _shelfItems = null!;
     private int _shelfIndex = -1;
-    private bool _padSelecting;
     private DsCard[] _cards = [];
     private int _zone;       // 0 = game shelf, 1 = the destination cards
     private int _cardIndex;
@@ -34,15 +34,21 @@ public sealed class HomePage : ContentPage, IPadHandler
             Text = "Games", FontFamily = DsChrome.PixelFont, FontSize = 14,
             TextColor = UiTokens.Ink1,
         };
-        _shelf = new CollectionView
+        _shelfItems = new HorizontalStackLayout
         {
-            SelectionMode = SelectionMode.Single,
-            ItemsLayout = new LinearItemsLayout(ItemsLayoutOrientation.Horizontal) { ItemSpacing = 12 },
-            ItemTemplate = new DataTemplate(BuildCartridgeTile),
+            Spacing = 12,
             VerticalOptions = LayoutOptions.Center,
         };
-        _shelf.SetBinding(ItemsView.ItemsSourceProperty, nameof(SavePickerViewModel.Groups));
-        _shelf.SelectionChanged += OnGameSelected;
+        BindableLayout.SetItemsSource(_shelfItems, _viewModel.Groups);
+        BindableLayout.SetItemTemplate(_shelfItems, new DataTemplate(BuildCartridgeTile));
+        _shelf = new ScrollView
+        {
+            Orientation = ScrollOrientation.Horizontal,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Never,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Never,
+            VerticalOptions = LayoutOptions.Center,
+            Content = _shelfItems,
+        };
         var shelfArea = new Grid
         {
             RowSpacing = 6,
@@ -50,12 +56,14 @@ public sealed class HomePage : ContentPage, IPadHandler
             Children = { gamesLabel, _shelf },
         };
         Grid.SetRow(_shelf, 1);
+        BlockNativeFocus(_shelf);
 
         // The three destinations as PKSM tiles with bundled pixel icons.
         var bank = new DsCard("bank", "Bank") { Tapped = () => _ = PushAsync<BankPage>() };
         var events = new DsCard("events", "Events") { Tapped = () => _ = ShowEventsMenuAsync() };
         var settings = new DsCard("settings", "Settings") { Tapped = () => _ = ShowSettingsAsync() };
         _cards = [bank, events, settings];
+        foreach (var card in _cards) BlockNativeFocus(card);
         var cards = new Grid
         {
             ColumnSpacing = 10,
@@ -96,6 +104,22 @@ public sealed class HomePage : ContentPage, IPadHandler
     }
 
     private Grid _hostGrid = null!;
+
+    /// <summary>
+    /// The shelf's selection is drawn by PKForge (the cyan frame); Android's own focused
+    /// state is the grey box that sticks around until the next tap, so it is disabled here.
+    /// </summary>
+    private static void BlockNativeFocus(View view)
+    {
+        view.HandlerChanged += (_, _) =>
+        {
+            if (view.Handler?.PlatformView is Android.Views.View platform)
+            {
+                platform.Focusable = false;
+                platform.FocusableInTouchMode = false;
+            }
+        };
+    }
 
     private bool _welcomeShown;
     private bool _scannedOnce;
@@ -226,15 +250,25 @@ public sealed class HomePage : ContentPage, IPadHandler
     {
         if (_viewModel.Groups.Count == 0) return false;
         _shelfIndex = Math.Clamp(_shelfIndex < 0 ? 0 : _shelfIndex + delta, 0, _viewModel.Groups.Count - 1);
-        _padSelecting = true;
         var selected = _viewModel.Groups[_shelfIndex];
-        _shelf.SelectedItem = selected;
-        _shelf.ScrollTo(_shelfIndex, position: ScrollToPosition.Center);
+        for (var i = 0; i < _viewModel.Groups.Count; i++)
+            _viewModel.Groups[i].IsSelected = i == _shelfIndex;
+        if (_shelfIndex < _shelfItems.Children.Count && _shelfItems.Children[_shelfIndex] is View selectedView)
+        {
+            var centeredX = Math.Max(0, selectedView.X - Math.Max(0, (_shelf.Width - selectedView.Width) / 2));
+            // Smooth scroll for single steps; snap while the pad repeats fast. Overlapping
+            // animated scrolls during held navigation made the shelf teleport.
+            var snap = Environment.TickCount64 - _lastShelfMoveMs < 200;
+            _ = _shelf.ScrollToAsync(centeredX, 0, !snap);
+        }
+        _lastShelfMoveMs = Environment.TickCount64;
         // The lower screen previews the highlighted game's hero art.
         var state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
         if (state is not null) state.PreviewGame = selected.Saves[0];
         return true;
     }
+
+    private long _lastShelfMoveMs;
 
     private bool OpenShelfSelection()
     {
@@ -609,33 +643,44 @@ public sealed class HomePage : ContentPage, IPadHandler
     /// A game as an actual cartridge: fixed uniform size, dark contact strip on top,
     /// and the game art as the cart's label sticker (era-colored plastic behind it).
     /// </summary>
-    private static View BuildCartridgeTile()
+    private View BuildCartridgeTile()
     {
         const double cartWidth = 76;
         const double cartHeight = 84;
 
-        var contactStrip = new BoxView { HeightRequest = 9, Color = Colors.Black.WithAlpha(0.25f) };
+        var contactStrip = new BoxView { HeightRequest = 9, Color = UiTokens.MaroonDeep };
 
-        var labelText = new Label
+        var gameMark = new GameCartridgeMark();
+        gameMark.SetBinding(GameCartridgeMark.GenerationProperty, nameof(DetectedSave.Generation));
+
+        // Use the real game label art whenever we bundle it. The identity mark remains a
+        // deliberate, consistent fallback for homebrew, hacks, and unknown saves.
+        var gameArt = new Image
         {
-            FontSize = 11,
-            FontAttributes = FontAttributes.Bold,
-            TextColor = UiTokens.Ink0,
-            HorizontalTextAlignment = TextAlignment.Center,
-            VerticalTextAlignment = TextAlignment.Center,
+            Aspect = Aspect.AspectFit,
+            IsVisible = false,
+            Margin = new Thickness(3),
         };
-        labelText.SetBinding(Label.TextProperty, new Binding(nameof(DetectedSave.Generation), stringFormat: "GEN {0}"));
-
-        var artImage = new Image { Aspect = Aspect.AspectFill, IsVisible = false };
-
-        // The label sticker: white fallback with GEN text, replaced by real art when bundled.
+        gameArt.BindingContextChanged += async (_, _) =>
+        {
+            if (gameArt.BindingContext is not SaveGroup group) return;
+            gameArt.IsVisible = false;
+            gameMark.IsVisible = true;
+            var path = await GameArt.GetIconAsync(group.GameLabel);
+            // A recycled template may have moved on while package I/O was in flight.
+            if (!ReferenceEquals(gameArt.BindingContext, group)) return;
+            gameArt.Source = path;
+            gameArt.IsVisible = path is not null;
+            gameMark.IsVisible = path is null;
+        };
         var sticker = new Border
         {
-            BackgroundColor = Colors.White.WithAlpha(0.9f),
-            StrokeThickness = 0,
+            BackgroundColor = UiTokens.ShellPress,
+            Stroke = UiTokens.ShellEdge,
+            StrokeThickness = 1,
             StrokeShape = new RoundRectangle { CornerRadius = 4 },
             Margin = new Thickness(7, 5, 7, 7),
-            Content = new Grid { Children = { labelText, artImage } },
+            Content = new Grid { Children = { gameMark, gameArt } },
         };
 
         var cartLayout = new Grid
@@ -659,24 +704,6 @@ public sealed class HomePage : ContentPage, IPadHandler
         cartBody.SetBinding(Border.StrokeProperty, new Binding(nameof(DetectedSave.Generation), converter: GenerationEdge));
 
         var iconHost = new Grid { Children = { cartBody } };
-        iconHost.BindingContextChanged += async (sender, _) =>
-        {
-            var ctx = ((Grid)sender!).BindingContext;
-            var gameLabel = ctx switch
-            {
-                DetectedSave single => single.GameLabel,
-                SaveGroup group => group.Saves[0].GameLabel,
-                _ => null,
-            };
-            if (gameLabel is null) return;
-            artImage.IsVisible = false;
-            labelText.IsVisible = true;
-            var path = await GameArt.GetIconAsync(gameLabel);
-            if (path is null || !ReferenceEquals(((Grid)sender).BindingContext, ctx)) return;
-            artImage.Source = ImageSource.FromFile(path);
-            artImage.IsVisible = true;
-            labelText.IsVisible = false;
-        };
 
         var name = new Label
         {
@@ -707,8 +734,8 @@ public sealed class HomePage : ContentPage, IPadHandler
         });
 
         // Every tile is exactly the same size: the shelf must read as a row of carts.
-        var chipIcon = PksmIcons.Icon("folder", 12, PksmIcons.White);
-        var chipLabel = new Label { TextColor = Colors.White, FontSize = 9, FontAttributes = FontAttributes.Bold };
+        var chipIcon = PksmIcons.Icon("folder", 12, PksmIcons.Dark);
+        var chipLabel = new Label { TextColor = UiTokens.OnAccent, FontSize = 9, FontAttributes = FontAttributes.Bold };
         chipLabel.SetBinding(Label.TextProperty, new Binding(nameof(SaveGroup.Count), stringFormat: "x{0}"));
         var countChip = new Border
         {
@@ -732,37 +759,27 @@ public sealed class HomePage : ContentPage, IPadHandler
         card.WidthRequest = 122;
         card.HeightRequest = 138;
 
-        // Shelf cursor = the same gold frame as the box cursor, replacing the platform hover tint.
-        VisualStateManager.SetVisualStateGroups(card, new VisualStateGroupList
+        card.Triggers.Add(new DataTrigger(typeof(Border))
         {
-            new VisualStateGroup
+            Binding = new Binding(nameof(SaveGroup.IsSelected)),
+            Value = true,
+            Setters =
             {
-                Name = "CommonStates",
-                States =
-                {
-                    new VisualState
-                    {
-                        Name = "Normal",
-                        Setters =
-                        {
-                            new Setter { Property = Border.StrokeProperty, Value = UiTokens.ShellEdge },
-                            new Setter { Property = Border.StrokeThicknessProperty, Value = 1.5 },
-                            new Setter { Property = BackgroundColorProperty, Value = UiTokens.Shell },
-                        },
-                    },
-                    new VisualState
-                    {
-                        Name = "Selected",
-                        Setters =
-                        {
-                            new Setter { Property = Border.StrokeProperty, Value = UiTokens.SelectBorder },
-                            new Setter { Property = Border.StrokeThicknessProperty, Value = 3.0 },
-                            new Setter { Property = BackgroundColorProperty, Value = UiTokens.Shell },
-                        },
-                    },
-                },
+                new Setter { Property = Border.StrokeProperty, Value = UiTokens.SelectBorder },
+                new Setter { Property = Border.StrokeThicknessProperty, Value = 3.0 },
             },
         });
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += async (_, _) =>
+        {
+            if (card.BindingContext is not SaveGroup group) return;
+            _shelfIndex = _viewModel.Groups.IndexOf(group);
+            for (var i = 0; i < _viewModel.Groups.Count; i++)
+                _viewModel.Groups[i].IsSelected = i == _shelfIndex;
+            await OpenGroupAsync(group);
+        };
+        card.GestureRecognizers.Add(tap);
+        BlockNativeFocus(card);
         return card;
     }
 
@@ -792,19 +809,6 @@ public sealed class HomePage : ContentPage, IPadHandler
     {
         public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) => convert(value);
         public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
-    }
-
-    private async void OnGameSelected(object? sender, SelectionChangedEventArgs args)
-    {
-        if (args.CurrentSelection.FirstOrDefault() is not SaveGroup group) return;
-        if (_padSelecting)
-        {
-            // Pad navigation only moves the highlight; A opens.
-            _padSelecting = false;
-            return;
-        }
-        ((CollectionView)sender!).SelectedItem = null;
-        await OpenGroupAsync(group);
     }
 
     private async Task OpenSaveAsync(DetectedSave save)

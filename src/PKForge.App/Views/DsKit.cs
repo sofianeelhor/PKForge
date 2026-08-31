@@ -8,8 +8,7 @@ using SkiaSharp.Views.Maui.Controls;
 namespace PKForge.App.Views;
 
 /// <summary>
-/// A PKSM menu row: white surface, warm-grey hairline, indigo-light selected band with an
-/// indigo edge — the striped-list cursor of the 3DS language.
+/// A PKSM menu row rebuilt as layered navy chrome with a cyan/cobalt focus state.
 /// Draws its own chrome in Skia; the label (and optional icon) ride on top.
 /// </summary>
 public sealed class DsFolderButton : Grid
@@ -72,7 +71,7 @@ public sealed class DsFolderButton : Grid
             Text = option.Label,
             FontFamily = DsChrome.PixelFont,
             FontSize = 15,
-            TextColor = UiTokens.Paper,
+            TextColor = UiTokens.Ink0,
             VerticalTextAlignment = TextAlignment.Center,
             LineBreakMode = LineBreakMode.NoWrap,
             HorizontalOptions = LayoutOptions.Start,
@@ -99,7 +98,7 @@ public sealed class DsFolderButton : Grid
         {
             if (_selected == value) return;
             _selected = value;
-            _label.TextColor = value ? UiTokens.SelectInk : UiTokens.Paper;
+            _label.TextColor = value ? UiTokens.SelectInk : UiTokens.Ink0;
             if (_icon is not null && !PksmIcons.IsNative(_iconName))
                 _icon.Source = PksmIcons.Source(_iconName, value ? PksmIcons.Indigo : PksmIcons.White);
             _bg.InvalidateSurface();
@@ -218,8 +217,7 @@ public static class DsIcons
 }
 
 /// <summary>
-/// A PKSM icon card: white tile, warm-grey border, the bundled pixel icon as hero,
-/// pixel label beneath. The home/menu tile. Selection = gold ring + gentle scale.
+/// A PKSM icon card: layered navy tile, bundled pixel icon as hero, pixel label beneath.
 /// </summary>
 public sealed class DsCard : Grid
 {
@@ -258,7 +256,7 @@ public sealed class DsCard : Grid
 
         _label = new Label
         {
-            Text = label, FontFamily = DsChrome.PixelFont, FontSize = 15, TextColor = UiTokens.Paper,
+            Text = label, FontFamily = DsChrome.PixelFont, FontSize = 15, TextColor = UiTokens.Ink0,
             VerticalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap, MaxLines = 2,
             HorizontalTextAlignment = TextAlignment.Center,
         };
@@ -301,23 +299,23 @@ public sealed class DsCard : Grid
     }
 }
 
-/// <summary>Reusable screen chrome: maroon title strip, dark status strip, hint footer, lattice field.</summary>
+/// <summary>Reusable screen chrome: continuous dark rails, hint footer, and logo-grid field.</summary>
 public static class DsChrome
 {
     public const string PixelFont = "PixelUI";
 
-    /// <summary>The Gen-5 maroon title strip with the centered white wordmark.</summary>
+    /// <summary>The Gen-5 title strip translated into the logo's cobalt/cyan chrome.</summary>
     public static View TitleBar(string title = "PKForge")
     {
         var bar = new Grid
         {
             HeightRequest = 28,
-            BackgroundColor = UiTokens.Maroon,
+            BackgroundColor = UiTokens.MaroonDeep,
             Padding = new Thickness(14, 0),
             ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto), new(GridLength.Star)],
             Children =
             {
-                new BoxView { Color = UiTokens.MaroonDeep, HeightRequest = 2, VerticalOptions = LayoutOptions.End, InputTransparent = true },
+                new BoxView { Color = UiTokens.BagCyanEdge, HeightRequest = 2, VerticalOptions = LayoutOptions.End, InputTransparent = true },
                 new Label
                 {
                     Text = title, FontFamily = PixelFont, FontSize = 16, TextColor = Colors.White,
@@ -362,18 +360,14 @@ public static class DsChrome
     public static View Footer(params (string Button, string Label, Action? OnTap)[] hints)
         => Kit.HintBar(hints);
 
-    /// <summary>The faint indigo dot-lattice field behind menu bodies (the PC-box paper).</summary>
+    /// <summary>The logo's navy/cobalt grid behind every global menu body.</summary>
     public static SKCanvasView GridBackground()
     {
         var view = new SKCanvasView { InputTransparent = true };
         view.PaintSurface += (_, a) =>
         {
             var c = a.Surface.Canvas;
-            c.Clear(Pksm.Housing);
-            using var dot = new SKPaint { Color = Pksm.HousingDot };
-            for (var y = 7f; y < a.Info.Height; y += 14)
-                for (var x = 7f; x < a.Info.Width; x += 14)
-                    c.DrawRect(x, y, x + 2, y + 2, dot);
+            PksmPaint.LogoGrid(c, new SKRect(0, 0, a.Info.Width, a.Info.Height));
         };
         return view;
     }

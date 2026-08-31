@@ -15,7 +15,10 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public SaveEngineSession(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
         _originalBytes = bytes.ToArray();
-        if (!SaveParser.TryGetSaveFile(_originalBytes, out var save) || save is null)
+        // PKHeX's parser normalizes its input buffer in place (Gen 7 zeroes the MemeCrypto
+        // signature block). The baseline every restore point is cut from must stay the
+        // pristine file bytes, so the parser gets its own scratch copy.
+        if (!SaveParser.TryGetSaveFile(_originalBytes.ToArray(), out var save) || save is null)
             throw new InvalidDataException("The selected bytes are not a recognized save file.");
         _save = save;
         Snapshot = BuildSnapshot(displayName);
@@ -952,10 +955,8 @@ public sealed class SaveEngineSession : ISaveEngineSession
         var targetGender = gender ?? work.Gender;
         var targetAbility = abilityNumber ?? work.AbilityNumber;
         var unown = work.Version is GameVersion.FR or GameVersion.LG && work.Species == (int)Species.Unown;
-        var rnd = Random.Shared;
-        for (var attempt = 0; attempt < 5_000_000; attempt++)
+        foreach (var pid in PidCandidates(work, ratio, targetNature, targetGender, targetAbility, wasShiny))
         {
-            var pid = rnd.Rand32();
             if (targetNature is { } n && pid % 25 != (byte)n) continue;
             if (EntityGender.GetFromPIDAndRatio(pid, ratio) != targetGender) continue;
             if (unown && EntityPID.GetUnownForm3(pid) != work.Form) continue;
@@ -971,6 +972,46 @@ public sealed class SaveEngineSession : ISaveEngineSession
             return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Guided PID construction for the PID-coupled generations. The low byte is chosen
+    /// for the target gender (carrying the Gen 3/4 ability bit in bit 0); a free byte is
+    /// rolled; and the high word is then PINNED so the TID^SID^PID xor collapses to a
+    /// 3-bit value (shiny, star/square variants) or a forced bit 8 (non-shiny). Only the
+    /// nature modulus (and Unown letters) stay to chance at 1-in-25 each, so the old
+    /// 5,000,000-attempt search - which failed ~20% of the time for shiny Gen 4 mons
+    /// needing a rare gender - becomes a few dozen tries at worst. Every candidate is
+    /// re-verified by the caller before it is applied.
+    /// </summary>
+    internal static IEnumerable<uint> PidCandidates(PKM entity, byte ratio, Nature? nature, byte targetGender, int targetAbility, bool wasShiny)
+    {
+        var generation34 = entity.Format <= 4;
+        // AbilityNumber is a slot flag (1/2, or 4 for Gen 5 hidden abilities); the PID
+        // stores the raw slot bit. 1 << bit must reproduce the captured AbilityNumber.
+        var abilityBit = targetAbility is 2 ? 1 : 0;
+        var idXor = entity.TID16 ^ entity.SID16;
+        var fixedGender = PersonalInfo.IsSingleGender(ratio) || ratio == PersonalInfo.RatioMagicGenderless;
+        var rnd = Random.Shared;
+
+        for (var attempt = 0; attempt < 10_000; attempt++)
+        {
+            var low = (byte)rnd.Next(256);
+            if (!fixedGender && EntityGender.GetFromPIDAndRatio(low, ratio) != targetGender)
+                continue;
+            if (generation34 && (low & 1) != abilityBit)
+                continue; // Gen 3/4: the ability slot is PID bit 0
+
+            var free = (byte)rnd.Next(256);
+            // Variants keep bit 0 available for Gen 5's ability slot (PID bit 16).
+            var variant = (byte)((rnd.Next(4) << 1) | abilityBit);
+            var partial = idXor ^ low ^ (free << 8);
+            var hi = wasShiny
+                ? (ushort)((partial & 0xFFF8) | variant)
+                : (ushort)(((partial ^ 0x0100) & 0xFFF8) | variant);
+
+            yield return (uint)hi << 16 | (uint)free << 8 | low;
+        }
     }
 
     public IReadOnlyList<int> GetMissingSpecies()
@@ -2075,6 +2116,66 @@ public sealed class SaveEngineSession : ISaveEngineSession
     }
 
     public bool ValidateUnchangedRoundTrip() => _save.Write().Span.SequenceEqual(_originalBytes);
+
+    // ── Pokémon Compass (S/V romhack v2.1.x) ──
+    // Compass keeps the vanilla S/V save format and adds SCBlocks keyed by FNV-1a
+    // hashes of Compass_* names. Only settings confirmed by in-game toggling are
+    // exposed; block keys and value tables come from the PKCompassHeX analysis.
+    private sealed record CompassDefinition(uint Key, string Id, string Name, string[] Choices);
+
+    private static readonly string[] CompassToggle = ["On", "Off"];
+
+    private static readonly CompassDefinition[] CompassDefinitions =
+    [
+        new(CompassBlockKeys.KExpshare, "expshare", "Exp. Share", CompassToggle),
+        new(CompassBlockKeys.KPicnicExp, "picnicexp", "Picnic EXP", CompassToggle),
+        new(CompassBlockKeys.KRNGSkew, "capturebonuses", "Capture Bonuses", CompassToggle),
+        new(CompassBlockKeys.KLetsGoEV, "letsgoev", "Let's Go EVs", ["Party", "Leader", "Disabled"]),
+        new(CompassBlockKeys.KShinyNotification, "shinynotice", "Shiny Notices", ["Spoiler-Free", "Full", "Off"]),
+        new(CompassBlockKeys.KAnimRate, "animrate", "Animation Rate", ["High", "Medium", "Low"]),
+        new(CompassBlockKeys.KExpmulti, "expmulti", "EXP Multiplier",
+            ["60%", "70%", "80%", "90%", "100%", "110%", "120%", "130%", "140%", "150%"]),
+        new(CompassBlockKeys.KSpawnRate, "spawnrate", "Spawn Rate",
+            [.. Enumerable.Range(0, 21).Select(value => (value * 10 + 10).ToString())]),
+        new(CompassBlockKeys.KLevelcap, "levelcap", "Level Cap",
+            ["No cap", .. Enumerable.Range(1, 99).Select(value => value.ToString())]),
+    ];
+
+    // The marker says "this is Compass"; the setting blocks only exist from v2.1 on,
+    // so older saves label correctly but offer no settings editor.
+    public bool SupportsCompassSettings => _save is SAV9SV sv && CompassBlockKeys.HasCompassSettingBlocks(sv);
+
+    public IReadOnlyList<CompassSetting> GetCompassSettings()
+    {
+        if (_save is not SAV9SV sv || !sv.Blocks.HasBlock(CompassBlockKeys.KRNGSkew))
+            return [];
+        var settings = new List<CompassSetting>();
+        foreach (var definition in CompassDefinitions)
+        {
+            if (!sv.Blocks.HasBlock(definition.Key))
+                continue; // an older Compass revision may not carry every setting
+            var block = sv.Blocks.GetBlock(definition.Key);
+            if (block.Type != SCTypeCode.SByte)
+                continue; // every confirmed setting is an SByte; anything else is unmapped
+            var value = Math.Clamp((int)(sbyte)block.GetValue(), 0, definition.Choices.Length - 1);
+            settings.Add(new CompassSetting(definition.Id, definition.Name, definition.Choices, value));
+        }
+        return settings;
+    }
+
+    public bool SetCompassSetting(string id, int choiceIndex)
+    {
+        if (_save is not SAV9SV sv)
+            return false;
+        var definition = Array.Find(CompassDefinitions, d => d.Id == id);
+        if (definition is null || !sv.Blocks.HasBlock(definition.Key))
+            return false;
+        var block = sv.Blocks.GetBlock(definition.Key);
+        if (block.Type != SCTypeCode.SByte || (uint)choiceIndex >= (uint)definition.Choices.Length)
+            return false;
+        block.SetValue((sbyte)choiceIndex);
+        return true;
+    }
 
     private SaveSnapshot BuildSnapshot(string? displayName)
     {

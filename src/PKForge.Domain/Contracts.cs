@@ -32,7 +32,8 @@ public sealed record SaveDescription(string GameName, int Generation, string Tra
 
 public interface IBackupService
 {
-    ValueTask<BackupReceipt> CreateAsync(SaveSnapshot source, CancellationToken cancellationToken = default);
+    /// <summary>The change description shown in the restore point list (what this point undoes).</summary>
+    ValueTask<BackupReceipt> CreateAsync(SaveSnapshot source, string? changeDescription = null, CancellationToken cancellationToken = default);
     ValueTask<IReadOnlyList<BackupInfo>> ListAsync(CancellationToken cancellationToken = default);
     ValueTask<ReadOnlyMemory<byte>> ReadAsync(string backupId, CancellationToken cancellationToken = default);
 }
@@ -58,12 +59,24 @@ public interface ISaveSessionService
     SaveSession? Current { get; }
     ISaveEngineSession? CurrentSession { get; }
     ValueTask<SaveSession> OpenAsync(PickedDocument document, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Advances the tracked baseline of <paramref name="documentId"/> to the bytes that were
+    /// just written, so the NEXT restore point captures the state before the next change
+    /// instead of the state from when the save was opened.
+    /// </summary>
+    void MarkWritten(string documentId, ReadOnlyMemory<byte> written);
 }
 
 /// <summary>Commits validated bytes only after a durable backup has completed.</summary>
 public interface ISafeSaveWriter
 {
-    ValueTask<SaveWriteReceipt> WriteAsync(string documentId, SaveSnapshot original, ReadOnlyMemory<byte> candidate, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// No-op when the candidate equals the tracked baseline: no backup, no write, and a
+    /// receipt with <see cref="SaveWriteReceipt.Changed"/> false, so nothing is written
+    /// (and no restore point is created) when a mutation produced identical bytes.
+    /// </summary>
+    ValueTask<SaveWriteReceipt> WriteAsync(string documentId, SaveSnapshot original, ReadOnlyMemory<byte> candidate, string? changeDescription = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -110,13 +123,19 @@ public sealed record BackupInfo(
     string? DisplayName,
     string Format,
     int Generation,
-    long SizeBytes);
+    long SizeBytes,
+    string? ChangeDescription = null);
 
 public sealed record PickedDocument(string DocumentId, string DisplayName);
 
 public sealed record SaveSession(PickedDocument Document, SaveSnapshot Snapshot);
 
-public sealed record SaveWriteReceipt(string BackupId, string OriginalSha256, string WrittenSha256, DateTimeOffset WrittenUtc);
+public sealed record SaveWriteReceipt(
+    string BackupId,
+    string OriginalSha256,
+    string WrittenSha256,
+    DateTimeOffset WrittenUtc,
+    bool Changed = true);
 
 public sealed record BankEntity(
     Guid EntityId,

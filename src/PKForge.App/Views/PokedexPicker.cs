@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using Microsoft.Maui.Controls.Shapes;
 using PKForge.App.Services;
 using PKForge.App.Theme;
 using PKForge.Domain;
+using SkiaSharp;
 
 namespace PKForge.App.Views;
 
@@ -21,7 +23,29 @@ public sealed class PokedexPicker : IPadHandler
     private static readonly (int Gen, int First, int Last)[] GenRanges =
         [(1, 1, 151), (2, 152, 251), (3, 252, 386), (4, 387, 493), (5, 494, 649), (6, 650, 721), (7, 722, 809), (8, 810, 905), (9, 906, 1025)];
 
-    private sealed record DexEntry(int Id, string Name, string? IconPath, IReadOnlyList<int> Types, int Gen);
+    private sealed class DexEntry(int id, string name, string? iconPath, IReadOnlyList<int> types, int gen,
+        BaseStats stats, SpeciesFormFlags forms) : INotifyPropertyChanged
+    {
+        private bool _isSelected;
+        public int Id { get; } = id;
+        public string Name { get; } = name;
+        public string? IconPath { get; } = iconPath;
+        public IReadOnlyList<int> Types { get; } = types;
+        public int Gen { get; } = gen;
+        public BaseStats Stats { get; } = stats;
+        public SpeciesFormFlags Forms { get; } = forms;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected == value) return;
+                _isSelected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+            }
+        }
+        public event PropertyChangedEventHandler? PropertyChanged;
+    }
 
     private readonly TaskCompletionSource<PickItem?> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly List<DexEntry> _all;
@@ -34,10 +58,16 @@ public sealed class PokedexPicker : IPadHandler
     private readonly HashSet<int> _typeFilters = [];
     private int? _genFilter;
     private int _index;
-    private bool _padSelecting;
+    private DexEntry? _selectedEntry;
     private readonly SecondScreenState? _state;
     private readonly List<Border> _typeChips = [];
     private readonly List<Border> _genChips = [];
+    private string _category = "Any";
+    private string _power = "Any";
+    private string _theme = "Any";
+    private Label _categoryLabel = null!;
+    private Label _powerLabel = null!;
+    private Label _themeLabel = null!;
 
     public static async Task<PickItem?> ShowAsync(Grid host, IGameDataService data, ISaveEngineSession session)
     {
@@ -67,19 +97,18 @@ public sealed class PokedexPicker : IPadHandler
                     try
                     {
                         var target = IconCachePath(id);
+                        Stream asset;
                         try
                         {
-                            await using var asset = await FileSystem.OpenAppPackageFileAsync($"sprites/b_{id}.png");
-                            await using var output = File.Create(target);
-                            await asset.CopyToAsync(output);
+                            asset = await FileSystem.OpenAppPackageFileAsync($"sprites/b_{id}.png");
                         }
                         catch (FileNotFoundException)
                         {
                             // Gen 9 has no pixel sprites; PKHeX shows official artwork.
-                            await using var asset = await FileSystem.OpenAppPackageFileAsync($"artwork/a_{id}.png");
-                            await using var output = File.Create(target);
-                            await asset.CopyToAsync(output);
+                            asset = await FileSystem.OpenAppPackageFileAsync($"artwork/a_{id}.png");
                         }
+                        await using (asset)
+                            NormalizeIcon(asset, target);
                     }
                     catch { /* no bundled sprite for this id */ }
                 }));
@@ -95,7 +124,59 @@ public sealed class PokedexPicker : IPadHandler
     }
 
     private static string IconCachePath(int species) =>
-        System.IO.Path.Combine(FileSystem.CacheDirectory, $"mini-{species}.png");
+        System.IO.Path.Combine(FileSystem.CacheDirectory, $"mini-v2-{species}.png");
+
+    /// <summary>
+    /// Crops transparent padding, scales every species to one visual footprint, then
+    /// anchors it to a shared baseline. Evolution families no longer jump in apparent size.
+    /// </summary>
+    private static void NormalizeIcon(Stream source, string target)
+    {
+        using var bitmap = SKBitmap.Decode(source);
+        if (bitmap is null) return;
+
+        var left = bitmap.Width;
+        var top = bitmap.Height;
+        var right = -1;
+        var bottom = -1;
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                if (bitmap.GetPixel(x, y).Alpha <= 8) continue;
+                left = Math.Min(left, x);
+                top = Math.Min(top, y);
+                right = Math.Max(right, x);
+                bottom = Math.Max(bottom, y);
+            }
+        }
+        if (right < left || bottom < top) return;
+
+        const int canvasWidth = 72;
+        const int canvasHeight = 58;
+        const float visualWidth = 54;
+        const float visualHeight = 44;
+        var sourceRect = new SKRect(left, top, right + 1, bottom + 1);
+        var scale = Math.Min(visualWidth / sourceRect.Width, visualHeight / sourceRect.Height);
+        var width = MathF.Max(1, MathF.Round(sourceRect.Width * scale));
+        var height = MathF.Max(1, MathF.Round(sourceRect.Height * scale));
+        var xOffset = MathF.Round((canvasWidth - width) / 2f);
+        var baseline = canvasHeight - 5f;
+        var destination = new SKRect(xOffset, baseline - height, xOffset + width, baseline);
+
+        using var normalized = new SKBitmap(canvasWidth, canvasHeight, SKColorType.Rgba8888, SKAlphaType.Premul);
+        using (var canvas = new SKCanvas(normalized))
+        {
+            canvas.Clear(SKColors.Transparent);
+            using var sourceImage = SKImage.FromBitmap(bitmap);
+            canvas.DrawImage(sourceImage, sourceRect, destination,
+                new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
+        }
+        using var image = SKImage.FromBitmap(normalized);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        using var output = File.Create(target);
+        encoded.SaveTo(output);
+    }
 
     private PokedexPicker(Grid host, IGameDataService data, ISaveEngineSession session)
     {
@@ -113,8 +194,10 @@ public sealed class PokedexPicker : IPadHandler
             if (data.SpeciesNames[id].Length == 0) continue;
             var icon = IconCachePath(id);
             var genIndex = Array.FindIndex(GenRanges, r => id >= r.First && id <= r.Last);
+            var forms = id < data.FormFlags.Count ? data.FormFlags[id] : new SpeciesFormFlags(false, false, false, false);
             _all.Add(new DexEntry(id, data.SpeciesNames[id], File.Exists(icon) ? icon : null,
-                session.GetSpeciesTypes(id), genIndex >= 0 ? GenRanges[genIndex].Gen : 9));
+                session.GetSpeciesTypes(id), genIndex >= 0 ? GenRanges[genIndex].Gen : 9,
+                session.GetBaseStats(id), forms));
         }
         _filtered = ApplyFilters();
 
@@ -132,18 +215,11 @@ public sealed class PokedexPicker : IPadHandler
 
         _grid = new CollectionView
         {
-            SelectionMode = SelectionMode.Single,
+            SelectionMode = SelectionMode.None,
             ItemsLayout = new GridItemsLayout(6, ItemsLayoutOrientation.Vertical) { VerticalItemSpacing = 6, HorizontalItemSpacing = 6 },
             ItemTemplate = new DataTemplate(BuildCell),
             ItemsSource = _filtered,
         };
-        _grid.SelectionChanged += (_, args) =>
-        {
-            if (_padSelecting) { _padSelecting = false; return; }
-            if (args.CurrentSelection.FirstOrDefault() is DexEntry entry)
-                Close(new PickItem(entry.Id, entry.Name, entry.IconPath));
-        };
-
         var content = new Grid
         {
             RowSpacing = 8,
@@ -160,6 +236,7 @@ public sealed class PokedexPicker : IPadHandler
             ("Ⓑ", "CANCEL", () => Close(null)),
             ("Ⓛ Ⓡ", "GEN", null),
             ("Ⓧ", "TYPES", () => _ = ShowTypeFilterMenuAsync()),
+            ("Ⓢ", "FILTERS", () => _ = ShowFilterAxisMenuAsync()),
             ("Ⓨ", "CLEAR", ClearFilters));
         content.Add(hints); Grid.SetRow(hints, 4);
 
@@ -204,8 +281,20 @@ public sealed class PokedexPicker : IPadHandler
     {
         _typeFilters.Clear();
         _genFilter = null;
+        _category = "Any";
+        _power = "Any";
+        _theme = "Any";
+        RefreshCapsules();
         RefreshChipStates();
         Refilter();
+    }
+
+    private void RefreshCapsules()
+    {
+        if (_categoryLabel is null) return;
+        _categoryLabel.Text = $"CATEGORY: {_category.ToUpperInvariant()}";
+        _powerLabel.Text = $"POWER: {_power.ToUpperInvariant()}";
+        _themeLabel.Text = $"THEME: {_theme.ToUpperInvariant()}";
     }
 
     private void RefreshChipStates()
@@ -230,7 +319,7 @@ public sealed class PokedexPicker : IPadHandler
                 Opacity = 0.55,
                 StrokeShape = new RoundRectangle { CornerRadius = 6 },
                 Padding = new Thickness(8, 3),
-                Content = new Label { Text = TypeNames[type].ToUpperInvariant(), TextColor = Colors.White, FontSize = 9, FontAttributes = FontAttributes.Bold },
+                Content = new Label { Text = TypeNames[type].ToUpperInvariant(), TextColor = TypePalette.ForegroundForType(type), FontSize = 9, FontAttributes = FontAttributes.Bold },
             };
             var tap = new TapGestureRecognizer();
             tap.Tapped += (_, _) => ToggleType(captured);
@@ -266,7 +355,7 @@ public sealed class PokedexPicker : IPadHandler
 
         var clear = new Border
         {
-            BackgroundColor = UiTokens.Ink1,
+            BackgroundColor = UiTokens.MenuBlue,
             StrokeThickness = 0,
             StrokeShape = new RoundRectangle { CornerRadius = 6 },
             Padding = new Thickness(10, 3),
@@ -277,6 +366,11 @@ public sealed class PokedexPicker : IPadHandler
         clear.GestureRecognizers.Add(clearTap);
         genRow.Children.Add(clear);
 
+        var extras = new HorizontalStackLayout { Spacing = 5 };
+        extras.Children.Add(FilterCapsule("CATEGORY", () => _ = ShowCategoryMenuAsync(), ref _categoryLabel));
+        extras.Children.Add(FilterCapsule("POWER", () => _ = ShowPowerMenuAsync(), ref _powerLabel));
+        extras.Children.Add(FilterCapsule("THEME", () => _ = ShowThemeMenuAsync(), ref _themeLabel));
+
         return new VerticalStackLayout
         {
             Spacing = 5,
@@ -284,67 +378,108 @@ public sealed class PokedexPicker : IPadHandler
             {
                 new ScrollView { Orientation = ScrollOrientation.Horizontal, HorizontalScrollBarVisibility = ScrollBarVisibility.Never, Content = typeRow },
                 genRow,
+                extras,
             },
         };
     }
 
-    /// <summary>A cozy box tile: sprite on an LCD cell, name underneath.</summary>
-    private static View BuildCell()
+    /// <summary>A live capsule showing the current selection of one filter axis.</summary>
+    private Border FilterCapsule(string caption, Action open, ref Label valueLabel)
     {
-        var icon = new Image { HeightRequest = 52, Aspect = Aspect.AspectFit };
+        valueLabel = new Label { Text = $"{caption}: ANY", TextColor = Colors.White, FontSize = 9, FontAttributes = FontAttributes.Bold };
+        var capsule = new Border
+        {
+            BackgroundColor = UiTokens.MenuBlue,
+            StrokeThickness = 0,
+            StrokeShape = new RoundRectangle { CornerRadius = 6 },
+            Padding = new Thickness(10, 3),
+            Content = valueLabel,
+        };
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += (_, _) => open();
+        capsule.GestureRecognizers.Add(tap);
+        return capsule;
+    }
+
+    /// <summary>A compact logo-deck tile: normalized sprite, strong name plate, cyan focus.</summary>
+    private View BuildCell()
+    {
+        var icon = new Image
+        {
+            HeightRequest = 48,
+            WidthRequest = 62,
+            Aspect = Aspect.AspectFit,
+            HorizontalOptions = LayoutOptions.Center,
+            VerticalOptions = LayoutOptions.Center,
+        };
         icon.SetBinding(Image.SourceProperty, nameof(DexEntry.IconPath));
 
         var name = new Label
         {
-            TextColor = UiTokens.Ink1,
-            FontSize = 9,
+            TextColor = UiTokens.Ink0,
+            FontFamily = DsChrome.PixelFont,
+            FontSize = 10,
+            FontAttributes = FontAttributes.Bold,
             HorizontalTextAlignment = TextAlignment.Center,
             LineBreakMode = LineBreakMode.TailTruncation,
+            MaxLines = 1,
         };
         name.SetBinding(Label.TextProperty, nameof(DexEntry.Name));
 
-        // Each tile wears its generation's era color (soft pastel) behind the sprite.
+        var number = new Label
+        {
+            TextColor = UiTokens.InkSoft,
+            FontFamily = DsChrome.PixelFont,
+            FontSize = 8,
+            HorizontalTextAlignment = TextAlignment.Center,
+        };
+        number.SetBinding(Label.TextProperty, new Binding(nameof(DexEntry.Id), stringFormat: "No.{0:000}"));
+
+        var namePlate = new Border
+        {
+            BackgroundColor = UiTokens.MaroonDeep,
+            Stroke = UiTokens.ShellEdge,
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 3 },
+            Padding = new Thickness(3, 1),
+            Content = new VerticalStackLayout { Spacing = 0, Children = { name, number } },
+        };
+
         var cell = new Border
         {
-            StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 9 },
-            Padding = new Thickness(3, 5, 3, 3),
-            Content = new VerticalStackLayout { Spacing = 2, Children = { icon, name } },
-        };
-        cell.SetBinding(VisualElement.BackgroundColorProperty, new Binding(nameof(DexEntry.Gen), converter: GenPastel));
-        cell.SetBinding(Border.StrokeProperty, new Binding(nameof(DexEntry.Gen), converter: GenPastelEdge));
-        VisualStateManager.SetVisualStateGroups(cell, new VisualStateGroupList
-        {
-            new VisualStateGroup
+            HeightRequest = 78,
+            BackgroundColor = UiTokens.ShellPress,
+            Stroke = UiTokens.ShellEdge,
+            StrokeThickness = 1.5,
+            StrokeShape = new RoundRectangle { CornerRadius = 5 },
+            Padding = new Thickness(4, 3),
+            Content = new Grid
             {
-                Name = "CommonStates",
-                States =
-                {
-                    new VisualState { Name = "Normal", Setters = { new Setter { Property = Border.StrokeThicknessProperty, Value = 1.0 } } },
-                    new VisualState { Name = "Selected", Setters = { new Setter { Property = Border.StrokeProperty, Value = UiTokens.SelectBorder }, new Setter { Property = Border.StrokeThicknessProperty, Value = 3.0 } } },
-                },
+                RowSpacing = 2,
+                RowDefinitions = [new(GridLength.Star), new(GridLength.Auto)],
+                Children = { icon, namePlate },
+            },
+        };
+        Grid.SetRow(namePlate, 1);
+        cell.Triggers.Add(new DataTrigger(typeof(Border))
+        {
+            Binding = new Binding(nameof(DexEntry.IsSelected)),
+            Value = true,
+            Setters =
+            {
+                new Setter { Property = Border.StrokeProperty, Value = UiTokens.SelectBorder },
+                new Setter { Property = Border.StrokeThicknessProperty, Value = 4.0 },
+                new Setter { Property = VisualElement.BackgroundColorProperty, Value = UiTokens.SelectFill },
             },
         });
-        return cell;
-    }
-
-    private static readonly IValueConverter GenPastel = new GenTintConverter(0.72f);
-    private static readonly IValueConverter GenPastelEdge = new GenTintConverter(0.45f);
-
-    /// <summary>Era color softened toward white - pastel tile fills, slightly deeper edges.</summary>
-    private sealed class GenTintConverter(float towardWhite) : IValueConverter
-    {
-        public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += (_, _) =>
         {
-            var era = Kit.EraColor(value is int gen ? gen : 0);
-            return Color.FromRgb(
-                era.Red + (1f - era.Red) * towardWhite,
-                era.Green + (1f - era.Green) * towardWhite,
-                era.Blue + (1f - era.Blue) * towardWhite);
-        }
-
-        public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
-            throw new NotSupportedException();
+            if (cell.BindingContext is DexEntry entry)
+                Close(new PickItem(entry.Id, entry.Name, entry.IconPath));
+        };
+        cell.GestureRecognizers.Add(tap);
+        return cell;
     }
 
     private List<DexEntry> ApplyFilters()
@@ -359,8 +494,58 @@ public sealed class PokedexPicker : IPadHandler
             source = source.Where(e => _typeFilters.All(t => e.Types.Contains(t)));
         if (!string.IsNullOrWhiteSpace(_query))
             source = source.Where(e => e.Name.Contains(_query, StringComparison.OrdinalIgnoreCase));
+        if (_category != "Any")
+            source = source.Where(e => MatchesCategory(e, _category));
+        if (_power != "Any")
+            source = source.Where(e => MatchesPower(e, _power));
+        if (_theme != "Any")
+            source = source.Where(e => MatchesTheme(e, _theme));
         return source.ToList();
     }
+
+    private static bool MatchesCategory(DexEntry e, string category) => category switch
+    {
+        "Legendary" => SpeciesCategories.Legendary.Contains(e.Id),
+        "Mythical" => SpeciesCategories.Mythical.Contains(e.Id),
+        "Ultra Beast" => SpeciesCategories.UltraBeast.Contains(e.Id),
+        "Paradox" => SpeciesCategories.Paradox.Contains(e.Id),
+        "Pseudo-Legendary" => SpeciesCategories.PseudoLegendary.Contains(e.Id),
+        "Starter" => SpeciesCategories.Starter.Contains(e.Id),
+        "Fossil" => SpeciesCategories.Fossil.Contains(e.Id),
+        "Baby" => SpeciesCategories.Baby.Contains(e.Id),
+        "Regional Form" => e.Forms.Regional,
+        "Mega-capable" => e.Forms.Mega,
+        "Gigantamax-capable" => SpeciesCategories.GigantamaxCapable.Contains(e.Id),
+        "Has Alternate Forms" => e.Forms.HasForms,
+        _ => true,
+    };
+
+    private static bool MatchesPower(DexEntry e, string power)
+    {
+        var total = e.Stats.Hp + e.Stats.Atk + e.Stats.Def + e.Stats.SpA + e.Stats.SpD + e.Stats.Spe;
+        return power switch
+        {
+            "400+ BST" => total >= 400,
+            "500+ BST" => total >= 500,
+            "600+ BST" => total >= 600,
+            "Physical Attacker" => e.Stats.Atk >= 100 && e.Stats.Atk >= e.Stats.SpA + 15,
+            "Special Attacker" => e.Stats.SpA >= 100 && e.Stats.SpA >= e.Stats.Atk + 15,
+            "Fast" => e.Stats.Spe >= 100,
+            "Sturdy" => e.Stats.Hp + e.Stats.Def + e.Stats.SpD >= 280,
+            _ => true,
+        };
+    }
+
+    private static bool MatchesTheme(DexEntry e, string theme) => theme switch
+    {
+        "Dragons" => e.Types.Contains(15) || SpeciesCategories.Themes.DragonExtras.Contains(e.Id),
+        "Aquatic" => e.Types.Contains(10) || SpeciesCategories.Themes.AquaticExtras.Contains(e.Id),
+        "Felines" => SpeciesCategories.Themes.Felines.Contains(e.Id),
+        "Canines" => SpeciesCategories.Themes.Canines.Contains(e.Id),
+        "Birds" => SpeciesCategories.Themes.Birds.Contains(e.Id),
+        "Dinosaurs" => SpeciesCategories.Themes.Dinosaurs.Contains(e.Id),
+        _ => true,
+    };
 
     private CancellationTokenSource? _searchDebounce;
 
@@ -382,6 +567,8 @@ public sealed class PokedexPicker : IPadHandler
 
     private void Refilter()
     {
+        if (_selectedEntry is not null) _selectedEntry.IsSelected = false;
+        _selectedEntry = null;
         _filtered = ApplyFilters();
         _index = 0;
         _grid.ItemsSource = _filtered;
@@ -408,6 +595,7 @@ public sealed class PokedexPicker : IPadHandler
             case PadButton.R: CycleGen(1); return true;
             case PadButton.X: _ = ShowTypeFilterMenuAsync(); return true;
             case PadButton.Y: ClearFilters(); return true;
+            case PadButton.Start: _ = ShowFilterAxisMenuAsync(); return true;
             default: return true; // the dex owns the pad while open
         }
     }
@@ -416,12 +604,15 @@ public sealed class PokedexPicker : IPadHandler
     {
         if (_filtered.Count == 0)
         {
+            if (_selectedEntry is not null) _selectedEntry.IsSelected = false;
+            _selectedEntry = null;
             if (_state is not null) _state.PreviewSpecies = null;
             return;
         }
         _index = Math.Clamp(index, 0, _filtered.Count - 1);
-        _padSelecting = true;
-        _grid.SelectedItem = _filtered[_index];
+        if (_selectedEntry is not null) _selectedEntry.IsSelected = false;
+        _selectedEntry = _filtered[_index];
+        _selectedEntry.IsSelected = true;
         _grid.ScrollTo(_index, position: ScrollToPosition.Center, animate: false);
         if (_state is not null) _state.PreviewSpecies = _filtered[_index].Id;
     }
@@ -439,6 +630,58 @@ public sealed class PokedexPicker : IPadHandler
         var name = choice.StartsWith("✓ ", StringComparison.Ordinal) ? choice[2..] : choice;
         var type = Array.IndexOf(TypeNames, name);
         if (type >= 0) ToggleType(type);
+    }
+
+    /// <summary>Pad path into the three deep-filter axes (the capsules are the touch path).</summary>
+    private async Task ShowFilterAxisMenuAsync()
+    {
+        var choice = await PadMenu.ShowAsync(_host, "FILTERS",
+            "Categories, power, and themes combine with the type gems and generation chips.",
+            new PadOption($"Category: {_category}", IconPath: "pokedex"),
+            new PadOption($"Power: {_power}", IconPath: "dice"),
+            new PadOption($"Theme: {_theme}", IconPath: "script"),
+            new PadOption("Clear all filters", IconPath: "quit"));
+        switch (choice)
+        {
+            case "Clear all filters": ClearFilters(); return;
+            case { } picked when picked.StartsWith("Category", StringComparison.Ordinal): await ShowCategoryMenuAsync(); return;
+            case { } picked when picked.StartsWith("Power", StringComparison.Ordinal): await ShowPowerMenuAsync(); return;
+            case { } picked when picked.StartsWith("Theme", StringComparison.Ordinal): await ShowThemeMenuAsync(); return;
+        }
+    }
+
+    private async Task ShowCategoryMenuAsync()
+    {
+        var choice = await PadMenu.ShowAsync(_host, "CATEGORY",
+            "Rarity and special families. Combines with types, generation, power, and theme.",
+            "Any", "Legendary", "Mythical", "Ultra Beast", "Paradox", "Pseudo-Legendary",
+            "Starter", "Fossil", "Baby", "Regional Form", "Mega-capable",
+            "Gigantamax-capable", "Has Alternate Forms");
+        if (choice is null) return;
+        _category = choice;
+        RefreshCapsules();
+        Refilter();
+    }
+
+    private async Task ShowPowerMenuAsync()
+    {
+        var choice = await PadMenu.ShowAsync(_host, "POWER", null,
+            "Any", "400+ BST", "500+ BST", "600+ BST", "Physical Attacker",
+            "Special Attacker", "Fast", "Sturdy");
+        if (choice is null) return;
+        _power = choice;
+        RefreshCapsules();
+        Refilter();
+    }
+
+    private async Task ShowThemeMenuAsync()
+    {
+        var choice = await PadMenu.ShowAsync(_host, "THEME", "The fun filters. Subjective by design.",
+            "Any", "Dragons", "Aquatic", "Felines", "Canines", "Birds", "Dinosaurs");
+        if (choice is null) return;
+        _theme = choice;
+        RefreshCapsules();
+        Refilter();
     }
 
     private void Close(PickItem? result)

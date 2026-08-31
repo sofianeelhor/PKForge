@@ -28,6 +28,18 @@ public sealed class FileBackupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ChangeDescriptionPersistsInTheSidecar()
+    {
+        var service = new FileBackupService(_root);
+
+        var receipt = await service.CreateAsync(Snapshot([1, 2, 3], "save.sav"), "Deposited Pikachu in the Bank");
+        var info = Assert.Single(await service.ListAsync());
+
+        Assert.Equal(receipt.BackupId, info.BackupId);
+        Assert.Equal("Deposited Pikachu in the Bank", info.ChangeDescription);
+    }
+
+    [Fact]
     public async Task ReadDetectsCorruptBytes()
     {
         var service = new FileBackupService(_root);

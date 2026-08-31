@@ -9,15 +9,15 @@ namespace PKForge.App.Views;
 
 /// <summary>
 /// The themed component kit. Every screen composes these primitives — panels, buttons,
-/// hint bars, chips — in the PKSM/DS-era language: white surfaces with warm-grey borders,
-/// maroon Gen-5 header strips, cream choice buttons with cyan rims, indigo icon accents.
+/// hint bars, chips — in the PKSM/DS-era language rebuilt from the PKForge logo:
+/// dark grid fields, layered navy surfaces, cobalt structure, and cyan focus light.
 /// Views take colors from UiTokens (mapped from PKForge.Chrome Pksm), never literals.
 /// </summary>
 public static class Kit
 {
     /// <summary>
-    /// The page housing backdrop: pale indigo-tinted paper with the faint dot lattice and
-    /// resting pokéball outlines. Prerendered once per size — no per-frame paint storms.
+    /// The page housing backdrop: the logo's crisp navy/cobalt grid.
+    /// Prerendered once per size — no per-frame paint storms.
     /// </summary>
     public static SKCanvasView DeviceBackground()
     {
@@ -46,54 +46,31 @@ public static class Kit
         return canvasView;
     }
 
-    /// <summary>Bakes the backdrop (dot lattice + resting pokéballs) into one bitmap.</summary>
+    /// <summary>Bakes the shared logo grid into one bitmap.</summary>
     private static SKBitmap RenderBackdrop(SKImageInfo info)
     {
         var bitmap = new SKBitmap(info.Width, info.Height);
         using var canvas = new SKCanvas(bitmap);
-        canvas.Clear(Pksm.Housing);
-
-        // Resting pokéball outlines — quiet on the dark grid.
-        using var ball = new SKPaint
-        {
-            Color = Pksm.HousingDot.WithAlpha(0x80),
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = 3f,
-            IsAntialias = true,
-        };
-        foreach (var (fx, fy, radius) in new[] { (0.16f, 0.28f, 90f), (0.52f, 0.78f, 130f), (0.84f, 0.20f, 70f) })
-        {
-            var x = fx * info.Width;
-            var y = fy * info.Height;
-            canvas.DrawCircle(x, y, radius, ball);
-            canvas.DrawLine(x - radius, y, x + radius, y, ball);
-            canvas.DrawCircle(x, y, radius * 0.3f, ball);
-        }
-
-        // The quiet dot lattice.
-        using var dot = new SKPaint { Color = Pksm.HousingDot };
-        for (var y = 7f; y < info.Height; y += 14)
-            for (var x = 7f; x < info.Width; x += 14)
-                canvas.DrawRect(x, y, x + 2, y + 2, dot);
+        PksmPaint.LogoGrid(canvas, new SKRect(0, 0, info.Width, info.Height));
         return bitmap;
     }
 
-    /// <summary>Soft lift under every floating surface — the molded-plastic panel feel.</summary>
+    /// <summary>Compact pixel-like depth under floating device surfaces.</summary>
     private static Shadow FloatShadow => new()
     {
         Brush = Brush.Black,
-        Opacity = 0.14f,
-        Radius = 12,
-        Offset = new Point(0, 4),
+        Opacity = 0.46f,
+        Radius = 2,
+        Offset = new Point(4, 4),
     };
 
-    /// <summary>A white chrome window: paper body, soft grey border, soft shadow.</summary>
+    /// <summary>A layered navy device window with a crisp cobalt bezel.</summary>
     public static Border DevicePanel(View content, double padding = 12) => new()
     {
         BackgroundColor = UiTokens.Shell,
         Stroke = UiTokens.ShellEdge,
-        StrokeThickness = 2,
-        StrokeShape = new RoundRectangle { CornerRadius = 8 },
+        StrokeThickness = 2.5,
+        StrokeShape = new RoundRectangle { CornerRadius = 5 },
         Shadow = FloatShadow,
         Padding = padding,
         Content = content,
@@ -108,7 +85,7 @@ public static class Kit
         BackgroundColor = UiTokens.Shell,
         Stroke = UiTokens.ShellEdge,
         StrokeThickness = 2,
-        StrokeShape = new RoundRectangle { CornerRadius = 4 },
+        StrokeShape = new RoundRectangle { CornerRadius = 3 },
         Shadow = FloatShadow,
         Padding = padding,
         Content = content,
@@ -230,8 +207,8 @@ public static class Kit
     }
 
     /// <summary>
-    /// A PKSM choice button (the STATS/MOVES/SAVE language): cream fill, cyan rim,
-    /// ink text. Primary actions get the lift.
+    /// A PKSM choice button (the STATS/MOVES/SAVE language): navy fill, cyan rim,
+    /// pale text. Primary actions get the pixel lift.
     /// </summary>
     public static Button Capsule(string text, Color accent, bool primary = false)
     {
@@ -239,7 +216,7 @@ public static class Kit
         {
             Text = text,
             BackgroundColor = UiTokens.ChoiceFill,
-            BorderColor = UiTokens.ChoiceRim,
+            BorderColor = accent,
             BorderWidth = 2,
             TextColor = UiTokens.Ink0,
             FontAttributes = FontAttributes.Bold,
@@ -257,9 +234,9 @@ public static class Kit
         Text = glyph,
         FontFamily = "Rounded",
         BackgroundColor = UiTokens.MenuBlueDeep,
-        BorderColor = UiTokens.Paper,
+        BorderColor = accent,
         BorderWidth = 1.5,
-        TextColor = UiTokens.Paper,
+        TextColor = UiTokens.Ink0,
         FontAttributes = FontAttributes.Bold,
         FontSize = 14,
         CornerRadius = 5,
@@ -279,7 +256,7 @@ public static class Kit
         VerticalOptions = LayoutOptions.Center,
     };
 
-    /// <summary>Screen title: quiet slate caps.</summary>
+    /// <summary>Screen title: pale console caps on the shared dark field.</summary>
     public static Label HousingTitle(string text) => new()
     {
         Text = text,
@@ -291,8 +268,7 @@ public static class Kit
     };
 
     /// <summary>
-    /// The Gen-5 maroon header strip: PKSM's section header. White text on maroon,
-    /// a dark bottom edge. Use at the top of panels and screens.
+    /// The Gen-5 header strip translated to cobalt with a cyan signal edge.
     /// </summary>
     public static View HeaderBar(string title)
     {
@@ -331,14 +307,14 @@ public static class Kit
                 {
                     new Border
                     {
-                        Stroke = new SolidColorBrush(UiTokens.Paper),
+                        Stroke = new SolidColorBrush(UiTokens.SelectBorder),
                         StrokeThickness = 1.5,
                         StrokeShape = new RoundRectangle { CornerRadius = 10 },
-                        BackgroundColor = UiTokens.MenuBlue,
+                        BackgroundColor = UiTokens.BagCyanEdge,
                         Padding = new Thickness(6, 2),
                         Content = new Label
                         {
-                            Text = glyph, FontFamily = DsChrome.PixelFont, TextColor = UiTokens.Paper, FontSize = 12,
+                            Text = glyph, FontFamily = DsChrome.PixelFont, TextColor = UiTokens.OnAccent, FontSize = 12,
                             FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center,
                             HorizontalTextAlignment = TextAlignment.Center,
                         },

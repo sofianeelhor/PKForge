@@ -14,7 +14,7 @@ public sealed class FileBackupService(string rootDirectory, int maxVersions = 20
     private readonly int _maxVersions = maxVersions;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    public async ValueTask<BackupReceipt> CreateAsync(SaveSnapshot source, CancellationToken cancellationToken = default)
+    public async ValueTask<BackupReceipt> CreateAsync(SaveSnapshot source, string? changeDescription = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
         Directory.CreateDirectory(_root);
@@ -23,7 +23,7 @@ public sealed class FileBackupService(string rootDirectory, int maxVersions = 20
         var id = $"{createdUtc:yyyyMMddTHHmmssfffZ}-{Guid.NewGuid():N}";
         var bytes = source.OriginalBytes.ToArray();
         var sha = Convert.ToHexString(SHA256.HashData(bytes));
-        var info = new BackupInfo(id, createdUtc, sha, source.DisplayName, source.Format, source.Generation, bytes.LongLength);
+        var info = new BackupInfo(id, createdUtc, sha, source.DisplayName, source.Format, source.Generation, bytes.LongLength, changeDescription);
 
         // Bytes first, sidecar last: a backup without a sidecar is ignored, never half-trusted.
         await File.WriteAllBytesAsync(BytesPath(id), bytes, cancellationToken).ConfigureAwait(false);

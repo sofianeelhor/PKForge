@@ -45,4 +45,33 @@ internal static class SaveParser
         // revision. Match its own loader rather than rejecting a future revision.
         return (BinaryPrimitives.ReadUInt32LittleEndian(data) & 0xFFFF0000) == 0xFFFF0000;
     }
+
+    /// <summary>
+    /// Unbound (and its CFRU engine) stamps every GBA sector footer with 0x01121999
+    /// where retail Pokémon saves carry the 0x080120xx signature family. Verified
+    /// against a real Unbound v2.1.1.1 save (sectors 5-12 = the CFRU PC stream) and a
+    /// real vanilla FireRed save (all sectors 0x08012025, checksums all valid).
+    /// </summary>
+    internal const uint UnboundSectorSignature = 0x0112_1999;
+
+    /// <summary>
+    /// True when the bytes are a Pokémon Unbound save. Unbound keeps FireRed's save
+    /// envelope, so stock PKHeX parses it as plain SAV3FRLG with a wrong PC and party
+    /// layout; detecting it here keeps the shelf honest and blocks unsafe edits until
+    /// the dedicated Unbound engine exists.
+    /// </summary>
+    internal static bool IsPokemonUnbound(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 0x20_000)
+            return false;
+
+        // The 0x20000 file = 32 sectors of 0x1000; the signature is a u32 at 0xFF8 of each.
+        var stamps = 0;
+        for (var sector = 0; sector < 32; sector++)
+        {
+            if (BinaryPrimitives.ReadUInt32LittleEndian(data[(sector * 0x1000 + 0xFF8)..]) == UnboundSectorSignature)
+                stamps++;
+        }
+        return stamps >= 8; // a full main half stamps 14 sectors; extras never carry it
+    }
 }

@@ -204,7 +204,18 @@ public interface ISaveEngineSession : IDisposable
     AffixedRibbonInfo GetAffixedRibbon(int box, int slot);
     /// <summary>Selects an already-owned ribbon/mark as the Pokémon's title; use -1 to clear it.</summary>
     void SetAffixedRibbon(int box, int slot, int ribbonIndex);
+
+    // ── Pokémon Compass (S/V romhack) ──
+    /// <summary>True when the open save carries Compass-only blocks (the romhack's marker).</summary>
+    bool SupportsCompassSettings { get; }
+    /// <summary>Editable Compass settings with their confirmed value tables; empty on vanilla saves.</summary>
+    IReadOnlyList<CompassSetting> GetCompassSettings();
+    /// <summary>Applies a choice index to a setting in-session; commit through the usual safe write.</summary>
+    bool SetCompassSetting(string id, int choiceIndex);
 }
+
+/// <summary>One Pokémon Compass setting: its choices (display labels) and the current one.</summary>
+public sealed record CompassSetting(string Id, string Name, string[] Choices, int Selected);
 
 /// <summary>A pick-list entry the engine hands the UI: stable id + display name.</summary>
 public sealed record NamedChoice(int Id, string Name);
@@ -370,7 +381,13 @@ public interface IGameDataService
     IReadOnlyList<string> AbilityNames { get; }
     IReadOnlyList<string> NatureNames { get; }
     IReadOnlyList<string> BallNames { get; }
+
+    /// <summary>Form facts per species id (index 0 unused), derived from the modern form tables.</summary>
+    IReadOnlyList<SpeciesFormFlags> FormFlags { get; }
 }
+
+/// <summary>What kinds of alternate faces a species has (mega, g-max, regional, any).</summary>
+public sealed record SpeciesFormFlags(bool HasForms, bool Mega, bool Gigantamax, bool Regional);
 
 /// <summary>Runs offline legality analysis through the pinned engine.</summary>
 public interface ILegalityService

@@ -8,6 +8,8 @@ public sealed class SaveEngine : ISaveEngine
 {
     public SaveSnapshot Open(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
+        if (SaveParser.IsPokemonUnbound(bytes.Span))
+            return OpenUnbound(bytes, displayName).Snapshot;
         if (!SaveParser.TryGetSaveFile(bytes.ToArray(), out var save) || save is null)
             throw new InvalidDataException("The selected bytes are not a recognized save file.");
 
@@ -26,8 +28,15 @@ public sealed class SaveEngine : ISaveEngine
         return new SaveSnapshot(save.Context.ToString(), save.Generation, bytes.ToArray(), slots, displayName);
     }
 
-    public ISaveEngineSession OpenSession(ReadOnlyMemory<byte> bytes, string? displayName = null) =>
-        new SaveEngineSession(bytes, displayName);
+    public ISaveEngineSession OpenSession(ReadOnlyMemory<byte> bytes, string? displayName = null)
+    {
+        if (SaveParser.IsPokemonUnbound(bytes.Span))
+            return OpenUnbound(bytes, displayName);
+        return new SaveEngineSession(bytes, displayName);
+    }
+
+    private static Unbound.UnboundEngineSession OpenUnbound(ReadOnlyMemory<byte> bytes, string? displayName) =>
+        new(bytes, displayName);
 
     public ReadOnlyMemory<byte> Serialize(SaveSnapshot snapshot) => snapshot.OriginalBytes.ToArray();
 
@@ -106,6 +115,16 @@ public sealed class SaveEngine : ISaveEngine
         if (SaveParser.IsLuminescentPlatinum(raw))
             return new SaveDescription("Luminescent Platinum", save.Generation, save.OT, save.PlayTimeString);
 
+        // Compass keeps the vanilla S/V format. The fork's canonical marker (the
+        // TrainerSeed table, present in every Compass version) tells it apart from
+        // retail Scarlet/Violet - the v2.1 settings blocks are NOT a safe marker,
+        // pre-2.1 saves carry none of them.
+        if (save is SAV9SV sv && CompassBlockKeys.IsCompassSave(sv))
+            return new SaveDescription("Compass", save.Generation, save.OT, save.PlayTimeString);
+
+        if (SaveParser.IsPokemonUnbound(raw))
+            return new SaveDescription("Unbound", save.Generation, save.OT, save.PlayTimeString);
+
         var strings = GameInfo.GetStrings("en");
         var versionIndex = (int)save.Version;
         var gameName = versionIndex > 0 && versionIndex < strings.gamelist.Length && strings.gamelist[versionIndex].Length > 0
@@ -113,4 +132,13 @@ public sealed class SaveEngine : ISaveEngine
             : $"Generation {save.Generation}";
         return new SaveDescription(gameName, save.Generation, save.OT, save.PlayTimeString);
     }
+
+    /// <summary>
+    /// Unbound relocates the PC and extends FireRed's species table, so editing it with
+    /// the stock FireRed engine would corrupt the save. It is recognized (and labeled)
+    /// everywhere, but stays closed until the dedicated Unbound engine ships.
+    /// </summary>
+    private static InvalidOperationException UnboundNotEditable() => new(
+        "Pokémon Unbound is recognized, but its CFRU save layout needs the Unbound editor " +
+        "(coming soon). The save file was not touched.");
 }

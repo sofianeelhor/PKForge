@@ -3,8 +3,8 @@ using SkiaSharp;
 namespace PKForge.Chrome;
 
 /// <summary>
-/// The drawn chrome of the Gen-5 era: dark strips, glossy black buttons, the navy +
-/// light-blue selection, red corner brackets and the red triangle cursor. Content cards
+/// The drawn chrome of the Gen-5 era: navy strips, logo-blue buttons, the cobalt +
+/// cyan selection, red corner brackets and the red triangle cursor. Content cards
 /// are white on the colored worlds. Everything composes from <see cref="Pksm"/> tokens.
 /// </summary>
 public static class PksmPaint
@@ -13,6 +13,24 @@ public static class PksmPaint
 
     private static SKPaint Paint(SKColor c) => new() { Color = c, IsAntialias = true, Style = SKPaintStyle.Fill };
     private static SKPaint Stroke(SKColor c, float w) => new() { Color = c, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = w };
+
+    /// <summary>The exact visual rhythm of the logo background: navy field, crisp cobalt grid.</summary>
+    public static void LogoGrid(SKCanvas c, SKRect r, float cell = 32, float lineWidth = 3)
+    {
+        c.DrawRect(r, Paint(Pksm.Housing));
+        using var line = new SKPaint
+        {
+            Color = Pksm.HousingLine.WithAlpha(0xD0),
+            IsAntialias = false,
+            StrokeWidth = lineWidth,
+        };
+        var offsetX = r.Left % cell;
+        var offsetY = r.Top % cell;
+        for (var x = r.Left - offsetX; x <= r.Right; x += cell)
+            c.DrawLine(MathF.Round(x), r.Top, MathF.Round(x), r.Bottom, line);
+        for (var y = r.Top - offsetY; y <= r.Bottom; y += cell)
+            c.DrawLine(r.Left, MathF.Round(y), r.Right, MathF.Round(y), line);
+    }
 
     /// <summary>The diagonal top gloss the era's buttons wore: a light line under the top edge.</summary>
     private static void Gloss(SKCanvas c, SKRect r, float radius)
@@ -24,33 +42,36 @@ public static class PksmPaint
 
     // ---------- Windows & panels ----------
 
-    /// <summary>White content card on a colored world: neutral border, subtle bottom shade.</summary>
+    /// <summary>Layered navy content card with a crisp pixel-console bezel.</summary>
     public static void Panel(SKCanvas c, SKRect r, SKColor? fill = null, float radius = 6)
     {
+        c.DrawRoundRect(new SKRect(r.Left + 4, r.Top + 4, r.Right + 4, r.Bottom + 4), radius, radius, Paint(Pksm.LogoVoid.WithAlpha(0xB0)));
         c.DrawRoundRect(r, radius, radius, Paint(fill ?? Pksm.Paper));
         c.DrawRoundRect(r, radius, radius, Stroke(Pksm.PaperEdge, 2));
+        c.DrawLine(r.Left + radius, r.Top + 2, r.Right - radius, r.Top + 2, Stroke(Pksm.LogoBlue, 2));
     }
 
-    /// <summary>A light chrome window: white body, soft grey border (menus, dialogs).</summary>
+    /// <summary>A dark chrome window: layered navy body and cobalt bezel.</summary>
     public static void DarkWindow(SKCanvas c, SKRect r, float radius = 8)
     {
-        c.DrawRoundRect(r, radius, radius, Paint(Pksm.Paper));
-        c.DrawRoundRect(r, radius, radius, Stroke(Pksm.PaperEdge, 2));
+        Panel(c, r, Pksm.Paper, radius);
     }
 
-    /// <summary>The PKSM button: blue fill, deep outline, white inner rim.</summary>
+    /// <summary>The resting logo button: void outline, navy body, cobalt/cyan edge light.</summary>
     public static void BlackButton(SKCanvas c, SKRect r, float radius = 6)
     {
         c.DrawRoundRect(r, radius, radius, Paint(Pksm.ButtonBlueDeep));
-        c.DrawRoundRect(SKRect.Inflate(r, -1, -1), radius - 1, radius - 1, Paint(Pksm.ButtonBlue));
-        c.DrawRoundRect(SKRect.Inflate(r, -3, -3), radius - 2, radius - 2, Stroke(Pksm.Paper, 2));
+        c.DrawRoundRect(SKRect.Inflate(r, -1, -1), radius - 1, radius - 1, Paint(Pksm.LogoDeck));
+        c.DrawRoundRect(SKRect.Inflate(r, -2, -2), radius - 2, radius - 2, Stroke(Pksm.LogoGrid, 2));
+        c.DrawLine(r.Left + radius, r.Bottom - 2, r.Right - radius, r.Bottom - 2, Stroke(Pksm.LogoBlue, 2));
     }
 
-    /// <summary>The selected button: indigo-light body with the indigo border.</summary>
+    /// <summary>The selected button: cyan focus edge with a cobalt body, readable under white labels.</summary>
     public static void SelectedButton(SKCanvas c, SKRect r, float radius = 6)
     {
-        c.DrawRoundRect(r, radius, radius, Paint(Pksm.SelectBorder));
-        c.DrawRoundRect(SKRect.Inflate(r, -2, -2), radius - 1, radius - 1, Paint(Pksm.SelectFill));
+        c.DrawRoundRect(r, radius, radius, Paint(Pksm.LogoCyan));
+        c.DrawRoundRect(SKRect.Inflate(r, -2, -2), radius - 1, radius - 1, Paint(Pksm.LogoGrid));
+        c.DrawRoundRect(SKRect.Inflate(r, -4, -4), radius - 2, radius - 2, Stroke(Pksm.Ink.WithAlpha(0xB0), 1.5f));
     }
 
     /// <summary>Message window: white slab, blue border, ink text.</summary>
@@ -60,23 +81,24 @@ public static class PksmPaint
         c.DrawRoundRect(SKRect.Inflate(r, -2, -2), 7, 7, Paint(Pksm.Paper));
     }
 
-    /// <summary>Section header: near-black strip with white text, sits on panels and screens.</summary>
+    /// <summary>Section header: cobalt strip with a cyan signal edge.</summary>
     public static void HeaderStrip(SKCanvas c, SKRect r, string label, SKFont font)
     {
         c.DrawRoundRect(r, 3, 3, Paint(Pksm.ButtonBlueDeep));
         c.DrawRoundRect(new SKRect(r.Left + 1, r.Top + 1, r.Right - 1, r.Bottom - 2), 2, 2, Paint(Pksm.HeaderBlue));
+        c.DrawRect(new SKRect(r.Left + 8, r.Bottom - 3, r.Right - 8, r.Bottom - 1), Paint(Pksm.LogoCyan));
         using var sh = new SKPaint { Color = SKColors.White };
         var baseline = r.MidY + font.Size * 0.35f;
         c.DrawText(label, r.Left + r.Height * 0.5f, baseline, SKTextAlign.Left, font, sh);
     }
 
-    /// <summary>List row on a white card: shade idle, navy + light-blue bar selected.</summary>
+    /// <summary>List row on a white card: shade idle, cobalt + cyan bar selected.</summary>
     public static void StripeRow(SKCanvas c, SKRect r, bool selected)
     {
         if (selected)
         {
-            c.DrawRect(r, Paint(Pksm.SelectFill));
-            c.DrawRect(new SKRect(r.Left, r.Top, r.Left + 4, r.Bottom), Paint(Pksm.SelectBorder));
+            c.DrawRect(r, Paint(Pksm.LogoGrid));
+            c.DrawRect(new SKRect(r.Left, r.Top, r.Left + 4, r.Bottom), Paint(Pksm.LogoCyan));
         }
         else
         {
@@ -105,7 +127,7 @@ public static class PksmPaint
         var fill = selected ? Pksm.RecessBlue : Pksm.StorageMenuBlueDeep;
         c.DrawRoundRect(r, 4, 4, Paint(Pksm.IndigoInk));
         c.DrawRoundRect(SKRect.Inflate(r, -1, -1), 3, 3, Paint(fill));
-        c.DrawRoundRect(SKRect.Inflate(r, -3, -3), 2, 2, Stroke(Pksm.Paper, 2));
+        c.DrawRoundRect(SKRect.Inflate(r, -3, -3), 2, 2, Stroke(Pksm.Ink, 2));
     }
 
     /// <summary>Bag pocket pill: navy surface, cyan pill, yellow-green rim when selected.</summary>
@@ -132,20 +154,19 @@ public static class PksmPaint
     {
         c.DrawRoundRect(r, 3, 3, Paint(selected ? active : idle));
         if (selected)
-            c.DrawRoundRect(new SKRect(r.Left + 1, r.Top + 1, r.Right - 1, r.Bottom - 1), 2, 2, Stroke(Pksm.Paper, 1.5f));
+            c.DrawRoundRect(new SKRect(r.Left + 1, r.Top + 1, r.Right - 1, r.Bottom - 1), 2, 2, Stroke(Pksm.Ink, 1.5f));
     }
 
     // ---------- Storage world ----------
 
-    /// <summary>Box wallpaper: saturated flat + faint dot lattice, the PC-box feel.</summary>
+    /// <summary>Box wallpaper: dark world tint + a quieter echo of the logo grid.</summary>
     public static void Wallpaper(SKCanvas c, SKRect r, SKColor baseColor)
     {
         c.DrawRect(r, Paint(baseColor));
-        var dot = Pksm.WallpaperShade(baseColor).WithAlpha(0x28);
-        var d = Paint(dot);
-        for (var y = (int)r.Top + 6; y < r.Bottom - 3; y += 12)
-            for (var x = (int)r.Left + 6; x < r.Right - 3; x += 12)
-                c.DrawRect(new SKRect(x, y, x + 3, y + 3), d);
+        var grid = Pksm.WallpaperShade(baseColor).WithAlpha(0x60);
+        using var p = new SKPaint { Color = grid, IsAntialias = false, StrokeWidth = 2 };
+        for (var x = r.Left + 18; x < r.Right; x += 30) c.DrawLine(x, r.Top, x, r.Bottom, p);
+        for (var y = r.Top + 18; y < r.Bottom; y += 30) c.DrawLine(r.Left, y, r.Right, y, p);
     }
 
     /// <summary>Red corner brackets: THE selection on grids and dex cells (Kalos style).</summary>
@@ -165,7 +186,7 @@ public static class PksmPaint
     /// <summary>White corner brackets framing a whole grid area (the storage frame).</summary>
     public static void FrameBrackets(SKCanvas c, SKRect r, float arm = 16, float thick = 4)
     {
-        var p = Paint(Pksm.Paper);
+        var p = Paint(Pksm.Ink);
         c.DrawRect(new SKRect(r.Left, r.Top, r.Left + arm, r.Top + thick), p);
         c.DrawRect(new SKRect(r.Left, r.Top, r.Left + thick, r.Top + arm), p);
         c.DrawRect(new SKRect(r.Right - arm, r.Top, r.Right, r.Top + thick), p);
@@ -213,7 +234,7 @@ public static class PksmPaint
         path.LineTo(tip.X + size * 0.8f, tip.Y + size * 0.75f);
         path.Close();
         c.DrawPath(path, Paint(Pksm.CursorRed));
-        c.DrawPath(path, Stroke(new SKColor(0x8F, 0x27, 0x1E), 1.5f));
+        c.DrawPath(path, Stroke(Pksm.Illegal, 1.5f));
     }
 
     /// <summary>Selection on a slot: red corner brackets, the one grid selection.</summary>
@@ -285,20 +306,20 @@ public static class PksmPaint
         c.DrawOval(new SKRect(ball.MidX - 3, ball.MidY - 3, ball.MidX + 3, ball.MidY + 3), p);
     }
 
-    /// <summary>Bottom hint bar: black strip, white border, key discs + white labels.</summary>
+    /// <summary>Bottom hint rail: continuous dark console chrome with cyan key discs.</summary>
     public static void HintBar(SKCanvas c, SKRect bar, IReadOnlyList<(string Key, string Label)> prompts, SKFont font)
     {
-        c.DrawRect(bar, Paint(Pksm.Paper));
-        c.DrawRect(new SKRect(bar.Left, bar.Top, bar.Right, bar.Top + 2), Paint(Pksm.PaperEdge));
+        c.DrawRect(bar, Paint(Pksm.LogoVoid));
+        c.DrawRect(new SKRect(bar.Left, bar.Top, bar.Right, bar.Top + 2), Paint(Pksm.LogoGrid));
         var x = bar.Left + 24;
         foreach (var (key, label) in prompts)
         {
             var kw = key.Length * font.Size * 0.62f + 14;
             var disc = new SKRect(x, bar.MidY - font.Size * 0.62f, x + kw, bar.MidY + font.Size * 0.62f);
-            c.DrawOval(disc, Paint(Pksm.ButtonBlue));
-            c.DrawOval(disc, Stroke(Pksm.Paper, 1.5f));
-            CenterText(c, key, disc.MidX, bar.MidY, font, SKColors.White, SKColors.Transparent, SKTextAlign.Center);
-            CenterText(c, label, disc.Right + 10, bar.MidY, font, Pksm.Ink, SKColors.White.WithAlpha(0x70));
+            c.DrawOval(disc, Paint(Pksm.LogoCyan));
+            c.DrawOval(disc, Stroke(Pksm.LogoGrid, 1.5f));
+            CenterText(c, key, disc.MidX, bar.MidY, font, Pksm.LogoVoid, SKColors.Transparent, SKTextAlign.Center);
+            CenterText(c, label, disc.Right + 10, bar.MidY, font, Pksm.Ink, SKColors.Transparent);
             x += kw + 10 + label.Length * font.Size * 0.62f + 34;
         }
     }

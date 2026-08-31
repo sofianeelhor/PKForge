@@ -28,6 +28,8 @@ public sealed class LegalizerService : ILegalizerService
 
     public GenerationOutcome Generate(ISaveEngineSession session, int box, int slot, GenerationRequest request)
     {
+        if (session is Unbound.UnboundEngineSession unbound)
+            return unbound.GenerateInto(box, slot, request);
         var text = BuildShowdownText(request, ((SaveEngineSession)session).SaveFile.Context);
         return GenerateFromShowdown(session, box, slot, text, request.AllowUnsupportedSpecies);
     }
@@ -35,6 +37,8 @@ public sealed class LegalizerService : ILegalizerService
     public GenerationOutcome GenerateFromShowdown(ISaveEngineSession session, int box, int slot, string showdownText,
         bool allowUnsupportedSpecies = false)
     {
+        if (session is Unbound.UnboundEngineSession unbound)
+            return unbound.GenerateFromShowdownText(box, slot, showdownText);
         if (session is not SaveEngineSession engineSession)
             return new GenerationOutcome(false, "Unsupported session type.");
         var save = engineSession.SaveFile;
@@ -126,7 +130,9 @@ public sealed class LegalizerService : ILegalizerService
             return new GenerationOutcome(false, "Unsupported session type.");
         var save = engineSession.SaveFile;
 
-        var current = save.GetBoxSlotAtIndex(box, slot);
+        // Box -1 is the party: it has its own accessors, and the box path would go out
+        // of range and abort the whole mutation behind the loading overlay.
+        var current = box == -1 ? save.GetPartySlotAtIndex(slot) : save.GetBoxSlotAtIndex(box, slot);
         if (current.Species == 0)
             return new GenerationOutcome(false, "Empty slot.");
         if (new LegalityAnalysis(current).Valid)
@@ -136,7 +142,10 @@ public sealed class LegalizerService : ILegalizerService
         if (!new LegalityAnalysis(repaired).Valid)
             return new GenerationOutcome(false, "Could not find a legal repair for this mon.");
 
-        save.SetBoxSlotAtIndex(repaired, box, slot, EntityImportSettings.None);
+        if (box == -1)
+            save.SetPartySlotAtIndex(repaired, slot, EntityImportSettings.None);
+        else
+            save.SetBoxSlotAtIndex(repaired, box, slot, EntityImportSettings.None);
         return new GenerationOutcome(true, "Legalized.");
     }
 

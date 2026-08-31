@@ -71,7 +71,7 @@ public sealed class PickerMenu : IPadHandler
         // never a fixed 340 that pushed the title and hint bar off a 360dp screen.
         _preview = new Label
         {
-            TextColor = UiTokens.Paper,
+            TextColor = UiTokens.Ink0,
             FontFamily = DsChrome.PixelFont,
             FontSize = 14,
             FontAttributes = FontAttributes.Bold,
@@ -80,8 +80,23 @@ public sealed class PickerMenu : IPadHandler
             LineBreakMode = LineBreakMode.TailTruncation,
         };
         var hints = Kit.HintBar(("A", "PICK", null), ("B", "CANCEL", () => Close(null)));
-        var hintRow = new Grid { Children = { hints, _preview }, Padding = new Thickness(0, 3, 0, 0) };
-        _preview.HorizontalOptions = LayoutOptions.Center;
+        var previewBar = new Border
+        {
+            BackgroundColor = UiTokens.ShellPress,
+            Stroke = UiTokens.ShellEdge,
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 5 },
+            Padding = new Thickness(10, 2),
+            Content = _preview,
+        };
+        // The selected-item preview used to be layered over the controller hints in a
+        // single grid cell. Keep both useful pad affordances, but give each its own row.
+        var hintRow = new VerticalStackLayout
+        {
+            Spacing = 4,
+            Padding = new Thickness(0, 3, 0, 0),
+            Children = { previewBar, hints },
+        };
 
         var content = new Grid
         {

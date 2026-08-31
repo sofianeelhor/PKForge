@@ -22,19 +22,19 @@ public static class PartyView
     private static SKFont? _smallFont;
     private static SKFont? _labelFont;
 
-    private static readonly SKColor Bg = new(0x14, 0x1D, 0x3E);
-    private static readonly SKColor BgLine = new(0x1D, 0x2A, 0x55);
-    private static readonly SKColor Body = new(0x2A, 0x3A, 0x78, 0xC8);
-    private static readonly SKColor TopEdge = new(0x5A, 0x70, 0xC8, 0xE0);
-    private static readonly SKColor BotEdge = new(0x0C, 0x14, 0x30, 0xE0);
+    private static readonly SKColor Bg = Pksm.LogoDeep;
+    private static readonly SKColor BgLine = Pksm.LogoGrid.WithAlpha(0x78);
+    private static readonly SKColor Body = Pksm.LogoGrid.WithAlpha(0xC8);
+    private static readonly SKColor TopEdge = Pksm.LogoCyan.WithAlpha(0xE0);
+    private static readonly SKColor BotEdge = Pksm.LogoVoid.WithAlpha(0xE0);
     private static readonly SKColor FaintBody = new(0x4A, 0x26, 0x20, 0xCC);
     private static readonly SKColor FaintEdge = new(0x7A, 0x44, 0x36, 0xE0);
     private static readonly SKColor FaintName = new(0xE0, 0xA9, 0x8A);
     private static readonly SKColor FaintLv = new(0xB0, 0x7A, 0x60);
-    private static readonly SKColor Track = new(0x0C, 0x14, 0x30);
-    private static readonly SKColor LvColor = new(0x8F, 0xA0, 0xC8);
-    private static readonly SKColor HpLabel = new(0x66, 0x7A, 0xB8);
-    private static readonly SKColor Selected = new(0x35, 0xB8, 0xC8);
+    private static readonly SKColor Track = Pksm.LogoVoid;
+    private static readonly SKColor LvColor = Pksm.InkSoft;
+    private static readonly SKColor HpLabel = Pksm.LogoBlue;
+    private static readonly SKColor Selected = Pksm.LogoCyan;
 
     public static void Paint(SKCanvas canvas, SKImageInfo info, ISpriteService sprites, ISaveEngineSession? session, int selectedSlot, Action invalidate, (int Box, int Slot)? carrySource = null, float pulsePhase = 0f)
     {
@@ -141,7 +141,7 @@ public static class PartyView
 
         if (ghost)
         {
-            using var veil = new SKPaint { Color = new SKColor(0x14, 0x1D, 0x3E, 0xB4), IsAntialias = true };
+            using var veil = new SKPaint { Color = Pksm.LogoDeep.WithAlpha(0xB4), IsAntialias = true };
             canvas.DrawPath(BevelPath(SKRect.Inflate(r, -2, -2.5f), 0), veil);
         }
         if (ghostTag)
@@ -261,7 +261,7 @@ public static class PartyView
     /// <summary>The gender glyphs as clean vectors: blue male arrow, pink female cross.</summary>
     private static void DrawGender(SKCanvas canvas, SKPoint center, float radius, bool male)
     {
-        var color = male ? new SKColor(0x4A, 0x8B, 0xF0) : new SKColor(0xF0, 0x7A, 0x9B);
+        var color = male ? Pksm.LogoCyan : new SKColor(0xF0, 0x7A, 0x9B);
         using var paint = new SKPaint { Color = color, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = Math.Max(2f, radius * 0.32f) };
         if (male)
         {

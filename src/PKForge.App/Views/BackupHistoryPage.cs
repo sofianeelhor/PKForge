@@ -131,7 +131,17 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
             StringFormat = "{0} · {1} · {2}",
         });
 
-        var text = new VerticalStackLayout { Spacing = 2, Children = { title, detail } };
+        var change = new Label
+        {
+            TextColor = UiTokens.Ink0,
+            FontFamily = DsChrome.PixelFont,
+            FontSize = 12,
+            LineBreakMode = LineBreakMode.WordWrap,
+        };
+        change.SetBinding(Label.TextProperty, nameof(BackupInfo.ChangeDescription));
+        change.SetBinding(Label.IsVisibleProperty, nameof(BackupInfo.ChangeDescription), converter: NotNullToVisible);
+
+        var text = new VerticalStackLayout { Spacing = 2, Children = { title, detail, change } };
         var row = new Grid
         {
             ColumnSpacing = 10,
@@ -143,6 +153,18 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
         var card = Kit.DevicePanel(row, padding: 10);
         card.Margin = new Thickness(2, 4);
         return card;
+    }
+
+    /// <summary>Hides the change line for legacy restore points created before descriptions existed.</summary>
+    private static readonly NotNullToVisibleConverter NotNullToVisible = new();
+
+    private sealed class NotNullToVisibleConverter : IValueConverter
+    {
+        public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+            value is string { Length: > 0 };
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+            throw new NotSupportedException();
     }
 
     private async void OnSelected(object? sender, SelectionChangedEventArgs args)

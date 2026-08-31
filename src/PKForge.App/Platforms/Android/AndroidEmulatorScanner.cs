@@ -185,8 +185,11 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
             }
             Trace($"DocumentUri={documentUri}");
 
-            // A file already parsed at this modification time never gets re-read: rescans are instant.
-            var cacheKey = documentUri.ToString()!;
+            // A file already parsed at this modification time never gets re-read: rescans
+            // are instant. The install epoch in the key makes each fresh APK re-read every
+            // file exactly once, so detection improvements (new romhack labels, say) reach
+            // saves whose timestamps have not changed since the previous install.
+            var cacheKey = documentUri + "#" + InstallEpoch;
             var modifiedTicks = child.LastModified?.UtcTicks ?? 0;
 #if !DEBUG && !DIAGNOSTIC
             if (ScanCache.TryGet(cacheKey, modifiedTicks, out var cached))
@@ -259,6 +262,27 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
     }
 
     private sealed record ChildDocument(string DocId, string Name, bool IsDirectory, DateTimeOffset? LastModified);
+
+    /// <summary>Android's last package update time: zero-once per install, stable after.</summary>
+    private static long _installEpoch = -1;
+
+    private static long InstallEpoch
+    {
+        get
+        {
+            if (_installEpoch >= 0) return _installEpoch;
+            try
+            {
+                var context = Platform.AppContext;
+                _installEpoch = context.PackageManager!.GetPackageInfo(context.PackageName!, 0)?.LastUpdateTime ?? 0;
+            }
+            catch
+            {
+                _installEpoch = 0; // unbustable cache is still better than a crashing scan
+            }
+            return _installEpoch;
+        }
+    }
 
     /// <summary>
     /// Persistent parse cache keyed by document URI + last-modified time. A null entry
