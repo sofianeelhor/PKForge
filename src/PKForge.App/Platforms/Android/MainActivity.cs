@@ -54,8 +54,52 @@ public sealed class MainActivity : MauiAppCompatActivity
                 Haptic();
                 return true;
             }
+            // Directional keys must never fall through to Android's native focus search:
+            // it draws the grey selection rectangles on the home shelf. Touch stays the
+            // only pointer input, so there is nothing useful to hand over.
+            if (IsDirectional(button))
+                return true;
         }
         return base.DispatchKeyEvent(e);
+    }
+
+    private Services.PadButton? _hatDirection;
+
+    public override bool OnGenericMotionEvent(MotionEvent? e)
+    {
+        // D-pad-emulating hats (the Thor's stick and some dpad firmwares) arrive as axis
+        // motion, not key events. Left unhandled they drive native focus navigation and
+        // put the same grey boxes on screen; route them through the pad router instead.
+        if (e is { Action: MotionEventActions.Move })
+        {
+            var direction = HatDirection(e);
+            var repeat = direction == _hatDirection;
+            _hatDirection = direction;
+            if (direction is { } button && !repeat)
+            {
+                var router = IPlatformApplication.Current?.Services.GetService<Services.GamepadRouter>();
+                if (router?.Dispatch(button) == true)
+                {
+                    Haptic();
+                    return true;
+                }
+            }
+            if (direction is not null)
+                return true;
+        }
+        return base.OnGenericMotionEvent(e);
+    }
+
+    private static bool IsDirectional(Services.PadButton button) =>
+        button is Services.PadButton.Up or Services.PadButton.Down or Services.PadButton.Left or Services.PadButton.Right;
+
+    private static Services.PadButton? HatDirection(MotionEvent e)
+    {
+        var x = e.GetAxisValue(Axis.HatX);
+        var y = e.GetAxisValue(Axis.HatY);
+        if (Math.Abs(x) < 0.5f && Math.Abs(y) < 0.5f) return null;
+        if (Math.Abs(y) >= Math.Abs(x)) return y < 0 ? Services.PadButton.Up : Services.PadButton.Down;
+        return x < 0 ? Services.PadButton.Left : Services.PadButton.Right;
     }
 
     private static Services.PadButton? ResolveButton(Keycode code) => code switch
@@ -84,7 +128,6 @@ public sealed class MainActivity : MauiAppCompatActivity
             base.OnActivityResult(requestCode, resultCode, data);
     }
 
-    public override bool OnGenericMotionEvent(MotionEvent? e) => base.OnGenericMotionEvent(e);
 
     /// <summary>Short tick on handled pad input. Failures (no vibrator, disabled) are ignored.</summary>
     private static void Haptic()

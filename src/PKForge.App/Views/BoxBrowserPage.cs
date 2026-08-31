@@ -1444,12 +1444,15 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         };
         if (session.GetGrandUndergroundItems().Count != 0)
             options.Insert(2, new PadOption("Grand Underground", IconPath: "bag"));
+        if (session.SupportsCompassSettings)
+            options.Insert(2, new PadOption("Compass settings", IconPath: "settings"));
         var choice = await PadMenu.ShowAsync(_hostGrid, "SAVE DATA", null, options.ToArray());
         switch (choice)
         {
             case "Trainer card": await ShowTrainerCardAsync(); return;
             case "Bag & items": await ShowBagAsync(); return;
             case "Grand Underground": await GrandUndergroundEditor.ShowAsync(_hostGrid, session, _viewModel); return;
+            case "Compass settings": await ShowCompassSettingsAsync(session); return;
             case "Pokédex": await ShowDexMenuAsync(); return;
             case "Fashion": await ShowFashionAsync(); return;
             case "Trainer records": await ShowTrainerRecordsAsync(); return;
@@ -1469,6 +1472,47 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 return;
             }
             case "Restore points": await PushAsync<BackupHistoryPage>(); return;
+        }
+    }
+
+    /// <summary>
+    /// Pokemon Compass romhack settings: the confirmed QoL toggles (exp share, level
+    /// cap, spawn rate...). Each change is one backed-up write through the normal path.
+    /// </summary>
+    private async Task ShowCompassSettingsAsync(Domain.ISaveEngineSession session)
+    {
+        while (true)
+        {
+            var settings = session.GetCompassSettings();
+            if (settings.Count == 0)
+            {
+                _viewModel.Status = "No Compass settings found in this save.";
+                return;
+            }
+
+            var options = settings
+                .Select(setting => new PadOption($"{setting.Name}: {setting.Choices[setting.Selected]}", IconPath: "settings"))
+                .Append(new PadOption("Close", IconPath: "quit"))
+                .ToArray();
+            var choice = await PadMenu.ShowAsync(_hostGrid, "COMPASS SETTINGS",
+                "Pokemon Compass options. One backed-up write per change.", options);
+            if (choice is null or "Close") return;
+
+            var setting = settings.FirstOrDefault(s => choice.StartsWith(s.Name + ":", StringComparison.Ordinal));
+            if (setting is null) return;
+            var picked = await PickerMenu.ShowAsync(_hostGrid, setting.Name,
+                setting.Choices.Select((label, index) => new PickItem(index, label)).ToList(), setting.Selected);
+            if (picked is null) continue;
+            var label = setting.Choices[picked.Id];
+
+            var ok = await _viewModel.RunMutationAsync(s =>
+                s.SetCompassSetting(setting.Id, picked.Id)
+                    ? new GenerationOutcome(true, $"{setting.Name} set to {label}.")
+                    : new GenerationOutcome(false, "That Compass setting could not be applied."),
+                Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false,
+                changeDescription: $"Compass: {setting.Name} -> {label}");
+            if (ok)
+                _viewModel.Status = $"COMPASS: {setting.Name.ToUpperInvariant()} = {label.ToUpperInvariant()}";
         }
     }
 
@@ -2445,6 +2489,20 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             return true;
         }
         _lastAimSlot = -1;
+
+        // Party A is the games' summary flow: open the mon's actions (Edit leads into the
+        // stats editor). The PC-hand grab belongs to the boxes; party members move through
+        // the menu's Move entry so A never silently starts dragging a team member.
+        if (_viewModel.BoxIndex == -1)
+        {
+            var slots = _viewModel.VisibleSlots;
+            if (slot < slots.Count && slots[slot].Species is not null)
+            {
+                _ = ShowMonActionsAsync(slot);
+                return true;
+            }
+        }
+
         if (_viewModel.BeginCarry())
         {
             _canvas.InvalidateSurface();
@@ -2507,7 +2565,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 await SendToBankAsync(slot, nickname);
                 return;
             case "Copy to Bank":
-                await SendToBankAsync(slot, nickname);
+                await SendToBankAsync(slot, nickname, copyInsteadOfMove: true);
                 return;
             case "Send to another game…":
                 await SendSlotToAnotherGameAsync(slot, nickname);
@@ -2669,8 +2727,11 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         await QrPopup.ShowAsync(_hostGrid, "SHOWDOWN SET · QR", text);
     }
 
-    /// <summary>Deposit: the mon's bytes move into the app's vault, the game slot is emptied (one safe write).</summary>
-    private async Task SendToBankAsync(int slot, string nickname)
+    /// <summary>
+    /// Deposit: a copy duplicates into the vault and leaves the game untouched; a move
+    /// additionally empties the game slot (one safe write, one restore point).
+    /// </summary>
+    private async Task SendToBankAsync(int slot, string nickname, bool copyInsteadOfMove = false)
     {
         var session = _sessionsFor();
         var bank = IPlatformApplication.Current?.Services.GetService<IBankService>();
@@ -2685,11 +2746,18 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             return;
         }
 
+        if (copyInsteadOfMove)
+        {
+            bank.Add(export.Data, info);
+            _viewModel.Status = $"{nickname} copied to the Bank. The original stays in the game.";
+            return;
+        }
+
         var ok = await _viewModel.RunMutationAsync(s =>
         {
             s.ReleaseSlot(_viewModel.BoxIndex, slot);
             return new GenerationOutcome(true, $"{nickname} deposited in the Bank.");
-        }, slot);
+        }, slot, changeDescription: $"Deposit {nickname} in the Bank ({(_viewModel.BoxIndex == -1 ? $"Party {slot + 1}" : $"Box {_viewModel.BoxIndex + 1}, Slot {slot + 1}")})");
         if (ok)
         {
             bank.Add(export.Data, info);
@@ -2853,7 +2921,15 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var evs = FocusBorder(StatsField("EVS", nameof(BoxBrowserViewModel.EditEvs), () => _sessionsFor()?.GetTrainingCaps().EvMax ?? 252, shaded: true), "EVS", async () => await OpenStatsEditorAsync("EVS", nameof(BoxBrowserViewModel.EditEvs), () => _sessionsFor()?.GetTrainingCaps().EvMax ?? 252));
         var ball = FocusBorder(NamedPicker("BALL", nameof(BoxBrowserViewModel.EditBall), data.BallNames, BallItems, shaded: false), "BALL", async () => await OpenNamedPickerAsync("BALL", nameof(BoxBrowserViewModel.EditBall), BallItems));
         var genderValue = Kit.BlueprintValue(13);
-        var gender = FocusBorder(RowChrome("GENDER", genderValue, false), "GENDER", async () => await OpenGenderPickerAsync());
+        var genderChevron = new Label
+        {
+            Text = ">", FontFamily = DsChrome.PixelFont, TextColor = UiTokens.Blueprint,
+            FontSize = 13, VerticalTextAlignment = TextAlignment.Center,
+        };
+        var gender = FocusBorder(RowChrome("GENDER", genderValue, false, genderChevron), "GENDER", async () => await OpenGenderPickerAsync());
+        var genderTap = new TapGestureRecognizer();
+        genderTap.Tapped += async (_, _) => await OpenGenderPickerAsync();
+        gender.GestureRecognizers.Add(genderTap);
         genderValue.Text = _viewModel.EditGender switch { "0" => "Male", "1" => "Female", _ => "Genderless" };
         _viewModel.PropertyChanged += (_, args) =>
         {
@@ -3519,6 +3595,12 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         if (slot < slots.Count && slots[slot].Species is null)
         {
             _ = OfferAddPokemonAsync(slot);
+            return;
+        }
+        if (_viewModel.BoxIndex == -1)
+        {
+            // Same rule as the pad: a party tap opens the mon's actions, never a grab.
+            _ = ShowMonActionsAsync(slot);
             return;
         }
         if (wasSelected && _viewModel.BeginCarry())

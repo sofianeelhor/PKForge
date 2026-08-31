@@ -56,12 +56,14 @@ public sealed class HomePage : ContentPage, IPadHandler
             Children = { gamesLabel, _shelf },
         };
         Grid.SetRow(_shelf, 1);
+        BlockNativeFocus(_shelf);
 
         // The three destinations as PKSM tiles with bundled pixel icons.
         var bank = new DsCard("bank", "Bank") { Tapped = () => _ = PushAsync<BankPage>() };
         var events = new DsCard("events", "Events") { Tapped = () => _ = ShowEventsMenuAsync() };
         var settings = new DsCard("settings", "Settings") { Tapped = () => _ = ShowSettingsAsync() };
         _cards = [bank, events, settings];
+        foreach (var card in _cards) BlockNativeFocus(card);
         var cards = new Grid
         {
             ColumnSpacing = 10,
@@ -102,6 +104,22 @@ public sealed class HomePage : ContentPage, IPadHandler
     }
 
     private Grid _hostGrid = null!;
+
+    /// <summary>
+    /// The shelf's selection is drawn by PKForge (the cyan frame); Android's own focused
+    /// state is the grey box that sticks around until the next tap, so it is disabled here.
+    /// </summary>
+    private static void BlockNativeFocus(View view)
+    {
+        view.HandlerChanged += (_, _) =>
+        {
+            if (view.Handler?.PlatformView is Android.Views.View platform)
+            {
+                platform.Focusable = false;
+                platform.FocusableInTouchMode = false;
+            }
+        };
+    }
 
     private bool _welcomeShown;
     private bool _scannedOnce;
@@ -755,6 +773,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             await OpenGroupAsync(group);
         };
         card.GestureRecognizers.Add(tap);
+        BlockNativeFocus(card);
         return card;
     }
 
