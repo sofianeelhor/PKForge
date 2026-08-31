@@ -256,13 +256,19 @@ public sealed class HomePage : ContentPage, IPadHandler
         if (_shelfIndex < _shelfItems.Children.Count && _shelfItems.Children[_shelfIndex] is View selectedView)
         {
             var centeredX = Math.Max(0, selectedView.X - Math.Max(0, (_shelf.Width - selectedView.Width) / 2));
-            _ = _shelf.ScrollToAsync(centeredX, 0, true);
+            // Smooth scroll for single steps; snap while the pad repeats fast. Overlapping
+            // animated scrolls during held navigation made the shelf teleport.
+            var snap = Environment.TickCount64 - _lastShelfMoveMs < 200;
+            _ = _shelf.ScrollToAsync(centeredX, 0, !snap);
         }
+        _lastShelfMoveMs = Environment.TickCount64;
         // The lower screen previews the highlighted game's hero art.
         var state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
         if (state is not null) state.PreviewGame = selected.Saves[0];
         return true;
     }
+
+    private long _lastShelfMoveMs;
 
     private bool OpenShelfSelection()
     {

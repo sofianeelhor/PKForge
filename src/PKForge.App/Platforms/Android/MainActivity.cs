@@ -21,6 +21,8 @@ public sealed class MainActivity : MauiAppCompatActivity
     {
         // A Presentation owns a separate window, so Android does not reliably hide it
         // when the launcher backgrounds the main activity (notably on the AYN Thor).
+        StopHatRepeat();
+        _hatDirection = null;
         SecondaryDisplayHost()?.SuspendForActivityPause();
         base.OnPause();
     }
@@ -68,39 +70,53 @@ public sealed class MainActivity : MauiAppCompatActivity
     }
 
     private Services.PadButton? _hatDirection;
-    private long _hatLastDispatchMs;
+    private readonly Android.OS.Handler _hatRepeatHandler = new(Android.OS.Looper.MainLooper!);
+    private Java.Lang.Runnable? _hatRepeatRunnable;
     private const long HatHoldDelayMs = 320;
     private const long HatRepeatMs = 80;
 
     public override bool OnGenericMotionEvent(MotionEvent? e)
     {
-        // D-pad-emulating hats (the Thor's controller) arrive as axis motion, not key
-        // events. Left unhandled they drive native focus navigation (the grey boxes);
-        // routed here they must also REPEAT: the native navigation the app replaced
-        // auto-repeated while the hat stayed deflected, so a held direction keeps
-        // moving after a short hold delay at a fixed cadence.
+        // D-pad-emulating hats (the Thor's controller) arrive as axis motion, and the
+        // device only reports CHANGES: a statically held direction produces no further
+        // events. The repeat therefore needs its own timer, exactly like the native
+        // joystick navigation this replaces: step once on deflection, then keep
+        // stepping after a hold delay at a fixed cadence until release.
         if (e is { Action: MotionEventActions.Move })
         {
             var direction = HatDirection(e);
-            var now = System.Environment.TickCount64;
-            if (direction is { } button)
+            if (direction != _hatDirection)
             {
-                if (direction != _hatDirection)
+                StopHatRepeat();
+                _hatDirection = direction;
+                if (direction is { } button)
                 {
                     DispatchHat(button, haptic: true);
-                    _hatLastDispatchMs = now;
-                }
-                else if (now - _hatLastDispatchMs >= HatRepeatMs)
-                {
-                    DispatchHat(button, haptic: false);
-                    _hatLastDispatchMs = now;
+                    StartHatRepeat(button, HatHoldDelayMs);
                 }
             }
-            _hatDirection = direction;
             if (direction is not null)
                 return true;
         }
         return base.OnGenericMotionEvent(e);
+    }
+
+    private void StartHatRepeat(Services.PadButton button, long delayMs)
+    {
+        _hatRepeatRunnable = new Java.Lang.Runnable(() =>
+        {
+            if (_hatDirection != button) return; // released or rolled to another direction
+            DispatchHat(button, haptic: false);
+            StartHatRepeat(button, HatRepeatMs);
+        });
+        _hatRepeatHandler.PostDelayed(_hatRepeatRunnable, delayMs);
+    }
+
+    private void StopHatRepeat()
+    {
+        if (_hatRepeatRunnable is null) return;
+        _hatRepeatHandler.RemoveCallbacks(_hatRepeatRunnable);
+        _hatRepeatRunnable = null;
     }
 
     private static void DispatchHat(Services.PadButton button, bool haptic)
