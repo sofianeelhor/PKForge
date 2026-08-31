@@ -48,6 +48,10 @@ public sealed class MainActivity : MauiAppCompatActivity
     {
         if (e?.Action == KeyEventActions.Down && ResolveButton(e.KeyCode) is { } button)
         {
+            // The hat axis auto-repeats held directions; framework key repeats for the
+            // same direction would stack on top and double the navigation speed.
+            if (e.RepeatCount > 0 && _hatDirection == button)
+                return true;
             var router = IPlatformApplication.Current?.Services.GetService<Services.GamepadRouter>();
             if (router?.Dispatch(button) == true)
             {
@@ -64,30 +68,46 @@ public sealed class MainActivity : MauiAppCompatActivity
     }
 
     private Services.PadButton? _hatDirection;
+    private long _hatLastDispatchMs;
+    private const long HatHoldDelayMs = 320;
+    private const long HatRepeatMs = 80;
 
     public override bool OnGenericMotionEvent(MotionEvent? e)
     {
-        // D-pad-emulating hats (the Thor's stick and some dpad firmwares) arrive as axis
-        // motion, not key events. Left unhandled they drive native focus navigation and
-        // put the same grey boxes on screen; route them through the pad router instead.
+        // D-pad-emulating hats (the Thor's controller) arrive as axis motion, not key
+        // events. Left unhandled they drive native focus navigation (the grey boxes);
+        // routed here they must also REPEAT: the native navigation the app replaced
+        // auto-repeated while the hat stayed deflected, so a held direction keeps
+        // moving after a short hold delay at a fixed cadence.
         if (e is { Action: MotionEventActions.Move })
         {
             var direction = HatDirection(e);
-            var repeat = direction == _hatDirection;
-            _hatDirection = direction;
-            if (direction is { } button && !repeat)
+            var now = System.Environment.TickCount64;
+            if (direction is { } button)
             {
-                var router = IPlatformApplication.Current?.Services.GetService<Services.GamepadRouter>();
-                if (router?.Dispatch(button) == true)
+                if (direction != _hatDirection)
                 {
-                    Haptic();
-                    return true;
+                    DispatchHat(button, haptic: true);
+                    _hatLastDispatchMs = now;
+                }
+                else if (now - _hatLastDispatchMs >= HatRepeatMs)
+                {
+                    DispatchHat(button, haptic: false);
+                    _hatLastDispatchMs = now;
                 }
             }
+            _hatDirection = direction;
             if (direction is not null)
                 return true;
         }
         return base.OnGenericMotionEvent(e);
+    }
+
+    private static void DispatchHat(Services.PadButton button, bool haptic)
+    {
+        var router = IPlatformApplication.Current?.Services.GetService<Services.GamepadRouter>();
+        if (router?.Dispatch(button) == true && haptic)
+            Haptic(); // once per press: a tick every 80 ms of repeat would buzz
     }
 
     private static bool IsDirectional(Services.PadButton button) =>
