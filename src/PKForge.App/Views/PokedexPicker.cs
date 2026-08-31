@@ -23,7 +23,8 @@ public sealed class PokedexPicker : IPadHandler
     private static readonly (int Gen, int First, int Last)[] GenRanges =
         [(1, 1, 151), (2, 152, 251), (3, 252, 386), (4, 387, 493), (5, 494, 649), (6, 650, 721), (7, 722, 809), (8, 810, 905), (9, 906, 1025)];
 
-    private sealed class DexEntry(int id, string name, string? iconPath, IReadOnlyList<int> types, int gen) : INotifyPropertyChanged
+    private sealed class DexEntry(int id, string name, string? iconPath, IReadOnlyList<int> types, int gen,
+        BaseStats stats, SpeciesFormFlags forms) : INotifyPropertyChanged
     {
         private bool _isSelected;
         public int Id { get; } = id;
@@ -31,6 +32,8 @@ public sealed class PokedexPicker : IPadHandler
         public string? IconPath { get; } = iconPath;
         public IReadOnlyList<int> Types { get; } = types;
         public int Gen { get; } = gen;
+        public BaseStats Stats { get; } = stats;
+        public SpeciesFormFlags Forms { get; } = forms;
         public bool IsSelected
         {
             get => _isSelected;
@@ -59,6 +62,12 @@ public sealed class PokedexPicker : IPadHandler
     private readonly SecondScreenState? _state;
     private readonly List<Border> _typeChips = [];
     private readonly List<Border> _genChips = [];
+    private string _category = "Any";
+    private string _power = "Any";
+    private string _theme = "Any";
+    private Label _categoryLabel = null!;
+    private Label _powerLabel = null!;
+    private Label _themeLabel = null!;
 
     public static async Task<PickItem?> ShowAsync(Grid host, IGameDataService data, ISaveEngineSession session)
     {
@@ -185,8 +194,10 @@ public sealed class PokedexPicker : IPadHandler
             if (data.SpeciesNames[id].Length == 0) continue;
             var icon = IconCachePath(id);
             var genIndex = Array.FindIndex(GenRanges, r => id >= r.First && id <= r.Last);
+            var forms = id < data.FormFlags.Count ? data.FormFlags[id] : new SpeciesFormFlags(false, false, false, false);
             _all.Add(new DexEntry(id, data.SpeciesNames[id], File.Exists(icon) ? icon : null,
-                session.GetSpeciesTypes(id), genIndex >= 0 ? GenRanges[genIndex].Gen : 9));
+                session.GetSpeciesTypes(id), genIndex >= 0 ? GenRanges[genIndex].Gen : 9,
+                session.GetBaseStats(id), forms));
         }
         _filtered = ApplyFilters();
 
@@ -225,6 +236,7 @@ public sealed class PokedexPicker : IPadHandler
             ("Ⓑ", "CANCEL", () => Close(null)),
             ("Ⓛ Ⓡ", "GEN", null),
             ("Ⓧ", "TYPES", () => _ = ShowTypeFilterMenuAsync()),
+            ("Ⓢ", "FILTERS", () => _ = ShowFilterAxisMenuAsync()),
             ("Ⓨ", "CLEAR", ClearFilters));
         content.Add(hints); Grid.SetRow(hints, 4);
 
@@ -269,8 +281,20 @@ public sealed class PokedexPicker : IPadHandler
     {
         _typeFilters.Clear();
         _genFilter = null;
+        _category = "Any";
+        _power = "Any";
+        _theme = "Any";
+        RefreshCapsules();
         RefreshChipStates();
         Refilter();
+    }
+
+    private void RefreshCapsules()
+    {
+        if (_categoryLabel is null) return;
+        _categoryLabel.Text = $"CATEGORY: {_category.ToUpperInvariant()}";
+        _powerLabel.Text = $"POWER: {_power.ToUpperInvariant()}";
+        _themeLabel.Text = $"THEME: {_theme.ToUpperInvariant()}";
     }
 
     private void RefreshChipStates()
@@ -342,6 +366,11 @@ public sealed class PokedexPicker : IPadHandler
         clear.GestureRecognizers.Add(clearTap);
         genRow.Children.Add(clear);
 
+        var extras = new HorizontalStackLayout { Spacing = 5 };
+        extras.Children.Add(FilterCapsule("CATEGORY", () => _ = ShowCategoryMenuAsync(), ref _categoryLabel));
+        extras.Children.Add(FilterCapsule("POWER", () => _ = ShowPowerMenuAsync(), ref _powerLabel));
+        extras.Children.Add(FilterCapsule("THEME", () => _ = ShowThemeMenuAsync(), ref _themeLabel));
+
         return new VerticalStackLayout
         {
             Spacing = 5,
@@ -349,8 +378,27 @@ public sealed class PokedexPicker : IPadHandler
             {
                 new ScrollView { Orientation = ScrollOrientation.Horizontal, HorizontalScrollBarVisibility = ScrollBarVisibility.Never, Content = typeRow },
                 genRow,
+                extras,
             },
         };
+    }
+
+    /// <summary>A live capsule showing the current selection of one filter axis.</summary>
+    private Border FilterCapsule(string caption, Action open, ref Label valueLabel)
+    {
+        valueLabel = new Label { Text = $"{caption}: ANY", TextColor = Colors.White, FontSize = 9, FontAttributes = FontAttributes.Bold };
+        var capsule = new Border
+        {
+            BackgroundColor = UiTokens.MenuBlue,
+            StrokeThickness = 0,
+            StrokeShape = new RoundRectangle { CornerRadius = 6 },
+            Padding = new Thickness(10, 3),
+            Content = valueLabel,
+        };
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += (_, _) => open();
+        capsule.GestureRecognizers.Add(tap);
+        return capsule;
     }
 
     /// <summary>A compact logo-deck tile: normalized sprite, strong name plate, cyan focus.</summary>
@@ -446,8 +494,58 @@ public sealed class PokedexPicker : IPadHandler
             source = source.Where(e => _typeFilters.All(t => e.Types.Contains(t)));
         if (!string.IsNullOrWhiteSpace(_query))
             source = source.Where(e => e.Name.Contains(_query, StringComparison.OrdinalIgnoreCase));
+        if (_category != "Any")
+            source = source.Where(e => MatchesCategory(e, _category));
+        if (_power != "Any")
+            source = source.Where(e => MatchesPower(e, _power));
+        if (_theme != "Any")
+            source = source.Where(e => MatchesTheme(e, _theme));
         return source.ToList();
     }
+
+    private static bool MatchesCategory(DexEntry e, string category) => category switch
+    {
+        "Legendary" => SpeciesCategories.Legendary.Contains(e.Id),
+        "Mythical" => SpeciesCategories.Mythical.Contains(e.Id),
+        "Ultra Beast" => SpeciesCategories.UltraBeast.Contains(e.Id),
+        "Paradox" => SpeciesCategories.Paradox.Contains(e.Id),
+        "Pseudo-Legendary" => SpeciesCategories.PseudoLegendary.Contains(e.Id),
+        "Starter" => SpeciesCategories.Starter.Contains(e.Id),
+        "Fossil" => SpeciesCategories.Fossil.Contains(e.Id),
+        "Baby" => SpeciesCategories.Baby.Contains(e.Id),
+        "Regional Form" => e.Forms.Regional,
+        "Mega-capable" => e.Forms.Mega,
+        "Gigantamax-capable" => SpeciesCategories.GigantamaxCapable.Contains(e.Id),
+        "Has Alternate Forms" => e.Forms.HasForms,
+        _ => true,
+    };
+
+    private static bool MatchesPower(DexEntry e, string power)
+    {
+        var total = e.Stats.Hp + e.Stats.Atk + e.Stats.Def + e.Stats.SpA + e.Stats.SpD + e.Stats.Spe;
+        return power switch
+        {
+            "400+ BST" => total >= 400,
+            "500+ BST" => total >= 500,
+            "600+ BST" => total >= 600,
+            "Physical Attacker" => e.Stats.Atk >= 100 && e.Stats.Atk >= e.Stats.SpA + 15,
+            "Special Attacker" => e.Stats.SpA >= 100 && e.Stats.SpA >= e.Stats.Atk + 15,
+            "Fast" => e.Stats.Spe >= 100,
+            "Sturdy" => e.Stats.Hp + e.Stats.Def + e.Stats.SpD >= 280,
+            _ => true,
+        };
+    }
+
+    private static bool MatchesTheme(DexEntry e, string theme) => theme switch
+    {
+        "Dragons" => e.Types.Contains(15) || SpeciesCategories.Themes.DragonExtras.Contains(e.Id),
+        "Aquatic" => e.Types.Contains(10) || SpeciesCategories.Themes.AquaticExtras.Contains(e.Id),
+        "Felines" => SpeciesCategories.Themes.Felines.Contains(e.Id),
+        "Canines" => SpeciesCategories.Themes.Canines.Contains(e.Id),
+        "Birds" => SpeciesCategories.Themes.Birds.Contains(e.Id),
+        "Dinosaurs" => SpeciesCategories.Themes.Dinosaurs.Contains(e.Id),
+        _ => true,
+    };
 
     private CancellationTokenSource? _searchDebounce;
 
@@ -497,6 +595,7 @@ public sealed class PokedexPicker : IPadHandler
             case PadButton.R: CycleGen(1); return true;
             case PadButton.X: _ = ShowTypeFilterMenuAsync(); return true;
             case PadButton.Y: ClearFilters(); return true;
+            case PadButton.Start: _ = ShowFilterAxisMenuAsync(); return true;
             default: return true; // the dex owns the pad while open
         }
     }
@@ -531,6 +630,58 @@ public sealed class PokedexPicker : IPadHandler
         var name = choice.StartsWith("✓ ", StringComparison.Ordinal) ? choice[2..] : choice;
         var type = Array.IndexOf(TypeNames, name);
         if (type >= 0) ToggleType(type);
+    }
+
+    /// <summary>Pad path into the three deep-filter axes (the capsules are the touch path).</summary>
+    private async Task ShowFilterAxisMenuAsync()
+    {
+        var choice = await PadMenu.ShowAsync(_host, "FILTERS",
+            "Categories, power, and themes combine with the type gems and generation chips.",
+            new PadOption($"Category: {_category}", IconPath: "pokedex"),
+            new PadOption($"Power: {_power}", IconPath: "dice"),
+            new PadOption($"Theme: {_theme}", IconPath: "script"),
+            new PadOption("Clear all filters", IconPath: "quit"));
+        switch (choice)
+        {
+            case "Clear all filters": ClearFilters(); return;
+            case { } picked when picked.StartsWith("Category", StringComparison.Ordinal): await ShowCategoryMenuAsync(); return;
+            case { } picked when picked.StartsWith("Power", StringComparison.Ordinal): await ShowPowerMenuAsync(); return;
+            case { } picked when picked.StartsWith("Theme", StringComparison.Ordinal): await ShowThemeMenuAsync(); return;
+        }
+    }
+
+    private async Task ShowCategoryMenuAsync()
+    {
+        var choice = await PadMenu.ShowAsync(_host, "CATEGORY",
+            "Rarity and special families. Combines with types, generation, power, and theme.",
+            "Any", "Legendary", "Mythical", "Ultra Beast", "Paradox", "Pseudo-Legendary",
+            "Starter", "Fossil", "Baby", "Regional Form", "Mega-capable",
+            "Gigantamax-capable", "Has Alternate Forms");
+        if (choice is null) return;
+        _category = choice;
+        RefreshCapsules();
+        Refilter();
+    }
+
+    private async Task ShowPowerMenuAsync()
+    {
+        var choice = await PadMenu.ShowAsync(_host, "POWER", null,
+            "Any", "400+ BST", "500+ BST", "600+ BST", "Physical Attacker",
+            "Special Attacker", "Fast", "Sturdy");
+        if (choice is null) return;
+        _power = choice;
+        RefreshCapsules();
+        Refilter();
+    }
+
+    private async Task ShowThemeMenuAsync()
+    {
+        var choice = await PadMenu.ShowAsync(_host, "THEME", "The fun filters. Subjective by design.",
+            "Any", "Dragons", "Aquatic", "Felines", "Canines", "Birds", "Dinosaurs");
+        if (choice is null) return;
+        _theme = choice;
+        RefreshCapsules();
+        Refilter();
     }
 
     private void Close(PickItem? result)
