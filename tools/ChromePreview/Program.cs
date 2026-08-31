@@ -47,15 +47,10 @@ Console.WriteLine($"wrote previews to {outDir}");
 
 // ---------- mock screens (1280x675, the Thor's landscape shape) ----------
 
-/// <summary>The B/W housing: dark grey with the faint grid.</summary>
+/// <summary>The shared logo-grid housing.</summary>
 static void Grid(SKCanvas c, SKRect r)
 {
-    using var bg = new SKPaint { Color = Pksm.Housing };
-    c.DrawRect(r, bg);
-    using var dot = new SKPaint { Color = Pksm.HousingDot };
-    for (var y = 7f; y < r.Height; y += 14)
-        for (var x = 7f; x < r.Width; x += 14)
-            c.DrawRect(x, y, x + 2, y + 2, dot);
+    PksmPaint.LogoGrid(c, r);
 }
 
 void StatusStrip(SKCanvas c, SKRect bar)

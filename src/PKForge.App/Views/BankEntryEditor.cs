@@ -911,7 +911,25 @@ public static class BankEntryEditor
                 Content = content;
             }
 
-            public void SetFocused(bool focused) => Stroke = focused ? UiTokens.SelectBorder : Colors.Transparent;
+            public void SetFocused(bool focused)
+            {
+                Stroke = focused ? UiTokens.SelectBorder : Colors.Transparent;
+                StrokeThickness = focused ? 4 : 2.5;
+                if (focused)
+                {
+                    Shadow = new Shadow
+                    {
+                        Brush = new SolidColorBrush(UiTokens.SelectBorder),
+                        Opacity = 0.65f,
+                        Radius = 6,
+                        Offset = new Point(0, 0),
+                    };
+                }
+                else
+                {
+                    ClearValue(VisualElement.ShadowProperty);
+                }
+            }
         }
     }
 }

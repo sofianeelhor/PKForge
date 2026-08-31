@@ -113,20 +113,8 @@ public sealed class SecondScreenBoxPage : ContentPage
         };
         Grid.SetColumn(factsPanel, 1);
 
-        // Hero art of the game highlighted on the shelf (home screen only).
-        var heroImage = new Image { Aspect = Aspect.AspectFill };
-        var heroTitle = new Label
-        {
-            TextColor = Colors.White,
-            FontSize = 24,
-            FontAttributes = FontAttributes.Bold,
-            CharacterSpacing = 2,
-            Margin = new Thickness(24, 0, 0, 18),
-            HorizontalOptions = LayoutOptions.Start,
-            VerticalOptions = LayoutOptions.End,
-            Shadow = new Shadow { Brush = Brush.Black, Opacity = 0.9f, Radius = 8, Offset = new Point(0, 2) },
-        };
-        var hero = new Grid { IsVisible = false, Children = { heroImage, heroTitle } };
+        // A purpose-built game banner replaces inconsistent third-party hero art and covers every title.
+        var hero = new GameHeroBackdrop { IsVisible = false };
 
         var idle = new VerticalStackLayout
         {
@@ -154,21 +142,15 @@ public sealed class SecondScreenBoxPage : ContentPage
             if (showSummary) UpdateSummary();
 
             var preview = state?.PreviewGame;
-            string? heroPath = null;
-            if (!showDex && !showSummary && preview is not null)
-                heroPath = await GameArt.GetHeroAsync(preview.GameLabel);
+            var showHero = !showDex && !showSummary && preview is not null;
 
             dex.IsVisible = showDex;
             summary.IsVisible = showSummary;
             _summaryVisible = showSummary;
             _dexVisible = showDex;
             SetAnimating(showSummary || showDex);
-            hero.IsVisible = !showDex && !showSummary && heroPath is not null;
-            if (hero.IsVisible)
-            {
-                heroImage.Source = ImageSource.FromFile(heroPath);
-                heroTitle.Text = preview!.GameLabel.ToUpperInvariant();
-            }
+            hero.IsVisible = showHero;
+            if (showHero) hero.SetGame(preview!);
             idle.IsVisible = !dex.IsVisible && !summary.IsVisible && !hero.IsVisible;
         }
 
@@ -345,7 +327,7 @@ public sealed class SecondScreenBoxPage : ContentPage
         }
     }
 
-    // ── The red Pokédex view (species preview while the picker is open) ──────────
+    // ── The logo-deck Pokédex view (species preview while the picker is open) ──
 
     private static readonly string[] RomanGens = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX"];
     private static readonly string[] RegionNames = ["Kanto", "Johto", "Hoenn", "Sinnoh", "Unova", "Kalos", "Alola", "Galar", "Paldea"];
@@ -354,21 +336,21 @@ public sealed class SecondScreenBoxPage : ContentPage
 
     private SKCanvasView _dexSprite = null!;
     private int _dexSpecies;
-    private readonly Label _dexName = new() { TextColor = Color.FromArgb("#DFF5E4"), FontSize = 24, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1 };
-    private readonly Label _dexNumber = new() { TextColor = Color.FromArgb("#9FCBA8"), FontSize = 13 };
-    private readonly Label _dexOrigin = new() { TextColor = Color.FromArgb("#9FCBA8"), FontSize = 12 };
+    private readonly Label _dexName = new() { TextColor = UiTokens.Ink0, FontSize = 24, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1 };
+    private readonly Label _dexNumber = new() { TextColor = UiTokens.InkSoft, FontSize = 13 };
+    private readonly Label _dexOrigin = new() { TextColor = UiTokens.InkSoft, FontSize = 12 };
     private readonly HorizontalStackLayout _dexTypes = new() { Spacing = 6 };
     private readonly ProgressBar[] _dexStatBars = new ProgressBar[6];
     private readonly Label[] _dexStatValues = new Label[6];
 
-    /// <summary>The classic red handheld dex: lens + LEDs, dark screen, green data readout.</summary>
+    /// <summary>The handheld dex translated into the logo's cobalt hardware language.</summary>
     private View BuildDexView()
     {
         _dexSprite = new SKCanvasView();
         _dexSprite.PaintSurface += PaintDexSprite;
 
         // Top-left hardware charm: the blue lens and three status LEDs.
-        var lens = new Ellipse { WidthRequest = 26, HeightRequest = 26, Fill = new SolidColorBrush(Color.FromArgb("#3D7DD8")), Stroke = new SolidColorBrush(Colors.White.WithAlpha(0.7f)), StrokeThickness = 2 };
+        var lens = new Ellipse { WidthRequest = 26, HeightRequest = 26, Fill = new SolidColorBrush(UiTokens.BagCyanEdge), Stroke = new SolidColorBrush(UiTokens.SelectBorder), StrokeThickness = 2 };
         var leds = new HorizontalStackLayout
         {
             Spacing = 6,
@@ -378,8 +360,8 @@ public sealed class SecondScreenBoxPage : ContentPage
 
         var screen = new Border
         {
-            BackgroundColor = Color.FromArgb("#18231C"),
-            Stroke = Color.FromArgb("#0D1410"),
+            BackgroundColor = UiTokens.ShellPress,
+            Stroke = UiTokens.SelectBorder,
             StrokeThickness = 3,
             StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 10 },
             Padding = 6,
@@ -394,9 +376,9 @@ public sealed class SecondScreenBoxPage : ContentPage
         for (var i = 0; i < 6; i++)
         {
             statsGrid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-            var caption = new Label { Text = statNames[i], TextColor = Color.FromArgb("#9FCBA8"), FontSize = 10, FontAttributes = FontAttributes.Bold };
-            _dexStatBars[i] = new ProgressBar { ProgressColor = Color.FromArgb("#6FE08A"), BackgroundColor = Color.FromArgb("#24352A"), VerticalOptions = LayoutOptions.Center };
-            _dexStatValues[i] = new Label { TextColor = Color.FromArgb("#DFF5E4"), FontSize = 10, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End };
+            var caption = new Label { Text = statNames[i], TextColor = UiTokens.InkSoft, FontSize = 10, FontAttributes = FontAttributes.Bold };
+            _dexStatBars[i] = new ProgressBar { ProgressColor = UiTokens.BagCyanEdge, BackgroundColor = UiTokens.ShellPress, VerticalOptions = LayoutOptions.Center };
+            _dexStatValues[i] = new Label { TextColor = UiTokens.Ink0, FontSize = 10, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End };
             statsGrid.Add(caption); Grid.SetRow(caption, i);
             statsGrid.Add(_dexStatBars[i]); Grid.SetRow(_dexStatBars[i], i); Grid.SetColumn(_dexStatBars[i], 1);
             statsGrid.Add(_dexStatValues[i]); Grid.SetRow(_dexStatValues[i], i); Grid.SetColumn(_dexStatValues[i], 2);
@@ -404,8 +386,8 @@ public sealed class SecondScreenBoxPage : ContentPage
 
         var info = new Border
         {
-            BackgroundColor = Color.FromArgb("#18231C"),
-            Stroke = Color.FromArgb("#0D1410"),
+            BackgroundColor = UiTokens.ShellPress,
+            Stroke = UiTokens.SelectBorder,
             StrokeThickness = 3,
             StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 10 },
             Padding = 12,
@@ -430,8 +412,8 @@ public sealed class SecondScreenBoxPage : ContentPage
 
         var shell = new Border
         {
-            BackgroundColor = Color.FromArgb("#D5433E"),
-            Stroke = Color.FromArgb("#8E2320"),
+            BackgroundColor = UiTokens.Maroon,
+            Stroke = UiTokens.BagCyanEdge,
             StrokeThickness = 3,
             StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 18 },
             Padding = 14,
@@ -484,7 +466,7 @@ public sealed class SecondScreenBoxPage : ContentPage
     private void PaintDexSprite(object? sender, SKPaintSurfaceEventArgs args)
     {
         var canvas = args.Surface.Canvas;
-        canvas.Clear(new SKColor(0x18, 0x23, 0x1C));
+        canvas.Clear(Pksm.PaperShade);
         _dexAnimated = false;
         if (_dexSpecies <= 0) return;
 

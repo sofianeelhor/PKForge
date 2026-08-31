@@ -87,7 +87,7 @@ public static class TextPopup
             Children =
             {
                 Kit.HeaderBar(title),
-                new Label { Text = hint, TextColor = Color.FromArgb("#9AA5B0"), FontFamily = DsChrome.PixelFont, FontSize = 12, LineBreakMode = LineBreakMode.WordWrap },
+                new Label { Text = hint, TextColor = UiTokens.InkSoft, FontFamily = DsChrome.PixelFont, FontSize = 12, LineBreakMode = LineBreakMode.WordWrap },
                 editor,
                 new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { cancel, ok } },
             },

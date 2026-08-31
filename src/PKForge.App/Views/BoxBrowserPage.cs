@@ -413,6 +413,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 case Border border:
                     border.Stroke = UiTokens.ShellEdge;
                     border.StrokeThickness = 1.2;
+                    border.ClearValue(VisualElement.ShadowProperty);
                     break;
                 case Button button:
                     if (target.OriginalBackground is { } originalBackground)
@@ -428,12 +429,19 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         switch (focused.View)
         {
             case Border border:
-                border.Stroke = UiTokens.MenuBlue;
-                border.StrokeThickness = 2.2;
+                border.Stroke = UiTokens.SelectBorder;
+                border.StrokeThickness = 4;
+                border.Shadow = new Shadow
+                {
+                    Brush = new SolidColorBrush(UiTokens.SelectBorder),
+                    Opacity = 0.65f,
+                    Radius = 6,
+                    Offset = new Point(0, 0),
+                };
                 break;
             case Button button:
-                button.BackgroundColor = UiTokens.MenuBlue;
-                button.TextColor = UiTokens.Paper;
+                button.BackgroundColor = UiTokens.SelectBorder;
+                button.TextColor = UiTokens.OnAccent;
                 break;
         }
 
@@ -1649,7 +1657,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                         Text = "BAG",
                         FontFamily = DsChrome.PixelFont,
                         FontSize = 18,
-                        TextColor = UiTokens.Paper,
+                        TextColor = UiTokens.Ink0,
                         VerticalTextAlignment = TextAlignment.Center,
                     },
                 },
@@ -1671,7 +1679,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 Text = "",
                 FontFamily = DsChrome.PixelFont,
                 FontSize = 11,
-                TextColor = UiTokens.Paper,
+                TextColor = UiTokens.Ink0,
                 LineBreakMode = LineBreakMode.WordWrap,
                 MaxLines = 2,
             };
@@ -1777,7 +1785,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 FontFamily = DsChrome.PixelFont,
                 FontSize = 17,
                 FontAttributes = FontAttributes.Bold,
-                TextColor = UiTokens.Paper,
+                TextColor = UiTokens.Ink0,
                 HorizontalTextAlignment = TextAlignment.Center,
                 VerticalTextAlignment = TextAlignment.Center,
                 HorizontalOptions = LayoutOptions.Center,
@@ -2127,7 +2135,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                     Text = label,
                     FontFamily = DsChrome.PixelFont,
                     FontSize = 12,
-                    TextColor = UiTokens.Paper,
+                    TextColor = UiTokens.Ink0,
                     VerticalTextAlignment = TextAlignment.Center,
                     HorizontalTextAlignment = TextAlignment.Center,
                     Margin = new Thickness(14, 0),
@@ -2179,7 +2187,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                     Text = name,
                     FontFamily = DsChrome.PixelFont,
                     FontSize = 13,
-                    TextColor = UiTokens.Paper,
+                    TextColor = UiTokens.Ink0,
                     VerticalTextAlignment = TextAlignment.Center,
                     LineBreakMode = LineBreakMode.TailTruncation,
                     InputTransparent = true,
@@ -2753,7 +2761,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var legality = new Button
         {
             Text = "ILLEGAL - VIEW REPORT",
-            TextColor = UiTokens.Paper,
+            TextColor = UiTokens.Ink0,
             BackgroundColor = UiTokens.Bad,
             FontFamily = DsChrome.PixelFont,
             FontSize = 12,

@@ -5,7 +5,7 @@ namespace PKForge.App.Views;
 /// <summary>
 /// The bundled PKSM pixel-icon set as MAUI image sources. Icons ship as PNGs under
 /// ui/pksm/ (see Resources/UI/ATTRIBUTION.md); they are tinted once on first use —
-/// the native periwinkle for colored surfaces, deep indigo for white panels — and cached.
+/// native authored color, logo cyan for navy panels, white, or logo-void — and cached.
 /// </summary>
 public static class PksmIcons
 {
@@ -19,6 +19,8 @@ public static class PksmIcons
 
     public const string Periwinkle = "periwinkle";
     public const string Indigo = "indigo";
+    public const string Cyan = "cyan";
+    public const string Dark = "dark";
     public const string White = "white";
     public const string Native = "native";
 
@@ -100,7 +102,9 @@ public static class PksmIcons
                 Periwinkle => (SKColor?)null, // native
                 Native => (SKColor?)null,
                 White => SKColors.White,
-                _ => Pksm.IndigoInk,
+                Dark => Pksm.LogoVoid,
+                Cyan => Pksm.LogoCyan,
+                _ => Pksm.LogoCyan,
             };
 
             byte[] result;

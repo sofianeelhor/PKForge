@@ -32,7 +32,7 @@ public static class AboutPopup
                 ColumnDefinitions = [new(new GridLength(140)), new(GridLength.Star)],
                 Children =
                 {
-                    new Label { Text = caption, FontSize = 11, FontFamily = DsChrome.PixelFont, FontAttributes = FontAttributes.Bold, TextColor = Color.FromArgb("#9AA5B0"), VerticalTextAlignment = TextAlignment.Center },
+                    new Label { Text = caption, FontSize = 11, FontFamily = DsChrome.PixelFont, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
                     valueLabel,
                 },
             };
@@ -57,7 +57,7 @@ public static class AboutPopup
             Text = text,
             FontSize = 11,
             FontFamily = DsChrome.PixelFont,
-            TextColor = color ?? Color.FromArgb("#9AA5B0"),
+            TextColor = color ?? UiTokens.InkSoft,
             HorizontalTextAlignment = TextAlignment.Center,
         };
 

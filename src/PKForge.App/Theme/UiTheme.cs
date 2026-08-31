@@ -7,8 +7,8 @@ namespace PKForge.App.Theme;
 /// <summary>
 /// MAUI-facing design tokens. The single source of truth for colors is <see cref="Pksm"/>
 /// (PKForge.Chrome); this maps those SKColors to MAUI Colors so views never hardcode values.
-/// Design language: the PKSM/DS-era storage world — white panels with warm-grey borders,
-/// maroon Gen-5 header strips, saturated per-box wallpapers, indigo icon set.
+/// Design language: the PKSM/DS-era storage world rebuilt in the logo's dark pixel grid,
+/// with layered navy panels, cobalt structure, cyan focus light, and adaptive pale ink.
 /// </summary>
 public static class UiTokens
 {
@@ -39,7 +39,7 @@ public static class UiTokens
     public static readonly Color SelectFill = As(Pksm.SelectFill);
 
     // ---- Chrome accents ----
-    public static readonly Color Maroon = As(Pksm.HeaderBlue);       // header strips are PKSM blue
+    public static readonly Color Maroon = As(Pksm.HeaderBlue);       // legacy name: logo-navy header strips
     public static readonly Color MaroonDeep = As(Pksm.ButtonBlueDeep);
     public static readonly Color Indigo = As(Pksm.Indigo);
     public static readonly Color IndigoLight = As(Pksm.IndigoLight);
@@ -75,7 +75,10 @@ public static class UiTokens
     public static readonly Color Bad = As(Pksm.Illegal);
     public static readonly Color DefaultAccent = Cyan;
 
-    public static readonly Color Scrim = Color.FromArgb("#883F4954");
+    public static readonly Color WorldText = As(Pksm.Ink);
+    public static readonly Color WorldTextMuted = As(Pksm.InkSoft);
+    public static readonly Color OnAccent = As(Pksm.LogoVoid);
+    public static readonly Color Scrim = Color.FromArgb("#CC14121D");
 
     // ---- Skia twins for the grid renderers ----
     public static readonly SKColor SkPaper = Pksm.Paper;
@@ -107,6 +110,13 @@ public static class TypePalette
 
     public static Color ForType(int typeId) =>
         (uint)typeId < (uint)Colors.Length ? Color.FromArgb(Colors[typeId]) : UiTokens.DefaultAccent;
+
+    public static Color ForegroundForType(int typeId)
+    {
+        var color = ForType(typeId);
+        var luminance = 0.299f * color.Red + 0.587f * color.Green + 0.114f * color.Blue;
+        return luminance >= 0.58f ? UiTokens.OnAccent : Microsoft.Maui.Graphics.Colors.White;
+    }
 }
 
 /// <summary>Owns the adaptive accent derived from the selected Pokémon's type(s).</summary>

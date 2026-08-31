@@ -6,11 +6,18 @@ using PKForge.Domain;
 namespace PKForge.App.ViewModels;
 
 /// <summary>One game on the shelf: every detected save for it (folders for multiple saves of one game).</summary>
-public sealed record SaveGroup(
-    string GameLabel, int Generation, EmulatorKind Emulator,
-    string? TrainerName, string? PlayTime, IReadOnlyList<DetectedSave> Saves)
+public sealed partial class SaveGroup(
+    string gameLabel, int generation, EmulatorKind emulator,
+    string? trainerName, string? playTime, IReadOnlyList<DetectedSave> saves) : ObservableObject
 {
+    public string GameLabel { get; } = gameLabel;
+    public int Generation { get; } = generation;
+    public EmulatorKind Emulator { get; } = emulator;
+    public string? TrainerName { get; } = trainerName;
+    public string? PlayTime { get; } = playTime;
+    public IReadOnlyList<DetectedSave> Saves { get; } = saves;
     public int Count => Saves.Count;
+    [ObservableProperty] private bool _isSelected;
 }
 
 public partial class SavePickerViewModel : ObservableObject
