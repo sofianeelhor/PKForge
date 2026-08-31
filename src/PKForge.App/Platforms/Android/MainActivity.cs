@@ -22,6 +22,7 @@ public sealed class MainActivity : MauiAppCompatActivity
         // A Presentation owns a separate window, so Android does not reliably hide it
         // when the launcher backgrounds the main activity (notably on the AYN Thor).
         StopHatRepeat();
+        StopKeyRepeat();
         _hatDirection = null;
         SecondaryDisplayHost()?.SuspendForActivityPause();
         base.OnPause();
@@ -50,14 +51,18 @@ public sealed class MainActivity : MauiAppCompatActivity
     {
         if (e?.Action == KeyEventActions.Down && ResolveButton(e.KeyCode) is { } button)
         {
-            // The hat axis auto-repeats held directions; framework key repeats for the
-            // same direction would stack on top and double the navigation speed.
-            if (e.RepeatCount > 0 && _hatDirection == button)
-                return true;
+            Android.Util.Log.Info("PKForgeInput", "key down " + e.KeyCode + " rc=" + e.RepeatCount);
+            // Direction repeats are owned by the app's own timers (the hat timer for
+            // stick-style input, the key timer for clean digital pads); framework
+            // repeats would stack on top and double the navigation speed.
+            if (e.RepeatCount > 0)
+                return IsDirectional(button);
             var router = IPlatformApplication.Current?.Services.GetService<Services.GamepadRouter>();
             if (router?.Dispatch(button) == true)
             {
                 Haptic();
+                if (IsDirectional(button))
+                    StartKeyRepeat(button);
                 return true;
             }
             // Directional keys must never fall through to Android's native focus search:
@@ -66,7 +71,36 @@ public sealed class MainActivity : MauiAppCompatActivity
             if (IsDirectional(button))
                 return true;
         }
+        if (e?.Action == KeyEventActions.Up && ResolveButton(e.KeyCode) == _keyRepeatButton)
+            StopKeyRepeat();
         return base.DispatchKeyEvent(e);
+    }
+
+    private Services.PadButton? _keyRepeatButton;
+    private Java.Lang.Runnable? _keyRepeatRunnable;
+
+    /// <summary>Hold-repeat for dpad directions that arrive as key events: some pads
+    /// report clean digital keys with no framework repeats at all.</summary>
+    private void StartKeyRepeat(Services.PadButton button)
+    {
+        StopKeyRepeat();
+        _keyRepeatButton = button;
+        _keyRepeatRunnable = new Java.Lang.Runnable(() =>
+        {
+            if (_keyRepeatButton != button) return;
+            var router = IPlatformApplication.Current?.Services.GetService<Services.GamepadRouter>();
+            if (router?.Dispatch(button) != true) { StopKeyRepeat(); return; }
+            _hatRepeatHandler.PostDelayed(_keyRepeatRunnable!, HatRepeatMs);
+        });
+        _hatRepeatHandler.PostDelayed(_keyRepeatRunnable, HatHoldDelayMs);
+    }
+
+    private void StopKeyRepeat()
+    {
+        _keyRepeatButton = null;
+        if (_keyRepeatRunnable is null) return;
+        _hatRepeatHandler.RemoveCallbacks(_keyRepeatRunnable);
+        _keyRepeatRunnable = null;
     }
 
     private Services.PadButton? _hatDirection;
@@ -85,6 +119,7 @@ public sealed class MainActivity : MauiAppCompatActivity
         if (e is { Action: MotionEventActions.Move })
         {
             var direction = HatDirection(e);
+            Android.Util.Log.Info("PKForgeInput", "motion hat x=" + e.GetAxisValue(Axis.HatX) + " y=" + e.GetAxisValue(Axis.HatY) + " src=" + e.Source);
             if (direction != _hatDirection)
             {
                 StopHatRepeat();
