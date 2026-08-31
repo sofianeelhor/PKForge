@@ -51,7 +51,6 @@ public sealed class MainActivity : MauiAppCompatActivity
     {
         if (e?.Action == KeyEventActions.Down && ResolveButton(e.KeyCode) is { } button)
         {
-            Android.Util.Log.Info("PKForgeInput", "key down " + e.KeyCode + " rc=" + e.RepeatCount);
             // Direction repeats are owned by the app's own timers (the hat timer for
             // stick-style input, the key timer for clean digital pads); framework
             // repeats would stack on top and double the navigation speed.
@@ -119,7 +118,6 @@ public sealed class MainActivity : MauiAppCompatActivity
         if (e is { Action: MotionEventActions.Move })
         {
             var direction = HatDirection(e);
-            Android.Util.Log.Info("PKForgeInput", "motion hat x=" + e.GetAxisValue(Axis.HatX) + " y=" + e.GetAxisValue(Axis.HatY) + " src=" + e.Source);
             if (direction != _hatDirection)
             {
                 StopHatRepeat();
