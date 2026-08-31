@@ -43,6 +43,35 @@ public sealed class SafeSaveWriterTests
         Assert.Equal("backup-1", receipt.BackupId);
     }
 
+    [Fact]
+    public async Task UnchangedCandidateCreatesNoBackupAndWritesNothing()
+    {
+        var engine = new FakeSaveEngine(valid: true);
+        var backup = new FakeBackupService();
+        var access = new FakeFileAccess();
+        var writer = new SafeSaveWriter(engine, backup, access);
+
+        var receipt = await writer.WriteAsync("content://save", Snapshot(new byte[] { 1, 2, 3 }), new byte[] { 1, 2, 3 });
+
+        Assert.False(receipt.Changed);
+        Assert.Equal(string.Empty, receipt.BackupId);
+        Assert.Equal(0, backup.Calls);
+        Assert.Equal(0, access.Writes);
+    }
+
+    [Fact]
+    public async Task ChangeDescriptionFlowsIntoTheBackup()
+    {
+        var engine = new FakeSaveEngine(valid: true);
+        var backup = new FakeBackupService();
+        var writer = new SafeSaveWriter(engine, backup, new FakeFileAccess());
+
+        await writer.WriteAsync("content://save", Snapshot(new byte[] { 1, 2, 3 }), new byte[] { 4, 5, 6 },
+            "Edit Garchomp (Box 3, Slot 12)");
+
+        Assert.Equal("Edit Garchomp (Box 3, Slot 12)", backup.LastDescription);
+    }
+
     private sealed class FakeSaveEngine(bool valid) : ISaveEngine
     {
         public SaveSnapshot Open(ReadOnlyMemory<byte> bytes, string? displayName = null) => throw new NotImplementedException();
@@ -59,10 +88,12 @@ public sealed class SafeSaveWriterTests
     {
         public int Calls { get; private set; }
         public int CreatedOrder { get; private set; } = -1;
+        public string? LastDescription { get; private set; }
 
-        public ValueTask<BackupReceipt> CreateAsync(SaveSnapshot source, CancellationToken cancellationToken = default)
+        public ValueTask<BackupReceipt> CreateAsync(SaveSnapshot source, string? changeDescription = null, CancellationToken cancellationToken = default)
         {
             Calls++;
+            LastDescription = changeDescription;
             CreatedOrder = Order++;
             return ValueTask.FromResult(new BackupReceipt($"backup-{Calls}", DateTimeOffset.UtcNow, "sha"));
         }

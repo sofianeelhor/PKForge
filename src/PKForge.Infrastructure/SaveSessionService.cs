@@ -22,4 +22,12 @@ public sealed class SaveSessionService(ISaveFileAccess access, ISaveEngine engin
         Current = session;
         return session;
     }
+
+    public void MarkWritten(string documentId, ReadOnlyMemory<byte> written)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentId);
+        if (Current is not { } current || current.Document.DocumentId != documentId) return;
+        // The baseline is a private copy: later engine mutations can never bleed into it.
+        Current = current with { Snapshot = current.Snapshot with { OriginalBytes = written.ToArray() } };
+    }
 }

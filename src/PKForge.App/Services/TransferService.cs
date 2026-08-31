@@ -11,7 +11,7 @@ public sealed record TransferOutcome(bool Success, string Message, int Box = -1,
 /// its format by the engine (Gen 1 to Gen 9 either way), and the write goes through the
 /// same validate, backup, atomic-write pipeline as every other mutation.
 /// </summary>
-public sealed class TransferService(ISaveEngine engine, ISafeSaveWriter writer, ISaveFileAccess access)
+public sealed class TransferService(ISaveEngine engine, ISafeSaveWriter writer, ISaveFileAccess access, ISaveSessionService sessions)
 {
     /// <summary>Places the entity into the first empty slot of the target save, across every box.</summary>
     public async Task<TransferOutcome> SendToGameAsync(
@@ -32,7 +32,11 @@ public sealed class TransferService(ISaveEngine engine, ISafeSaveWriter writer, 
         if (!session.ImportSlot(landing.Box, landing.Slot, entityBytes.ToArray()))
             return new TransferOutcome(false, $"{nickname} cannot enter {target.GameLabel}'s format.");
 
-        var receipt = await writer.WriteAsync(target.DocumentId, snapshot, session.Serialize(), cancellationToken).ConfigureAwait(false);
+        var candidate = session.Serialize();
+        var receipt = await writer.WriteAsync(target.DocumentId, snapshot, candidate,
+            $"{nickname} arrived from a transfer", cancellationToken).ConfigureAwait(false);
+        if (receipt.Changed)
+            sessions.MarkWritten(target.DocumentId, candidate);
         return new TransferOutcome(true, $"{nickname} joined {target.GameLabel} (box {landing.Box + 1}).", landing.Box, landing.Slot, receipt.BackupId);
     }
 }
