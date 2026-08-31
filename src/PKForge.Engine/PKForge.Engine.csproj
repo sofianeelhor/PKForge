@@ -17,4 +17,9 @@
     <InternalsVisibleTo Include="DexGen" />
     <InternalsVisibleTo Include="PKForge.Engine.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Pokémon Unbound ROM-truth tables from the MIT-licensed PUSE project
+         (github.com/Zannael/PUSE), vendored as data; see Unbound/Data/README.md. -->
+    <EmbeddedResource Include="Unbound/Data/*" LogicalName="unbound.%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

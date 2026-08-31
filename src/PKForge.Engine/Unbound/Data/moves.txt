@@ -1,0 +1,922 @@
+1:Pound
+2:Karate Chop
+3:Double Slap
+4:Comet Punch
+5:Mega Punch
+6:Pay Day
+7:Fire Punch
+8:Ice Punch
+9:ThunderPunch
+10:Scratch
+11:Vise Grip
+12:Guillotine
+13:Razor Wind
+14:Swords Dance
+15:Cut
+16:Gust
+17:Wing Attack
+18:Whirlwind
+19:Fly
+20:Bind
+21:Slam
+22:Vine Whip
+23:Stomp
+24:Double Kick
+25:Mega Kick
+26:Jump Kick
+27:Rolling Kick
+28:Sand Attack
+29:Headbutt
+30:Horn Attack
+31:Fury Attack
+32:Horn Drill
+33:Tackle
+34:Body Slam
+35:Wrap
+36:Take Down
+37:Thrash
+38:Double-Edge
+39:Tail Whip
+40:Poison Sting
+41:Twineedle
+42:Pin Missile
+43:Leer
+44:Bite
+45:Growl
+46:Roar
+47:Sing
+48:Supersonic
+49:Sonic Boom
+50:Disable
+51:Acid
+52:Ember
+53:Flamethrower
+54:Mist
+55:Water Gun
+56:Hydro Pump
+57:Surf
+58:Ice Beam
+59:Blizzard
+60:Psybeam
+61:Bubble Beam
+62:Aurora Beam
+63:Hyper Beam
+64:Peck
+65:Drill Peck
+66:Submission
+67:Low Kick
+68:Counter
+69:Seismic Toss
+70:Strength
+71:Absorb
+72:Mega Drain
+73:Leech Seed
+74:Growth
+75:Razor Leaf
+76:Solar Beam
+77:PoisonPowder
+78:Stun Spore
+79:Sleep Powder
+80:Petal Dance
+81:String Shot
+82:Dragon Rage
+83:Fire Spin
+84:ThunderShock
+85:Thunderbolt
+86:Thunder Wave
+87:Thunder
+88:Rock Throw
+89:Earthquake
+90:Fissure
+91:Dig
+92:Toxic
+93:Confusion
+94:Psychic
+95:Hypnosis
+96:Meditate
+97:Agility
+98:Quick Attack
+99:Rage
+100:Teleport
+101:Night Shade
+102:Mimic
+103:Screech
+104:Double Team
+105:Recover
+106:Harden
+107:Minimize
+108:Smokescreen
+109:Confuse Ray
+110:Withdraw
+111:Defense Curl
+112:Barrier
+113:Light Screen
+114:Haze
+115:Reflect
+116:Focus Energy
+117:Bide
+118:Metronome
+119:Mirror Move
+120:Selfdestruct
+121:Egg Bomb
+122:Lick
+123:Smog
+124:Sludge
+125:Bone Club
+126:Fire Blast
+127:Waterfall
+128:Clamp
+129:Swift
+130:Skull Bash
+131:Spike Cannon
+132:Constrict
+133:Amnesia
+134:Kinesis
+135:Soft-Boiled
+136:Hi Jump Kick
+137:Glare
+138:Dream Eater
+139:Poison Gas
+140:Barrage
+141:Leech Life
+142:Lovely Kiss
+143:Sky Attack
+144:Transform
+145:Bubble
+146:Dizzy Punch
+147:Spore
+148:Flash
+149:Psywave
+150:Splash
+151:Acid Armor
+152:Crabhammer
+153:Explosion
+154:Fury Swipes
+155:Bonemerang
+156:Rest
+157:Rock Slide
+158:Hyper Fang
+159:Sharpen
+160:Conversion
+161:Tri Attack
+162:Super Fang
+163:Slash
+164:Substitute
+165:Struggle
+166:Sketch
+167:Triple Kick
+168:Thief
+169:Spider Web
+170:Mind Reader
+171:Nightmare
+172:Flame Wheel
+173:Snore
+174:Curse
+175:Flail
+176:Conversion 2
+177:Aeroblast
+178:Cotton Spore
+179:Reversal
+180:Spite
+181:Powder Snow
+182:Protect
+183:Mach Punch
+184:Scary Face
+185:Feint Attack
+186:Sweet Kiss
+187:Belly Drum
+188:Sludge Bomb
+189:Mud-Slap
+190:Octazooka
+191:Spikes
+192:Zap Cannon
+193:Foresight
+194:Destiny Bond
+195:Perish Song
+196:Icy Wind
+197:Detect
+198:Bone Rush
+199:Lock-On
+200:Outrage
+201:Sandstorm
+202:Giga Drain
+203:Endure
+204:Charm
+205:Rollout
+206:False Swipe
+207:Swagger
+208:Milk Drink
+209:Spark
+210:Fury Cutter
+211:Steel Wing
+212:Mean Look
+213:Attract
+214:Sleep Talk
+215:Heal Bell
+216:Return
+217:Present
+218:Frustration
+219:Safeguard
+220:Pain Split
+221:Sacred Fire
+222:Magnitude
+223:DynamicPunch
+224:Megahorn
+225:DragonBreath
+226:Baton Pass
+227:Encore
+228:Pursuit
+229:Rapid Spin
+230:Sweet Scent
+231:Iron Tail
+232:Metal Claw
+233:Vital Throw
+234:Morning Sun
+235:Synthesis
+236:Moonlight
+237:Hidden Power
+238:Cross Chop
+239:Twister
+240:Rain Dance
+241:Sunny Day
+242:Crunch
+243:Mirror Coat
+244:Psych Up
+245:ExtremeSpeed
+246:AncientPower
+247:Shadow Ball
+248:Future Sight
+249:Rock Smash
+250:Whirlpool
+251:Beat Up
+252:Fake Out
+253:Uproar
+254:Stockpile
+255:Spit Up
+256:Swallow
+257:Heat Wave
+258:Hail
+259:Torment
+260:Flatter
+261:Will-O-Wisp
+262:Memento
+263:Facade
+264:Focus Punch
+265:SmellingSalt
+266:Follow Me
+267:Nature Power
+268:Charge
+269:Taunt
+270:Helping Hand
+271:Trick
+272:Role Play
+273:Wish
+274:Assist
+275:Ingrain
+276:Superpower
+277:Magic Coat
+278:Recycle
+279:Revenge
+280:Brick Break
+281:Yawn
+282:Knock Off
+283:Endeavor
+284:Eruption
+285:Skill Swap
+286:Imprison
+287:Refresh
+288:Grudge
+289:Snatch
+290:Secret Power
+291:Dive
+292:Arm Thrust
+293:Camouflage
+294:Tail Glow
+295:Luster Purge
+296:Mist Ball
+297:FeatherDance
+298:Teeter Dance
+299:Blaze Kick
+300:Mud Sport
+301:Ice Ball
+302:Needle Arm
+303:Slack Off
+304:Hyper Voice
+305:Poison Fang
+306:Crush Claw
+307:Blast Burn
+308:Hydro Cannon
+309:Meteor Mash
+310:Astonish
+311:Weather Ball
+312:Aromatherapy
+313:Fake Tears
+314:Air Cutter
+315:Overheat
+316:Odor Sleuth
+317:Rock Tomb
+318:Silver Wind
+319:Metal Sound
+320:Grasswhistle
+321:Tickle
+322:Cosmic Power
+323:Water Spout
+324:Signal Beam
+325:Shadow Punch
+326:Extrasensory
+327:Sky Uppercut
+328:Sand Tomb
+329:Sheer Cold
+330:Muddy Water
+331:Bullet Seed
+332:Aerial Ace
+333:Icicle Spear
+334:Iron Defense
+335:Block
+336:Howl
+337:Dragon Claw
+338:Frenzy Plant
+339:Bulk Up
+340:Bounce
+341:Mud Shot
+342:Poison Tail
+343:Covet
+344:Volt Tackle
+345:Magical Leaf
+346:Water Sport
+347:Calm Mind
+348:Leaf Blade
+349:Dragon Dance
+350:Rock Blast
+351:Shock Wave
+352:Water Pulse
+353:Doom Desire
+354:Psycho Boost
+355:Leech Fang
+356:Air Slash
+357:Aqua Jet
+358:Aqua Tail
+359:Aura Sphere
+360:Avalanche
+361:Brave Bird
+362:Bug Buzz
+363:Bullet Punch
+364:Charge Beam
+365:Close Combat
+366:Cross Poison
+367:Dark Pulse
+368:Discharge
+369:Draco Meteor
+370:Dragon Pulse
+371:Drain Punch
+372:Earth Power
+373:Energy Ball
+374:Focus Blast
+375:Force Palm
+376:Giga Impact
+377:Grass Knot
+378:Gunk Shot
+379:Hammer Arm
+380:Head Smash
+381:Ice Shard
+382:Iron Head
+383:Lava Plume
+384:Magnet Bomb
+385:Mud Bomb
+386:Nasty Plot
+387:Night Slash
+388:Ominous Wind
+389:Power Gem
+390:Power Whip
+391:Psycho Cut
+392:Rock Climb
+393:Rock Polish
+394:Rock Wrecker
+395:Roost
+396:Seed Bomb
+397:Shadow Claw
+398:Shadow Sneak
+399:Vacuum Wave
+400:X-Scissor
+401:Zen Headbutt
+402:Switcheroo
+403:Drill Run
+404:Bulldoze
+405:Electroweb
+406:Flame Charge
+407:Frost Breath
+408:Heart Stamp
+409:Hone Claws
+410:Horn Leech
+411:Coil
+412:Hurricane
+413:Icicle Crash
+414:Work Up
+415:Quiver Dance
+416:Leaf Tornado
+417:Low Sweep
+418:Snarl
+419:Struggle Bug
+420:Steamroller
+421:Storm Throw
+422:Venoshock
+423:Wild Charge
+424:Poison Jab
+425:Acid Spray
+426:Fiery Dance
+427:Clear Smog
+428:Leaf Storm
+429:Stone Edge
+430:Payback
+431:Fire Fang
+432:Ice Fang
+433:Thunder Fang
+434:Flare Blitz
+435:Inferno
+436:Hex
+437:Dual Chop
+438:Double Hit
+439:Cotton Guard
+440:Acrobatics
+441:Flame Burst
+442:U-turn
+443:Volt Switch
+444:Dragon Tail
+445:Circle Throw
+446:Mirror Shot
+447:Wood Hammer
+448:Heal Pulse
+449:Flash Cannon
+450:Bug Bite
+451:Pluck
+452:Shell Smash
+453:Rage Powder
+454:Wake-Up Slap
+455:Razor Shell
+456:Copycat
+457:Miracle Eye
+458:Sucker Punch
+459:Scald
+460:Brine
+461:Fairy Wind
+462:Doll Eyes
+463:Play Rough
+464:Moonblast
+465:Drain Kiss
+466:Dazzle Gleam
+467:Disarm Cry
+468:Stealth Rock
+469:Toxic Spikes
+470:Healing Wish
+471:Lunar Dance
+472:Tailwind
+473:Boomburst
+474:Incinerate
+475:Worry Seed
+476:Gastro Acid
+477:Geomancy
+478:Flower Guard
+479:Rototiller
+480:Shift Gear
+481:Sticky Web
+482:Stored Power
+483:Acupressure
+484:Punishment
+485:Assurance
+486:Dragon Rush
+487:Dark Void
+488:Feint
+489:PhantomForce
+490:Petal Storm
+491:Play Nice
+492:Roar of Time
+493:Spacial Rend
+494:Magma Storm
+495:Final Gambit
+496:Shadow Force
+497:Nuzzle
+498:Retaliate
+499:Metal Bash
+500:Judgment
+501:Freeze-Dry
+502:Psyshock
+503:Round
+504:Tail Slap
+505:Gear Grind
+506:Natural Gift
+507:Chip Away
+508:Smack Down
+509:Space Hole
+510:Gyro Ball
+511:Space Fury
+512:Attack Order
+513:Defend Order
+514:Heal Order
+515:Captivate
+516:Defog
+517:Origin Pulse
+518:Cliff Blades
+519:Guard Swap
+520:Steam Pump
+521:Metal Burst
+522:Me First
+523:Power Swap
+524:Power Trick
+525:Psycho Shift
+526:Wring Out
+527:Kings Shield
+528:Psystrike
+529:Autotomize
+530:DiamondStorm
+531:Sludge Wave
+532:Heavy Slam
+533:Synchronoise
+534:Electro Ball
+535:Foul Play
+536:Entrainment
+537:Night Daze
+538:Echoed Voice
+539:Land's Wrath
+540:OblivionWing
+541:Heart Swap
+542:Crush Grip
+543:Sacred Sword
+544:Heat Crash
+545:Head Charge
+546:Techno Blast
+547:Relic Song
+548:Secret Sword
+549:Glaciate
+550:Bolt Strike
+551:Blue Flare
+552:Freeze Shock
+553:Ice Burn
+554:V-create
+555:Fusion Flare
+556:Fusion Bolt
+557:Fell Stinger
+558:Noble Roar
+559:DragonAscent
+560:Parting Shot
+561:Topsy-Turvy
+562:Core Enforce
+563:Chatter
+564:Confide
+565:Water Star
+566:Mystic Fire
+567:Spiky Shield
+568:EerieImpulse
+569:Hold Back
+570:Infestation
+571:Power-Up Hit
+572:1000 Arrows
+573:1000 Waves
+574:Para Charge
+575:Searing Shot
+576:Seed Flare
+577:Accelerock
+578:Anchor Shot
+579:Aurora Veil
+580:Baneful Bunk
+581:Beak Blast
+582:Brutal Swing
+583:Burn Up
+584:Clang Scales
+585:Dark Lariat
+586:Draco Hammer
+587:Fire Lash
+588:First Press
+589:Fleur Cannon
+590:Floral Heal
+591:Gear Up
+592:HiHorsepower
+593:Ice Hammer
+594:Laser Focus
+595:Leafage
+596:Liquidation
+597:Lunge
+598:Geist Beam
+599:Multi-Attack
+600:Nature's Mad
+601:Pollen Puff
+602:Power Trip
+603:Prism Laser
+604:Psychic Fang
+605:Purify
+606:Revel Dance
+607:Shadow Bone
+608:Shell Trap
+609:Shore Up
+610:Smart Strike
+611:Solar Blade
+612:Sparkle Aria
+613:Spect Thief
+614:Speed Swap
+615:Spirit Lock
+616:Spotlight
+617:Bad Tantrum
+618:Strength Sap
+619:Sunsteel Ram
+620:Teary Look
+621:Throat Chop
+622:Toxic Thread
+623:Trop Kick
+624:Zing Zap
+625:Elec Terrain
+626:GrassTerrain
+627:Mist Terrain
+628:Psyc Terrain
+629:Grass Pledge
+630:Fire Pledge
+631:Water Pledge
+632:Trick Room
+633:Magic Room
+634:Wonder Room
+635:Crafty Guard
+636:Mat Block
+637:Quick Guard
+638:Wide Guard
+639:Aqua Ring
+640:Aroma Mist
+641:Belch
+642:Bestow
+643:Fling
+644:Flying Press
+645:Gravity
+646:Guard Split
+647:Heal Block
+648:Ion Deluge
+649:Lucky Chant
+650:Magnet Rise
+651:Magnet Flux
+652:Powder
+653:Power Split
+654:Reflect Type
+655:Simple Beam
+656:Soak
+657:Telekinesis
+658:TrickoTreat
+659:Venom Drench
+660:Woods Curse
+661:Mind Blown
+662:PhotonGeyser
+663:Plasma Fists
+664:Electrify
+665:Embargo
+666:Fairy Lock
+667:Light o Ruin
+668:Trump Card
+669:After You
+670:Instruct
+671:Quash
+672:Happy Hour
+673:Double Iron
+674:Last Resort
+675:Sky Drop
+676:Celebrate
+677:Hold Hands
+678:DMax Cannon
+679:Snipe Shot
+680:Jaw Lock
+681:Stuff Cheeks
+682:No Retreat
+683:Tar Shot
+684:Magic Powder
+685:Dragon Darts
+686:Teatime
+687:Octolock
+688:Bolt Beak
+689:FishiousRend
+690:Court Change
+691:Clang Soul
+692:Body Press
+693:Decorate
+694:Drum Beating
+695:Snap Trap
+696:Pyro Ball
+697:Giant Blade
+698:Giant Bash
+699:Aura Wheel
+700:Break Swipe
+701:Branch Poke
+702:Overdrive
+703:Apple Acid
+704:Grav Apple
+705:Spirit Break
+706:Weird Steam
+707:Life Dew
+708:Obstruct
+709:False Yield
+710:Meteor Rush
+711:Eternabeam
+712:Steel Beam
+713:Expand Force
+714:Steel Roller
+715:Scale Shot
+716:Meteor Beam
+717:ShellSideArm
+718:MistyExplode
+719:Grassy Glide
+720:Rising Volt
+721:TerrainPulse
+722:SkitterSmack
+723:Jealous Burn
+724:Lash Out
+725:Poltergeist
+726:Corrode Gas
+727:Coaching
+728:Flip Turn
+729:Triple Axel
+730:DualWingbeat
+731:Scorch Sands
+732:Jungle Heal
+733:Wicked Blow
+734:SurgeStrikes
+735:Freeze Glare
+736:Thunder Kick
+737:Fiery Wrath
+738:Eerie Spell
+739:Thunder Cage
+740:DragonEnergy
+741:Astral Storm
+742:GlacialLance
+743:Dire Claw
+744:PsyshieldRam
+745:Power Shift
+746:Stone Axe
+747:Mystic Power
+748:Raging Fury
+749:Wave Crash
+750:Chloroblast
+751:MountainGale
+752:VictoryDance
+753:HeadlongRush
+754:Barb Barrage
+755:Esper Wing
+756:BitterMalice
+757:Shelter
+758:TripleArrows
+759:InfernalRage
+760:Endless Edge
+761:BleakiceWind
+762:WildboltWind
+763:SandsearWind
+764:Spring Wind
+765:Lunar Bless
+766:Take Heart
+767:Z-Move 1
+768:Z-Move 2
+769:Z-Move 3
+770:Z-Move 4
+771:Z-Move 5
+772:Z-Move 6
+773:Z-Move 7
+774:Z-Move 8
+775:Z-Move 9
+776:Z-Move 10
+777:Z-Move 11
+778:Z-Move 12
+779:Z-Move 13
+780:Z-Move 14
+781:Z-Move 15
+782:Z-Move 16
+783:Z-Move 17
+784:Z-Move 18
+785:Z-Move 19
+786:Z-Move 20
+787:Z-Move 21
+788:Z-Move 22
+789:Z-Move 23
+790:Z-Move 24
+791:Z-Move 25
+792:Z-Move 26
+793:Z-Move 27
+794:Z-Move 28
+795:Z-Move 29
+796:Z-Move 30
+797:Z-Move 31
+798:Z-Move 32
+799:Z-Move 33
+800:Z-Move 34
+801:Z-Move 35
+802:Z-Move 36
+803:Z-Move 37
+804:Z-Move 38
+805:Z-Move 39
+806:Z-Move 40
+807:Z-Move 41
+808:Z-Move 42
+809:Z-Move 43
+810:Z-Move 44
+811:Z-Move 45
+812:Z-Move 46
+813:Z-Move 47
+814:Z-Move 48
+815:Z-Move 49
+816:Z-Move 50
+817:Z-Move 51
+818:Z-Move 52
+819:Z-Move 53
+820:Guard
+821:Strike
+822:Strike
+823:Knuckle
+824:Knuckle
+825:Airstream
+826:Airstream
+827:Ooze
+828:Ooze
+829:Quake
+830:Quake
+831:Rockfall
+832:Rockfall
+833:Flutterby
+834:Flutterby
+835:Phantasm
+836:Phantasm
+837:Steelspike
+838:Steelspike
+839:Flare
+840:Flare
+841:Geyser
+842:Geyser
+843:Overgrowth
+844:Overgrowth
+845:Lightning
+846:Lightning
+847:Mindstorm
+848:Mindstorm
+849:Hailstorm
+850:Hailstorm
+851:Wyrmwind
+852:Wyrmwind
+853:Darkness
+854:Darkness
+855:Starfall
+856:Starfall
+857:Vine Lash
+858:Vine Lash
+859:Wildfire
+860:Wildfire
+861:Cannonade
+862:Cannonade
+863:Befuddle
+864:Befuddle
+865:Voltcrash
+866:Voltcrash
+867:Goldrush
+868:Goldrush
+869:Chistrike
+870:Chistrike
+871:Terror
+872:Terror
+873:Foamburst
+874:Foamburst
+875:Resonance
+876:Resonance
+877:Cuddle
+878:Cuddle
+879:Replenish
+880:Replenish
+881:Malodor
+882:Malodor
+883:Meltdown
+884:Meltdown
+885:Drum Solo
+886:Drum Solo
+887:Fireball
+888:Fireball
+889:Hydrosnipe
+890:Hydrosnipe
+891:Windrage
+892:Windrage
+893:Gravitas
+894:Gravitas
+895:Stonesurge
+896:Stonesurge
+897:Volcalith
+898:Volcalith
+899:Tartness
+900:Tartness
+901:Sweetness
+902:Sweetness
+903:Sandblast
+904:Sandblast
+905:Stunshock
+906:Stunshock
+907:Centiferno
+908:Centiferno
+909:Smite
+910:Smite
+911:Snooze
+912:Snooze
+913:Finale
+914:Finale
+915:Steelsurge
+916:Steelsurge
+917:Depletion
+918:Depletion
+919:One Blow
+920:One Blow
+921:Rapid Flow
+922:Rapid Flow

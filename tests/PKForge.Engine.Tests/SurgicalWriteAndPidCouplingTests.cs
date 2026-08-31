@@ -177,6 +177,33 @@ public sealed class SurgicalWriteAndPidCouplingTests
     }
 
     [Fact]
+    public void ShinyGenderEditNeverFailsByChance()
+    {
+        // The old random PID search needed shiny + nature + ability + a rare gender at
+        // once (~1 in 3.3M per attempt) and could exhaust 5M attempts about a fifth of
+        // the time. The guided construction pins everything but nature, so repeated
+        // shiny gender flips must always land.
+        using var session = OpenFirst("*.pk4", d => d.Species != 0 && AllowsBothGenders(d.Species) && d.Gender is 0 or 1);
+        session.ApplyEdit(0, 0, new EntityEdit(IsShiny: true));
+        var start = session.ReadEntity(0, 0);
+        Assert.True(start.IsShiny);
+        var other = start.Gender == 0 ? 1 : 0;
+
+        for (var round = 0; round < 25; round++)
+        {
+            session.ApplyEdit(0, 0, new EntityEdit(Gender: other));
+            var flipped = session.ReadEntity(0, 0);
+            Assert.Equal(other, flipped.Gender);
+            Assert.True(flipped.IsShiny);
+
+            session.ApplyEdit(0, 0, new EntityEdit(Gender: (byte)start.Gender));
+            var restored = session.ReadEntity(0, 0);
+            Assert.Equal(start.Gender, restored.Gender);
+            Assert.True(restored.IsShiny);
+        }
+    }
+
+    [Fact]
     public void BatchNatureKeepsShinyStateOnGen3()
     {
         using var session = OpenFirst("*.pk3", d => d.Species != 0);

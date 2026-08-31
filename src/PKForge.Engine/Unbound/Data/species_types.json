@@ -1,0 +1,12039 @@
+{
+  "1": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "2": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "3": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "4": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "5": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "6": {
+    "type1": "Fire",
+    "type2": "Flying",
+    "types": [
+      "Fire",
+      "Flying"
+    ],
+    "type1_id": 10,
+    "type2_id": 2
+  },
+  "7": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "8": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "9": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "10": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "11": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "12": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "13": {
+    "type1": "Bug",
+    "type2": "Poison",
+    "types": [
+      "Bug",
+      "Poison"
+    ],
+    "type1_id": 6,
+    "type2_id": 3
+  },
+  "14": {
+    "type1": "Bug",
+    "type2": "Poison",
+    "types": [
+      "Bug",
+      "Poison"
+    ],
+    "type1_id": 6,
+    "type2_id": 3
+  },
+  "15": {
+    "type1": "Bug",
+    "type2": "Poison",
+    "types": [
+      "Bug",
+      "Poison"
+    ],
+    "type1_id": 6,
+    "type2_id": 3
+  },
+  "16": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "17": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "18": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "19": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "20": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "21": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "22": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "23": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "24": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "25": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "26": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "27": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "28": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "29": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "30": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "31": {
+    "type1": "Poison",
+    "type2": "Ground",
+    "types": [
+      "Poison",
+      "Ground"
+    ],
+    "type1_id": 3,
+    "type2_id": 4
+  },
+  "32": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "33": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "34": {
+    "type1": "Poison",
+    "type2": "Ground",
+    "types": [
+      "Poison",
+      "Ground"
+    ],
+    "type1_id": 3,
+    "type2_id": 4
+  },
+  "35": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "36": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "37": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "38": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "39": {
+    "type1": "Normal",
+    "type2": "Fairy",
+    "types": [
+      "Normal",
+      "Fairy"
+    ],
+    "type1_id": 0,
+    "type2_id": 23
+  },
+  "40": {
+    "type1": "Normal",
+    "type2": "Fairy",
+    "types": [
+      "Normal",
+      "Fairy"
+    ],
+    "type1_id": 0,
+    "type2_id": 23
+  },
+  "41": {
+    "type1": "Poison",
+    "type2": "Flying",
+    "types": [
+      "Poison",
+      "Flying"
+    ],
+    "type1_id": 3,
+    "type2_id": 2
+  },
+  "42": {
+    "type1": "Poison",
+    "type2": "Flying",
+    "types": [
+      "Poison",
+      "Flying"
+    ],
+    "type1_id": 3,
+    "type2_id": 2
+  },
+  "43": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "44": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "45": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "46": {
+    "type1": "Bug",
+    "type2": "Grass",
+    "types": [
+      "Bug",
+      "Grass"
+    ],
+    "type1_id": 6,
+    "type2_id": 12
+  },
+  "47": {
+    "type1": "Bug",
+    "type2": "Grass",
+    "types": [
+      "Bug",
+      "Grass"
+    ],
+    "type1_id": 6,
+    "type2_id": 12
+  },
+  "48": {
+    "type1": "Bug",
+    "type2": "Poison",
+    "types": [
+      "Bug",
+      "Poison"
+    ],
+    "type1_id": 6,
+    "type2_id": 3
+  },
+  "49": {
+    "type1": "Bug",
+    "type2": "Poison",
+    "types": [
+      "Bug",
+      "Poison"
+    ],
+    "type1_id": 6,
+    "type2_id": 3
+  },
+  "50": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "51": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "52": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "53": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "54": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "55": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "56": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "57": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "58": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "59": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "60": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "61": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "62": {
+    "type1": "Water",
+    "type2": "Fighting",
+    "types": [
+      "Water",
+      "Fighting"
+    ],
+    "type1_id": 11,
+    "type2_id": 1
+  },
+  "63": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "64": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "65": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "66": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "67": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "68": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "69": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "70": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "71": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "72": {
+    "type1": "Water",
+    "type2": "Poison",
+    "types": [
+      "Water",
+      "Poison"
+    ],
+    "type1_id": 11,
+    "type2_id": 3
+  },
+  "73": {
+    "type1": "Water",
+    "type2": "Poison",
+    "types": [
+      "Water",
+      "Poison"
+    ],
+    "type1_id": 11,
+    "type2_id": 3
+  },
+  "74": {
+    "type1": "Rock",
+    "type2": "Ground",
+    "types": [
+      "Rock",
+      "Ground"
+    ],
+    "type1_id": 5,
+    "type2_id": 4
+  },
+  "75": {
+    "type1": "Rock",
+    "type2": "Ground",
+    "types": [
+      "Rock",
+      "Ground"
+    ],
+    "type1_id": 5,
+    "type2_id": 4
+  },
+  "76": {
+    "type1": "Rock",
+    "type2": "Ground",
+    "types": [
+      "Rock",
+      "Ground"
+    ],
+    "type1_id": 5,
+    "type2_id": 4
+  },
+  "77": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "78": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "79": {
+    "type1": "Water",
+    "type2": "Psychic",
+    "types": [
+      "Water",
+      "Psychic"
+    ],
+    "type1_id": 11,
+    "type2_id": 14
+  },
+  "80": {
+    "type1": "Water",
+    "type2": "Psychic",
+    "types": [
+      "Water",
+      "Psychic"
+    ],
+    "type1_id": 11,
+    "type2_id": 14
+  },
+  "81": {
+    "type1": "Electric",
+    "type2": "Steel",
+    "types": [
+      "Electric",
+      "Steel"
+    ],
+    "type1_id": 13,
+    "type2_id": 8
+  },
+  "82": {
+    "type1": "Electric",
+    "type2": "Steel",
+    "types": [
+      "Electric",
+      "Steel"
+    ],
+    "type1_id": 13,
+    "type2_id": 8
+  },
+  "83": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "84": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "85": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "86": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "87": {
+    "type1": "Water",
+    "type2": "Ice",
+    "types": [
+      "Water",
+      "Ice"
+    ],
+    "type1_id": 11,
+    "type2_id": 15
+  },
+  "88": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "89": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "90": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "91": {
+    "type1": "Water",
+    "type2": "Ice",
+    "types": [
+      "Water",
+      "Ice"
+    ],
+    "type1_id": 11,
+    "type2_id": 15
+  },
+  "92": {
+    "type1": "Ghost",
+    "type2": "Poison",
+    "types": [
+      "Ghost",
+      "Poison"
+    ],
+    "type1_id": 7,
+    "type2_id": 3
+  },
+  "93": {
+    "type1": "Ghost",
+    "type2": "Poison",
+    "types": [
+      "Ghost",
+      "Poison"
+    ],
+    "type1_id": 7,
+    "type2_id": 3
+  },
+  "94": {
+    "type1": "Ghost",
+    "type2": "Poison",
+    "types": [
+      "Ghost",
+      "Poison"
+    ],
+    "type1_id": 7,
+    "type2_id": 3
+  },
+  "95": {
+    "type1": "Rock",
+    "type2": "Ground",
+    "types": [
+      "Rock",
+      "Ground"
+    ],
+    "type1_id": 5,
+    "type2_id": 4
+  },
+  "96": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "97": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "98": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "99": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "100": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "101": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "102": {
+    "type1": "Grass",
+    "type2": "Psychic",
+    "types": [
+      "Grass",
+      "Psychic"
+    ],
+    "type1_id": 12,
+    "type2_id": 14
+  },
+  "103": {
+    "type1": "Grass",
+    "type2": "Psychic",
+    "types": [
+      "Grass",
+      "Psychic"
+    ],
+    "type1_id": 12,
+    "type2_id": 14
+  },
+  "104": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "105": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "106": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "107": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "108": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "109": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "110": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "111": {
+    "type1": "Ground",
+    "type2": "Rock",
+    "types": [
+      "Ground",
+      "Rock"
+    ],
+    "type1_id": 4,
+    "type2_id": 5
+  },
+  "112": {
+    "type1": "Ground",
+    "type2": "Rock",
+    "types": [
+      "Ground",
+      "Rock"
+    ],
+    "type1_id": 4,
+    "type2_id": 5
+  },
+  "113": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "114": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "115": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "116": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "117": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "118": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "119": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "120": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "121": {
+    "type1": "Water",
+    "type2": "Psychic",
+    "types": [
+      "Water",
+      "Psychic"
+    ],
+    "type1_id": 11,
+    "type2_id": 14
+  },
+  "122": {
+    "type1": "Psychic",
+    "type2": "Fairy",
+    "types": [
+      "Psychic",
+      "Fairy"
+    ],
+    "type1_id": 14,
+    "type2_id": 23
+  },
+  "123": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "124": {
+    "type1": "Ice",
+    "type2": "Psychic",
+    "types": [
+      "Ice",
+      "Psychic"
+    ],
+    "type1_id": 15,
+    "type2_id": 14
+  },
+  "125": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "126": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "127": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "128": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "129": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "130": {
+    "type1": "Water",
+    "type2": "Flying",
+    "types": [
+      "Water",
+      "Flying"
+    ],
+    "type1_id": 11,
+    "type2_id": 2
+  },
+  "131": {
+    "type1": "Water",
+    "type2": "Ice",
+    "types": [
+      "Water",
+      "Ice"
+    ],
+    "type1_id": 11,
+    "type2_id": 15
+  },
+  "132": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "133": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "134": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "135": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "136": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "137": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "138": {
+    "type1": "Rock",
+    "type2": "Water",
+    "types": [
+      "Rock",
+      "Water"
+    ],
+    "type1_id": 5,
+    "type2_id": 11
+  },
+  "139": {
+    "type1": "Rock",
+    "type2": "Water",
+    "types": [
+      "Rock",
+      "Water"
+    ],
+    "type1_id": 5,
+    "type2_id": 11
+  },
+  "140": {
+    "type1": "Rock",
+    "type2": "Water",
+    "types": [
+      "Rock",
+      "Water"
+    ],
+    "type1_id": 5,
+    "type2_id": 11
+  },
+  "141": {
+    "type1": "Rock",
+    "type2": "Water",
+    "types": [
+      "Rock",
+      "Water"
+    ],
+    "type1_id": 5,
+    "type2_id": 11
+  },
+  "142": {
+    "type1": "Rock",
+    "type2": "Flying",
+    "types": [
+      "Rock",
+      "Flying"
+    ],
+    "type1_id": 5,
+    "type2_id": 2
+  },
+  "143": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "144": {
+    "type1": "Ice",
+    "type2": "Flying",
+    "types": [
+      "Ice",
+      "Flying"
+    ],
+    "type1_id": 15,
+    "type2_id": 2
+  },
+  "145": {
+    "type1": "Electric",
+    "type2": "Flying",
+    "types": [
+      "Electric",
+      "Flying"
+    ],
+    "type1_id": 13,
+    "type2_id": 2
+  },
+  "146": {
+    "type1": "Fire",
+    "type2": "Flying",
+    "types": [
+      "Fire",
+      "Flying"
+    ],
+    "type1_id": 10,
+    "type2_id": 2
+  },
+  "147": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "148": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "149": {
+    "type1": "Dragon",
+    "type2": "Flying",
+    "types": [
+      "Dragon",
+      "Flying"
+    ],
+    "type1_id": 16,
+    "type2_id": 2
+  },
+  "150": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "151": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "152": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "153": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "154": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "155": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "156": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "157": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "158": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "159": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "160": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "161": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "162": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "163": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "164": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "165": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "166": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "167": {
+    "type1": "Bug",
+    "type2": "Poison",
+    "types": [
+      "Bug",
+      "Poison"
+    ],
+    "type1_id": 6,
+    "type2_id": 3
+  },
+  "168": {
+    "type1": "Bug",
+    "type2": "Poison",
+    "types": [
+      "Bug",
+      "Poison"
+    ],
+    "type1_id": 6,
+    "type2_id": 3
+  },
+  "169": {
+    "type1": "Poison",
+    "type2": "Flying",
+    "types": [
+      "Poison",
+      "Flying"
+    ],
+    "type1_id": 3,
+    "type2_id": 2
+  },
+  "170": {
+    "type1": "Water",
+    "type2": "Electric",
+    "types": [
+      "Water",
+      "Electric"
+    ],
+    "type1_id": 11,
+    "type2_id": 13
+  },
+  "171": {
+    "type1": "Water",
+    "type2": "Electric",
+    "types": [
+      "Water",
+      "Electric"
+    ],
+    "type1_id": 11,
+    "type2_id": 13
+  },
+  "172": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "173": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "174": {
+    "type1": "Normal",
+    "type2": "Fairy",
+    "types": [
+      "Normal",
+      "Fairy"
+    ],
+    "type1_id": 0,
+    "type2_id": 23
+  },
+  "175": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "176": {
+    "type1": "Fairy",
+    "type2": "Flying",
+    "types": [
+      "Fairy",
+      "Flying"
+    ],
+    "type1_id": 23,
+    "type2_id": 2
+  },
+  "177": {
+    "type1": "Psychic",
+    "type2": "Flying",
+    "types": [
+      "Psychic",
+      "Flying"
+    ],
+    "type1_id": 14,
+    "type2_id": 2
+  },
+  "178": {
+    "type1": "Psychic",
+    "type2": "Flying",
+    "types": [
+      "Psychic",
+      "Flying"
+    ],
+    "type1_id": 14,
+    "type2_id": 2
+  },
+  "179": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "180": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "181": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "182": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "183": {
+    "type1": "Water",
+    "type2": "Fairy",
+    "types": [
+      "Water",
+      "Fairy"
+    ],
+    "type1_id": 11,
+    "type2_id": 23
+  },
+  "184": {
+    "type1": "Water",
+    "type2": "Fairy",
+    "types": [
+      "Water",
+      "Fairy"
+    ],
+    "type1_id": 11,
+    "type2_id": 23
+  },
+  "185": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "186": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "187": {
+    "type1": "Grass",
+    "type2": "Flying",
+    "types": [
+      "Grass",
+      "Flying"
+    ],
+    "type1_id": 12,
+    "type2_id": 2
+  },
+  "188": {
+    "type1": "Grass",
+    "type2": "Flying",
+    "types": [
+      "Grass",
+      "Flying"
+    ],
+    "type1_id": 12,
+    "type2_id": 2
+  },
+  "189": {
+    "type1": "Grass",
+    "type2": "Flying",
+    "types": [
+      "Grass",
+      "Flying"
+    ],
+    "type1_id": 12,
+    "type2_id": 2
+  },
+  "190": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "191": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "192": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "193": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "194": {
+    "type1": "Water",
+    "type2": "Ground",
+    "types": [
+      "Water",
+      "Ground"
+    ],
+    "type1_id": 11,
+    "type2_id": 4
+  },
+  "195": {
+    "type1": "Water",
+    "type2": "Ground",
+    "types": [
+      "Water",
+      "Ground"
+    ],
+    "type1_id": 11,
+    "type2_id": 4
+  },
+  "196": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "197": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "198": {
+    "type1": "Dark",
+    "type2": "Flying",
+    "types": [
+      "Dark",
+      "Flying"
+    ],
+    "type1_id": 17,
+    "type2_id": 2
+  },
+  "199": {
+    "type1": "Water",
+    "type2": "Psychic",
+    "types": [
+      "Water",
+      "Psychic"
+    ],
+    "type1_id": 11,
+    "type2_id": 14
+  },
+  "200": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "201": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "202": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "203": {
+    "type1": "Normal",
+    "type2": "Psychic",
+    "types": [
+      "Normal",
+      "Psychic"
+    ],
+    "type1_id": 0,
+    "type2_id": 14
+  },
+  "204": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "205": {
+    "type1": "Bug",
+    "type2": "Steel",
+    "types": [
+      "Bug",
+      "Steel"
+    ],
+    "type1_id": 6,
+    "type2_id": 8
+  },
+  "206": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "207": {
+    "type1": "Ground",
+    "type2": "Flying",
+    "types": [
+      "Ground",
+      "Flying"
+    ],
+    "type1_id": 4,
+    "type2_id": 2
+  },
+  "208": {
+    "type1": "Steel",
+    "type2": "Ground",
+    "types": [
+      "Steel",
+      "Ground"
+    ],
+    "type1_id": 8,
+    "type2_id": 4
+  },
+  "209": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "210": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "211": {
+    "type1": "Water",
+    "type2": "Poison",
+    "types": [
+      "Water",
+      "Poison"
+    ],
+    "type1_id": 11,
+    "type2_id": 3
+  },
+  "212": {
+    "type1": "Bug",
+    "type2": "Steel",
+    "types": [
+      "Bug",
+      "Steel"
+    ],
+    "type1_id": 6,
+    "type2_id": 8
+  },
+  "213": {
+    "type1": "Bug",
+    "type2": "Rock",
+    "types": [
+      "Bug",
+      "Rock"
+    ],
+    "type1_id": 6,
+    "type2_id": 5
+  },
+  "214": {
+    "type1": "Bug",
+    "type2": "Fighting",
+    "types": [
+      "Bug",
+      "Fighting"
+    ],
+    "type1_id": 6,
+    "type2_id": 1
+  },
+  "215": {
+    "type1": "Dark",
+    "type2": "Ice",
+    "types": [
+      "Dark",
+      "Ice"
+    ],
+    "type1_id": 17,
+    "type2_id": 15
+  },
+  "216": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "217": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "218": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "219": {
+    "type1": "Fire",
+    "type2": "Rock",
+    "types": [
+      "Fire",
+      "Rock"
+    ],
+    "type1_id": 10,
+    "type2_id": 5
+  },
+  "220": {
+    "type1": "Ice",
+    "type2": "Ground",
+    "types": [
+      "Ice",
+      "Ground"
+    ],
+    "type1_id": 15,
+    "type2_id": 4
+  },
+  "221": {
+    "type1": "Ice",
+    "type2": "Ground",
+    "types": [
+      "Ice",
+      "Ground"
+    ],
+    "type1_id": 15,
+    "type2_id": 4
+  },
+  "222": {
+    "type1": "Water",
+    "type2": "Rock",
+    "types": [
+      "Water",
+      "Rock"
+    ],
+    "type1_id": 11,
+    "type2_id": 5
+  },
+  "223": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "224": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "225": {
+    "type1": "Ice",
+    "type2": "Flying",
+    "types": [
+      "Ice",
+      "Flying"
+    ],
+    "type1_id": 15,
+    "type2_id": 2
+  },
+  "226": {
+    "type1": "Water",
+    "type2": "Flying",
+    "types": [
+      "Water",
+      "Flying"
+    ],
+    "type1_id": 11,
+    "type2_id": 2
+  },
+  "227": {
+    "type1": "Steel",
+    "type2": "Flying",
+    "types": [
+      "Steel",
+      "Flying"
+    ],
+    "type1_id": 8,
+    "type2_id": 2
+  },
+  "228": {
+    "type1": "Dark",
+    "type2": "Fire",
+    "types": [
+      "Dark",
+      "Fire"
+    ],
+    "type1_id": 17,
+    "type2_id": 10
+  },
+  "229": {
+    "type1": "Dark",
+    "type2": "Fire",
+    "types": [
+      "Dark",
+      "Fire"
+    ],
+    "type1_id": 17,
+    "type2_id": 10
+  },
+  "230": {
+    "type1": "Water",
+    "type2": "Dragon",
+    "types": [
+      "Water",
+      "Dragon"
+    ],
+    "type1_id": 11,
+    "type2_id": 16
+  },
+  "231": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "232": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "233": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "234": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "235": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "236": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "237": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "238": {
+    "type1": "Ice",
+    "type2": "Psychic",
+    "types": [
+      "Ice",
+      "Psychic"
+    ],
+    "type1_id": 15,
+    "type2_id": 14
+  },
+  "239": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "240": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "241": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "242": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "243": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "244": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "245": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "246": {
+    "type1": "Rock",
+    "type2": "Ground",
+    "types": [
+      "Rock",
+      "Ground"
+    ],
+    "type1_id": 5,
+    "type2_id": 4
+  },
+  "247": {
+    "type1": "Rock",
+    "type2": "Ground",
+    "types": [
+      "Rock",
+      "Ground"
+    ],
+    "type1_id": 5,
+    "type2_id": 4
+  },
+  "248": {
+    "type1": "Rock",
+    "type2": "Dark",
+    "types": [
+      "Rock",
+      "Dark"
+    ],
+    "type1_id": 5,
+    "type2_id": 17
+  },
+  "249": {
+    "type1": "Psychic",
+    "type2": "Flying",
+    "types": [
+      "Psychic",
+      "Flying"
+    ],
+    "type1_id": 14,
+    "type2_id": 2
+  },
+  "250": {
+    "type1": "Fire",
+    "type2": "Flying",
+    "types": [
+      "Fire",
+      "Flying"
+    ],
+    "type1_id": 10,
+    "type2_id": 2
+  },
+  "251": {
+    "type1": "Psychic",
+    "type2": "Grass",
+    "types": [
+      "Psychic",
+      "Grass"
+    ],
+    "type1_id": 14,
+    "type2_id": 12
+  },
+  "252": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "253": {
+    "type1": "Mystery",
+    "type2": "Mystery",
+    "types": [
+      "Mystery"
+    ],
+    "type1_id": 9,
+    "type2_id": 9
+  },
+  "254": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "255": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "256": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "257": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "258": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "259": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "260": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "261": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "262": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "263": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "264": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "265": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "266": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "267": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "268": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "269": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "270": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "271": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "272": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "273": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "274": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "275": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "276": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "277": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "278": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "279": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "280": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "281": {
+    "type1": "Fire",
+    "type2": "Fighting",
+    "types": [
+      "Fire",
+      "Fighting"
+    ],
+    "type1_id": 10,
+    "type2_id": 1
+  },
+  "282": {
+    "type1": "Fire",
+    "type2": "Fighting",
+    "types": [
+      "Fire",
+      "Fighting"
+    ],
+    "type1_id": 10,
+    "type2_id": 1
+  },
+  "283": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "284": {
+    "type1": "Water",
+    "type2": "Ground",
+    "types": [
+      "Water",
+      "Ground"
+    ],
+    "type1_id": 11,
+    "type2_id": 4
+  },
+  "285": {
+    "type1": "Water",
+    "type2": "Ground",
+    "types": [
+      "Water",
+      "Ground"
+    ],
+    "type1_id": 11,
+    "type2_id": 4
+  },
+  "286": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "287": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "288": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "289": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "290": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "291": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "292": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "293": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "294": {
+    "type1": "Bug",
+    "type2": "Poison",
+    "types": [
+      "Bug",
+      "Poison"
+    ],
+    "type1_id": 6,
+    "type2_id": 3
+  },
+  "295": {
+    "type1": "Water",
+    "type2": "Grass",
+    "types": [
+      "Water",
+      "Grass"
+    ],
+    "type1_id": 11,
+    "type2_id": 12
+  },
+  "296": {
+    "type1": "Water",
+    "type2": "Grass",
+    "types": [
+      "Water",
+      "Grass"
+    ],
+    "type1_id": 11,
+    "type2_id": 12
+  },
+  "297": {
+    "type1": "Water",
+    "type2": "Grass",
+    "types": [
+      "Water",
+      "Grass"
+    ],
+    "type1_id": 11,
+    "type2_id": 12
+  },
+  "298": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "299": {
+    "type1": "Grass",
+    "type2": "Dark",
+    "types": [
+      "Grass",
+      "Dark"
+    ],
+    "type1_id": 12,
+    "type2_id": 17
+  },
+  "300": {
+    "type1": "Grass",
+    "type2": "Dark",
+    "types": [
+      "Grass",
+      "Dark"
+    ],
+    "type1_id": 12,
+    "type2_id": 17
+  },
+  "301": {
+    "type1": "Bug",
+    "type2": "Ground",
+    "types": [
+      "Bug",
+      "Ground"
+    ],
+    "type1_id": 6,
+    "type2_id": 4
+  },
+  "302": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "303": {
+    "type1": "Bug",
+    "type2": "Ghost",
+    "types": [
+      "Bug",
+      "Ghost"
+    ],
+    "type1_id": 6,
+    "type2_id": 7
+  },
+  "304": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "305": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "306": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "307": {
+    "type1": "Grass",
+    "type2": "Fighting",
+    "types": [
+      "Grass",
+      "Fighting"
+    ],
+    "type1_id": 12,
+    "type2_id": 1
+  },
+  "308": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "309": {
+    "type1": "Water",
+    "type2": "Flying",
+    "types": [
+      "Water",
+      "Flying"
+    ],
+    "type1_id": 11,
+    "type2_id": 2
+  },
+  "310": {
+    "type1": "Water",
+    "type2": "Flying",
+    "types": [
+      "Water",
+      "Flying"
+    ],
+    "type1_id": 11,
+    "type2_id": 2
+  },
+  "311": {
+    "type1": "Bug",
+    "type2": "Water",
+    "types": [
+      "Bug",
+      "Water"
+    ],
+    "type1_id": 6,
+    "type2_id": 11
+  },
+  "312": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "313": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "314": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "315": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "316": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "317": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "318": {
+    "type1": "Ground",
+    "type2": "Psychic",
+    "types": [
+      "Ground",
+      "Psychic"
+    ],
+    "type1_id": 4,
+    "type2_id": 14
+  },
+  "319": {
+    "type1": "Ground",
+    "type2": "Psychic",
+    "types": [
+      "Ground",
+      "Psychic"
+    ],
+    "type1_id": 4,
+    "type2_id": 14
+  },
+  "320": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "321": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "322": {
+    "type1": "Dark",
+    "type2": "Ghost",
+    "types": [
+      "Dark",
+      "Ghost"
+    ],
+    "type1_id": 17,
+    "type2_id": 7
+  },
+  "323": {
+    "type1": "Water",
+    "type2": "Ground",
+    "types": [
+      "Water",
+      "Ground"
+    ],
+    "type1_id": 11,
+    "type2_id": 4
+  },
+  "324": {
+    "type1": "Water",
+    "type2": "Ground",
+    "types": [
+      "Water",
+      "Ground"
+    ],
+    "type1_id": 11,
+    "type2_id": 4
+  },
+  "325": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "326": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "327": {
+    "type1": "Water",
+    "type2": "Dark",
+    "types": [
+      "Water",
+      "Dark"
+    ],
+    "type1_id": 11,
+    "type2_id": 17
+  },
+  "328": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "329": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "330": {
+    "type1": "Water",
+    "type2": "Dark",
+    "types": [
+      "Water",
+      "Dark"
+    ],
+    "type1_id": 11,
+    "type2_id": 17
+  },
+  "331": {
+    "type1": "Water",
+    "type2": "Dark",
+    "types": [
+      "Water",
+      "Dark"
+    ],
+    "type1_id": 11,
+    "type2_id": 17
+  },
+  "332": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "333": {
+    "type1": "Ground",
+    "type2": "Dragon",
+    "types": [
+      "Ground",
+      "Dragon"
+    ],
+    "type1_id": 4,
+    "type2_id": 16
+  },
+  "334": {
+    "type1": "Ground",
+    "type2": "Dragon",
+    "types": [
+      "Ground",
+      "Dragon"
+    ],
+    "type1_id": 4,
+    "type2_id": 16
+  },
+  "335": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "336": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "337": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "338": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "339": {
+    "type1": "Fire",
+    "type2": "Ground",
+    "types": [
+      "Fire",
+      "Ground"
+    ],
+    "type1_id": 10,
+    "type2_id": 4
+  },
+  "340": {
+    "type1": "Fire",
+    "type2": "Ground",
+    "types": [
+      "Fire",
+      "Ground"
+    ],
+    "type1_id": 10,
+    "type2_id": 4
+  },
+  "341": {
+    "type1": "Ice",
+    "type2": "Water",
+    "types": [
+      "Ice",
+      "Water"
+    ],
+    "type1_id": 15,
+    "type2_id": 11
+  },
+  "342": {
+    "type1": "Ice",
+    "type2": "Water",
+    "types": [
+      "Ice",
+      "Water"
+    ],
+    "type1_id": 15,
+    "type2_id": 11
+  },
+  "343": {
+    "type1": "Ice",
+    "type2": "Water",
+    "types": [
+      "Ice",
+      "Water"
+    ],
+    "type1_id": 15,
+    "type2_id": 11
+  },
+  "344": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "345": {
+    "type1": "Grass",
+    "type2": "Dark",
+    "types": [
+      "Grass",
+      "Dark"
+    ],
+    "type1_id": 12,
+    "type2_id": 17
+  },
+  "346": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "347": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "348": {
+    "type1": "Rock",
+    "type2": "Psychic",
+    "types": [
+      "Rock",
+      "Psychic"
+    ],
+    "type1_id": 5,
+    "type2_id": 14
+  },
+  "349": {
+    "type1": "Rock",
+    "type2": "Psychic",
+    "types": [
+      "Rock",
+      "Psychic"
+    ],
+    "type1_id": 5,
+    "type2_id": 14
+  },
+  "350": {
+    "type1": "Normal",
+    "type2": "Fairy",
+    "types": [
+      "Normal",
+      "Fairy"
+    ],
+    "type1_id": 0,
+    "type2_id": 23
+  },
+  "351": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "352": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "353": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "354": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "355": {
+    "type1": "Steel",
+    "type2": "Fairy",
+    "types": [
+      "Steel",
+      "Fairy"
+    ],
+    "type1_id": 8,
+    "type2_id": 23
+  },
+  "356": {
+    "type1": "Fighting",
+    "type2": "Psychic",
+    "types": [
+      "Fighting",
+      "Psychic"
+    ],
+    "type1_id": 1,
+    "type2_id": 14
+  },
+  "357": {
+    "type1": "Fighting",
+    "type2": "Psychic",
+    "types": [
+      "Fighting",
+      "Psychic"
+    ],
+    "type1_id": 1,
+    "type2_id": 14
+  },
+  "358": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "359": {
+    "type1": "Dragon",
+    "type2": "Flying",
+    "types": [
+      "Dragon",
+      "Flying"
+    ],
+    "type1_id": 16,
+    "type2_id": 2
+  },
+  "360": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "361": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "362": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "363": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "364": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "365": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "366": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "367": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "368": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "369": {
+    "type1": "Grass",
+    "type2": "Flying",
+    "types": [
+      "Grass",
+      "Flying"
+    ],
+    "type1_id": 12,
+    "type2_id": 2
+  },
+  "370": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "371": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "372": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "373": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "374": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "375": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "376": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "377": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "378": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "379": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "380": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "381": {
+    "type1": "Water",
+    "type2": "Rock",
+    "types": [
+      "Water",
+      "Rock"
+    ],
+    "type1_id": 11,
+    "type2_id": 5
+  },
+  "382": {
+    "type1": "Steel",
+    "type2": "Rock",
+    "types": [
+      "Steel",
+      "Rock"
+    ],
+    "type1_id": 8,
+    "type2_id": 5
+  },
+  "383": {
+    "type1": "Steel",
+    "type2": "Rock",
+    "types": [
+      "Steel",
+      "Rock"
+    ],
+    "type1_id": 8,
+    "type2_id": 5
+  },
+  "384": {
+    "type1": "Steel",
+    "type2": "Rock",
+    "types": [
+      "Steel",
+      "Rock"
+    ],
+    "type1_id": 8,
+    "type2_id": 5
+  },
+  "385": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "386": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "387": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "388": {
+    "type1": "Rock",
+    "type2": "Grass",
+    "types": [
+      "Rock",
+      "Grass"
+    ],
+    "type1_id": 5,
+    "type2_id": 12
+  },
+  "389": {
+    "type1": "Rock",
+    "type2": "Grass",
+    "types": [
+      "Rock",
+      "Grass"
+    ],
+    "type1_id": 5,
+    "type2_id": 12
+  },
+  "390": {
+    "type1": "Rock",
+    "type2": "Bug",
+    "types": [
+      "Rock",
+      "Bug"
+    ],
+    "type1_id": 5,
+    "type2_id": 6
+  },
+  "391": {
+    "type1": "Rock",
+    "type2": "Bug",
+    "types": [
+      "Rock",
+      "Bug"
+    ],
+    "type1_id": 5,
+    "type2_id": 6
+  },
+  "392": {
+    "type1": "Psychic",
+    "type2": "Fairy",
+    "types": [
+      "Psychic",
+      "Fairy"
+    ],
+    "type1_id": 14,
+    "type2_id": 23
+  },
+  "393": {
+    "type1": "Psychic",
+    "type2": "Fairy",
+    "types": [
+      "Psychic",
+      "Fairy"
+    ],
+    "type1_id": 14,
+    "type2_id": 23
+  },
+  "394": {
+    "type1": "Psychic",
+    "type2": "Fairy",
+    "types": [
+      "Psychic",
+      "Fairy"
+    ],
+    "type1_id": 14,
+    "type2_id": 23
+  },
+  "395": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "396": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "397": {
+    "type1": "Dragon",
+    "type2": "Flying",
+    "types": [
+      "Dragon",
+      "Flying"
+    ],
+    "type1_id": 16,
+    "type2_id": 2
+  },
+  "398": {
+    "type1": "Steel",
+    "type2": "Psychic",
+    "types": [
+      "Steel",
+      "Psychic"
+    ],
+    "type1_id": 8,
+    "type2_id": 14
+  },
+  "399": {
+    "type1": "Steel",
+    "type2": "Psychic",
+    "types": [
+      "Steel",
+      "Psychic"
+    ],
+    "type1_id": 8,
+    "type2_id": 14
+  },
+  "400": {
+    "type1": "Steel",
+    "type2": "Psychic",
+    "types": [
+      "Steel",
+      "Psychic"
+    ],
+    "type1_id": 8,
+    "type2_id": 14
+  },
+  "401": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "402": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "403": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "404": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "405": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "406": {
+    "type1": "Dragon",
+    "type2": "Flying",
+    "types": [
+      "Dragon",
+      "Flying"
+    ],
+    "type1_id": 16,
+    "type2_id": 2
+  },
+  "407": {
+    "type1": "Dragon",
+    "type2": "Psychic",
+    "types": [
+      "Dragon",
+      "Psychic"
+    ],
+    "type1_id": 16,
+    "type2_id": 14
+  },
+  "408": {
+    "type1": "Dragon",
+    "type2": "Psychic",
+    "types": [
+      "Dragon",
+      "Psychic"
+    ],
+    "type1_id": 16,
+    "type2_id": 14
+  },
+  "409": {
+    "type1": "Steel",
+    "type2": "Psychic",
+    "types": [
+      "Steel",
+      "Psychic"
+    ],
+    "type1_id": 8,
+    "type2_id": 14
+  },
+  "410": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "411": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "412": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "413": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "414": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "415": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "416": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "417": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "418": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "419": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "420": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "421": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "422": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "423": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "424": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "425": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "426": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "427": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "428": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "429": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "430": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "431": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "432": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "433": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "434": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "435": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "436": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "437": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "438": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "439": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "440": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "441": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "442": {
+    "type1": "Grass",
+    "type2": "Ground",
+    "types": [
+      "Grass",
+      "Ground"
+    ],
+    "type1_id": 12,
+    "type2_id": 4
+  },
+  "443": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "444": {
+    "type1": "Fire",
+    "type2": "Fighting",
+    "types": [
+      "Fire",
+      "Fighting"
+    ],
+    "type1_id": 10,
+    "type2_id": 1
+  },
+  "445": {
+    "type1": "Fire",
+    "type2": "Fighting",
+    "types": [
+      "Fire",
+      "Fighting"
+    ],
+    "type1_id": 10,
+    "type2_id": 1
+  },
+  "446": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "447": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "448": {
+    "type1": "Water",
+    "type2": "Steel",
+    "types": [
+      "Water",
+      "Steel"
+    ],
+    "type1_id": 11,
+    "type2_id": 8
+  },
+  "449": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "450": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "451": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "452": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "453": {
+    "type1": "Normal",
+    "type2": "Water",
+    "types": [
+      "Normal",
+      "Water"
+    ],
+    "type1_id": 0,
+    "type2_id": 11
+  },
+  "454": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "455": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "456": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "457": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "458": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "459": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "460": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "461": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "462": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "463": {
+    "type1": "Rock",
+    "type2": "Steel",
+    "types": [
+      "Rock",
+      "Steel"
+    ],
+    "type1_id": 5,
+    "type2_id": 8
+  },
+  "464": {
+    "type1": "Rock",
+    "type2": "Steel",
+    "types": [
+      "Rock",
+      "Steel"
+    ],
+    "type1_id": 5,
+    "type2_id": 8
+  },
+  "465": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "466": {
+    "type1": "Bug",
+    "type2": "Grass",
+    "types": [
+      "Bug",
+      "Grass"
+    ],
+    "type1_id": 6,
+    "type2_id": 12
+  },
+  "467": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "468": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "469": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "470": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "471": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "472": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "473": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "474": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "475": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "476": {
+    "type1": "Water",
+    "type2": "Ground",
+    "types": [
+      "Water",
+      "Ground"
+    ],
+    "type1_id": 11,
+    "type2_id": 4
+  },
+  "477": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "478": {
+    "type1": "Ghost",
+    "type2": "Flying",
+    "types": [
+      "Ghost",
+      "Flying"
+    ],
+    "type1_id": 7,
+    "type2_id": 2
+  },
+  "479": {
+    "type1": "Ghost",
+    "type2": "Flying",
+    "types": [
+      "Ghost",
+      "Flying"
+    ],
+    "type1_id": 7,
+    "type2_id": 2
+  },
+  "480": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "481": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "482": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "483": {
+    "type1": "Dark",
+    "type2": "Flying",
+    "types": [
+      "Dark",
+      "Flying"
+    ],
+    "type1_id": 17,
+    "type2_id": 2
+  },
+  "484": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "485": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "486": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "487": {
+    "type1": "Poison",
+    "type2": "Dark",
+    "types": [
+      "Poison",
+      "Dark"
+    ],
+    "type1_id": 3,
+    "type2_id": 17
+  },
+  "488": {
+    "type1": "Poison",
+    "type2": "Dark",
+    "types": [
+      "Poison",
+      "Dark"
+    ],
+    "type1_id": 3,
+    "type2_id": 17
+  },
+  "489": {
+    "type1": "Steel",
+    "type2": "Psychic",
+    "types": [
+      "Steel",
+      "Psychic"
+    ],
+    "type1_id": 8,
+    "type2_id": 14
+  },
+  "490": {
+    "type1": "Steel",
+    "type2": "Psychic",
+    "types": [
+      "Steel",
+      "Psychic"
+    ],
+    "type1_id": 8,
+    "type2_id": 14
+  },
+  "491": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "492": {
+    "type1": "Psychic",
+    "type2": "Fairy",
+    "types": [
+      "Psychic",
+      "Fairy"
+    ],
+    "type1_id": 14,
+    "type2_id": 23
+  },
+  "493": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "494": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "495": {
+    "type1": "Ghost",
+    "type2": "Dark",
+    "types": [
+      "Ghost",
+      "Dark"
+    ],
+    "type1_id": 7,
+    "type2_id": 17
+  },
+  "496": {
+    "type1": "Dragon",
+    "type2": "Ground",
+    "types": [
+      "Dragon",
+      "Ground"
+    ],
+    "type1_id": 16,
+    "type2_id": 4
+  },
+  "497": {
+    "type1": "Dragon",
+    "type2": "Ground",
+    "types": [
+      "Dragon",
+      "Ground"
+    ],
+    "type1_id": 16,
+    "type2_id": 4
+  },
+  "498": {
+    "type1": "Dragon",
+    "type2": "Ground",
+    "types": [
+      "Dragon",
+      "Ground"
+    ],
+    "type1_id": 16,
+    "type2_id": 4
+  },
+  "499": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "500": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "501": {
+    "type1": "Fighting",
+    "type2": "Steel",
+    "types": [
+      "Fighting",
+      "Steel"
+    ],
+    "type1_id": 1,
+    "type2_id": 8
+  },
+  "502": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "503": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "504": {
+    "type1": "Poison",
+    "type2": "Bug",
+    "types": [
+      "Poison",
+      "Bug"
+    ],
+    "type1_id": 3,
+    "type2_id": 6
+  },
+  "505": {
+    "type1": "Poison",
+    "type2": "Dark",
+    "types": [
+      "Poison",
+      "Dark"
+    ],
+    "type1_id": 3,
+    "type2_id": 17
+  },
+  "506": {
+    "type1": "Poison",
+    "type2": "Fighting",
+    "types": [
+      "Poison",
+      "Fighting"
+    ],
+    "type1_id": 3,
+    "type2_id": 1
+  },
+  "507": {
+    "type1": "Poison",
+    "type2": "Fighting",
+    "types": [
+      "Poison",
+      "Fighting"
+    ],
+    "type1_id": 3,
+    "type2_id": 1
+  },
+  "508": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "509": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "510": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "511": {
+    "type1": "Water",
+    "type2": "Flying",
+    "types": [
+      "Water",
+      "Flying"
+    ],
+    "type1_id": 11,
+    "type2_id": 2
+  },
+  "512": {
+    "type1": "Grass",
+    "type2": "Ice",
+    "types": [
+      "Grass",
+      "Ice"
+    ],
+    "type1_id": 12,
+    "type2_id": 15
+  },
+  "513": {
+    "type1": "Grass",
+    "type2": "Ice",
+    "types": [
+      "Grass",
+      "Ice"
+    ],
+    "type1_id": 12,
+    "type2_id": 15
+  },
+  "514": {
+    "type1": "Dark",
+    "type2": "Ice",
+    "types": [
+      "Dark",
+      "Ice"
+    ],
+    "type1_id": 17,
+    "type2_id": 15
+  },
+  "515": {
+    "type1": "Electric",
+    "type2": "Steel",
+    "types": [
+      "Electric",
+      "Steel"
+    ],
+    "type1_id": 13,
+    "type2_id": 8
+  },
+  "516": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "517": {
+    "type1": "Ground",
+    "type2": "Rock",
+    "types": [
+      "Ground",
+      "Rock"
+    ],
+    "type1_id": 4,
+    "type2_id": 5
+  },
+  "518": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "519": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "520": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "521": {
+    "type1": "Fairy",
+    "type2": "Flying",
+    "types": [
+      "Fairy",
+      "Flying"
+    ],
+    "type1_id": 23,
+    "type2_id": 2
+  },
+  "522": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "523": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "524": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "525": {
+    "type1": "Ground",
+    "type2": "Flying",
+    "types": [
+      "Ground",
+      "Flying"
+    ],
+    "type1_id": 4,
+    "type2_id": 2
+  },
+  "526": {
+    "type1": "Ice",
+    "type2": "Ground",
+    "types": [
+      "Ice",
+      "Ground"
+    ],
+    "type1_id": 15,
+    "type2_id": 4
+  },
+  "527": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "528": {
+    "type1": "Psychic",
+    "type2": "Fighting",
+    "types": [
+      "Psychic",
+      "Fighting"
+    ],
+    "type1_id": 14,
+    "type2_id": 1
+  },
+  "529": {
+    "type1": "Rock",
+    "type2": "Steel",
+    "types": [
+      "Rock",
+      "Steel"
+    ],
+    "type1_id": 5,
+    "type2_id": 8
+  },
+  "530": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "531": {
+    "type1": "Ice",
+    "type2": "Ghost",
+    "types": [
+      "Ice",
+      "Ghost"
+    ],
+    "type1_id": 15,
+    "type2_id": 7
+  },
+  "532": {
+    "type1": "Electric",
+    "type2": "Ghost",
+    "types": [
+      "Electric",
+      "Ghost"
+    ],
+    "type1_id": 13,
+    "type2_id": 7
+  },
+  "533": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "534": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "535": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "536": {
+    "type1": "Steel",
+    "type2": "Dragon",
+    "types": [
+      "Steel",
+      "Dragon"
+    ],
+    "type1_id": 8,
+    "type2_id": 16
+  },
+  "537": {
+    "type1": "Water",
+    "type2": "Dragon",
+    "types": [
+      "Water",
+      "Dragon"
+    ],
+    "type1_id": 11,
+    "type2_id": 16
+  },
+  "538": {
+    "type1": "Fire",
+    "type2": "Steel",
+    "types": [
+      "Fire",
+      "Steel"
+    ],
+    "type1_id": 10,
+    "type2_id": 8
+  },
+  "539": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "540": {
+    "type1": "Ghost",
+    "type2": "Dragon",
+    "types": [
+      "Ghost",
+      "Dragon"
+    ],
+    "type1_id": 7,
+    "type2_id": 16
+  },
+  "541": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "542": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "543": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "544": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "545": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "546": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "547": {
+    "type1": "Psychic",
+    "type2": "Fire",
+    "types": [
+      "Psychic",
+      "Fire"
+    ],
+    "type1_id": 14,
+    "type2_id": 10
+  },
+  "548": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "549": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "550": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "551": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "552": {
+    "type1": "Fire",
+    "type2": "Fighting",
+    "types": [
+      "Fire",
+      "Fighting"
+    ],
+    "type1_id": 10,
+    "type2_id": 1
+  },
+  "553": {
+    "type1": "Fire",
+    "type2": "Fighting",
+    "types": [
+      "Fire",
+      "Fighting"
+    ],
+    "type1_id": 10,
+    "type2_id": 1
+  },
+  "554": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "555": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "556": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "557": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "558": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "559": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "560": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "561": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "562": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "563": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "564": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "565": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "566": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "567": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "568": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "569": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "570": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "571": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "572": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "573": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "574": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "575": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "576": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "577": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "578": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "579": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "580": {
+    "type1": "Psychic",
+    "type2": "Flying",
+    "types": [
+      "Psychic",
+      "Flying"
+    ],
+    "type1_id": 14,
+    "type2_id": 2
+  },
+  "581": {
+    "type1": "Psychic",
+    "type2": "Flying",
+    "types": [
+      "Psychic",
+      "Flying"
+    ],
+    "type1_id": 14,
+    "type2_id": 2
+  },
+  "582": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "583": {
+    "type1": "Ground",
+    "type2": "Steel",
+    "types": [
+      "Ground",
+      "Steel"
+    ],
+    "type1_id": 4,
+    "type2_id": 8
+  },
+  "584": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "585": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "586": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "587": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "588": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "589": {
+    "type1": "Water",
+    "type2": "Ground",
+    "types": [
+      "Water",
+      "Ground"
+    ],
+    "type1_id": 11,
+    "type2_id": 4
+  },
+  "590": {
+    "type1": "Water",
+    "type2": "Ground",
+    "types": [
+      "Water",
+      "Ground"
+    ],
+    "type1_id": 11,
+    "type2_id": 4
+  },
+  "591": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "592": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "593": {
+    "type1": "Bug",
+    "type2": "Grass",
+    "types": [
+      "Bug",
+      "Grass"
+    ],
+    "type1_id": 6,
+    "type2_id": 12
+  },
+  "594": {
+    "type1": "Bug",
+    "type2": "Grass",
+    "types": [
+      "Bug",
+      "Grass"
+    ],
+    "type1_id": 6,
+    "type2_id": 12
+  },
+  "595": {
+    "type1": "Bug",
+    "type2": "Grass",
+    "types": [
+      "Bug",
+      "Grass"
+    ],
+    "type1_id": 6,
+    "type2_id": 12
+  },
+  "596": {
+    "type1": "Bug",
+    "type2": "Poison",
+    "types": [
+      "Bug",
+      "Poison"
+    ],
+    "type1_id": 6,
+    "type2_id": 3
+  },
+  "597": {
+    "type1": "Bug",
+    "type2": "Poison",
+    "types": [
+      "Bug",
+      "Poison"
+    ],
+    "type1_id": 6,
+    "type2_id": 3
+  },
+  "598": {
+    "type1": "Bug",
+    "type2": "Poison",
+    "types": [
+      "Bug",
+      "Poison"
+    ],
+    "type1_id": 6,
+    "type2_id": 3
+  },
+  "599": {
+    "type1": "Grass",
+    "type2": "Fairy",
+    "types": [
+      "Grass",
+      "Fairy"
+    ],
+    "type1_id": 12,
+    "type2_id": 23
+  },
+  "600": {
+    "type1": "Grass",
+    "type2": "Fairy",
+    "types": [
+      "Grass",
+      "Fairy"
+    ],
+    "type1_id": 12,
+    "type2_id": 23
+  },
+  "601": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "602": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "603": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "604": {
+    "type1": "Ground",
+    "type2": "Dark",
+    "types": [
+      "Ground",
+      "Dark"
+    ],
+    "type1_id": 4,
+    "type2_id": 17
+  },
+  "605": {
+    "type1": "Ground",
+    "type2": "Dark",
+    "types": [
+      "Ground",
+      "Dark"
+    ],
+    "type1_id": 4,
+    "type2_id": 17
+  },
+  "606": {
+    "type1": "Ground",
+    "type2": "Dark",
+    "types": [
+      "Ground",
+      "Dark"
+    ],
+    "type1_id": 4,
+    "type2_id": 17
+  },
+  "607": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "608": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "609": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "610": {
+    "type1": "Bug",
+    "type2": "Rock",
+    "types": [
+      "Bug",
+      "Rock"
+    ],
+    "type1_id": 6,
+    "type2_id": 5
+  },
+  "611": {
+    "type1": "Bug",
+    "type2": "Rock",
+    "types": [
+      "Bug",
+      "Rock"
+    ],
+    "type1_id": 6,
+    "type2_id": 5
+  },
+  "612": {
+    "type1": "Dark",
+    "type2": "Fighting",
+    "types": [
+      "Dark",
+      "Fighting"
+    ],
+    "type1_id": 17,
+    "type2_id": 1
+  },
+  "613": {
+    "type1": "Dark",
+    "type2": "Fighting",
+    "types": [
+      "Dark",
+      "Fighting"
+    ],
+    "type1_id": 17,
+    "type2_id": 1
+  },
+  "614": {
+    "type1": "Psychic",
+    "type2": "Flying",
+    "types": [
+      "Psychic",
+      "Flying"
+    ],
+    "type1_id": 14,
+    "type2_id": 2
+  },
+  "615": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "616": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "617": {
+    "type1": "Water",
+    "type2": "Rock",
+    "types": [
+      "Water",
+      "Rock"
+    ],
+    "type1_id": 11,
+    "type2_id": 5
+  },
+  "618": {
+    "type1": "Water",
+    "type2": "Rock",
+    "types": [
+      "Water",
+      "Rock"
+    ],
+    "type1_id": 11,
+    "type2_id": 5
+  },
+  "619": {
+    "type1": "Rock",
+    "type2": "Flying",
+    "types": [
+      "Rock",
+      "Flying"
+    ],
+    "type1_id": 5,
+    "type2_id": 2
+  },
+  "620": {
+    "type1": "Rock",
+    "type2": "Flying",
+    "types": [
+      "Rock",
+      "Flying"
+    ],
+    "type1_id": 5,
+    "type2_id": 2
+  },
+  "621": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "622": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "623": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "624": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "625": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "626": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "627": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "628": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "629": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "630": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "631": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "632": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "633": {
+    "type1": "Water",
+    "type2": "Flying",
+    "types": [
+      "Water",
+      "Flying"
+    ],
+    "type1_id": 11,
+    "type2_id": 2
+  },
+  "634": {
+    "type1": "Water",
+    "type2": "Flying",
+    "types": [
+      "Water",
+      "Flying"
+    ],
+    "type1_id": 11,
+    "type2_id": 2
+  },
+  "635": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "636": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "637": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "638": {
+    "type1": "Normal",
+    "type2": "Grass",
+    "types": [
+      "Normal",
+      "Grass"
+    ],
+    "type1_id": 0,
+    "type2_id": 12
+  },
+  "639": {
+    "type1": "Normal",
+    "type2": "Grass",
+    "types": [
+      "Normal",
+      "Grass"
+    ],
+    "type1_id": 0,
+    "type2_id": 12
+  },
+  "640": {
+    "type1": "Electric",
+    "type2": "Flying",
+    "types": [
+      "Electric",
+      "Flying"
+    ],
+    "type1_id": 13,
+    "type2_id": 2
+  },
+  "641": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "642": {
+    "type1": "Bug",
+    "type2": "Steel",
+    "types": [
+      "Bug",
+      "Steel"
+    ],
+    "type1_id": 6,
+    "type2_id": 8
+  },
+  "643": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "644": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "645": {
+    "type1": "Water",
+    "type2": "Ghost",
+    "types": [
+      "Water",
+      "Ghost"
+    ],
+    "type1_id": 11,
+    "type2_id": 7
+  },
+  "646": {
+    "type1": "Water",
+    "type2": "Ghost",
+    "types": [
+      "Water",
+      "Ghost"
+    ],
+    "type1_id": 11,
+    "type2_id": 7
+  },
+  "647": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "648": {
+    "type1": "Bug",
+    "type2": "Electric",
+    "types": [
+      "Bug",
+      "Electric"
+    ],
+    "type1_id": 6,
+    "type2_id": 13
+  },
+  "649": {
+    "type1": "Bug",
+    "type2": "Electric",
+    "types": [
+      "Bug",
+      "Electric"
+    ],
+    "type1_id": 6,
+    "type2_id": 13
+  },
+  "650": {
+    "type1": "Grass",
+    "type2": "Steel",
+    "types": [
+      "Grass",
+      "Steel"
+    ],
+    "type1_id": 12,
+    "type2_id": 8
+  },
+  "651": {
+    "type1": "Grass",
+    "type2": "Steel",
+    "types": [
+      "Grass",
+      "Steel"
+    ],
+    "type1_id": 12,
+    "type2_id": 8
+  },
+  "652": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "653": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "654": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "655": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "656": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "657": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "658": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "659": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "660": {
+    "type1": "Ghost",
+    "type2": "Fire",
+    "types": [
+      "Ghost",
+      "Fire"
+    ],
+    "type1_id": 7,
+    "type2_id": 10
+  },
+  "661": {
+    "type1": "Ghost",
+    "type2": "Fire",
+    "types": [
+      "Ghost",
+      "Fire"
+    ],
+    "type1_id": 7,
+    "type2_id": 10
+  },
+  "662": {
+    "type1": "Ghost",
+    "type2": "Fire",
+    "types": [
+      "Ghost",
+      "Fire"
+    ],
+    "type1_id": 7,
+    "type2_id": 10
+  },
+  "663": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "664": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "665": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "666": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "667": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "668": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "669": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "670": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "671": {
+    "type1": "Ground",
+    "type2": "Electric",
+    "types": [
+      "Ground",
+      "Electric"
+    ],
+    "type1_id": 4,
+    "type2_id": 13
+  },
+  "672": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "673": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "674": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "675": {
+    "type1": "Ground",
+    "type2": "Ghost",
+    "types": [
+      "Ground",
+      "Ghost"
+    ],
+    "type1_id": 4,
+    "type2_id": 7
+  },
+  "676": {
+    "type1": "Ground",
+    "type2": "Ghost",
+    "types": [
+      "Ground",
+      "Ghost"
+    ],
+    "type1_id": 4,
+    "type2_id": 7
+  },
+  "677": {
+    "type1": "Dark",
+    "type2": "Steel",
+    "types": [
+      "Dark",
+      "Steel"
+    ],
+    "type1_id": 17,
+    "type2_id": 8
+  },
+  "678": {
+    "type1": "Dark",
+    "type2": "Steel",
+    "types": [
+      "Dark",
+      "Steel"
+    ],
+    "type1_id": 17,
+    "type2_id": 8
+  },
+  "679": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "680": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "681": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "682": {
+    "type1": "Dark",
+    "type2": "Flying",
+    "types": [
+      "Dark",
+      "Flying"
+    ],
+    "type1_id": 17,
+    "type2_id": 2
+  },
+  "683": {
+    "type1": "Dark",
+    "type2": "Flying",
+    "types": [
+      "Dark",
+      "Flying"
+    ],
+    "type1_id": 17,
+    "type2_id": 2
+  },
+  "684": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "685": {
+    "type1": "Bug",
+    "type2": "Steel",
+    "types": [
+      "Bug",
+      "Steel"
+    ],
+    "type1_id": 6,
+    "type2_id": 8
+  },
+  "686": {
+    "type1": "Dark",
+    "type2": "Dragon",
+    "types": [
+      "Dark",
+      "Dragon"
+    ],
+    "type1_id": 17,
+    "type2_id": 16
+  },
+  "687": {
+    "type1": "Dark",
+    "type2": "Dragon",
+    "types": [
+      "Dark",
+      "Dragon"
+    ],
+    "type1_id": 17,
+    "type2_id": 16
+  },
+  "688": {
+    "type1": "Dark",
+    "type2": "Dragon",
+    "types": [
+      "Dark",
+      "Dragon"
+    ],
+    "type1_id": 17,
+    "type2_id": 16
+  },
+  "689": {
+    "type1": "Bug",
+    "type2": "Fire",
+    "types": [
+      "Bug",
+      "Fire"
+    ],
+    "type1_id": 6,
+    "type2_id": 10
+  },
+  "690": {
+    "type1": "Bug",
+    "type2": "Fire",
+    "types": [
+      "Bug",
+      "Fire"
+    ],
+    "type1_id": 6,
+    "type2_id": 10
+  },
+  "691": {
+    "type1": "Steel",
+    "type2": "Fighting",
+    "types": [
+      "Steel",
+      "Fighting"
+    ],
+    "type1_id": 8,
+    "type2_id": 1
+  },
+  "692": {
+    "type1": "Rock",
+    "type2": "Fighting",
+    "types": [
+      "Rock",
+      "Fighting"
+    ],
+    "type1_id": 5,
+    "type2_id": 1
+  },
+  "693": {
+    "type1": "Grass",
+    "type2": "Fighting",
+    "types": [
+      "Grass",
+      "Fighting"
+    ],
+    "type1_id": 12,
+    "type2_id": 1
+  },
+  "694": {
+    "type1": "Flying",
+    "type2": "Flying",
+    "types": [
+      "Flying"
+    ],
+    "type1_id": 2,
+    "type2_id": 2
+  },
+  "695": {
+    "type1": "Electric",
+    "type2": "Flying",
+    "types": [
+      "Electric",
+      "Flying"
+    ],
+    "type1_id": 13,
+    "type2_id": 2
+  },
+  "696": {
+    "type1": "Dragon",
+    "type2": "Fire",
+    "types": [
+      "Dragon",
+      "Fire"
+    ],
+    "type1_id": 16,
+    "type2_id": 10
+  },
+  "697": {
+    "type1": "Dragon",
+    "type2": "Electric",
+    "types": [
+      "Dragon",
+      "Electric"
+    ],
+    "type1_id": 16,
+    "type2_id": 13
+  },
+  "698": {
+    "type1": "Ground",
+    "type2": "Flying",
+    "types": [
+      "Ground",
+      "Flying"
+    ],
+    "type1_id": 4,
+    "type2_id": 2
+  },
+  "699": {
+    "type1": "Dragon",
+    "type2": "Ice",
+    "types": [
+      "Dragon",
+      "Ice"
+    ],
+    "type1_id": 16,
+    "type2_id": 15
+  },
+  "700": {
+    "type1": "Water",
+    "type2": "Fighting",
+    "types": [
+      "Water",
+      "Fighting"
+    ],
+    "type1_id": 11,
+    "type2_id": 1
+  },
+  "701": {
+    "type1": "Normal",
+    "type2": "Psychic",
+    "types": [
+      "Normal",
+      "Psychic"
+    ],
+    "type1_id": 0,
+    "type2_id": 14
+  },
+  "702": {
+    "type1": "Bug",
+    "type2": "Steel",
+    "types": [
+      "Bug",
+      "Steel"
+    ],
+    "type1_id": 6,
+    "type2_id": 8
+  },
+  "703": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "704": {
+    "type1": "Water",
+    "type2": "Ghost",
+    "types": [
+      "Water",
+      "Ghost"
+    ],
+    "type1_id": 11,
+    "type2_id": 7
+  },
+  "705": {
+    "type1": "Water",
+    "type2": "Ghost",
+    "types": [
+      "Water",
+      "Ghost"
+    ],
+    "type1_id": 11,
+    "type2_id": 7
+  },
+  "706": {
+    "type1": "Ghost",
+    "type2": "Dark",
+    "types": [
+      "Ghost",
+      "Dark"
+    ],
+    "type1_id": 7,
+    "type2_id": 17
+  },
+  "707": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "708": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "709": {
+    "type1": "Bug",
+    "type2": "Ground",
+    "types": [
+      "Bug",
+      "Ground"
+    ],
+    "type1_id": 6,
+    "type2_id": 4
+  },
+  "710": {
+    "type1": "Bug",
+    "type2": "Steel",
+    "types": [
+      "Bug",
+      "Steel"
+    ],
+    "type1_id": 6,
+    "type2_id": 8
+  },
+  "711": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "712": {
+    "type1": "Water",
+    "type2": "Ground",
+    "types": [
+      "Water",
+      "Ground"
+    ],
+    "type1_id": 11,
+    "type2_id": 4
+  },
+  "713": {
+    "type1": "Electric",
+    "type2": "Fire",
+    "types": [
+      "Electric",
+      "Fire"
+    ],
+    "type1_id": 13,
+    "type2_id": 10
+  },
+  "714": {
+    "type1": "Electric",
+    "type2": "Water",
+    "types": [
+      "Electric",
+      "Water"
+    ],
+    "type1_id": 13,
+    "type2_id": 11
+  },
+  "715": {
+    "type1": "Electric",
+    "type2": "Ice",
+    "types": [
+      "Electric",
+      "Ice"
+    ],
+    "type1_id": 13,
+    "type2_id": 15
+  },
+  "716": {
+    "type1": "Electric",
+    "type2": "Flying",
+    "types": [
+      "Electric",
+      "Flying"
+    ],
+    "type1_id": 13,
+    "type2_id": 2
+  },
+  "717": {
+    "type1": "Electric",
+    "type2": "Grass",
+    "types": [
+      "Electric",
+      "Grass"
+    ],
+    "type1_id": 13,
+    "type2_id": 12
+  },
+  "718": {
+    "type1": "Ghost",
+    "type2": "Dragon",
+    "types": [
+      "Ghost",
+      "Dragon"
+    ],
+    "type1_id": 7,
+    "type2_id": 16
+  },
+  "719": {
+    "type1": "Grass",
+    "type2": "Flying",
+    "types": [
+      "Grass",
+      "Flying"
+    ],
+    "type1_id": 12,
+    "type2_id": 2
+  },
+  "720": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "721": {
+    "type1": "Flying",
+    "type2": "Flying",
+    "types": [
+      "Flying"
+    ],
+    "type1_id": 2,
+    "type2_id": 2
+  },
+  "722": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "723": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "724": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "725": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "726": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "727": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "728": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "729": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "730": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "731": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "732": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "733": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "734": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "735": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "736": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "737": {
+    "type1": "Fire",
+    "type2": "Psychic",
+    "types": [
+      "Fire",
+      "Psychic"
+    ],
+    "type1_id": 10,
+    "type2_id": 14
+  },
+  "738": {
+    "type1": "Normal",
+    "type2": "Grass",
+    "types": [
+      "Normal",
+      "Grass"
+    ],
+    "type1_id": 0,
+    "type2_id": 12
+  },
+  "739": {
+    "type1": "Normal",
+    "type2": "Grass",
+    "types": [
+      "Normal",
+      "Grass"
+    ],
+    "type1_id": 0,
+    "type2_id": 12
+  },
+  "740": {
+    "type1": "Normal",
+    "type2": "Grass",
+    "types": [
+      "Normal",
+      "Grass"
+    ],
+    "type1_id": 0,
+    "type2_id": 12
+  },
+  "741": {
+    "type1": "Normal",
+    "type2": "Grass",
+    "types": [
+      "Normal",
+      "Grass"
+    ],
+    "type1_id": 0,
+    "type2_id": 12
+  },
+  "742": {
+    "type1": "Normal",
+    "type2": "Grass",
+    "types": [
+      "Normal",
+      "Grass"
+    ],
+    "type1_id": 0,
+    "type2_id": 12
+  },
+  "743": {
+    "type1": "Normal",
+    "type2": "Grass",
+    "types": [
+      "Normal",
+      "Grass"
+    ],
+    "type1_id": 0,
+    "type2_id": 12
+  },
+  "744": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "745": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "746": {
+    "type1": "Normal",
+    "type2": "Fighting",
+    "types": [
+      "Normal",
+      "Fighting"
+    ],
+    "type1_id": 0,
+    "type2_id": 1
+  },
+  "747": {
+    "type1": "Bug",
+    "type2": "Steel",
+    "types": [
+      "Bug",
+      "Steel"
+    ],
+    "type1_id": 6,
+    "type2_id": 8
+  },
+  "748": {
+    "type1": "Bug",
+    "type2": "Steel",
+    "types": [
+      "Bug",
+      "Steel"
+    ],
+    "type1_id": 6,
+    "type2_id": 8
+  },
+  "749": {
+    "type1": "Bug",
+    "type2": "Steel",
+    "types": [
+      "Bug",
+      "Steel"
+    ],
+    "type1_id": 6,
+    "type2_id": 8
+  },
+  "750": {
+    "type1": "Bug",
+    "type2": "Steel",
+    "types": [
+      "Bug",
+      "Steel"
+    ],
+    "type1_id": 6,
+    "type2_id": 8
+  },
+  "751": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "752": {
+    "type1": "Dragon",
+    "type2": "Ice",
+    "types": [
+      "Dragon",
+      "Ice"
+    ],
+    "type1_id": 16,
+    "type2_id": 15
+  },
+  "753": {
+    "type1": "Dragon",
+    "type2": "Ice",
+    "types": [
+      "Dragon",
+      "Ice"
+    ],
+    "type1_id": 16,
+    "type2_id": 15
+  },
+  "754": {
+    "type1": "Flying",
+    "type2": "Flying",
+    "types": [
+      "Flying"
+    ],
+    "type1_id": 2,
+    "type2_id": 2
+  },
+  "755": {
+    "type1": "Electric",
+    "type2": "Flying",
+    "types": [
+      "Electric",
+      "Flying"
+    ],
+    "type1_id": 13,
+    "type2_id": 2
+  },
+  "756": {
+    "type1": "Ground",
+    "type2": "Flying",
+    "types": [
+      "Ground",
+      "Flying"
+    ],
+    "type1_id": 4,
+    "type2_id": 2
+  },
+  "757": {
+    "type1": "Water",
+    "type2": "Fighting",
+    "types": [
+      "Water",
+      "Fighting"
+    ],
+    "type1_id": 11,
+    "type2_id": 1
+  },
+  "758": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "759": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "760": {
+    "type1": "Grass",
+    "type2": "Fighting",
+    "types": [
+      "Grass",
+      "Fighting"
+    ],
+    "type1_id": 12,
+    "type2_id": 1
+  },
+  "761": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "762": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "763": {
+    "type1": "Fire",
+    "type2": "Psychic",
+    "types": [
+      "Fire",
+      "Psychic"
+    ],
+    "type1_id": 10,
+    "type2_id": 14
+  },
+  "764": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "765": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "766": {
+    "type1": "Water",
+    "type2": "Dark",
+    "types": [
+      "Water",
+      "Dark"
+    ],
+    "type1_id": 11,
+    "type2_id": 17
+  },
+  "767": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "768": {
+    "type1": "Normal",
+    "type2": "Ground",
+    "types": [
+      "Normal",
+      "Ground"
+    ],
+    "type1_id": 0,
+    "type2_id": 4
+  },
+  "769": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "770": {
+    "type1": "Fire",
+    "type2": "Flying",
+    "types": [
+      "Fire",
+      "Flying"
+    ],
+    "type1_id": 10,
+    "type2_id": 2
+  },
+  "771": {
+    "type1": "Fire",
+    "type2": "Flying",
+    "types": [
+      "Fire",
+      "Flying"
+    ],
+    "type1_id": 10,
+    "type2_id": 2
+  },
+  "772": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "773": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "774": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "775": {
+    "type1": "Fire",
+    "type2": "Normal",
+    "types": [
+      "Fire",
+      "Normal"
+    ],
+    "type1_id": 10,
+    "type2_id": 0
+  },
+  "776": {
+    "type1": "Fire",
+    "type2": "Normal",
+    "types": [
+      "Fire",
+      "Normal"
+    ],
+    "type1_id": 10,
+    "type2_id": 0
+  },
+  "777": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "778": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "779": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "780": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "781": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "782": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "783": {
+    "type1": "Fighting",
+    "type2": "Dark",
+    "types": [
+      "Fighting",
+      "Dark"
+    ],
+    "type1_id": 1,
+    "type2_id": 17
+  },
+  "784": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "785": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "786": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "787": {
+    "type1": "Steel",
+    "type2": "Ghost",
+    "types": [
+      "Steel",
+      "Ghost"
+    ],
+    "type1_id": 8,
+    "type2_id": 7
+  },
+  "788": {
+    "type1": "Steel",
+    "type2": "Ghost",
+    "types": [
+      "Steel",
+      "Ghost"
+    ],
+    "type1_id": 8,
+    "type2_id": 7
+  },
+  "789": {
+    "type1": "Steel",
+    "type2": "Ghost",
+    "types": [
+      "Steel",
+      "Ghost"
+    ],
+    "type1_id": 8,
+    "type2_id": 7
+  },
+  "790": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "791": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "792": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "793": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "794": {
+    "type1": "Dark",
+    "type2": "Psychic",
+    "types": [
+      "Dark",
+      "Psychic"
+    ],
+    "type1_id": 17,
+    "type2_id": 14
+  },
+  "795": {
+    "type1": "Dark",
+    "type2": "Psychic",
+    "types": [
+      "Dark",
+      "Psychic"
+    ],
+    "type1_id": 17,
+    "type2_id": 14
+  },
+  "796": {
+    "type1": "Rock",
+    "type2": "Water",
+    "types": [
+      "Rock",
+      "Water"
+    ],
+    "type1_id": 5,
+    "type2_id": 11
+  },
+  "797": {
+    "type1": "Rock",
+    "type2": "Water",
+    "types": [
+      "Rock",
+      "Water"
+    ],
+    "type1_id": 5,
+    "type2_id": 11
+  },
+  "798": {
+    "type1": "Poison",
+    "type2": "Water",
+    "types": [
+      "Poison",
+      "Water"
+    ],
+    "type1_id": 3,
+    "type2_id": 11
+  },
+  "799": {
+    "type1": "Poison",
+    "type2": "Dragon",
+    "types": [
+      "Poison",
+      "Dragon"
+    ],
+    "type1_id": 3,
+    "type2_id": 16
+  },
+  "800": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "801": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "802": {
+    "type1": "Electric",
+    "type2": "Normal",
+    "types": [
+      "Electric",
+      "Normal"
+    ],
+    "type1_id": 13,
+    "type2_id": 0
+  },
+  "803": {
+    "type1": "Electric",
+    "type2": "Normal",
+    "types": [
+      "Electric",
+      "Normal"
+    ],
+    "type1_id": 13,
+    "type2_id": 0
+  },
+  "804": {
+    "type1": "Rock",
+    "type2": "Dragon",
+    "types": [
+      "Rock",
+      "Dragon"
+    ],
+    "type1_id": 5,
+    "type2_id": 16
+  },
+  "805": {
+    "type1": "Rock",
+    "type2": "Dragon",
+    "types": [
+      "Rock",
+      "Dragon"
+    ],
+    "type1_id": 5,
+    "type2_id": 16
+  },
+  "806": {
+    "type1": "Rock",
+    "type2": "Ice",
+    "types": [
+      "Rock",
+      "Ice"
+    ],
+    "type1_id": 5,
+    "type2_id": 15
+  },
+  "807": {
+    "type1": "Rock",
+    "type2": "Ice",
+    "types": [
+      "Rock",
+      "Ice"
+    ],
+    "type1_id": 5,
+    "type2_id": 15
+  },
+  "808": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "809": {
+    "type1": "Fighting",
+    "type2": "Flying",
+    "types": [
+      "Fighting",
+      "Flying"
+    ],
+    "type1_id": 1,
+    "type2_id": 2
+  },
+  "810": {
+    "type1": "Electric",
+    "type2": "Fairy",
+    "types": [
+      "Electric",
+      "Fairy"
+    ],
+    "type1_id": 13,
+    "type2_id": 23
+  },
+  "811": {
+    "type1": "Rock",
+    "type2": "Fairy",
+    "types": [
+      "Rock",
+      "Fairy"
+    ],
+    "type1_id": 5,
+    "type2_id": 23
+  },
+  "812": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "813": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "814": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "815": {
+    "type1": "Steel",
+    "type2": "Fairy",
+    "types": [
+      "Steel",
+      "Fairy"
+    ],
+    "type1_id": 8,
+    "type2_id": 23
+  },
+  "816": {
+    "type1": "Ghost",
+    "type2": "Grass",
+    "types": [
+      "Ghost",
+      "Grass"
+    ],
+    "type1_id": 7,
+    "type2_id": 12
+  },
+  "817": {
+    "type1": "Ghost",
+    "type2": "Grass",
+    "types": [
+      "Ghost",
+      "Grass"
+    ],
+    "type1_id": 7,
+    "type2_id": 12
+  },
+  "818": {
+    "type1": "Ghost",
+    "type2": "Grass",
+    "types": [
+      "Ghost",
+      "Grass"
+    ],
+    "type1_id": 7,
+    "type2_id": 12
+  },
+  "819": {
+    "type1": "Ghost",
+    "type2": "Grass",
+    "types": [
+      "Ghost",
+      "Grass"
+    ],
+    "type1_id": 7,
+    "type2_id": 12
+  },
+  "820": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "821": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "822": {
+    "type1": "Flying",
+    "type2": "Dragon",
+    "types": [
+      "Flying",
+      "Dragon"
+    ],
+    "type1_id": 2,
+    "type2_id": 16
+  },
+  "823": {
+    "type1": "Flying",
+    "type2": "Dragon",
+    "types": [
+      "Flying",
+      "Dragon"
+    ],
+    "type1_id": 2,
+    "type2_id": 16
+  },
+  "824": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "825": {
+    "type1": "Dark",
+    "type2": "Flying",
+    "types": [
+      "Dark",
+      "Flying"
+    ],
+    "type1_id": 17,
+    "type2_id": 2
+  },
+  "826": {
+    "type1": "Dragon",
+    "type2": "Ground",
+    "types": [
+      "Dragon",
+      "Ground"
+    ],
+    "type1_id": 16,
+    "type2_id": 4
+  },
+  "827": {
+    "type1": "Rock",
+    "type2": "Fairy",
+    "types": [
+      "Rock",
+      "Fairy"
+    ],
+    "type1_id": 5,
+    "type2_id": 23
+  },
+  "828": {
+    "type1": "Psychic",
+    "type2": "Ghost",
+    "types": [
+      "Psychic",
+      "Ghost"
+    ],
+    "type1_id": 14,
+    "type2_id": 7
+  },
+  "829": {
+    "type1": "Psychic",
+    "type2": "Dark",
+    "types": [
+      "Psychic",
+      "Dark"
+    ],
+    "type1_id": 14,
+    "type2_id": 17
+  },
+  "830": {
+    "type1": "Fire",
+    "type2": "Water",
+    "types": [
+      "Fire",
+      "Water"
+    ],
+    "type1_id": 10,
+    "type2_id": 11
+  },
+  "831": {
+    "type1": "Fire",
+    "type2": "Normal",
+    "types": [
+      "Fire",
+      "Normal"
+    ],
+    "type1_id": 10,
+    "type2_id": 0
+  },
+  "832": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "833": {
+    "type1": "Steel",
+    "type2": "Ghost",
+    "types": [
+      "Steel",
+      "Ghost"
+    ],
+    "type1_id": 8,
+    "type2_id": 7
+  },
+  "834": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "835": {
+    "type1": "Dragon",
+    "type2": "Ground",
+    "types": [
+      "Dragon",
+      "Ground"
+    ],
+    "type1_id": 16,
+    "type2_id": 4
+  },
+  "836": {
+    "type1": "Dragon",
+    "type2": "Ground",
+    "types": [
+      "Dragon",
+      "Ground"
+    ],
+    "type1_id": 16,
+    "type2_id": 4
+  },
+  "837": {
+    "type1": "Dragon",
+    "type2": "Ground",
+    "types": [
+      "Dragon",
+      "Ground"
+    ],
+    "type1_id": 16,
+    "type2_id": 4
+  },
+  "838": {
+    "type1": "Dragon",
+    "type2": "Ground",
+    "types": [
+      "Dragon",
+      "Ground"
+    ],
+    "type1_id": 16,
+    "type2_id": 4
+  },
+  "839": {
+    "type1": "Water",
+    "type2": "Dark",
+    "types": [
+      "Water",
+      "Dark"
+    ],
+    "type1_id": 11,
+    "type2_id": 17
+  },
+  "840": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "841": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "842": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "843": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "844": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "845": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "846": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "847": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "848": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "849": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "850": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "851": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "852": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "853": {
+    "type1": "Ghost",
+    "type2": "Grass",
+    "types": [
+      "Ghost",
+      "Grass"
+    ],
+    "type1_id": 7,
+    "type2_id": 12
+  },
+  "854": {
+    "type1": "Ghost",
+    "type2": "Grass",
+    "types": [
+      "Ghost",
+      "Grass"
+    ],
+    "type1_id": 7,
+    "type2_id": 12
+  },
+  "855": {
+    "type1": "Ghost",
+    "type2": "Grass",
+    "types": [
+      "Ghost",
+      "Grass"
+    ],
+    "type1_id": 7,
+    "type2_id": 12
+  },
+  "856": {
+    "type1": "Ghost",
+    "type2": "Grass",
+    "types": [
+      "Ghost",
+      "Grass"
+    ],
+    "type1_id": 7,
+    "type2_id": 12
+  },
+  "857": {
+    "type1": "Ghost",
+    "type2": "Grass",
+    "types": [
+      "Ghost",
+      "Grass"
+    ],
+    "type1_id": 7,
+    "type2_id": 12
+  },
+  "858": {
+    "type1": "Ghost",
+    "type2": "Grass",
+    "types": [
+      "Ghost",
+      "Grass"
+    ],
+    "type1_id": 7,
+    "type2_id": 12
+  },
+  "859": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "860": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "861": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "862": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "863": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "864": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "865": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "866": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "867": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "868": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "869": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "870": {
+    "type1": "Fire",
+    "type2": "Dragon",
+    "types": [
+      "Fire",
+      "Dragon"
+    ],
+    "type1_id": 10,
+    "type2_id": 16
+  },
+  "871": {
+    "type1": "Fire",
+    "type2": "Flying",
+    "types": [
+      "Fire",
+      "Flying"
+    ],
+    "type1_id": 10,
+    "type2_id": 2
+  },
+  "872": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "873": {
+    "type1": "Bug",
+    "type2": "Poison",
+    "types": [
+      "Bug",
+      "Poison"
+    ],
+    "type1_id": 6,
+    "type2_id": 3
+  },
+  "874": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "875": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "876": {
+    "type1": "Water",
+    "type2": "Psychic",
+    "types": [
+      "Water",
+      "Psychic"
+    ],
+    "type1_id": 11,
+    "type2_id": 14
+  },
+  "877": {
+    "type1": "Ghost",
+    "type2": "Poison",
+    "types": [
+      "Ghost",
+      "Poison"
+    ],
+    "type1_id": 7,
+    "type2_id": 3
+  },
+  "878": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "879": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "880": {
+    "type1": "Water",
+    "type2": "Dark",
+    "types": [
+      "Water",
+      "Dark"
+    ],
+    "type1_id": 11,
+    "type2_id": 17
+  },
+  "881": {
+    "type1": "Rock",
+    "type2": "Flying",
+    "types": [
+      "Rock",
+      "Flying"
+    ],
+    "type1_id": 5,
+    "type2_id": 2
+  },
+  "882": {
+    "type1": "Psychic",
+    "type2": "Fighting",
+    "types": [
+      "Psychic",
+      "Fighting"
+    ],
+    "type1_id": 14,
+    "type2_id": 1
+  },
+  "883": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "884": {
+    "type1": "Electric",
+    "type2": "Dragon",
+    "types": [
+      "Electric",
+      "Dragon"
+    ],
+    "type1_id": 13,
+    "type2_id": 16
+  },
+  "885": {
+    "type1": "Steel",
+    "type2": "Ground",
+    "types": [
+      "Steel",
+      "Ground"
+    ],
+    "type1_id": 8,
+    "type2_id": 4
+  },
+  "886": {
+    "type1": "Bug",
+    "type2": "Steel",
+    "types": [
+      "Bug",
+      "Steel"
+    ],
+    "type1_id": 6,
+    "type2_id": 8
+  },
+  "887": {
+    "type1": "Bug",
+    "type2": "Fighting",
+    "types": [
+      "Bug",
+      "Fighting"
+    ],
+    "type1_id": 6,
+    "type2_id": 1
+  },
+  "888": {
+    "type1": "Dark",
+    "type2": "Fire",
+    "types": [
+      "Dark",
+      "Fire"
+    ],
+    "type1_id": 17,
+    "type2_id": 10
+  },
+  "889": {
+    "type1": "Rock",
+    "type2": "Dark",
+    "types": [
+      "Rock",
+      "Dark"
+    ],
+    "type1_id": 5,
+    "type2_id": 17
+  },
+  "890": {
+    "type1": "Grass",
+    "type2": "Dragon",
+    "types": [
+      "Grass",
+      "Dragon"
+    ],
+    "type1_id": 12,
+    "type2_id": 16
+  },
+  "891": {
+    "type1": "Fire",
+    "type2": "Fighting",
+    "types": [
+      "Fire",
+      "Fighting"
+    ],
+    "type1_id": 10,
+    "type2_id": 1
+  },
+  "892": {
+    "type1": "Water",
+    "type2": "Ground",
+    "types": [
+      "Water",
+      "Ground"
+    ],
+    "type1_id": 11,
+    "type2_id": 4
+  },
+  "893": {
+    "type1": "Psychic",
+    "type2": "Fairy",
+    "types": [
+      "Psychic",
+      "Fairy"
+    ],
+    "type1_id": 14,
+    "type2_id": 23
+  },
+  "894": {
+    "type1": "Dark",
+    "type2": "Ghost",
+    "types": [
+      "Dark",
+      "Ghost"
+    ],
+    "type1_id": 17,
+    "type2_id": 7
+  },
+  "895": {
+    "type1": "Steel",
+    "type2": "Fairy",
+    "types": [
+      "Steel",
+      "Fairy"
+    ],
+    "type1_id": 8,
+    "type2_id": 23
+  },
+  "896": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "897": {
+    "type1": "Fighting",
+    "type2": "Psychic",
+    "types": [
+      "Fighting",
+      "Psychic"
+    ],
+    "type1_id": 1,
+    "type2_id": 14
+  },
+  "898": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "899": {
+    "type1": "Water",
+    "type2": "Dark",
+    "types": [
+      "Water",
+      "Dark"
+    ],
+    "type1_id": 11,
+    "type2_id": 17
+  },
+  "900": {
+    "type1": "Fire",
+    "type2": "Ground",
+    "types": [
+      "Fire",
+      "Ground"
+    ],
+    "type1_id": 10,
+    "type2_id": 4
+  },
+  "901": {
+    "type1": "Dragon",
+    "type2": "Fairy",
+    "types": [
+      "Dragon",
+      "Fairy"
+    ],
+    "type1_id": 16,
+    "type2_id": 23
+  },
+  "902": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "903": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "904": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "905": {
+    "type1": "Dragon",
+    "type2": "Flying",
+    "types": [
+      "Dragon",
+      "Flying"
+    ],
+    "type1_id": 16,
+    "type2_id": 2
+  },
+  "906": {
+    "type1": "Steel",
+    "type2": "Psychic",
+    "types": [
+      "Steel",
+      "Psychic"
+    ],
+    "type1_id": 8,
+    "type2_id": 14
+  },
+  "907": {
+    "type1": "Dragon",
+    "type2": "Psychic",
+    "types": [
+      "Dragon",
+      "Psychic"
+    ],
+    "type1_id": 16,
+    "type2_id": 14
+  },
+  "908": {
+    "type1": "Dragon",
+    "type2": "Psychic",
+    "types": [
+      "Dragon",
+      "Psychic"
+    ],
+    "type1_id": 16,
+    "type2_id": 14
+  },
+  "909": {
+    "type1": "Ground",
+    "type2": "Fire",
+    "types": [
+      "Ground",
+      "Fire"
+    ],
+    "type1_id": 4,
+    "type2_id": 10
+  },
+  "910": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "911": {
+    "type1": "Dragon",
+    "type2": "Flying",
+    "types": [
+      "Dragon",
+      "Flying"
+    ],
+    "type1_id": 16,
+    "type2_id": 2
+  },
+  "912": {
+    "type1": "Normal",
+    "type2": "Fighting",
+    "types": [
+      "Normal",
+      "Fighting"
+    ],
+    "type1_id": 0,
+    "type2_id": 1
+  },
+  "913": {
+    "type1": "Dragon",
+    "type2": "Ground",
+    "types": [
+      "Dragon",
+      "Ground"
+    ],
+    "type1_id": 16,
+    "type2_id": 4
+  },
+  "914": {
+    "type1": "Fighting",
+    "type2": "Steel",
+    "types": [
+      "Fighting",
+      "Steel"
+    ],
+    "type1_id": 1,
+    "type2_id": 8
+  },
+  "915": {
+    "type1": "Grass",
+    "type2": "Ice",
+    "types": [
+      "Grass",
+      "Ice"
+    ],
+    "type1_id": 12,
+    "type2_id": 15
+  },
+  "916": {
+    "type1": "Psychic",
+    "type2": "Fighting",
+    "types": [
+      "Psychic",
+      "Fighting"
+    ],
+    "type1_id": 14,
+    "type2_id": 1
+  },
+  "917": {
+    "type1": "Normal",
+    "type2": "Fairy",
+    "types": [
+      "Normal",
+      "Fairy"
+    ],
+    "type1_id": 0,
+    "type2_id": 23
+  },
+  "918": {
+    "type1": "Rock",
+    "type2": "Fairy",
+    "types": [
+      "Rock",
+      "Fairy"
+    ],
+    "type1_id": 5,
+    "type2_id": 23
+  },
+  "919": {
+    "type1": "Steel",
+    "type2": "Dragon",
+    "types": [
+      "Steel",
+      "Dragon"
+    ],
+    "type1_id": 8,
+    "type2_id": 16
+  },
+  "920": {
+    "type1": "Water",
+    "type2": "Dragon",
+    "types": [
+      "Water",
+      "Dragon"
+    ],
+    "type1_id": 11,
+    "type2_id": 16
+  },
+  "921": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "922": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "923": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "924": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "925": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "926": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "927": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "928": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "929": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "930": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "931": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "932": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "933": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "934": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "935": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "936": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "937": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "938": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "939": {
+    "type1": "Grass",
+    "type2": "Flying",
+    "types": [
+      "Grass",
+      "Flying"
+    ],
+    "type1_id": 12,
+    "type2_id": 2
+  },
+  "940": {
+    "type1": "Grass",
+    "type2": "Flying",
+    "types": [
+      "Grass",
+      "Flying"
+    ],
+    "type1_id": 12,
+    "type2_id": 2
+  },
+  "941": {
+    "type1": "Grass",
+    "type2": "Ghost",
+    "types": [
+      "Grass",
+      "Ghost"
+    ],
+    "type1_id": 12,
+    "type2_id": 7
+  },
+  "942": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "943": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "944": {
+    "type1": "Fire",
+    "type2": "Dark",
+    "types": [
+      "Fire",
+      "Dark"
+    ],
+    "type1_id": 10,
+    "type2_id": 17
+  },
+  "945": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "946": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "947": {
+    "type1": "Water",
+    "type2": "Fairy",
+    "types": [
+      "Water",
+      "Fairy"
+    ],
+    "type1_id": 11,
+    "type2_id": 23
+  },
+  "948": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "949": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "950": {
+    "type1": "Normal",
+    "type2": "Flying",
+    "types": [
+      "Normal",
+      "Flying"
+    ],
+    "type1_id": 0,
+    "type2_id": 2
+  },
+  "951": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "952": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "953": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "954": {
+    "type1": "Bug",
+    "type2": "Electric",
+    "types": [
+      "Bug",
+      "Electric"
+    ],
+    "type1_id": 6,
+    "type2_id": 13
+  },
+  "955": {
+    "type1": "Bug",
+    "type2": "Electric",
+    "types": [
+      "Bug",
+      "Electric"
+    ],
+    "type1_id": 6,
+    "type2_id": 13
+  },
+  "956": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "957": {
+    "type1": "Fighting",
+    "type2": "Ice",
+    "types": [
+      "Fighting",
+      "Ice"
+    ],
+    "type1_id": 1,
+    "type2_id": 15
+  },
+  "958": {
+    "type1": "Fire",
+    "type2": "Flying",
+    "types": [
+      "Fire",
+      "Flying"
+    ],
+    "type1_id": 10,
+    "type2_id": 2
+  },
+  "959": {
+    "type1": "Bug",
+    "type2": "Fairy",
+    "types": [
+      "Bug",
+      "Fairy"
+    ],
+    "type1_id": 6,
+    "type2_id": 23
+  },
+  "960": {
+    "type1": "Bug",
+    "type2": "Fairy",
+    "types": [
+      "Bug",
+      "Fairy"
+    ],
+    "type1_id": 6,
+    "type2_id": 23
+  },
+  "961": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "962": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "963": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "964": {
+    "type1": "Poison",
+    "type2": "Water",
+    "types": [
+      "Poison",
+      "Water"
+    ],
+    "type1_id": 3,
+    "type2_id": 11
+  },
+  "965": {
+    "type1": "Poison",
+    "type2": "Water",
+    "types": [
+      "Poison",
+      "Water"
+    ],
+    "type1_id": 3,
+    "type2_id": 11
+  },
+  "966": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "967": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "968": {
+    "type1": "Water",
+    "type2": "Bug",
+    "types": [
+      "Water",
+      "Bug"
+    ],
+    "type1_id": 11,
+    "type2_id": 6
+  },
+  "969": {
+    "type1": "Water",
+    "type2": "Bug",
+    "types": [
+      "Water",
+      "Bug"
+    ],
+    "type1_id": 11,
+    "type2_id": 6
+  },
+  "970": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "971": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "972": {
+    "type1": "Grass",
+    "type2": "Fairy",
+    "types": [
+      "Grass",
+      "Fairy"
+    ],
+    "type1_id": 12,
+    "type2_id": 23
+  },
+  "973": {
+    "type1": "Grass",
+    "type2": "Fairy",
+    "types": [
+      "Grass",
+      "Fairy"
+    ],
+    "type1_id": 12,
+    "type2_id": 23
+  },
+  "974": {
+    "type1": "Poison",
+    "type2": "Fire",
+    "types": [
+      "Poison",
+      "Fire"
+    ],
+    "type1_id": 3,
+    "type2_id": 10
+  },
+  "975": {
+    "type1": "Poison",
+    "type2": "Fire",
+    "types": [
+      "Poison",
+      "Fire"
+    ],
+    "type1_id": 3,
+    "type2_id": 10
+  },
+  "976": {
+    "type1": "Normal",
+    "type2": "Fighting",
+    "types": [
+      "Normal",
+      "Fighting"
+    ],
+    "type1_id": 0,
+    "type2_id": 1
+  },
+  "977": {
+    "type1": "Normal",
+    "type2": "Fighting",
+    "types": [
+      "Normal",
+      "Fighting"
+    ],
+    "type1_id": 0,
+    "type2_id": 1
+  },
+  "978": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "979": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "980": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "981": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "982": {
+    "type1": "Normal",
+    "type2": "Psychic",
+    "types": [
+      "Normal",
+      "Psychic"
+    ],
+    "type1_id": 0,
+    "type2_id": 14
+  },
+  "983": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "984": {
+    "type1": "Bug",
+    "type2": "Water",
+    "types": [
+      "Bug",
+      "Water"
+    ],
+    "type1_id": 6,
+    "type2_id": 11
+  },
+  "985": {
+    "type1": "Bug",
+    "type2": "Water",
+    "types": [
+      "Bug",
+      "Water"
+    ],
+    "type1_id": 6,
+    "type2_id": 11
+  },
+  "986": {
+    "type1": "Ghost",
+    "type2": "Ground",
+    "types": [
+      "Ghost",
+      "Ground"
+    ],
+    "type1_id": 7,
+    "type2_id": 4
+  },
+  "987": {
+    "type1": "Ghost",
+    "type2": "Ground",
+    "types": [
+      "Ghost",
+      "Ground"
+    ],
+    "type1_id": 7,
+    "type2_id": 4
+  },
+  "988": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "989": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "990": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "991": {
+    "type1": "Rock",
+    "type2": "Flying",
+    "types": [
+      "Rock",
+      "Flying"
+    ],
+    "type1_id": 5,
+    "type2_id": 2
+  },
+  "992": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "993": {
+    "type1": "Fire",
+    "type2": "Dragon",
+    "types": [
+      "Fire",
+      "Dragon"
+    ],
+    "type1_id": 10,
+    "type2_id": 16
+  },
+  "994": {
+    "type1": "Electric",
+    "type2": "Steel",
+    "types": [
+      "Electric",
+      "Steel"
+    ],
+    "type1_id": 13,
+    "type2_id": 8
+  },
+  "995": {
+    "type1": "Ghost",
+    "type2": "Fairy",
+    "types": [
+      "Ghost",
+      "Fairy"
+    ],
+    "type1_id": 7,
+    "type2_id": 23
+  },
+  "996": {
+    "type1": "Water",
+    "type2": "Psychic",
+    "types": [
+      "Water",
+      "Psychic"
+    ],
+    "type1_id": 11,
+    "type2_id": 14
+  },
+  "997": {
+    "type1": "Normal",
+    "type2": "Dragon",
+    "types": [
+      "Normal",
+      "Dragon"
+    ],
+    "type1_id": 0,
+    "type2_id": 16
+  },
+  "998": {
+    "type1": "Ghost",
+    "type2": "Grass",
+    "types": [
+      "Ghost",
+      "Grass"
+    ],
+    "type1_id": 7,
+    "type2_id": 12
+  },
+  "999": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "1000": {
+    "type1": "Dragon",
+    "type2": "Fighting",
+    "types": [
+      "Dragon",
+      "Fighting"
+    ],
+    "type1_id": 16,
+    "type2_id": 1
+  },
+  "1001": {
+    "type1": "Dragon",
+    "type2": "Fighting",
+    "types": [
+      "Dragon",
+      "Fighting"
+    ],
+    "type1_id": 16,
+    "type2_id": 1
+  },
+  "1002": {
+    "type1": "Electric",
+    "type2": "Fairy",
+    "types": [
+      "Electric",
+      "Fairy"
+    ],
+    "type1_id": 13,
+    "type2_id": 23
+  },
+  "1003": {
+    "type1": "Psychic",
+    "type2": "Fairy",
+    "types": [
+      "Psychic",
+      "Fairy"
+    ],
+    "type1_id": 14,
+    "type2_id": 23
+  },
+  "1004": {
+    "type1": "Grass",
+    "type2": "Fairy",
+    "types": [
+      "Grass",
+      "Fairy"
+    ],
+    "type1_id": 12,
+    "type2_id": 23
+  },
+  "1005": {
+    "type1": "Water",
+    "type2": "Fairy",
+    "types": [
+      "Water",
+      "Fairy"
+    ],
+    "type1_id": 11,
+    "type2_id": 23
+  },
+  "1006": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "1007": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "1008": {
+    "type1": "Psychic",
+    "type2": "Steel",
+    "types": [
+      "Psychic",
+      "Steel"
+    ],
+    "type1_id": 14,
+    "type2_id": 8
+  },
+  "1009": {
+    "type1": "Psychic",
+    "type2": "Ghost",
+    "types": [
+      "Psychic",
+      "Ghost"
+    ],
+    "type1_id": 14,
+    "type2_id": 7
+  },
+  "1010": {
+    "type1": "Rock",
+    "type2": "Poison",
+    "types": [
+      "Rock",
+      "Poison"
+    ],
+    "type1_id": 5,
+    "type2_id": 3
+  },
+  "1011": {
+    "type1": "Bug",
+    "type2": "Fighting",
+    "types": [
+      "Bug",
+      "Fighting"
+    ],
+    "type1_id": 6,
+    "type2_id": 1
+  },
+  "1012": {
+    "type1": "Bug",
+    "type2": "Fighting",
+    "types": [
+      "Bug",
+      "Fighting"
+    ],
+    "type1_id": 6,
+    "type2_id": 1
+  },
+  "1013": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1014": {
+    "type1": "Steel",
+    "type2": "Flying",
+    "types": [
+      "Steel",
+      "Flying"
+    ],
+    "type1_id": 8,
+    "type2_id": 2
+  },
+  "1015": {
+    "type1": "Grass",
+    "type2": "Steel",
+    "types": [
+      "Grass",
+      "Steel"
+    ],
+    "type1_id": 12,
+    "type2_id": 8
+  },
+  "1016": {
+    "type1": "Dark",
+    "type2": "Dragon",
+    "types": [
+      "Dark",
+      "Dragon"
+    ],
+    "type1_id": 17,
+    "type2_id": 16
+  },
+  "1017": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "1018": {
+    "type1": "Steel",
+    "type2": "Fairy",
+    "types": [
+      "Steel",
+      "Fairy"
+    ],
+    "type1_id": 8,
+    "type2_id": 23
+  },
+  "1019": {
+    "type1": "Fighting",
+    "type2": "Ghost",
+    "types": [
+      "Fighting",
+      "Ghost"
+    ],
+    "type1_id": 1,
+    "type2_id": 7
+  },
+  "1020": {
+    "type1": "Dark",
+    "type2": "Normal",
+    "types": [
+      "Dark",
+      "Normal"
+    ],
+    "type1_id": 17,
+    "type2_id": 0
+  },
+  "1021": {
+    "type1": "Dark",
+    "type2": "Normal",
+    "types": [
+      "Dark",
+      "Normal"
+    ],
+    "type1_id": 17,
+    "type2_id": 0
+  },
+  "1022": {
+    "type1": "Electric",
+    "type2": "Psychic",
+    "types": [
+      "Electric",
+      "Psychic"
+    ],
+    "type1_id": 13,
+    "type2_id": 14
+  },
+  "1023": {
+    "type1": "Ice",
+    "type2": "Steel",
+    "types": [
+      "Ice",
+      "Steel"
+    ],
+    "type1_id": 15,
+    "type2_id": 8
+  },
+  "1024": {
+    "type1": "Ice",
+    "type2": "Steel",
+    "types": [
+      "Ice",
+      "Steel"
+    ],
+    "type1_id": 15,
+    "type2_id": 8
+  },
+  "1025": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "1026": {
+    "type1": "Ice",
+    "type2": "Fairy",
+    "types": [
+      "Ice",
+      "Fairy"
+    ],
+    "type1_id": 15,
+    "type2_id": 23
+  },
+  "1027": {
+    "type1": "Ground",
+    "type2": "Steel",
+    "types": [
+      "Ground",
+      "Steel"
+    ],
+    "type1_id": 4,
+    "type2_id": 8
+  },
+  "1028": {
+    "type1": "Ground",
+    "type2": "Steel",
+    "types": [
+      "Ground",
+      "Steel"
+    ],
+    "type1_id": 4,
+    "type2_id": 8
+  },
+  "1029": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "1030": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "1031": {
+    "type1": "Rock",
+    "type2": "Electric",
+    "types": [
+      "Rock",
+      "Electric"
+    ],
+    "type1_id": 5,
+    "type2_id": 13
+  },
+  "1032": {
+    "type1": "Rock",
+    "type2": "Electric",
+    "types": [
+      "Rock",
+      "Electric"
+    ],
+    "type1_id": 5,
+    "type2_id": 13
+  },
+  "1033": {
+    "type1": "Rock",
+    "type2": "Electric",
+    "types": [
+      "Rock",
+      "Electric"
+    ],
+    "type1_id": 5,
+    "type2_id": 13
+  },
+  "1034": {
+    "type1": "Poison",
+    "type2": "Dark",
+    "types": [
+      "Poison",
+      "Dark"
+    ],
+    "type1_id": 3,
+    "type2_id": 17
+  },
+  "1035": {
+    "type1": "Poison",
+    "type2": "Dark",
+    "types": [
+      "Poison",
+      "Dark"
+    ],
+    "type1_id": 3,
+    "type2_id": 17
+  },
+  "1036": {
+    "type1": "Grass",
+    "type2": "Psychic",
+    "types": [
+      "Grass",
+      "Psychic"
+    ],
+    "type1_id": 12,
+    "type2_id": 14
+  },
+  "1037": {
+    "type1": "Grass",
+    "type2": "Dragon",
+    "types": [
+      "Grass",
+      "Dragon"
+    ],
+    "type1_id": 12,
+    "type2_id": 16
+  },
+  "1038": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "1039": {
+    "type1": "Fire",
+    "type2": "Ghost",
+    "types": [
+      "Fire",
+      "Ghost"
+    ],
+    "type1_id": 10,
+    "type2_id": 7
+  },
+  "1040": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "1041": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "1042": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "1043": {
+    "type1": "Electric",
+    "type2": "Flying",
+    "types": [
+      "Electric",
+      "Flying"
+    ],
+    "type1_id": 13,
+    "type2_id": 2
+  },
+  "1044": {
+    "type1": "Psychic",
+    "type2": "Flying",
+    "types": [
+      "Psychic",
+      "Flying"
+    ],
+    "type1_id": 14,
+    "type2_id": 2
+  },
+  "1045": {
+    "type1": "Ghost",
+    "type2": "Flying",
+    "types": [
+      "Ghost",
+      "Flying"
+    ],
+    "type1_id": 7,
+    "type2_id": 2
+  },
+  "1046": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "1047": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "1048": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "1049": {
+    "type1": "Flying",
+    "type2": "Flying",
+    "types": [
+      "Flying"
+    ],
+    "type1_id": 2,
+    "type2_id": 2
+  },
+  "1050": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "1051": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "1052": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "1053": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "1054": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "1055": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "1056": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "1057": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "1058": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "1059": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1060": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "1061": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "1062": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "1063": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "1064": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "1065": {
+    "type1": "Rock",
+    "type2": "Flying",
+    "types": [
+      "Rock",
+      "Flying"
+    ],
+    "type1_id": 5,
+    "type2_id": 2
+  },
+  "1066": {
+    "type1": "Rock",
+    "type2": "Flying",
+    "types": [
+      "Rock",
+      "Flying"
+    ],
+    "type1_id": 5,
+    "type2_id": 2
+  },
+  "1067": {
+    "type1": "Rock",
+    "type2": "Flying",
+    "types": [
+      "Rock",
+      "Flying"
+    ],
+    "type1_id": 5,
+    "type2_id": 2
+  },
+  "1068": {
+    "type1": "Rock",
+    "type2": "Flying",
+    "types": [
+      "Rock",
+      "Flying"
+    ],
+    "type1_id": 5,
+    "type2_id": 2
+  },
+  "1069": {
+    "type1": "Rock",
+    "type2": "Flying",
+    "types": [
+      "Rock",
+      "Flying"
+    ],
+    "type1_id": 5,
+    "type2_id": 2
+  },
+  "1070": {
+    "type1": "Rock",
+    "type2": "Flying",
+    "types": [
+      "Rock",
+      "Flying"
+    ],
+    "type1_id": 5,
+    "type2_id": 2
+  },
+  "1071": {
+    "type1": "Rock",
+    "type2": "Flying",
+    "types": [
+      "Rock",
+      "Flying"
+    ],
+    "type1_id": 5,
+    "type2_id": 2
+  },
+  "1072": {
+    "type1": "Ghost",
+    "type2": "Fairy",
+    "types": [
+      "Ghost",
+      "Fairy"
+    ],
+    "type1_id": 7,
+    "type2_id": 23
+  },
+  "1073": {
+    "type1": "Steel",
+    "type2": "Fairy",
+    "types": [
+      "Steel",
+      "Fairy"
+    ],
+    "type1_id": 8,
+    "type2_id": 23
+  },
+  "1074": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "1075": {
+    "type1": "Poison",
+    "type2": "Dragon",
+    "types": [
+      "Poison",
+      "Dragon"
+    ],
+    "type1_id": 3,
+    "type2_id": 16
+  },
+  "1076": {
+    "type1": "Rock",
+    "type2": "Steel",
+    "types": [
+      "Rock",
+      "Steel"
+    ],
+    "type1_id": 5,
+    "type2_id": 8
+  },
+  "1077": {
+    "type1": "Fire",
+    "type2": "Ghost",
+    "types": [
+      "Fire",
+      "Ghost"
+    ],
+    "type1_id": 10,
+    "type2_id": 7
+  },
+  "1078": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1079": {
+    "type1": "Psychic",
+    "type2": "Steel",
+    "types": [
+      "Psychic",
+      "Steel"
+    ],
+    "type1_id": 14,
+    "type2_id": 8
+  },
+  "1080": {
+    "type1": "Psychic",
+    "type2": "Ghost",
+    "types": [
+      "Psychic",
+      "Ghost"
+    ],
+    "type1_id": 14,
+    "type2_id": 7
+  },
+  "1081": {
+    "type1": "Psychic",
+    "type2": "Dragon",
+    "types": [
+      "Psychic",
+      "Dragon"
+    ],
+    "type1_id": 14,
+    "type2_id": 16
+  },
+  "1082": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "1083": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "1084": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "1085": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1086": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1087": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1088": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1089": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1090": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1091": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1092": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1093": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1094": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1095": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1096": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1097": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1098": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1099": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1100": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1101": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "1102": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "1103": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "1104": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "1105": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "1106": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "1107": {
+    "type1": "Fire",
+    "type2": "Fire",
+    "types": [
+      "Fire"
+    ],
+    "type1_id": 10,
+    "type2_id": 10
+  },
+  "1108": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "1109": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "1110": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "1111": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "1112": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "1113": {
+    "type1": "Flying",
+    "type2": "Flying",
+    "types": [
+      "Flying"
+    ],
+    "type1_id": 2,
+    "type2_id": 2
+  },
+  "1114": {
+    "type1": "Flying",
+    "type2": "Flying",
+    "types": [
+      "Flying"
+    ],
+    "type1_id": 2,
+    "type2_id": 2
+  },
+  "1115": {
+    "type1": "Flying",
+    "type2": "Steel",
+    "types": [
+      "Flying",
+      "Steel"
+    ],
+    "type1_id": 2,
+    "type2_id": 8
+  },
+  "1116": {
+    "type1": "Bug",
+    "type2": "Bug",
+    "types": [
+      "Bug"
+    ],
+    "type1_id": 6,
+    "type2_id": 6
+  },
+  "1117": {
+    "type1": "Bug",
+    "type2": "Psychic",
+    "types": [
+      "Bug",
+      "Psychic"
+    ],
+    "type1_id": 6,
+    "type2_id": 14
+  },
+  "1118": {
+    "type1": "Bug",
+    "type2": "Psychic",
+    "types": [
+      "Bug",
+      "Psychic"
+    ],
+    "type1_id": 6,
+    "type2_id": 14
+  },
+  "1119": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "1120": {
+    "type1": "Dark",
+    "type2": "Dark",
+    "types": [
+      "Dark"
+    ],
+    "type1_id": 17,
+    "type2_id": 17
+  },
+  "1121": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "1122": {
+    "type1": "Grass",
+    "type2": "Grass",
+    "types": [
+      "Grass"
+    ],
+    "type1_id": 12,
+    "type2_id": 12
+  },
+  "1123": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "1124": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "1125": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "1126": {
+    "type1": "Water",
+    "type2": "Rock",
+    "types": [
+      "Water",
+      "Rock"
+    ],
+    "type1_id": 11,
+    "type2_id": 5
+  },
+  "1127": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1128": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1129": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "1130": {
+    "type1": "Rock",
+    "type2": "Fire",
+    "types": [
+      "Rock",
+      "Fire"
+    ],
+    "type1_id": 5,
+    "type2_id": 10
+  },
+  "1131": {
+    "type1": "Rock",
+    "type2": "Fire",
+    "types": [
+      "Rock",
+      "Fire"
+    ],
+    "type1_id": 5,
+    "type2_id": 10
+  },
+  "1132": {
+    "type1": "Grass",
+    "type2": "Dragon",
+    "types": [
+      "Grass",
+      "Dragon"
+    ],
+    "type1_id": 12,
+    "type2_id": 16
+  },
+  "1133": {
+    "type1": "Grass",
+    "type2": "Dragon",
+    "types": [
+      "Grass",
+      "Dragon"
+    ],
+    "type1_id": 12,
+    "type2_id": 16
+  },
+  "1134": {
+    "type1": "Grass",
+    "type2": "Dragon",
+    "types": [
+      "Grass",
+      "Dragon"
+    ],
+    "type1_id": 12,
+    "type2_id": 16
+  },
+  "1135": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "1136": {
+    "type1": "Ground",
+    "type2": "Ground",
+    "types": [
+      "Ground"
+    ],
+    "type1_id": 4,
+    "type2_id": 4
+  },
+  "1137": {
+    "type1": "Flying",
+    "type2": "Water",
+    "types": [
+      "Flying",
+      "Water"
+    ],
+    "type1_id": 2,
+    "type2_id": 11
+  },
+  "1138": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "1139": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "1140": {
+    "type1": "Electric",
+    "type2": "Poison",
+    "types": [
+      "Electric",
+      "Poison"
+    ],
+    "type1_id": 13,
+    "type2_id": 3
+  },
+  "1141": {
+    "type1": "Electric",
+    "type2": "Poison",
+    "types": [
+      "Electric",
+      "Poison"
+    ],
+    "type1_id": 13,
+    "type2_id": 3
+  },
+  "1142": {
+    "type1": "Fire",
+    "type2": "Bug",
+    "types": [
+      "Fire",
+      "Bug"
+    ],
+    "type1_id": 10,
+    "type2_id": 6
+  },
+  "1143": {
+    "type1": "Fire",
+    "type2": "Bug",
+    "types": [
+      "Fire",
+      "Bug"
+    ],
+    "type1_id": 10,
+    "type2_id": 6
+  },
+  "1144": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "1145": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "1146": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "1147": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "1148": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "1149": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "1150": {
+    "type1": "Psychic",
+    "type2": "Fairy",
+    "types": [
+      "Psychic",
+      "Fairy"
+    ],
+    "type1_id": 14,
+    "type2_id": 23
+  },
+  "1151": {
+    "type1": "Dark",
+    "type2": "Fairy",
+    "types": [
+      "Dark",
+      "Fairy"
+    ],
+    "type1_id": 17,
+    "type2_id": 23
+  },
+  "1152": {
+    "type1": "Dark",
+    "type2": "Fairy",
+    "types": [
+      "Dark",
+      "Fairy"
+    ],
+    "type1_id": 17,
+    "type2_id": 23
+  },
+  "1153": {
+    "type1": "Dark",
+    "type2": "Fairy",
+    "types": [
+      "Dark",
+      "Fairy"
+    ],
+    "type1_id": 17,
+    "type2_id": 23
+  },
+  "1154": {
+    "type1": "Dark",
+    "type2": "Normal",
+    "types": [
+      "Dark",
+      "Normal"
+    ],
+    "type1_id": 17,
+    "type2_id": 0
+  },
+  "1155": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "1156": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "1157": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "1158": {
+    "type1": "Ice",
+    "type2": "Psychic",
+    "types": [
+      "Ice",
+      "Psychic"
+    ],
+    "type1_id": 15,
+    "type2_id": 14
+  },
+  "1159": {
+    "type1": "Ground",
+    "type2": "Ghost",
+    "types": [
+      "Ground",
+      "Ghost"
+    ],
+    "type1_id": 4,
+    "type2_id": 7
+  },
+  "1160": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "1161": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "1162": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "1163": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1164": {
+    "type1": "Ice",
+    "type2": "Bug",
+    "types": [
+      "Ice",
+      "Bug"
+    ],
+    "type1_id": 15,
+    "type2_id": 6
+  },
+  "1165": {
+    "type1": "Ice",
+    "type2": "Bug",
+    "types": [
+      "Ice",
+      "Bug"
+    ],
+    "type1_id": 15,
+    "type2_id": 6
+  },
+  "1166": {
+    "type1": "Rock",
+    "type2": "Rock",
+    "types": [
+      "Rock"
+    ],
+    "type1_id": 5,
+    "type2_id": 5
+  },
+  "1167": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "1168": {
+    "type1": "Psychic",
+    "type2": "Normal",
+    "types": [
+      "Psychic",
+      "Normal"
+    ],
+    "type1_id": 14,
+    "type2_id": 0
+  },
+  "1169": {
+    "type1": "Electric",
+    "type2": "Dark",
+    "types": [
+      "Electric",
+      "Dark"
+    ],
+    "type1_id": 13,
+    "type2_id": 17
+  },
+  "1170": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "1171": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "1172": {
+    "type1": "Electric",
+    "type2": "Dragon",
+    "types": [
+      "Electric",
+      "Dragon"
+    ],
+    "type1_id": 13,
+    "type2_id": 16
+  },
+  "1173": {
+    "type1": "Electric",
+    "type2": "Ice",
+    "types": [
+      "Electric",
+      "Ice"
+    ],
+    "type1_id": 13,
+    "type2_id": 15
+  },
+  "1174": {
+    "type1": "Water",
+    "type2": "Dragon",
+    "types": [
+      "Water",
+      "Dragon"
+    ],
+    "type1_id": 11,
+    "type2_id": 16
+  },
+  "1175": {
+    "type1": "Water",
+    "type2": "Ice",
+    "types": [
+      "Water",
+      "Ice"
+    ],
+    "type1_id": 11,
+    "type2_id": 15
+  },
+  "1176": {
+    "type1": "Steel",
+    "type2": "Dragon",
+    "types": [
+      "Steel",
+      "Dragon"
+    ],
+    "type1_id": 8,
+    "type2_id": 16
+  },
+  "1177": {
+    "type1": "Dragon",
+    "type2": "Ghost",
+    "types": [
+      "Dragon",
+      "Ghost"
+    ],
+    "type1_id": 16,
+    "type2_id": 7
+  },
+  "1178": {
+    "type1": "Dragon",
+    "type2": "Ghost",
+    "types": [
+      "Dragon",
+      "Ghost"
+    ],
+    "type1_id": 16,
+    "type2_id": 7
+  },
+  "1179": {
+    "type1": "Dragon",
+    "type2": "Ghost",
+    "types": [
+      "Dragon",
+      "Ghost"
+    ],
+    "type1_id": 16,
+    "type2_id": 7
+  },
+  "1180": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "1181": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "1182": {
+    "type1": "Poison",
+    "type2": "Dragon",
+    "types": [
+      "Poison",
+      "Dragon"
+    ],
+    "type1_id": 3,
+    "type2_id": 16
+  },
+  "1183": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "1184": {
+    "type1": "Fighting",
+    "type2": "Dark",
+    "types": [
+      "Fighting",
+      "Dark"
+    ],
+    "type1_id": 1,
+    "type2_id": 17
+  },
+  "1185": {
+    "type1": "Dark",
+    "type2": "Grass",
+    "types": [
+      "Dark",
+      "Grass"
+    ],
+    "type1_id": 17,
+    "type2_id": 12
+  },
+  "1186": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1187": {
+    "type1": "Dragon",
+    "type2": "Dragon",
+    "types": [
+      "Dragon"
+    ],
+    "type1_id": 16,
+    "type2_id": 16
+  },
+  "1188": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "1189": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "1190": {
+    "type1": "Psychic",
+    "type2": "Grass",
+    "types": [
+      "Psychic",
+      "Grass"
+    ],
+    "type1_id": 14,
+    "type2_id": 12
+  },
+  "1191": {
+    "type1": "Flying",
+    "type2": "Water",
+    "types": [
+      "Flying",
+      "Water"
+    ],
+    "type1_id": 2,
+    "type2_id": 11
+  },
+  "1192": {
+    "type1": "Flying",
+    "type2": "Water",
+    "types": [
+      "Flying",
+      "Water"
+    ],
+    "type1_id": 2,
+    "type2_id": 11
+  },
+  "1193": {
+    "type1": "Electric",
+    "type2": "Poison",
+    "types": [
+      "Electric",
+      "Poison"
+    ],
+    "type1_id": 13,
+    "type2_id": 3
+  },
+  "1194": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "1195": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "1196": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "1197": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "1198": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "1199": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "1200": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "1201": {
+    "type1": "Fairy",
+    "type2": "Fairy",
+    "types": [
+      "Fairy"
+    ],
+    "type1_id": 23,
+    "type2_id": 23
+  },
+  "1202": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "1203": {
+    "type1": "Psychic",
+    "type2": "Normal",
+    "types": [
+      "Psychic",
+      "Normal"
+    ],
+    "type1_id": 14,
+    "type2_id": 0
+  },
+  "1204": {
+    "type1": "Electric",
+    "type2": "Dark",
+    "types": [
+      "Electric",
+      "Dark"
+    ],
+    "type1_id": 13,
+    "type2_id": 17
+  },
+  "1205": {
+    "type1": "Fairy",
+    "type2": "Steel",
+    "types": [
+      "Fairy",
+      "Steel"
+    ],
+    "type1_id": 23,
+    "type2_id": 8
+  },
+  "1206": {
+    "type1": "Fighting",
+    "type2": "Steel",
+    "types": [
+      "Fighting",
+      "Steel"
+    ],
+    "type1_id": 1,
+    "type2_id": 8
+  },
+  "1207": {
+    "type1": "Poison",
+    "type2": "Dragon",
+    "types": [
+      "Poison",
+      "Dragon"
+    ],
+    "type1_id": 3,
+    "type2_id": 16
+  },
+  "1208": {
+    "type1": "Fighting",
+    "type2": "Water",
+    "types": [
+      "Fighting",
+      "Water"
+    ],
+    "type1_id": 1,
+    "type2_id": 11
+  },
+  "1209": {
+    "type1": "Dark",
+    "type2": "Grass",
+    "types": [
+      "Dark",
+      "Grass"
+    ],
+    "type1_id": 17,
+    "type2_id": 12
+  },
+  "1210": {
+    "type1": "Psychic",
+    "type2": "Ice",
+    "types": [
+      "Psychic",
+      "Ice"
+    ],
+    "type1_id": 14,
+    "type2_id": 15
+  },
+  "1211": {
+    "type1": "Psychic",
+    "type2": "Ghost",
+    "types": [
+      "Psychic",
+      "Ghost"
+    ],
+    "type1_id": 14,
+    "type2_id": 7
+  },
+  "1212": {
+    "type1": "Steel",
+    "type2": "Steel",
+    "types": [
+      "Steel"
+    ],
+    "type1_id": 8,
+    "type2_id": 8
+  },
+  "1213": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "1214": {
+    "type1": "Psychic",
+    "type2": "Fairy",
+    "types": [
+      "Psychic",
+      "Fairy"
+    ],
+    "type1_id": 14,
+    "type2_id": 23
+  },
+  "1215": {
+    "type1": "Psychic",
+    "type2": "Psychic",
+    "types": [
+      "Psychic"
+    ],
+    "type1_id": 14,
+    "type2_id": 14
+  },
+  "1216": {
+    "type1": "Poison",
+    "type2": "Psychic",
+    "types": [
+      "Poison",
+      "Psychic"
+    ],
+    "type1_id": 3,
+    "type2_id": 14
+  },
+  "1217": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "1218": {
+    "type1": "Poison",
+    "type2": "Poison",
+    "types": [
+      "Poison"
+    ],
+    "type1_id": 3,
+    "type2_id": 3
+  },
+  "1219": {
+    "type1": "Poison",
+    "type2": "Fairy",
+    "types": [
+      "Poison",
+      "Fairy"
+    ],
+    "type1_id": 3,
+    "type2_id": 23
+  },
+  "1220": {
+    "type1": "Ice",
+    "type2": "Psychic",
+    "types": [
+      "Ice",
+      "Psychic"
+    ],
+    "type1_id": 15,
+    "type2_id": 14
+  },
+  "1221": {
+    "type1": "Psychic",
+    "type2": "Flying",
+    "types": [
+      "Psychic",
+      "Flying"
+    ],
+    "type1_id": 14,
+    "type2_id": 2
+  },
+  "1222": {
+    "type1": "Fighting",
+    "type2": "Flying",
+    "types": [
+      "Fighting",
+      "Flying"
+    ],
+    "type1_id": 1,
+    "type2_id": 2
+  },
+  "1223": {
+    "type1": "Dark",
+    "type2": "Flying",
+    "types": [
+      "Dark",
+      "Flying"
+    ],
+    "type1_id": 17,
+    "type2_id": 2
+  },
+  "1224": {
+    "type1": "Poison",
+    "type2": "Psychic",
+    "types": [
+      "Poison",
+      "Psychic"
+    ],
+    "type1_id": 3,
+    "type2_id": 14
+  },
+  "1225": {
+    "type1": "Ghost",
+    "type2": "Ghost",
+    "types": [
+      "Ghost"
+    ],
+    "type1_id": 7,
+    "type2_id": 7
+  },
+  "1226": {
+    "type1": "Dark",
+    "type2": "Normal",
+    "types": [
+      "Dark",
+      "Normal"
+    ],
+    "type1_id": 17,
+    "type2_id": 0
+  },
+  "1227": {
+    "type1": "Dark",
+    "type2": "Normal",
+    "types": [
+      "Dark",
+      "Normal"
+    ],
+    "type1_id": 17,
+    "type2_id": 0
+  },
+  "1228": {
+    "type1": "Psychic",
+    "type2": "Fairy",
+    "types": [
+      "Psychic",
+      "Fairy"
+    ],
+    "type1_id": 14,
+    "type2_id": 23
+  },
+  "1229": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "1230": {
+    "type1": "Ice",
+    "type2": "Ice",
+    "types": [
+      "Ice"
+    ],
+    "type1_id": 15,
+    "type2_id": 15
+  },
+  "1231": {
+    "type1": "Ice",
+    "type2": "Fire",
+    "types": [
+      "Ice",
+      "Fire"
+    ],
+    "type1_id": 15,
+    "type2_id": 10
+  },
+  "1232": {
+    "type1": "Ground",
+    "type2": "Ghost",
+    "types": [
+      "Ground",
+      "Ghost"
+    ],
+    "type1_id": 4,
+    "type2_id": 7
+  },
+  "1233": {
+    "type1": "Ground",
+    "type2": "Steel",
+    "types": [
+      "Ground",
+      "Steel"
+    ],
+    "type1_id": 4,
+    "type2_id": 8
+  },
+  "1234": {
+    "type1": "Fire",
+    "type2": "Rock",
+    "types": [
+      "Fire",
+      "Rock"
+    ],
+    "type1_id": 10,
+    "type2_id": 5
+  },
+  "1235": {
+    "type1": "Fire",
+    "type2": "Rock",
+    "types": [
+      "Fire",
+      "Rock"
+    ],
+    "type1_id": 10,
+    "type2_id": 5
+  },
+  "1236": {
+    "type1": "Electric",
+    "type2": "Grass",
+    "types": [
+      "Electric",
+      "Grass"
+    ],
+    "type1_id": 13,
+    "type2_id": 12
+  },
+  "1237": {
+    "type1": "Electric",
+    "type2": "Grass",
+    "types": [
+      "Electric",
+      "Grass"
+    ],
+    "type1_id": 13,
+    "type2_id": 12
+  },
+  "1238": {
+    "type1": "Fire",
+    "type2": "Ghost",
+    "types": [
+      "Fire",
+      "Ghost"
+    ],
+    "type1_id": 10,
+    "type2_id": 7
+  },
+  "1239": {
+    "type1": "Dark",
+    "type2": "Poison",
+    "types": [
+      "Dark",
+      "Poison"
+    ],
+    "type1_id": 17,
+    "type2_id": 3
+  },
+  "1240": {
+    "type1": "Poison",
+    "type2": "Fighting",
+    "types": [
+      "Poison",
+      "Fighting"
+    ],
+    "type1_id": 3,
+    "type2_id": 1
+  },
+  "1241": {
+    "type1": "Water",
+    "type2": "Dark",
+    "types": [
+      "Water",
+      "Dark"
+    ],
+    "type1_id": 11,
+    "type2_id": 17
+  },
+  "1242": {
+    "type1": "Grass",
+    "type2": "Fighting",
+    "types": [
+      "Grass",
+      "Fighting"
+    ],
+    "type1_id": 12,
+    "type2_id": 1
+  },
+  "1243": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "1244": {
+    "type1": "Normal",
+    "type2": "Ghost",
+    "types": [
+      "Normal",
+      "Ghost"
+    ],
+    "type1_id": 0,
+    "type2_id": 7
+  },
+  "1245": {
+    "type1": "Normal",
+    "type2": "Ghost",
+    "types": [
+      "Normal",
+      "Ghost"
+    ],
+    "type1_id": 0,
+    "type2_id": 7
+  },
+  "1246": {
+    "type1": "Psychic",
+    "type2": "Flying",
+    "types": [
+      "Psychic",
+      "Flying"
+    ],
+    "type1_id": 14,
+    "type2_id": 2
+  },
+  "1247": {
+    "type1": "Dragon",
+    "type2": "Steel",
+    "types": [
+      "Dragon",
+      "Steel"
+    ],
+    "type1_id": 16,
+    "type2_id": 8
+  },
+  "1248": {
+    "type1": "Dragon",
+    "type2": "Steel",
+    "types": [
+      "Dragon",
+      "Steel"
+    ],
+    "type1_id": 16,
+    "type2_id": 8
+  },
+  "1249": {
+    "type1": "Ice",
+    "type2": "Rock",
+    "types": [
+      "Ice",
+      "Rock"
+    ],
+    "type1_id": 15,
+    "type2_id": 5
+  },
+  "1250": {
+    "type1": "Grass",
+    "type2": "Fighting",
+    "types": [
+      "Grass",
+      "Fighting"
+    ],
+    "type1_id": 12,
+    "type2_id": 1
+  },
+  "1251": {
+    "type1": "Normal",
+    "type2": "Psychic",
+    "types": [
+      "Normal",
+      "Psychic"
+    ],
+    "type1_id": 0,
+    "type2_id": 14
+  },
+  "1252": {
+    "type1": "Bug",
+    "type2": "Rock",
+    "types": [
+      "Bug",
+      "Rock"
+    ],
+    "type1_id": 6,
+    "type2_id": 5
+  },
+  "1253": {
+    "type1": "Ground",
+    "type2": "Normal",
+    "types": [
+      "Ground",
+      "Normal"
+    ],
+    "type1_id": 4,
+    "type2_id": 0
+  },
+  "1254": {
+    "type1": "Water",
+    "type2": "Ghost",
+    "types": [
+      "Water",
+      "Ghost"
+    ],
+    "type1_id": 11,
+    "type2_id": 7
+  },
+  "1255": {
+    "type1": "Water",
+    "type2": "Ghost",
+    "types": [
+      "Water",
+      "Ghost"
+    ],
+    "type1_id": 11,
+    "type2_id": 7
+  },
+  "1256": {
+    "type1": "Poison",
+    "type2": "Fighting",
+    "types": [
+      "Poison",
+      "Fighting"
+    ],
+    "type1_id": 3,
+    "type2_id": 1
+  },
+  "1257": {
+    "type1": "Dark",
+    "type2": "Poison",
+    "types": [
+      "Dark",
+      "Poison"
+    ],
+    "type1_id": 17,
+    "type2_id": 3
+  },
+  "1258": {
+    "type1": "Fairy",
+    "type2": "Flying",
+    "types": [
+      "Fairy",
+      "Flying"
+    ],
+    "type1_id": 23,
+    "type2_id": 2
+  },
+  "1259": {
+    "type1": "Fairy",
+    "type2": "Flying",
+    "types": [
+      "Fairy",
+      "Flying"
+    ],
+    "type1_id": 23,
+    "type2_id": 2
+  },
+  "1260": {
+    "type1": "Grass",
+    "type2": "Poison",
+    "types": [
+      "Grass",
+      "Poison"
+    ],
+    "type1_id": 12,
+    "type2_id": 3
+  },
+  "1261": {
+    "type1": "Fire",
+    "type2": "Flying",
+    "types": [
+      "Fire",
+      "Flying"
+    ],
+    "type1_id": 10,
+    "type2_id": 2
+  },
+  "1262": {
+    "type1": "Water",
+    "type2": "Water",
+    "types": [
+      "Water"
+    ],
+    "type1_id": 11,
+    "type2_id": 11
+  },
+  "1263": {
+    "type1": "Bug",
+    "type2": "Flying",
+    "types": [
+      "Bug",
+      "Flying"
+    ],
+    "type1_id": 6,
+    "type2_id": 2
+  },
+  "1264": {
+    "type1": "Electric",
+    "type2": "Electric",
+    "types": [
+      "Electric"
+    ],
+    "type1_id": 13,
+    "type2_id": 13
+  },
+  "1265": {
+    "type1": "Normal",
+    "type2": "Normal",
+    "types": [
+      "Normal"
+    ],
+    "type1_id": 0,
+    "type2_id": 0
+  },
+  "1266": {
+    "type1": "Fighting",
+    "type2": "Fighting",
+    "types": [
+      "Fighting"
+    ],
+    "type1_id": 1,
+    "type2_id": 1
+  },
+  "1267": {
+    "type1": "Ghost",
+    "type2": "Poison",
+    "types": [
+      "Ghost",
+      "Poison"
+    ],
+    "type1_id": 7,
+    "type2_id": 3
+  }
+}
