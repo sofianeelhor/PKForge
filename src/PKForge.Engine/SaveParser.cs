@@ -17,6 +17,7 @@ internal static class SaveParser
 
     internal static bool TryGetSaveFile(byte[] data, out SaveFile? save)
     {
+        data = RetroArchSaveContainer.Decode(data);
         if (SaveUtil.TryGetSaveFile(data, out save))
             return true;
 
@@ -29,8 +30,22 @@ internal static class SaveParser
             return true;
         }
 
+        if (SAV3GCMemoryCard.IsMemoryCardSize(data.AsSpan()))
+            throw new InvalidDataException("This is a whole GameCube memory card. Export the Colosseum or XD save as a .gci file using Dolphin's Memory Card Manager, or use Dolphin's GCI Folder slot mode and link that folder.");
+
         save = null;
         return false;
+    }
+
+    // Ruby and Sapphire have identical save layouts and no reliable version flag.
+    // Only resolve an ambiguous RS save, and require a standalone name token.
+    internal static void ApplyVersionHint(SaveFile save, string? displayName)
+    {
+        if (save is not SAV3RS || save.Version != GameVersion.RS || displayName is null) return;
+        var tokens = System.Text.RegularExpressions.Regex.Split(displayName, @"[^\p{L}\p{N}]+");
+        var ruby = tokens.Contains("Ruby", StringComparer.OrdinalIgnoreCase);
+        var sapphire = tokens.Contains("Sapphire", StringComparer.OrdinalIgnoreCase);
+        if (ruby != sapphire) save.Version = ruby ? GameVersion.R : GameVersion.S;
     }
 
     internal static bool IsLuminescentPlatinum(ReadOnlySpan<byte> data)

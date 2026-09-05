@@ -7,7 +7,7 @@ namespace PKForge.App.Services;
 public static class GameArt
 {
     // Bumped whenever bundled art changes so on-device caches never serve stale images.
-    private const string AssetVersion = "v5";
+    private const string AssetVersion = "v6";
 
     public static Task<string?> GetIconAsync(string gameLabel) => GetAsync("gameart", gameLabel);
     public static Task<string?> GetHeroAsync(string gameLabel) => GetAsync("gamehero", gameLabel);

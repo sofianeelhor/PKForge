@@ -8,7 +8,7 @@ public interface ISaveEngine
     bool Validate(ReadOnlyMemory<byte> bytes);
 
     /// <summary>Cheap metadata probe for detection listings; null when the bytes are not a save.</summary>
-    SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes);
+    SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes, string? displayName = null);
 
     /// <summary>Describes loose .pk* bytes for a bank deposit; null when unrecognizable.</summary>
     BankEntryInfo? TryDescribeEntity(byte[] bytes, string sourceName);

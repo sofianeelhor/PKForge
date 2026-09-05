@@ -301,24 +301,72 @@ public sealed class HomePage : ContentPage, IPadHandler
         return new PadOption(label, IconPath: "storage");
     }
 
-    /// <summary>Pad-navigable emulator link menu (Ⓨ) - same choices as the wizard, popup form.</summary>
+    /// <summary>Platform folders keep emulator choices together for touch and controller use.</summary>
     private async Task ShowLinkMenuAsync()
     {
-        var choice = await PadMenu.ShowAsync(_hostGrid, "LINK A STORAGE UNIT", null,
-            new PadOption("RetroArch (GB/GBC/GBA)", IconPath: "retroarch"),
-            new PadOption("melonDS (DS)", IconPath: "melonds"),
-            new PadOption("Linkboy (GB/GBC/GBA)", IconPath: "linkboy"),
-            new PadOption("Azahar (3DS)", IconPath: "azahar"),
-            new PadOption("Eden (Switch)", IconPath: "eden"),
-            new PadOption("Single save file", IconPath: "search"));
-        switch (choice)
+        while (true)
         {
-            case "RetroArch (GB/GBC/GBA)": await _viewModel.AddRetroArchCommand.ExecuteAsync(null); break;
-            case "melonDS (DS)": await _viewModel.AddMelonDsCommand.ExecuteAsync(null); break;
-            case "Linkboy (GB/GBC/GBA)": await _viewModel.AddLinkboyCommand.ExecuteAsync(null); break;
-            case "Azahar (3DS)": await _viewModel.AddAzaharCommand.ExecuteAsync(null); break;
-            case "Eden (Switch)": await _viewModel.AddEdenCommand.ExecuteAsync(null); break;
-            case "Single save file": await LinkFileAsync(); break;
+            var platform = await PadMenu.ShowAsync(_hostGrid, "LINK A STORAGE UNIT", "Choose a platform to see its emulators.",
+                new PadOption("Game Boy / Game Boy Color", IconPath: "platform-gb"),
+                new PadOption("Game Boy Advance", IconPath: "platform-gba"),
+                new PadOption("Nintendo DS", IconPath: "platform-ds"),
+                new PadOption("GameCube", IconPath: "platform-gc"),
+                new PadOption("Nintendo 3DS", IconPath: "azahar"),
+                new PadOption("Nintendo Switch", IconPath: "eden"),
+                new PadOption("Single save file", IconPath: "search"));
+            if (platform is null) return;
+            if (platform == "Single save file") { await LinkFileAsync(); return; }
+            var options = platform switch
+            {
+                "Game Boy / Game Boy Color" => new[]
+                {
+                    new PadOption("RetroArch", IconPath: "retroarch"),
+                    new PadOption("Linkboy", IconPath: "linkboy"),
+                    new PadOption("Pizza Boy C (GB/GBC)", IconPath: "pizzaboy"),
+                },
+                "Game Boy Advance" => new[]
+                {
+                    new PadOption("RetroArch", IconPath: "retroarch"),
+                    new PadOption("Linkboy", IconPath: "linkboy"),
+                    new PadOption("Pizza Boy A (GBA)", IconPath: "pizzaboy"),
+                },
+                "Nintendo DS" => new[]
+                {
+                    new PadOption("melonDS", IconPath: "melonds"),
+                    new PadOption("DraStic", IconPath: "drastic"),
+                    new PadOption("RetroArch", IconPath: "retroarch"),
+                },
+                "GameCube" => new[] { new PadOption("Dolphin", IconPath: "dolphin") },
+                "Nintendo 3DS" => new[] { new PadOption("Azahar", IconPath: "azahar") },
+                _ => new[] { new PadOption("Eden", IconPath: "eden") },
+            };
+            var choice = await PadMenu.ShowAsync(_hostGrid, platform.ToUpperInvariant(), null, options);
+            if (choice is null) continue;
+            var guidance = choice switch
+            {
+                "Dolphin" => "Save in game and stop emulation before editing Colosseum or XD. Select Dolphin's GC folder, a region folder, or Card A / Card B containing .gci saves. For .raw memory cards, export the game as GCI with Dolphin's Memory Card Manager, or configure that card slot as GCI Folder. After editing, start the game normally; loading an old save state can undo your edits.",
+                "DraStic" => "Save in game and close DraStic. Select its backup folder containing .dsv battery saves, or the DraStic data folder. Save states are not supported. Restart the game normally after editing.",
+                "Pizza Boy A (GBA)" or "Pizza Boy C (GB/GBC)" => "Save in game and close Pizza Boy. Select the folder containing its battery saves (.sav), not save states. If Android hides the folder, export the battery save in Pizza Boy and link that export. Import the edited export back into Pizza Boy, then restart the game normally.",
+                "Azahar" or "Eden" => "Save in game and close the emulator. Select its files root containing the emulated storage. Restart the game normally after editing.",
+                _ => "Save in game and close the emulator. Select its saves folder (or the folder containing your battery saves). Save states are not supported. Restart the game normally after editing.",
+            };
+            var proceed = await PadMenu.ShowAsync(_hostGrid, $"LINK {choice.ToUpperInvariant()}",
+                guidance + " If Android does not offer access to the folder, use Single save file with an exported save.",
+                new PadOption("Choose folder", IconPath: "folder"), new PadOption("Back", IconPath: "restore"));
+            if (proceed != "Choose folder") continue;
+            switch (choice)
+            {
+                case "RetroArch": await _viewModel.AddRetroArchCommand.ExecuteAsync(null); break;
+                case "melonDS": await _viewModel.AddMelonDsCommand.ExecuteAsync(null); break;
+                case "Linkboy": await _viewModel.AddLinkboyCommand.ExecuteAsync(null); break;
+                case "Azahar": await _viewModel.AddAzaharCommand.ExecuteAsync(null); break;
+                case "Eden": await _viewModel.AddEdenCommand.ExecuteAsync(null); break;
+                case "Dolphin": await _viewModel.AddDolphinCommand.ExecuteAsync(null); break;
+                case "DraStic": await _viewModel.AddDraSticCommand.ExecuteAsync(null); break;
+                case "Pizza Boy A (GBA)": await _viewModel.AddPizzaBoyGbaCommand.ExecuteAsync(null); break;
+                case "Pizza Boy C (GB/GBC)": await _viewModel.AddPizzaBoyGbcCommand.ExecuteAsync(null); break;
+            }
+            return;
         }
     }
 
@@ -358,6 +406,9 @@ public sealed class HomePage : ContentPage, IPadHandler
         EmulatorKind.Linkboy => "linkboy",
         EmulatorKind.Azahar => "azahar",
         EmulatorKind.Eden => "eden",
+        EmulatorKind.Dolphin => "dolphin",
+        EmulatorKind.DraStic => "drastic",
+        EmulatorKind.PizzaBoyGba or EmulatorKind.PizzaBoyGbc => "pizzaboy",
         _ => "storage",
     };
 
@@ -637,6 +688,8 @@ public sealed class HomePage : ContentPage, IPadHandler
         await _viewModel.LinkFileCommand.ExecuteAsync(null);
         if (_viewModel.OpenedSave)
             await PushAsync<BoxBrowserPage>();
+        else if (_viewModel.Status.StartsWith("Could not", StringComparison.Ordinal))
+            await PadMenu.ShowAsync(_hostGrid, "SAVE COULD NOT OPEN", _viewModel.Status, "OK");
     }
 
     /// <summary>
@@ -830,6 +883,8 @@ public sealed class HomePage : ContentPage, IPadHandler
             if (state is not null) state.PreviewGame = null;
             await PushAsync<BoxBrowserPage>();
         }
+        else if (_viewModel.Status.StartsWith("Could not", StringComparison.Ordinal))
+            await PadMenu.ShowAsync(_hostGrid, "SAVE COULD NOT OPEN", _viewModel.Status, "OK");
     }
 
     private async Task PushAsync<TPage>() where TPage : Page

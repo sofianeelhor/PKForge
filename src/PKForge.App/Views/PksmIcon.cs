@@ -68,6 +68,13 @@ public static class PksmIcons
         "azahar" => "emu_azahar.png",
         "eden" => "emu_eden.png",
         "linkboy" => "emu_linkboy.png",
+        "dolphin" => "gi_dolphin.png",
+        "pizzaboy" => "gi_pizza.png",
+        "drastic" => "gi_gamepad.png",
+        "platform-gb" => "emu_linkboy.png",
+        "platform-gba" => "gi_gamepad.png",
+        "platform-ds" => "emu_melonds.png",
+        "platform-gc" => "gi_cube.png",
         _ => "icon_hex.png",
     };
 

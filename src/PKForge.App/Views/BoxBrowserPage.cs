@@ -827,15 +827,15 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 if (_viewModel.MarkedCount == 0) { _viewModel.Status = "Nothing marked."; return; }
                 var session = _sessionsFor();
                 if (session is null) return;
-                var exports = _viewModel.MarkedSlots.Select(m => session.ExportSlot(m.Box, m.Slot).Data).ToList();
+                var sources = _viewModel.MarkedSlots.ToArray();
                 var used = new HashSet<(int Box, int Slot)>();
                 await _viewModel.RunMutationAsync(s =>
                 {
                     var cloned = 0;
-                    foreach (var data in exports)
+                    foreach (var source in sources)
                     {
                         (int Box, int Slot)? landing = null;
-                        foreach (var cand in _viewModel.Save!.Slots.Where(x => x.Box >= 0 && x.Species is null))
+                        foreach (var cand in _viewModel.Save!.Slots.Where(x => x.Box >= 0))
                         {
                             if (used.Contains((cand.Box, cand.Slot))) continue;
                             if (!s.ReadEntity(cand.Box, cand.Slot).IsEmpty) continue; // live check: never overwrite
@@ -843,16 +843,17 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                             break;
                         }
                         if (landing is null) break;
-                        if (s.ImportSlot(landing.Value.Box, landing.Value.Slot, data))
+                        if (s.DuplicateSlot(source.Box, source.Slot, landing.Value.Box, landing.Value.Slot))
                         {
                             used.Add(landing.Value);
                             cloned++;
                         }
                     }
                     return new GenerationOutcome(cloned > 0,
-                        cloned == 0 ? "No room to clone."
-                        : $"Cloned {cloned} Pokémon." + (cloned < exports.Count ? $" {exports.Count - cloned} left (no room)." : ""));
+                        cloned == 0 ? "No Pokémon could be duplicated. Check free storage."
+                        : $"Cloned {cloned} Pokémon." + (cloned < sources.Length ? $" {sources.Length - cloned} could not be duplicated." : ""));
                 }, Math.Max(0, _viewModel.SelectedSlot));
+                _viewModel.RefreshAllSlots();
                 _canvas.InvalidateSurface();
                 return;
             }
@@ -2025,14 +2026,32 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
 
         private async Task ShowPresetsAsync()
         {
-            await FlushPendingAsync();
+            if (!await FlushPendingAsync()) return;
             var choice = await PadMenu.ShowAsync(_host, "ITEM PRESETS", "Only items legal in this game are changed.",
+                new PadOption("Save current bag as preset", IconPath: "bag"),
+                new PadOption("My item presets", IconPath: "gears"),
                 new PadOption("Refill this pouch to 99", IconPath: "bag"),
                 new PadOption("Give every Poké Ball x50", IconPath: "bag"),
                 new PadOption("Healing supplies x20", IconPath: "restore"),
                 new PadOption("Nuzlocke starter supplies", IconPath: "leaf"),
                 new PadOption("Remove every item in this pouch", IconPath: "release"));
             if (choice is null) return;
+
+            if (choice is "Save current bag as preset" or "My item presets")
+            {
+                try
+                {
+                    var store = new PKForge.Infrastructure.ItemPresetStore(Path.Combine(FileSystem.AppDataDirectory, "item-presets.json"));
+                    if (choice == "Save current bag as preset") await SavePersonalPresetAsync(store);
+                    else await ShowPersonalPresetsAsync(store);
+                }
+                catch (Exception ex)
+                {
+                    Report($"PRESET ERROR: {ex.Message}");
+                    await PadMenu.ShowAsync(_host, "ITEM PRESET ERROR", ex.Message, "OK");
+                }
+                return;
+            }
 
             if (choice == "Remove every item in this pouch")
             {
@@ -2056,6 +2075,102 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             }, _slotSeed, refreshSlot: false);
             Report(ok ? $"PRESET APPLIED - {changes.Count} ITEMS" : "PRESET FAILED - SEE STATUS");
             Rebuild();
+        }
+
+        private async Task SavePersonalPresetAsync(PKForge.Infrastructure.ItemPresetStore store, ItemPreset? existing = null)
+        {
+            var names = _session.GetItemNames();
+            var entries = _session.GetBag().SelectMany(pouch => pouch.Items
+                .Where(item => item.Count > 0 && item.Id > 0 && item.Id < names.Count
+                    && !string.IsNullOrWhiteSpace(names[item.Id])
+                    && _session.GetPouchLegalItems(pouch.Name).Contains(item.Id))
+                .Select(item => new ItemPresetEntry(pouch.Name, item.Id, names[item.Id], item.Count))).ToArray();
+            if (entries.Length == 0)
+            {
+                Report("NO COMPATIBLE ITEMS TO SAVE IN A PRESET");
+                return;
+            }
+            var name = existing?.Name ?? await TextPopup.ShowLineAsync(_host, "PRESET NAME", "Name your bag preset (60 characters max)");
+            if (string.IsNullOrWhiteSpace(name)) return;
+            store.Save(new ItemPreset(existing?.Id ?? Guid.NewGuid().ToString("N"), name, _session.Generation, entries));
+            Report($"PRESET SAVED - {entries.Length} ITEMS");
+        }
+
+        private async Task ShowPersonalPresetsAsync(PKForge.Infrastructure.ItemPresetStore store)
+        {
+            while (true)
+            {
+                var presets = store.Read();
+                if (presets.Count == 0)
+                {
+                    await PadMenu.ShowAsync(_host, "MY ITEM PRESETS", "Adjust your bag, then choose Save current bag as preset.", "OK");
+                    return;
+                }
+                var labels = presets.Select(p => $"{p.Name} (Gen {p.Generation})").ToArray();
+                var selected = await PadMenu.ShowAsync(_host, "MY ITEM PRESETS", "Presets set saved quantities. Other items stay in your bag.", labels);
+                var index = Array.IndexOf(labels, selected);
+                if (index < 0) return;
+                var preset = presets[index];
+                var action = await PadMenu.ShowAsync(_host, preset.Name.ToUpperInvariant(),
+                    $"{preset.Items.Count} items. Compatible items apply within Gen {preset.Generation}.",
+                    new PadOption("Apply preset", IconPath: "bag"),
+                    new PadOption("Update from current bag", IconPath: "editor"),
+                    new PadOption("Rename", IconPath: "editor"),
+                    new PadOption("Delete", IconPath: "release"));
+                if (action == "Rename")
+                {
+                    var name = await TextPopup.ShowLineAsync(_host, "RENAME PRESET", "Preset name", preset.Name);
+                    if (!string.IsNullOrWhiteSpace(name)) store.Save(preset with { Name = name });
+                }
+                else if (action == "Delete")
+                {
+                    if (await PadMenu.ConfirmAsync(_host, "DELETE PRESET?", preset.Name, "Delete")) store.Delete(preset.Id);
+                }
+                else if (action == "Update from current bag")
+                {
+                    if (await PadMenu.ConfirmAsync(_host, "UPDATE PRESET?", "Replace this preset with the current bag and its generation?", "Update"))
+                        await SavePersonalPresetAsync(store, preset);
+                }
+                else if (action == "Apply preset")
+                {
+                    var pouches = _session.GetBag().Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+                    var changes = preset.CompatibleItems(_session.Generation, _session.GetItemNames(),
+                        pouch => pouches.Contains(pouch) ? _session.GetPouchLegalItems(pouch) : []);
+                    if (changes.Count == 0)
+                    {
+                        await PadMenu.ShowAsync(_host, "NO COMPATIBLE ITEMS", $"This preset was saved for Gen {preset.Generation}. Only matching legal items can be applied.", "OK");
+                        continue;
+                    }
+                    if (!await PadMenu.ConfirmAsync(_host, "APPLY ITEM PRESET?",
+                        $"Set quantities for {changes.Count} items; skip {preset.Items.Count - changes.Count} incompatible items. Game quantity limits apply. Other items are kept.", "Apply")) continue;
+                    var ok = await _viewModel.RunMutationAsync(s =>
+                    {
+                        var original = s.GetBag().SelectMany(pouch => pouch.Items.Select(item =>
+                            (Key: (pouch.Name, item.Id), item.Count)))
+                            .ToDictionary(item => item.Key, item => item.Count);
+                        var applied = new List<ItemPresetEntry>();
+                        try
+                        {
+                            foreach (var item in changes)
+                            {
+                                s.SetItemCount(item.Pouch, item.ItemId, item.Count);
+                                applied.Add(item);
+                            }
+                        }
+                        catch
+                        {
+                            // A full pouch must not leave half of a preset in the live session.
+                            foreach (var item in applied.AsEnumerable().Reverse())
+                                s.SetItemCount(item.Pouch, item.ItemId, original.GetValueOrDefault((item.Pouch, item.ItemId)));
+                            throw;
+                        }
+                        return new GenerationOutcome(true, $"Preset changed {changes.Count} items.");
+                    }, _slotSeed, refreshSlot: false);
+                    Report(ok ? $"PRESET APPLIED - {changes.Count} ITEMS" : "PRESET FAILED - SEE STATUS");
+                    Rebuild();
+                    return;
+                }
+            }
         }
 
         private List<(string Pouch, int Item, int Count)> BuildPreset(string choice)
@@ -2610,35 +2725,31 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     private async Task DuplicateSlotAsync(int slot)
     {
         var session = _sessionsFor();
-        if (session is null) return;
+        if (session is null || _viewModel.IsBusy) return;
         var box = _viewModel.BoxIndex;
-        var export = session.ExportSlot(box, slot);
-        var name = _viewModel.Selected?.Nickname is { Length: > 0 } nick ? nick : "Pokémon";
-
-        if (box == -1)
+        var source = session.ReadEntity(box, slot);
+        if (source.IsEmpty) return;
+        var name = source.Nickname is { Length: > 0 } nick ? nick : "Pokémon";
+        var destination = box == -1
+            ? Enumerable.Range(0, 6).Count(i => !session.ReadEntity(-1, i).IsEmpty)
+            : _viewModel.VisibleSlots.Select(x => x.Slot).FirstOrDefault(i => session.ReadEntity(box, i).IsEmpty, -1);
+        if (destination < 0 || (box == -1 && destination >= 6))
         {
-            var partyCount = Enumerable.Range(0, 6).Count(i => !session.ReadEntity(-1, i).IsEmpty);
-            var ok = await _viewModel.RunMutationAsync(s =>
-                s.ImportSlot(-1, 0, export.Data)
-                    ? new GenerationOutcome(true, $"{name} cloned into the party.")
-                    : new GenerationOutcome(false, "The party is full."), slot);
-            if (!ok) { _viewModel.Status = "The party is full - no room to clone."; return; }
-            _viewModel.SelectSlot(Math.Min(partyCount, 5));
-            _canvas.InvalidateSurface();
+            _viewModel.Status = box == -1 ? "The party is full - no room to duplicate." : "This box is full - no room to duplicate.";
+            await PadMenu.ShowAsync(_hostGrid, "DUPLICATE", _viewModel.Status, "OK");
             return;
         }
-
-        var empty = _viewModel.VisibleSlots.FirstOrDefault(x => x.Species is null)?.Slot ?? -1;
-        if (empty < 0)
+        var ok = await _viewModel.RunMutationAsync(s =>
+            s.DuplicateSlot(box, slot, box, destination)
+                ? new GenerationOutcome(true, $"{name} duplicated.")
+                : new GenerationOutcome(false, "Could not duplicate into that slot."), destination);
+        if (!ok)
         {
-            _viewModel.Status = "This box is full - no room to clone.";
+            await PadMenu.ShowAsync(_hostGrid, "DUPLICATE FAILED", _viewModel.Status, "OK");
             return;
         }
-        await _viewModel.RunMutationAsync(s =>
-            s.ImportSlot(box, empty, export.Data)
-                ? new GenerationOutcome(true, $"{name} cloned.")
-                : new GenerationOutcome(false, "Clone failed."), empty);
-        _viewModel.SelectSlot(empty);
+        _viewModel.RefreshAllSlots(includeEmptyPartySlots: box == -1);
+        _viewModel.SelectSlot(destination);
         _canvas.InvalidateSurface();
     }
 

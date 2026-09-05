@@ -48,6 +48,9 @@ public static class SavePickerSheet
         EmulatorKind.MelonDS => "melonds",
         EmulatorKind.Azahar => "azahar",
         EmulatorKind.Eden => "eden",
+        EmulatorKind.Dolphin => "dolphin",
+        EmulatorKind.DraStic => "drastic",
+        EmulatorKind.PizzaBoyGba or EmulatorKind.PizzaBoyGbc => "pizzaboy",
         EmulatorKind.Linkboy => "linkboy",
         _ => "storage",
     };

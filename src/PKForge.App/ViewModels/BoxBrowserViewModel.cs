@@ -423,12 +423,17 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     }
 
     /// <summary>Re-reads every slot of the save into the grid model (after bulk mutations).</summary>
-    public void RefreshAllSlots()
+    public void RefreshAllSlots(bool includeEmptyPartySlots = false)
     {
         var session = _sessions.CurrentSession;
         if (session is null) return;
-        _slots = session.Snapshot.Slots
-            .Select(s =>
+        // A successful party append can extend past the construction-time snapshot.
+        // Only request party placeholders for that flow; box-only saves have no party.
+        var slots = (includeEmptyPartySlots || _slots.Any(s => s.Box == -1))
+            ? session.Snapshot.Slots.Where(s => s.Box >= 0)
+                .Concat(Enumerable.Range(0, 6).Select(i => new SlotSummary(-1, i, null, null, false, true)))
+            : session.Snapshot.Slots;
+        _slots = slots.Select(s =>
             {
                 var updated = session.ReadEntity(s.Box, s.Slot);
                 return s with

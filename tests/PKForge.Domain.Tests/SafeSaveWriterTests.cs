@@ -78,7 +78,7 @@ public sealed class SafeSaveWriterTests
         public ISaveEngineSession OpenSession(ReadOnlyMemory<byte> bytes, string? displayName = null) => throw new NotImplementedException();
         public ReadOnlyMemory<byte> Serialize(SaveSnapshot snapshot) => throw new NotImplementedException();
         public bool Validate(ReadOnlyMemory<byte> bytes) => valid;
-        public SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes) => throw new NotImplementedException();
+        public SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes, string? displayName = null) => throw new NotImplementedException();
         public BankEntryInfo? TryDescribeEntity(byte[] bytes, string sourceName) => throw new NotImplementedException();
         public ISaveEngineSession? OpenEntitySession(byte[] entityBytes, string? displayName = null) => throw new NotImplementedException();
         public ISaveEngineSession OpenBlankSession(int generation, string? displayName = null) => throw new NotImplementedException();

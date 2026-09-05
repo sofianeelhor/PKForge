@@ -16,6 +16,7 @@ namespace PKForge.Engine.Unbound;
 internal sealed class UnboundEngineSession : ISaveEngineSession
 {
     private readonly byte[] _data;
+    private readonly byte[] _originalBytes;
     private readonly int[] _sections;
     private readonly byte[] _stream;
     private bool _disposed;
@@ -24,7 +25,8 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
 
     public UnboundEngineSession(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
-        _data = bytes.ToArray();
+        _originalBytes = bytes.ToArray();
+        _data = RetroArchSaveContainer.Decode(bytes.Span);
         if (_data.Length != FileSize || !SaveParser.IsPokemonUnbound(_data))
             throw new InvalidDataException("These bytes are not a Pokémon Unbound save.");
         _sections = SectionOffsets(_data);
@@ -350,6 +352,38 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
             $"{UnboundData.SpeciesName(species)} generated for Unbound from the ROM's own tables (no legality data exists for this hack).");
     }
 
+    public bool DuplicateSlot(int fromBox, int fromSlot, int toBox, int toSlot)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var source = TryMon(fromBox, fromSlot);
+        if (source is null || !source.LooksValid) return false;
+        UnboundMon target;
+        SlotLocation? location = null;
+        if (toBox == -1)
+        {
+            if (PartyCount >= 6) return false;
+            target = new UnboundMon(_data, PartyBase + PartyOffset + PartyCount * PartyMonSize, party: true);
+        }
+        else
+        {
+            location = ResolveSlot(toBox, toSlot);
+            if (location is null) return false;
+            target = new UnboundMon(location.Value.Stream ? _stream : _data, location.Value.Offset, party: false);
+            if (target.Species != 0) return false;
+        }
+        if (source.Party == target.Party)
+            source.Buffer.AsSpan(source.Offset, source.Size).CopyTo(target.Buffer.AsSpan(target.Offset, target.Size));
+        else
+            CopyBetween(source, target);
+        if (toBox == -1)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(_data.AsSpan(PartyBase + PartyCountOffset), (uint)(PartyCount + 1));
+            CommitParty();
+        }
+        else CommitPc(location);
+        return true;
+    }
+
     public void MoveSlot(int fromBox, int fromSlot, int toBox, int toSlot)
     {
         var source = TryMon(fromBox, fromSlot) ?? throw new InvalidOperationException("The source slot is empty.");
@@ -574,14 +608,14 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
                 ? new SlotSummary(-1, slot, valid.Species, valid.Nickname, valid.IsShiny, true)
                 : new SlotSummary(-1, slot, null, null, false, true));
         }
-        return new SaveSnapshot("UNBOUND", 3, _data.ToArray(), slots, displayName);
+        return new SaveSnapshot("UNBOUND", 3, _originalBytes.ToArray(), slots, displayName);
     }
 
     public ReadOnlyMemory<byte> Serialize()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         // Every mutation commits to _data immediately; serialization is a plain copy.
-        return _data.ToArray();
+        return RetroArchSaveContainer.Repack(_data, _originalBytes);
     }
 
     public IReadOnlyList<int> GetAbilityChoices(int species, int form)

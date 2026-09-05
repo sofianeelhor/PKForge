@@ -8,7 +8,7 @@ public sealed class SaveEngine : ISaveEngine
 {
     public SaveSnapshot Open(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
-        if (SaveParser.IsPokemonUnbound(bytes.Span))
+        if (SaveParser.IsPokemonUnbound(RetroArchSaveContainer.Decode(bytes.Span)))
             return OpenUnbound(bytes, displayName).Snapshot;
         if (!SaveParser.TryGetSaveFile(bytes.ToArray(), out var save) || save is null)
             throw new InvalidDataException("The selected bytes are not a recognized save file.");
@@ -30,7 +30,7 @@ public sealed class SaveEngine : ISaveEngine
 
     public ISaveEngineSession OpenSession(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
-        if (SaveParser.IsPokemonUnbound(bytes.Span))
+        if (SaveParser.IsPokemonUnbound(RetroArchSaveContainer.Decode(bytes.Span)))
             return OpenUnbound(bytes, displayName);
         return new SaveEngineSession(bytes, displayName);
     }
@@ -40,7 +40,11 @@ public sealed class SaveEngine : ISaveEngine
 
     public ReadOnlyMemory<byte> Serialize(SaveSnapshot snapshot) => snapshot.OriginalBytes.ToArray();
 
-    public bool Validate(ReadOnlyMemory<byte> bytes) => SaveParser.TryGetSaveFile(bytes.ToArray(), out _);
+    public bool Validate(ReadOnlyMemory<byte> bytes)
+    {
+        try { return SaveParser.TryGetSaveFile(bytes.ToArray(), out _); }
+        catch (InvalidDataException) { return false; }
+    }
 
     public BankEntryInfo? TryDescribeEntity(byte[] bytes, string sourceName)
     {
@@ -106,9 +110,9 @@ public sealed class SaveEngine : ISaveEngine
         return new SaveEngineSession(blank, displayName);
     }
 
-    public SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes)
+    public SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
-        var raw = bytes.ToArray();
+        var raw = RetroArchSaveContainer.Decode(bytes.Span);
         if (!SaveParser.TryGetSaveFile(raw, out var save) || save is null)
             return null;
 
@@ -124,6 +128,21 @@ public sealed class SaveEngine : ISaveEngine
 
         if (SaveParser.IsPokemonUnbound(raw))
             return new SaveDescription("Unbound", save.Generation, save.OT, save.PlayTimeString);
+
+        // GameCube-only versions sit outside the handheld game-name table.
+        var sideGameName = save switch
+        {
+            SAV3Colosseum => "Colosseum",
+            SAV3XD => "XD: Gale of Darkness",
+            SAV3RSBox => "Box: Ruby & Sapphire",
+            _ => null,
+        };
+        if (sideGameName is not null)
+            return new SaveDescription(sideGameName, save.Generation, save.OT, save.PlayTimeString);
+
+        SaveParser.ApplyVersionHint(save, displayName);
+        if (save.Version == GameVersion.RS)
+            return new SaveDescription("Ruby / Sapphire", save.Generation, save.OT, save.PlayTimeString);
 
         var strings = GameInfo.GetStrings("en");
         var versionIndex = (int)save.Version;
