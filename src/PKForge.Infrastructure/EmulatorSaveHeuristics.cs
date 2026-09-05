@@ -33,6 +33,16 @@ public static class EmulatorSaveHeuristics
         return CandidateExtensions.Contains(extension);
     }
 
+    /// <summary>Dolphin links individual GCI saves, never whole multi-game memory cards.</summary>
+    public static bool IsCandidateFileName(string fileName, EmulatorKind kind) =>
+        kind == EmulatorKind.Dolphin
+            ? fileName.EndsWith(".gci", StringComparison.OrdinalIgnoreCase)
+            : IsCandidateFileName(fileName);
+
+    public static bool IsDolphinMemoryCard(string fileName) =>
+        Path.GetExtension(fileName).Equals(".raw", StringComparison.OrdinalIgnoreCase) ||
+        Path.GetExtension(fileName).Equals(".gcp", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Matches Eden's "main" / "*.bin" save file names (BDSP writes .bin, others extensionless "main").</summary>
     public static bool IsEdenSaveFileName(string fileName) =>
         fileName == "main" || fileName.EndsWith(".bin", StringComparison.OrdinalIgnoreCase);

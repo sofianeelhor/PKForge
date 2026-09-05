@@ -15,8 +15,8 @@ public sealed class SaveSessionService(ISaveFileAccess access, ISaveEngine engin
         ArgumentNullException.ThrowIfNull(document);
         var bytes = await access.ReadAsync(document.DocumentId, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        CurrentSession?.Dispose();
         var engineSession = engine.OpenSession(bytes, document.DisplayName);
+        CurrentSession?.Dispose();
         var session = new SaveSession(document, engineSession.Snapshot);
         CurrentSession = engineSession;
         Current = session;

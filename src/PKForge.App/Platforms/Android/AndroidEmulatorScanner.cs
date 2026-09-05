@@ -45,7 +45,8 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
             {
                 found = kind switch
                 {
-                    EmulatorKind.RetroArch or EmulatorKind.MelonDS or EmulatorKind.Linkboy => ScanFlatFolder(treeUri, rootDocId, kind, cancellationToken),
+                    EmulatorKind.RetroArch or EmulatorKind.MelonDS or EmulatorKind.Linkboy or
+                    EmulatorKind.DraStic or EmulatorKind.PizzaBoyGba or EmulatorKind.PizzaBoyGbc or EmulatorKind.Dolphin => ScanFlatFolder(treeUri, rootDocId, kind, cancellationToken),
                     EmulatorKind.Eden => ScanEden(treeUri, rootDocId, cancellationToken),
                     EmulatorKind.Azahar => ScanAzahar(treeUri, rootDocId, cancellationToken),
                     _ => [],
@@ -70,19 +71,25 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
     };
 
     /// <summary>
-    /// RetroArch and melonDS saves are flat files, but RetroArch commonly sorts them into
-    /// per-core subfolders (saves/&lt;core&gt;/*.srm). If the granted folder contains a
-    /// "saves" directory (i.e. the user granted the whole emulator folder), only that
-    /// subtree is walked; junk directories are pruned either way.
+    /// Battery saves and GCI files can be nested: RetroArch uses per-core folders,
+    /// DraStic uses backup/, and Dolphin uses GC/&lt;region&gt;/Card A or Card B.
+    /// Prefer the emulator's save subtrees when its whole data folder was granted.
+    /// Direct save-folder grants and custom locations are also supported.
     /// </summary>
     private List<DetectedSave> ScanFlatFolder(AndroidUri treeUri, string rootDocId, EmulatorKind kind, CancellationToken cancellationToken)
     {
-        const int maxDepth = 4;
+        const int maxDepth = 8;
         var results = new List<DetectedSave>();
         void OnFile(ChildDocument child)
         {
             _filesSeen++;
-            if (!EmulatorSaveHeuristics.IsCandidateFileName(child.Name)) return;
+            if (kind == EmulatorKind.Dolphin && EmulatorSaveHeuristics.IsDolphinMemoryCard(child.Name))
+            {
+                _rejected.Add($"{child.Name}: export Colosseum/XD as GCI with Dolphin's Memory Card Manager, or use GCI Folder for the card slot.");
+                Trace($"RAW MEMORY CARD {child.Name}: individual GCI export required");
+                return;
+            }
+            if (!EmulatorSaveHeuristics.IsCandidateFileName(child.Name, kind)) return;
             if (TryDetect(treeUri, child, kind, gameLabel: child.Name) is { } save)
                 results.Add(save);
             else
@@ -90,12 +97,20 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
         }
 
         var rootChildren = ListChildren(treeUri, rootDocId);
-        var savesDir = rootChildren.FirstOrDefault(x => x.IsDirectory && x.Name.Equals("saves", StringComparison.OrdinalIgnoreCase));
-        if (savesDir is not null)
+        string[] preferredFolders = kind switch
+        {
+            EmulatorKind.Dolphin => ["GC"],
+            EmulatorKind.DraStic => ["backup"],
+            EmulatorKind.PizzaBoyGba or EmulatorKind.PizzaBoyGbc => ["save", "saves"],
+            _ => ["saves"],
+        };
+        var savesDirs = rootChildren.Where(x => x.IsDirectory && preferredFolders.Contains(x.Name, StringComparer.OrdinalIgnoreCase)).ToArray();
+        if (savesDirs.Length > 0)
         {
             foreach (var file in rootChildren.Where(x => !x.IsDirectory))
                 OnFile(file);
-            FindFilesRecursive(treeUri, savesDir.DocId, maxDepth, cancellationToken, OnFile);
+            foreach (var savesDir in savesDirs)
+                FindFilesRecursive(treeUri, savesDir.DocId, maxDepth, cancellationToken, OnFile);
         }
         else
         {
@@ -189,7 +204,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
             // are instant. The install epoch in the key makes each fresh APK re-read every
             // file exactly once, so detection improvements (new romhack labels, say) reach
             // saves whose timestamps have not changed since the previous install.
-            var cacheKey = documentUri + "#" + InstallEpoch;
+            var cacheKey = documentUri + "#" + kind + "#" + InstallEpoch;
             var modifiedTicks = child.LastModified?.UtcTicks ?? 0;
 #if !DEBUG && !DIAGNOSTIC
             if (ScanCache.TryGet(cacheKey, modifiedTicks, out var cached))
@@ -230,7 +245,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IEmulatorDetect
             Trace($"BYTES length={bytes.Length} header16={Convert.ToHexString(bytes.AsSpan(0, headerLength))} knownBdspSize={bdspSize}");
 
             // Describe consumes a copy: the engine decrypts Switch saves in place during parsing.
-            var description = engine.TryDescribe(bytes);
+            var description = engine.TryDescribe(bytes, child.Name);
             if (description is null)
             {
                 Trace("PARSER REJECTED: ISaveEngine.TryDescribe returned null");

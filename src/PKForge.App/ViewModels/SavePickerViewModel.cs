@@ -91,13 +91,25 @@ public partial class SavePickerViewModel : ObservableObject
     private Task AddLinkboyAsync() => AddRootAndScanAsync(EmulatorKind.Linkboy);
 
     [RelayCommand]
+    private Task AddDolphinAsync() => AddRootAndScanAsync(EmulatorKind.Dolphin);
+
+    [RelayCommand]
+    private Task AddDraSticAsync() => AddRootAndScanAsync(EmulatorKind.DraStic);
+
+    [RelayCommand]
+    private Task AddPizzaBoyGbaAsync() => AddRootAndScanAsync(EmulatorKind.PizzaBoyGba);
+
+    [RelayCommand]
+    private Task AddPizzaBoyGbcAsync() => AddRootAndScanAsync(EmulatorKind.PizzaBoyGbc);
+
+    [RelayCommand]
     public async Task RescanAsync()
     {
         if (IsBusy) return;
         var roots = _roots.GetRoots();
         if (roots.Count == 0)
         {
-            Status = "No storage units linked yet. Link one below (RetroArch/melonDS: the saves folder; Azahar/Eden: the emulator's files root).";
+            Status = "No storage units linked yet. Open Link and choose your platform and emulator.";
             return;
         }
 

@@ -30,6 +30,25 @@ public sealed class UnboundSessionTests
     }
 
     [Fact]
+    public void DuplicatePartyAndPcRetainNativeFields()
+    {
+        using var session = OpenGroundTruth();
+        if (session is null) return;
+        var source = session.ExportSlot(-1, 0).Data;
+        Assert.True(session.DuplicateSlot(-1, 0, -1, 1));
+        Assert.Equal(source, session.ExportSlot(-1, 0).Data);
+        Assert.Equal(source, session.ExportSlot(-1, 1).Data);
+        Assert.True(session.DuplicateSlot(-1, 0, 0, 0));
+        var boxed = session.ExportSlot(0, 0).Data;
+        Assert.True(session.DuplicateSlot(0, 0, 0, 1));
+        Assert.Equal(boxed, session.ExportSlot(0, 1).Data);
+        Assert.False(session.DuplicateSlot(0, 0, 0, 1));
+        using var reopened = new UnboundEngineSession(session.Serialize());
+        Assert.Equal(source, reopened.ExportSlot(-1, 1).Data);
+        Assert.Equal(boxed, reopened.ExportSlot(0, 1).Data);
+    }
+
+    [Fact]
     public void PartyDecodesFromGroundTruth()
     {
         var session = OpenGroundTruth();

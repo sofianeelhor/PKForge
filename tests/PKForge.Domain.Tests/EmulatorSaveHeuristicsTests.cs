@@ -18,6 +18,31 @@ public sealed class EmulatorSaveHeuristicsTests
         Assert.Equal(expected, EmulatorSaveHeuristics.IsCandidateFileName(name));
 
     [Theory]
+    [InlineData("01-GC6E-PokemonColosseum.gci", true)]
+    [InlineData("01-GXXP-PokemonXD.GCI", true)]
+    [InlineData("MemoryCardA.USA.raw", false)]
+    [InlineData("game.sav", false)]
+    [InlineData("game.s01", false)]
+    public void DolphinLinksOnlyIndividualGciSaves(string name, bool expected) =>
+        Assert.Equal(expected, EmulatorSaveHeuristics.IsCandidateFileName(name, EmulatorKind.Dolphin));
+
+    [Theory]
+    [InlineData("MemoryCardA.USA.raw", true)]
+    [InlineData("MemoryCardB.GCP", true)]
+    [InlineData("PokemonXD.gci", false)]
+    public void DolphinCardsAreRecognizedForExportGuidance(string name, bool expected) =>
+        Assert.Equal(expected, EmulatorSaveHeuristics.IsDolphinMemoryCard(name));
+
+    [Theory]
+    [InlineData(EmulatorKind.DraStic, "Pokemon Platinum.dsv", true)]
+    [InlineData(EmulatorKind.DraStic, "Pokemon Platinum.dss", false)]
+    [InlineData(EmulatorKind.PizzaBoyGba, "Pokemon Ruby.sav", true)]
+    [InlineData(EmulatorKind.PizzaBoyGbc, "Pokemon Crystal.sav", true)]
+    [InlineData(EmulatorKind.PizzaBoyGba, "Pokemon Ruby.stat", false)]
+    public void HandheldEmulatorsFindBatterySavesNotStates(EmulatorKind emulator, string name, bool expected) =>
+        Assert.Equal(expected, EmulatorSaveHeuristics.IsCandidateFileName(name, emulator));
+
+    [Theory]
     [InlineData("main", true)]
     [InlineData("save.bin", true)]
     [InlineData("main.txt", false)]

@@ -45,6 +45,27 @@ public sealed class SaveSessionServiceTests
         Assert.True(service.Current.Snapshot.OriginalBytes.Span.SequenceEqual(firstWrite));
     }
 
+    [Fact]
+    public async Task FailedOpenKeepsPreviousSessionUsable()
+    {
+        var bytes = File.ReadAllBytes(CorpusPath("SM Project 802.main"));
+        var service = new SaveSessionService(new SwitchingAccess(bytes), new SaveEngine());
+        await service.OpenAsync(new PickedDocument("good", "Sun"));
+        var previous = service.CurrentSession!;
+        await Assert.ThrowsAsync<InvalidDataException>(() => service.OpenAsync(new PickedDocument("bad", "bad.srm")).AsTask());
+        Assert.Same(previous, service.CurrentSession);
+        Assert.Equal("good", service.Current!.Document.DocumentId);
+        Assert.NotEmpty(previous.Serialize().ToArray());
+    }
+
+    private sealed class SwitchingAccess(byte[] bytes) : ISaveFileAccess
+    {
+        public ValueTask<ReadOnlyMemory<byte>> ReadAsync(string documentId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<ReadOnlyMemory<byte>>(documentId == "good" ? bytes : new byte[100]);
+        public ValueTask WriteAtomicallyAsync(string documentId, ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
+    }
+
     private sealed class FakeAccess(byte[] bytes) : ISaveFileAccess
     {
         public ValueTask<ReadOnlyMemory<byte>> ReadAsync(string documentId, CancellationToken cancellationToken = default) =>

@@ -21,6 +21,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (!SaveParser.TryGetSaveFile(_originalBytes.ToArray(), out var save) || save is null)
             throw new InvalidDataException("The selected bytes are not a recognized save file.");
         _save = save;
+        SaveParser.ApplyVersionHint(_save, displayName);
         Snapshot = BuildSnapshot(displayName);
     }
 
@@ -447,6 +448,28 @@ public sealed class SaveEngineSession : ISaveEngineSession
             ThrowIfDisposed();
             return _save;
         }
+    }
+
+    public bool DuplicateSlot(int fromBox, int fromSlot, int toBox, int toSlot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(fromBox, fromSlot);
+        ValidateCoordinates(toBox, toSlot);
+        var source = GetEntityCore(fromBox, fromSlot);
+        if (source.Species == 0) return false;
+        if (toBox == -1)
+        {
+            if (_save.PartyCount >= 6) return false;
+            InsertParty(source.Clone());
+        }
+        else
+        {
+            if (GetEntityCore(toBox, toSlot).Species != 0) return false;
+            // PK6 and PK7 byte layouts overlap. The save already owns the exact
+            // runtime type, so cloning must never round-trip through format detection.
+            _save.SetBoxSlotAtIndex(source.Clone(), toBox, toSlot, ImportNone);
+        }
+        return true;
     }
 
     public void MoveSlot(int fromBox, int fromSlot, int toBox, int toSlot)
@@ -2112,10 +2135,10 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public ReadOnlyMemory<byte> Serialize()
     {
         ThrowIfDisposed();
-        return _save.Write();
+        return RetroArchSaveContainer.Repack(_save.Write().Span, _originalBytes);
     }
 
-    public bool ValidateUnchangedRoundTrip() => _save.Write().Span.SequenceEqual(_originalBytes);
+    public bool ValidateUnchangedRoundTrip() => Serialize().Span.SequenceEqual(_originalBytes);
 
     // ── Pokémon Compass (S/V romhack v2.1.x) ──
     // Compass keeps the vanilla S/V save format and adds SCBlocks keyed by FNV-1a

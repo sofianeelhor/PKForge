@@ -2,11 +2,16 @@ namespace PKForge.Domain;
 
 public enum EmulatorKind
 {
-    RetroArch,
-    MelonDS,
-    Azahar,
-    Eden,
-    Linkboy,
+    // Persisted in watched roots and scan caches. Never renumber existing entries.
+    RetroArch = 0,
+    MelonDS = 1,
+    Azahar = 2,
+    Eden = 3,
+    Linkboy = 4,
+    Dolphin = 5,
+    DraStic = 6,
+    PizzaBoyGba = 7,
+    PizzaBoyGbc = 8,
 }
 
 /// <summary>A persistable SAF folder grant, opaque to the domain layer.</summary>

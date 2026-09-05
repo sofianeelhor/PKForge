@@ -22,3 +22,18 @@ Additional icons from [game-icons.net](https://game-icons.net) (CC-BY 3.0,
 music, play, pause, skip, shuffle, autostart, quit, restore, release,
 male, female, genderless and pokedex symbols.
 padlock (lorc), dice (delapouite), skull (lorc), gears (lorc) and heart (lorc) symbols.
+
+Emulator-link menu illustrations by Delapouite from game-icons.net, CC-BY 3.0:
+[dolphin](https://game-icons.net/1x1/delapouite/dolphin.html),
+[pizza-slice](https://game-icons.net/1x1/delapouite/pizza-slice.html),
+[gamepad](https://game-icons.net/1x1/delapouite/gamepad.html), and
+[cube](https://game-icons.net/1x1/delapouite/cube.html).
+Adapted as transparent white silhouettes for PKForge's tint system. These are
+illustrations identifying the emulator/platform, not official emulator logos.
+
+Pokémon XD: Gale of Darkness bundled game artwork from SteamGridDB:
+- [Icon 23992](https://www.steamgriddb.com/icon/23992) by Sho.
+- [Hero 109196](https://www.steamgriddb.com/hero/109196) by leisrbags.
+- [English logo 7926](https://www.steamgriddb.com/logo/7926) uploaded by RealSayakaMaizono.
+Pokémon game artwork and logos © Nintendo / The Pokémon Company / Genius Sonority;
+these game assets are separate from the CC-BY menu illustrations above.

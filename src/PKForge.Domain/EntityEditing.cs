@@ -25,6 +25,10 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Moves (or swaps, when the target is occupied) two box slots.</summary>
     void MoveSlot(int fromBox, int fromSlot, int toBox, int toSlot);
 
+    /// <summary>Copies within this save without guessing or converting the entity format.
+    /// Box destinations must be empty; a party destination appends and respects its six-slot cap.</summary>
+    bool DuplicateSlot(int fromBox, int fromSlot, int toBox, int toSlot);
+
     /// <summary>Type ids (0-17) of a species' base form in the open save's game.</summary>
     IReadOnlyList<int> GetSpeciesTypes(int species);
 
