@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="pokepark_widget_title">POKÉPARK</string>
+    <string name="pokepark_widget_description">Your Pokémon living in Poképark. Tap to visit.</string>
+    <string name="pokepark_widget_empty">Your little Pokémon meadow\n\nTap to visit Poképark</string>
+</resources>

@@ -2653,6 +2653,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var nickname = _viewModel.Selected?.Nickname is { Length: > 0 } nick ? nick : $"slot {slot + 1}";
         var choice = await PadMenu.ShowAsync(_hostGrid, nickname.ToUpperInvariant(), null,
             new PadOption("Edit", IconPath: "editor"),
+            new PadOption("Send to Poképark", IconPath: "heart"),
             new PadOption("Move", IconPath: "storage"),
             new PadOption("Duplicate", IconPath: "storage"),
             new PadOption("Send to Bank", IconPath: "bank"),
@@ -2667,6 +2668,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Release", IconPath: "release"));
         switch (choice)
         {
+            case "Send to Poképark":
+                _viewModel.Status = IPlatformApplication.Current!.Services.GetRequiredService<PokeparkService>().AddSaveVisitor(_viewModel.BoxIndex, slot);
+                await PadMenu.ShowAsync(_hostGrid, "POKÉPARK", _viewModel.Status, new PadOption("OK"));
+                return;
             case "Edit":
                 EnterEditorFocusMode();
                 return;

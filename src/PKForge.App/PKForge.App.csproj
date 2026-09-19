@@ -61,6 +61,8 @@
     <MauiAsset Include="Resources/GameLogo/*.png" LogicalName="gamelogo/%(Filename)%(Extension)" />
     <!-- PKSM-derived pixel chrome (GPL-3, see Resources/UI/ATTRIBUTION.md). -->
     <MauiAsset Include="Resources/UI/pksm/*.png" LogicalName="ui/pksm/%(Filename)%(Extension)" />
+    <!-- MPWSP01 environment art by Scarloxy; attribution in docs/POKEPARK_MPWSP01.md. -->
+    <MauiAsset Include="Resources/Pokepark/Maps/*.png" LogicalName="pokepark/maps/%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../PKForge.Domain/PKForge.Domain.csproj" />

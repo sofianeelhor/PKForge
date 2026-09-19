@@ -212,6 +212,7 @@ public sealed class BankPage : ContentPage, IPadHandler
         var choice = await PadMenu.ShowAsync(_hostGrid, entry.Info.Nickname.ToUpperInvariant(),
             $"From {entry.Info.SourceName} · Gen {entry.Info.Generation} · deposited {entry.AddedUtc:yyyy-MM-dd}",
             new PadOption("Edit", IconPath: "editor"),
+            new PadOption("Send to Poképark", IconPath: "heart"),
             new PadOption("Duplicate", IconPath: "storage"),
             new PadOption("Send to game…", IconPath: "storage"),
             new PadOption("Copy to game…", IconPath: "storage"),
@@ -220,6 +221,10 @@ public sealed class BankPage : ContentPage, IPadHandler
             new PadOption("Release from bank", IconPath: "release"));
         switch (choice)
         {
+            case "Send to Poképark":
+                _boxViewModel.Status = IPlatformApplication.Current!.Services.GetRequiredService<PokeparkService>().AddBankVisitor(entry.Id);
+                await PadMenu.ShowAsync(_hostGrid, "POKÉPARK", _boxViewModel.Status, new PadOption("OK"));
+                return;
             case "Edit":
                 await EditEntryAsync(entry);
                 return;

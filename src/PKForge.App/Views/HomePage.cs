@@ -60,18 +60,20 @@ public sealed class HomePage : ContentPage, IPadHandler
 
         // The three destinations as PKSM tiles with bundled pixel icons.
         var bank = new DsCard("bank", "Bank") { Tapped = () => _ = PushAsync<BankPage>() };
+        var park = new DsCard("heart", "Poképark") { Tapped = () => _ = PushAsync<PokeparkPage>() };
         var events = new DsCard("events", "Events") { Tapped = () => _ = ShowEventsMenuAsync() };
         var settings = new DsCard("settings", "Settings") { Tapped = () => _ = ShowSettingsAsync() };
-        _cards = [bank, events, settings];
+        _cards = [bank, park, events, settings];
         foreach (var card in _cards) BlockNativeFocus(card);
         var cards = new Grid
         {
             ColumnSpacing = 10,
-            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Star), new(GridLength.Star)],
-            Children = { bank, events, settings },
+            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Star), new(GridLength.Star), new(GridLength.Star)],
+            Children = { bank, park, events, settings },
         };
-        Grid.SetColumn(events, 1);
-        Grid.SetColumn(settings, 2);
+        Grid.SetColumn(park, 1);
+        Grid.SetColumn(events, 2);
+        Grid.SetColumn(settings, 3);
 
         var body = new Grid
         {
@@ -139,6 +141,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         if (!_scannedOnce)
         {
             _scannedOnce = true;
+            IPlatformApplication.Current?.Services.GetService<PokeparkService>()?.EnsureInitialized();
             _viewModel.RescanCommand.Execute(null);
         }
         var host = IPlatformApplication.Current?.Services.GetService<ISecondaryDisplayHost>();

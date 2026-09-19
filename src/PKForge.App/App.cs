@@ -4,6 +4,12 @@ public sealed class App : Application
 {
     /// <summary>Raised when Android resumes the app (including after the install-permission screen).</summary>
     public static event Action? Resumed;
+    public static event Action? Suspended;
+    protected override void OnSleep()
+    {
+        Suspended?.Invoke();
+        base.OnSleep();
+    }
 
     /// <summary>The user's optional default background music starts with the app, once.</summary>
     protected override void OnStart()

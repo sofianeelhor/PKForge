@@ -41,6 +41,10 @@ public static class MauiProgram
         builder.Services.AddSingleton<ISafeSaveWriter, SafeSaveWriter>();
         builder.Services.AddSingleton<ILegalityService, LegalityService>();
         builder.Services.AddSingleton<ISpriteService, SpriteService>();
+        builder.Services.AddSingleton<PokeparkService>();
+        builder.Services.AddSingleton<PokeparkJournalState>();
+        builder.Services.AddSingleton<PokeparkSpriteService>();
+        builder.Services.AddTransient<PokeparkPage>();
         builder.Services.AddSingleton<ThemeService>();
         builder.Services.AddSingleton<GamepadRouter>();
         builder.Services.AddSingleton<SecondScreenState>();

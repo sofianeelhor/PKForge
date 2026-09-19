@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/PKForge.Domain/PKForge.Domain.csproj" />
+    <ProjectReference Include="../../external/PKHeX/PKHeX.Core/PKHeX.Core.csproj" />
+    <Compile Include="../../src/PKForge.App/Views/PokeparkScene.cs" Link="App/PokeparkScene.cs" />
+    <Compile Include="../../src/PKForge.App/Views/PixelFont.cs" Link="App/PixelFont.cs" />
+    <Compile Include="../../src/PKForge.App/Services/PokeparkSpriteService.cs" Link="App/PokeparkSpriteService.cs" />
+    <Compile Include="../../src/PKForge.App/Services/HabitatCatalog.cs" Link="App/HabitatCatalog.cs" />
+    <PackageReference Include="SkiaSharp" Version="3.116.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.macOS" Version="3.116.1" />
+  </ItemGroup>
+</Project>

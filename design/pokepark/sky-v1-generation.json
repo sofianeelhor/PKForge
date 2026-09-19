@@ -1,0 +1,32 @@
+[
+  {
+    "created_at": "2026-09-19T12:33:10.163742Z",
+    "display_name": "GPT Image 2.5",
+    "id": "31c60c9e-8b3b-4bfa-8f2e-9805b150d0b1",
+    "job_type": "gpt_image_2_5",
+    "min_result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3DGsybiMKqeWIf46fYNCVUh1ebF/hf_20260919_123310_31c60c9e-8b3b-4bfa-8f2e-9805b150d0b1_min.webp",
+    "params": {
+      "aspect_ratio": "16:9",
+      "height": 1520,
+      "medias": [
+        {
+          "data": {
+            "id": "4b2f6b8d-c9d8-4052-baee-d416d618ffd0",
+            "type": "media_input",
+            "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3DGsybiMKqeWIf46fYNCVUh1ebF/4b2f6b8d-c9d8-4052-baee-d416d618ffd0_resize.jpg"
+          },
+          "role": "image"
+        }
+      ],
+      "model": "sunburst",
+      "prompt": "Create ONE full-bleed 16:9 top-down pixel-art game environment using the attached APPROVED main park as the strict style reference. Match its sprite scale, crisp square pixel clusters, restrained detail, simple repeatable tile textures, outline weight, upper-left lighting and handheld game aesthetic. Same world scale and orthographic overhead camera, never isometric, horizon, panorama, perspective landscape or cinematic illustration. This is a navigable background for separately rendered Pokemon. No creatures, text, UI, frame, collage or labels. Broad uninterrupted habitat regions, a few carefully placed landmarks, no microdetail, noise, glow effects, gradients, dramatic lighting, ornate structures or dense decoration. Preserve the exact reference sage grass, tree sprites and sandy path textures wherever those materials occur. New biome materials use the same limited shading and pixel scale.\n\nA MOUNTAIN AND SKY sanctuary seen from directly overhead, a navigable high-altitude plateau suspended above a soft pale blue sky and a few broad flat pixel-cloud shapes. The plateau fills about 65% of image centered from x14-87%, y15-88%; its outer rim consists of simple warm-gray layered rock ledges, only short south-facing cliff edges to communicate height in the SAME top-down game convention, never a perspective scenic vista. Broad original sage grassy plateau across west and center, open pale-gray rocky summit ground to northeast. A winding narrow reference sandy path enters at bottom-center over a short wide stone neck, connects to a central open resting lawn and eastern summit. TWO modest angular rocky mountain peaks along north boundary, their tops lightly snow-capped, small and simple not dramatic. Two original-style green trees at west edge, two small rocks total. Pale blue sky is an actual large peripheral flying habitat surrounding plateau; leave continuous clear sky space especially east and top. Three simple white pixel cloud clusters only, no fog covering terrain. No waterfalls, waterfalls of clouds, buildings, bridges, fantasy crystals, floating mini-islands, stars, sunsets or detailed mountain panorama. Cozy daylight, readable clear land/sky boundary, lots of room for flying Pokemon.",
+      "quality": "high",
+      "reference_elements": [],
+      "remove_bg": false,
+      "resolution": "2k",
+      "width": 2688
+    },
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3DGsybiMKqeWIf46fYNCVUh1ebF/hf_20260919_123310_31c60c9e-8b3b-4bfa-8f2e-9805b150d0b1.png",
+    "status": "completed"
+  }
+]

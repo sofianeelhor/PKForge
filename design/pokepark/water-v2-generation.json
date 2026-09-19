@@ -1,0 +1,32 @@
+[
+  {
+    "created_at": "2026-09-19T12:33:09.047563Z",
+    "display_name": "GPT Image 2.5",
+    "id": "a1a39bf8-6537-4a0c-af07-2758c4e4086e",
+    "job_type": "gpt_image_2_5",
+    "min_result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3DGsybiMKqeWIf46fYNCVUh1ebF/hf_20260919_123309_a1a39bf8-6537-4a0c-af07-2758c4e4086e_min.webp",
+    "params": {
+      "aspect_ratio": "16:9",
+      "height": 1520,
+      "medias": [
+        {
+          "data": {
+            "id": "05b3afba-6a37-405b-92eb-a0558a6c06d9",
+            "type": "media_input",
+            "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3DGsybiMKqeWIf46fYNCVUh1ebF/05b3afba-6a37-405b-92eb-a0558a6c06d9_resize.jpg"
+          },
+          "role": "image"
+        }
+      ],
+      "model": "sunburst",
+      "prompt": "Create ONE full-bleed 16:9 top-down pixel-art game environment using the attached APPROVED main park as the strict style reference. Match its sprite scale, crisp square pixel clusters, restrained detail, simple repeatable tile textures, outline weight, upper-left lighting and handheld game aesthetic. Same world scale and orthographic overhead camera, never isometric, horizon, panorama, perspective landscape or cinematic illustration. This is a navigable background for separately rendered Pokemon. No creatures, text, UI, frame, collage or labels. Broad uninterrupted habitat regions, a few carefully placed landmarks, no microdetail, noise, glow effects, gradients, dramatic lighting, ornate structures or dense decoration. Preserve the exact reference sage grass, tree sprites and sandy path textures wherever those materials occur. New biome materials use the same limited shading and pixel scale.\n\nA genuinely AQUATIC sanctuary. Calm blue water covers approximately 75% of the entire map, stretching across the center, east, south and west; water is the playable floor for swimming Pokemon, not merely a pond in a forest. Use reference blue water with sparse horizontal ripples, a simple pale turquoise shallows band and a darker blue central swimming basin. Top edge: low gray stone shelf interrupted by ONE broad short waterfall at center, feeding the lagoon. A narrow curved grassy bank with three reference trees occupies only upper-left corner and leftmost edge, connected to a small sandy landing at lower-left; land totals at most 25%. Two little stepping rocks near the landing, one sparse reed clump. No central island, no bridges, buildings, boats, treasure, underwater coral clutter or multiple waterfalls. Keep the lake spacious and simple, shoreline stepped and organic. Do not surround all four edges with trees. The main visual impression must be a broad beautiful blue aquatic habitat with clear shallow and deep zones.",
+      "quality": "high",
+      "reference_elements": [],
+      "remove_bg": false,
+      "resolution": "2k",
+      "width": 2688
+    },
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3DGsybiMKqeWIf46fYNCVUh1ebF/hf_20260919_123309_a1a39bf8-6537-4a0c-af07-2758c4e4086e.png",
+    "status": "completed"
+  }
+]

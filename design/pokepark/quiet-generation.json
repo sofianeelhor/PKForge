@@ -1,0 +1,32 @@
+[
+  {
+    "created_at": "2026-09-19T12:29:36.48512Z",
+    "display_name": "GPT Image 2.5",
+    "id": "0d92f378-7d7e-4196-a74c-42368aca58a9",
+    "job_type": "gpt_image_2_5",
+    "min_result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3DGsybiMKqeWIf46fYNCVUh1ebF/hf_20260919_122936_0d92f378-7d7e-4196-a74c-42368aca58a9_min.webp",
+    "params": {
+      "aspect_ratio": "16:9",
+      "height": 1520,
+      "medias": [
+        {
+          "data": {
+            "id": "198a0a48-e4c2-4583-8f3e-927eb227724d",
+            "type": "media_input",
+            "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3DGsybiMKqeWIf46fYNCVUh1ebF/198a0a48-e4c2-4583-8f3e-927eb227724d_resize.jpg"
+          },
+          "role": "image"
+        }
+      ],
+      "model": "sunburst",
+      "prompt": "Create ONE full-bleed 16:9 top-down pixel art game map, a sibling environment of the attached APPROVED main park. The reference is a binding art bible: match its exact sage grass color and sparse grass tuft texture, identical tree crown shapes and sprite scale, identical sandy path texture, water colors, rock style, outline weight, pixel cluster size, limited palette and upper-left lighting. Reuse its visual vocabulary as if assembled from the SAME TILESET by the SAME artist. Do not reinvent the style. Preserve the reference level of simplicity and quiet open space. Overhead orthographic ground plane, no horizon, no isometric scene, no perspective, no diorama. Trees use the reference game-view convention. Output only the map: no text, title, UI, borders, creatures or people. Same world scale as the reference, not a zoomed-out landscape. Gentle stepped pixel contours, crisp square pixels, no painterly micro-detail, bloom, gradients or cinematic effects. Keep large connected open regions for independently animated Pokemon; props must never dominate. This is a separate full map, not a four-panel montage.\n\nWHISPERING GROVE: A quiet sheltered woodland for shy, sleepy and grass Pokemon. Same daytime sage grass, same green trees, SAME palette and texture as reference; no night scene, purple biome, fog or mystical glow. Forest border is slightly thicker at north and east. A loosely curved inward arm of three reference-style trees creates a protected open grassy nook on the east (x63-84%, y40-69%); its south-facing opening is wide and clearly accessible. A broad empty grassy meadow fills center and west. A narrow sandy path enters at bottom-left, gently bends through the western meadow and ends at a small oval resting clearing near center, without a cross-shaped intersection or square loop. One low fallen log at the northern meadow edge and one flat gray resting stone in the east nook; two small flower clumps total. Tree shadows modestly shade the nook but never obscure playable terrain. No water, buildings, benches, lamps, mushrooms everywhere, sparkles or decorative clutter. Let spacing and enclosure create calm.",
+      "quality": "high",
+      "reference_elements": [],
+      "remove_bg": false,
+      "resolution": "2k",
+      "width": 2688
+    },
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3DGsybiMKqeWIf46fYNCVUh1ebF/hf_20260919_122936_0d92f378-7d7e-4196-a74c-42368aca58a9.png",
+    "status": "completed"
+  }
+]

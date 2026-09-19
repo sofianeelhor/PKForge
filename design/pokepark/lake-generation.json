@@ -1,0 +1,32 @@
+[
+  {
+    "created_at": "2026-09-19T12:29:36.415693Z",
+    "display_name": "GPT Image 2.5",
+    "id": "28d7b5aa-d566-428a-8d08-248684afa5c5",
+    "job_type": "gpt_image_2_5",
+    "min_result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3DGsybiMKqeWIf46fYNCVUh1ebF/hf_20260919_122936_28d7b5aa-d566-428a-8d08-248684afa5c5_min.webp",
+    "params": {
+      "aspect_ratio": "16:9",
+      "height": 1520,
+      "medias": [
+        {
+          "data": {
+            "id": "06ce5880-6b7a-4c9f-9f8b-dd5a46e537a4",
+            "type": "media_input",
+            "url": "https://d2ol7oe51mr4n9.cloudfront.net/user_3DGsybiMKqeWIf46fYNCVUh1ebF/06ce5880-6b7a-4c9f-9f8b-dd5a46e537a4_resize.jpg"
+          },
+          "role": "image"
+        }
+      ],
+      "model": "sunburst",
+      "prompt": "Create ONE full-bleed 16:9 top-down pixel art game map, a sibling environment of the attached APPROVED main park. The reference is a binding art bible: match its exact sage grass color and sparse grass tuft texture, identical tree crown shapes and sprite scale, identical sandy path texture, water colors, rock style, outline weight, pixel cluster size, limited palette and upper-left lighting. Reuse its visual vocabulary as if assembled from the SAME TILESET by the SAME artist. Do not reinvent the style. Preserve the reference level of simplicity and quiet open space. Overhead orthographic ground plane, no horizon, no isometric scene, no perspective, no diorama. Trees use the reference game-view convention. Output only the map: no text, title, UI, borders, creatures or people. Same world scale as the reference, not a zoomed-out landscape. Gentle stepped pixel contours, crisp square pixels, no painterly micro-detail, bloom, gradients or cinematic effects. Keep large connected open regions for independently animated Pokemon; props must never dominate. This is a separate full map, not a four-panel montage.\n\nCASCADE LAKE: Water is the main activity space. A broad calm blue lake occupies the northeast and eastern half (x48-90%, y20-77%), with a short broad waterfall centered at x70%, y10-24% on the north boundary. Use precisely the reference water texture, simple sparse horizontal ripples, lighter shallows along the shoreline, not complex reflections. Connected wide grass lawn occupies western half, with a winding narrow sandy path from bottom center curving up the western bank toward north-left. A generous grassy crescent follows the southern shore for land Pokemon to gather and play beside swimmers. Forest encloses outer edges, leave clear south entrance. One tiny cluster of reeds at a bank, two small rocks total, two flower clumps; no bridges, islands, buildings, boats or extra waterfalls. Keep shoreline legible and open. Same green grass as reference, no tropical biome or sand beach replacing the lawn.",
+      "quality": "high",
+      "reference_elements": [],
+      "remove_bg": false,
+      "resolution": "2k",
+      "width": 2688
+    },
+    "result_url": "https://d8j0ntlcm91z4.cloudfront.net/user_3DGsybiMKqeWIf46fYNCVUh1ebF/hf_20260919_122936_28d7b5aa-d566-428a-8d08-248684afa5c5.png",
+    "status": "completed"
+  }
+]

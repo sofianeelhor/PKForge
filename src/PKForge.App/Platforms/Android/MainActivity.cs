@@ -31,7 +31,39 @@ public sealed class MainActivity : MauiAppCompatActivity
     protected override void OnResume()
     {
         base.OnResume();
+        OpenPokeparkFromIntent();
         SecondaryDisplayHost()?.ResumeAfterActivityPause();
+    }
+
+    protected override void OnNewIntent(Intent? intent)
+    {
+        base.OnNewIntent(intent);
+        Intent = intent;
+        OpenPokeparkFromIntent();
+    }
+
+    private void OpenPokeparkFromIntent()
+    {
+        if (Intent?.GetBooleanExtra("pokepark", false) != true) return;
+        Intent.RemoveExtra("pokepark");
+        // A launcher widget click can arrive while the secondary Presentation still
+        // owns focus. Bring the primary activity to the foreground before pushing
+        // the park page so the tap never strands the user on the lower display.
+        Window?.DecorView?.Post(() =>
+        {
+            Window?.DecorView?.RequestFocus();
+            Window?.DecorView?.ClearFocus();
+        });
+        Microsoft.Maui.Controls.Application.Current?.Dispatcher.Dispatch(async () =>
+        {
+            var secondary = SecondaryDisplayHost();
+            if (secondary is not null)
+                await secondary.DismissAsync();
+            var navigation = Microsoft.Maui.Controls.Application.Current?.Windows.FirstOrDefault()?.Page?.Navigation;
+            if (navigation is null || navigation.NavigationStack.LastOrDefault() is Views.PokeparkPage) return;
+            var page = IPlatformApplication.Current?.Services.GetRequiredService<Views.PokeparkPage>();
+            if (page is not null) await navigation.PushAsync(page);
+        });
     }
 
     private static AndroidSecondaryDisplayHost? SecondaryDisplayHost() =>
@@ -235,6 +267,18 @@ public sealed class AndroidSecondaryDisplayHost(IServiceProvider services) : ISe
         _presentation = new PagePresentation(activity, display, _page, services);
         _presentation.Show();
         return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ShowPokeparkJournalAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        // A normal mirror may still be showing from Home/Storage.  Reusing that
+        // Presentation leaves its old hero (for example a Pokémon Black logo)
+        // visible until Android happens to recreate the window.  Rebuild the
+        // surface synchronously whenever Poképark is entered so the journal page
+        // is the first frame on the lower display.
+        Dismiss();
+        return ShowAsync(cancellationToken);
     }
 
     public ValueTask DismissAsync(CancellationToken cancellationToken = default)
