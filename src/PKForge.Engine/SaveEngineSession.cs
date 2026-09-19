@@ -1184,7 +1184,10 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public bool ImportSlot(int box, int slot, byte[] fileBytes)
     {
         ThrowIfDisposed();
-        var imported = EntityFormat.GetFromBytes(fileBytes);
+        // Gen 6 stored/party bytes are ambiguous with PK7 when parsed without a
+        // destination context. Prefer the target save so native PK6 and edited PK6
+        // entities from the Bank remain importable into XY/ORAS.
+        var imported = EntityFormat.GetFromBytes(fileBytes, _save.Context);
         if (imported is null) return false;
         var converted = EntityConverter.ConvertToType(imported, _save.PKMType, out _);
         if (converted is null) return false;

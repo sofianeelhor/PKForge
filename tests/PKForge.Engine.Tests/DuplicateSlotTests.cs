@@ -45,6 +45,37 @@ public sealed class DuplicateSlotTests
     }
 
     [Theory]
+    [InlineData(GameVersion.AS)]
+    [InlineData(GameVersion.X)]
+    public void Gen6BankImportUsesDestinationContextForNativeAndEditedPokemon(GameVersion version)
+    {
+        var sourceSave = BlankSaveFile.Get(version, "Trainer", LanguageID.English);
+        var mon = new PK6
+        {
+            Species = 258, Version = version, CurrentLevel = 5, MetLevel = 5,
+            MetLocation = 14, Ball = 4, Language = 2, OriginalTrainerName = "Trainer",
+            TID16 = 12345, SID16 = 54321, PID = 0x12345678, EncryptionConstant = 0xABCDEF01,
+            Nickname = "Mudkip", Move1 = 33, Move2 = 45, OriginalTrainerFriendship = 70,
+        };
+        mon.RefreshChecksum();
+        sourceSave.SetBoxSlotAtIndex(mon, 0, 0, EntityImportSettings.None);
+
+        using var source = new SaveEngineSession(sourceSave, version.ToString());
+        var nativeBytes = source.ExportSlot(0, 0).Data;
+        source.ApplyEdit(0, 0, new EntityEdit(Nickname: "Edited"));
+        var editedBytes = source.ExportSlot(0, 0).Data;
+
+        foreach (var bankBytes in new[] { nativeBytes, editedBytes })
+        {
+            var targetSave = BlankSaveFile.Get(version, "Target", LanguageID.English);
+            using var target = new SaveEngineSession(targetSave, version.ToString());
+
+            Assert.True(target.ImportSlot(0, 0, bankBytes));
+            Assert.Equal(258, target.ReadEntity(0, 0).Species);
+        }
+    }
+
+    [Theory]
     [InlineData(3)]
     [InlineData(5)]
     [InlineData(6)]

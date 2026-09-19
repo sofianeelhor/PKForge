@@ -41,8 +41,23 @@ internal static class SaveParser
     // Only resolve an ambiguous RS save, and require a standalone name token.
     internal static void ApplyVersionHint(SaveFile save, string? displayName)
     {
-        if (save is not SAV3RS || save.Version != GameVersion.RS || displayName is null) return;
+        if (displayName is null) return;
         var tokens = System.Text.RegularExpressions.Regex.Split(displayName, @"[^\p{L}\p{N}]+");
+
+        // FR/LG share an indistinguishable save layout. PKHeX defaults to FR;
+        // preserve that default unless the filename carries an explicit edition.
+        if (save is SAV3FRLG && save.Version is GameVersion.FR or GameVersion.LG or GameVersion.FRLG)
+        {
+            var leafGreen = tokens.Any(token => token.Equals("LeafGreen", StringComparison.OrdinalIgnoreCase) ||
+                                                token.Equals("LG", StringComparison.OrdinalIgnoreCase));
+            var fireRed = tokens.Any(token => token.Equals("FireRed", StringComparison.OrdinalIgnoreCase) ||
+                                              token.Equals("FR", StringComparison.OrdinalIgnoreCase));
+            if (leafGreen != fireRed)
+                save.Version = leafGreen ? GameVersion.LG : GameVersion.FR;
+            return;
+        }
+
+        if (save is not SAV3RS || save.Version != GameVersion.RS) return;
         var ruby = tokens.Contains("Ruby", StringComparer.OrdinalIgnoreCase);
         var sapphire = tokens.Contains("Sapphire", StringComparer.OrdinalIgnoreCase);
         if (ruby != sapphire) save.Version = ruby ? GameVersion.R : GameVersion.S;

@@ -1441,6 +1441,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Fashion", IconPath: "trainer"),
             new PadOption("Trainer records", IconPath: "trainer"),
             new PadOption("Wonder cards", IconPath: "events"),
+            new PadOption("Export modified save", IconPath: "folder"),
             new PadOption("Restore points", IconPath: "credits"),
         };
         if (session.GetGrandUndergroundItems().Count != 0)
@@ -1457,6 +1458,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             case "Pokédex": await ShowDexMenuAsync(); return;
             case "Fashion": await ShowFashionAsync(); return;
             case "Trainer records": await ShowTrainerRecordsAsync(); return;
+            case "Export modified save": await ExportModifiedSaveAsync(session); return;
             case "Wonder cards":
             {
                 var wonderChoice = await PadMenu.ShowAsync(_hostGrid, "WONDER CARDS", null,
@@ -1473,6 +1475,35 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 return;
             }
             case "Restore points": await PushAsync<BackupHistoryPage>(); return;
+        }
+    }
+
+    /// <summary>Exports the live edited save through the Android share sheet.</summary>
+    private async Task ExportModifiedSaveAsync(Domain.ISaveEngineSession session)
+    {
+        try
+        {
+            var sourceName = IPlatformApplication.Current?.Services.GetService<ISaveSessionService>()?
+                .Current?.Document.DisplayName;
+            var originalName = string.IsNullOrWhiteSpace(sourceName) ? "pkforge-save" : sourceName;
+            var baseName = Path.GetFileNameWithoutExtension(originalName);
+            if (string.IsNullOrWhiteSpace(baseName)) baseName = "pkforge-save";
+            foreach (var invalid in Path.GetInvalidFileNameChars())
+                baseName = baseName.Replace(invalid, '_');
+            var extension = Path.GetExtension(originalName);
+            if (string.IsNullOrWhiteSpace(extension)) extension = ".sav";
+            var path = Path.Combine(FileSystem.CacheDirectory, $"{baseName}-modified{extension}");
+            await File.WriteAllBytesAsync(path, session.Serialize().ToArray());
+            await Share.Default.RequestAsync(new ShareFileRequest
+            {
+                Title = "Export modified save",
+                File = new ShareFile(path),
+            });
+            _viewModel.Status = $"Exported {Path.GetFileName(path)}";
+        }
+        catch (Exception error)
+        {
+            _viewModel.Status = $"Save export failed: {error.Message}";
         }
     }
 
@@ -2653,6 +2684,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var nickname = _viewModel.Selected?.Nickname is { Length: > 0 } nick ? nick : $"slot {slot + 1}";
         var choice = await PadMenu.ShowAsync(_hostGrid, nickname.ToUpperInvariant(), null,
             new PadOption("Edit", IconPath: "editor"),
+            new PadOption("Send to Poképark", IconPath: "heart"),
             new PadOption("Move", IconPath: "storage"),
             new PadOption("Duplicate", IconPath: "storage"),
             new PadOption("Send to Bank", IconPath: "bank"),
@@ -2667,6 +2699,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Release", IconPath: "release"));
         switch (choice)
         {
+            case "Send to Poképark":
+                _viewModel.Status = IPlatformApplication.Current!.Services.GetRequiredService<PokeparkService>().AddSaveVisitor(_viewModel.BoxIndex, slot);
+                await PadMenu.ShowAsync(_hostGrid, "POKÉPARK", _viewModel.Status, new PadOption("OK"));
+                return;
             case "Edit":
                 EnterEditorFocusMode();
                 return;

@@ -10,8 +10,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationId>org.pkforge.app</ApplicationId>
     <ApplicationTitle>PKForge</ApplicationTitle>
-    <ApplicationVersion>210</ApplicationVersion>
-    <ApplicationDisplayVersion>2.1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>220</ApplicationVersion>
+    <ApplicationDisplayVersion>2.2.0</ApplicationDisplayVersion>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
   </PropertyGroup>
   <PropertyGroup Condition="'$(DiagnosticBuild)' == 'true'">
@@ -61,6 +61,8 @@
     <MauiAsset Include="Resources/GameLogo/*.png" LogicalName="gamelogo/%(Filename)%(Extension)" />
     <!-- PKSM-derived pixel chrome (GPL-3, see Resources/UI/ATTRIBUTION.md). -->
     <MauiAsset Include="Resources/UI/pksm/*.png" LogicalName="ui/pksm/%(Filename)%(Extension)" />
+    <!-- MPWSP01 environment art by Scarloxy; attribution in docs/POKEPARK_MPWSP01.md. -->
+    <MauiAsset Include="Resources/Pokepark/Maps/*.png" LogicalName="pokepark/maps/%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../PKForge.Domain/PKForge.Domain.csproj" />

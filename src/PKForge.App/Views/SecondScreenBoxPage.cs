@@ -130,20 +130,24 @@ public sealed class SecondScreenBoxPage : ContentPage
         };
 
         var state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
+        var journalState = IPlatformApplication.Current?.Services.GetService<PokeparkJournalState>();
+        var journal = BuildPokeparkJournal(journalState);
         var dex = BuildDexView();
 
         async void SwapAsync()
         {
             var detail = _viewModel.Selected;
             // The Pokédex preview outranks everything while the picker is open.
-            var showDex = state?.PreviewSpecies is not null;
-            var showSummary = !showDex && detail is { IsEmpty: false };
+            var showJournal = journalState?.Resident is not null;
+            var showDex = !showJournal && state?.PreviewSpecies is not null;
+            var showSummary = !showJournal && !showDex && detail is { IsEmpty: false };
             if (showDex) UpdateDex(state!.PreviewSpecies!.Value);
             if (showSummary) UpdateSummary();
 
             var preview = state?.PreviewGame;
             var showHero = !showDex && !showSummary && preview is not null;
 
+            journal.IsVisible = showJournal;
             dex.IsVisible = showDex;
             summary.IsVisible = showSummary;
             _summaryVisible = showSummary;
@@ -151,10 +155,10 @@ public sealed class SecondScreenBoxPage : ContentPage
             SetAnimating(showSummary || showDex);
             hero.IsVisible = showHero;
             if (showHero) hero.SetGame(preview!);
-            idle.IsVisible = !dex.IsVisible && !summary.IsVisible && !hero.IsVisible;
+            idle.IsVisible = !journal.IsVisible && !dex.IsVisible && !summary.IsVisible && !hero.IsVisible;
         }
 
-        Content = new Grid { Children = { DsChrome.GridBackground(), hero, summary, dex, idle } };
+        Content = new Grid { Children = { DsChrome.GridBackground(), hero, summary, journal, dex, idle } };
         SwapAsync();
 
         _viewModelHandler = (_, args) =>
@@ -170,6 +174,20 @@ public sealed class SecondScreenBoxPage : ContentPage
         _viewModel.PropertyChanged += _viewModelHandler;
         if (state is not null)
             state.PropertyChanged += (_, _) => MainThread.BeginInvokeOnMainThread(SwapAsync);
+    }
+
+    private static View BuildPokeparkJournal(PokeparkJournalState? state)
+    {
+        var title = new Label { Text = "POKÉPARK  /  FIELD JOURNAL", FontSize = 18, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0 };
+        var name = new Label { FontSize = 28, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.IndigoInk };
+        var mood = new Label { FontSize = 15, TextColor = UiTokens.Ink1 };
+        var activity = new Label { FontSize = 18, TextColor = UiTokens.Ink0 };
+        var journal = new Label { FontSize = 16, TextColor = UiTokens.Ink0, LineBreakMode = LineBreakMode.WordWrap };
+        var likes = new Label { FontSize = 16, TextColor = UiTokens.Ink0, LineBreakMode = LineBreakMode.WordWrap };
+        var card = new Border { BackgroundColor = UiTokens.Paper, Stroke = UiTokens.ShellEdge, StrokeThickness = 2, StrokeShape = new RoundRectangle { CornerRadius = 12 }, Padding = 18, Margin = 14,
+            Content = new VerticalStackLayout { Spacing = 10, Children = { title, name, mood, new BoxView { HeightRequest = 2, Color = UiTokens.SelectBorder }, activity, journal, likes, new Label { Text = "This journal is a playful Poképark story. Game data stays unchanged.", FontSize = 12, TextColor = UiTokens.InkSoft } } } };
+        void Update() { var m = state?.Resident; name.Text = m is null ? "Poképark" : (m.Name + (m.Shiny ? " ★" : "")); mood.Text = m is null ? "" : $"Mood: {state!.Mood}"; activity.Text = m is null ? "" : $"Right now: {state!.Activity}"; journal.Text = m is null ? "" : $"PERSONALITY  {state!.Trait}\n\nMEADOW MEMORY  {state!.Story}"; likes.Text = m is null ? "" : $"FAVORITE LITTLE THINGS  {state!.Likes}"; }
+        if (state is not null) state.PropertyChanged += (_, _) => MainThread.BeginInvokeOnMainThread(Update); Update(); return card;
     }
 
     /// <summary>Detach from the shared view model before the presentation is discarded.</summary>

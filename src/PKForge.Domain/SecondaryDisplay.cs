@@ -9,5 +9,7 @@ public interface ISecondaryDisplayHost
 {
     bool IsAvailable { get; }
     ValueTask ShowAsync(CancellationToken cancellationToken = default);
+    /// <summary>Shows the secondary surface for a live Poképark journal (or the normal mirror when no resident is selected).</summary>
+    ValueTask ShowPokeparkJournalAsync(CancellationToken cancellationToken = default) => ShowAsync(cancellationToken);
     ValueTask DismissAsync(CancellationToken cancellationToken = default);
 }
