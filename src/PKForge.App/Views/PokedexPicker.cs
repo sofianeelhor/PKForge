@@ -80,49 +80,69 @@ public sealed class PokedexPicker : IPadHandler
         return await picker._result.Task;
     }
 
-    /// <summary>First run copies bundled mini sprites to cache without blocking the picker.</summary>
+    /// <summary>Set once the cold-cache sweep has run in this process: later picker
+    /// opens must not even rescan the cache directory.</summary>
+    private static bool _iconSweepDone;
+
+    /// <summary>First run copies bundled mini sprites to cache without blocking the
+    /// picker. The sweep is deliberately paced (small chunks with pauses): a cold
+    /// install has ~1000 sprites to decode, pixel-scan, and re-encode, and running
+    /// that at full parallelism starves the UI thread and the offline legalizer -
+    /// the fan-screaming first Create flow. Gentle background work instead.</summary>
     private static async Task EnsureIconsAsync(IGameDataService data)
     {
+        if (_iconSweepDone) return;
         var missing = new List<int>();
         for (var id = 1; id < data.SpeciesNames.Count; id++)
         {
             if (data.SpeciesNames[id].Length > 0 && !File.Exists(IconCachePath(id)))
                 missing.Add(id);
         }
-        if (missing.Count < 30) return; // negligible: let them fill lazily
+        if (missing.Count < 30)
+        {
+            _iconSweepDone = true; // negligible: let them fill lazily
+            return;
+        }
 
         try
         {
-            foreach (var chunk in missing.Chunk(64))
+            foreach (var chunk in missing.Chunk(8))
             {
-                await Task.WhenAll(chunk.Select(async id =>
-                {
-                    try
-                    {
-                        var target = IconCachePath(id);
-                        Stream asset;
-                        try
-                        {
-                            asset = await FileSystem.OpenAppPackageFileAsync($"sprites/b_{id}.png");
-                        }
-                        catch (FileNotFoundException)
-                        {
-                            // Gen 9 has no pixel sprites; PKHeX shows official artwork.
-                            asset = await FileSystem.OpenAppPackageFileAsync($"artwork/a_{id}.png");
-                        }
-                        await using (asset)
-                        using (var buffer = new MemoryStream())
-                        {
-                            await asset.CopyToAsync(buffer).ConfigureAwait(false);
-                            var bytes = buffer.ToArray();
-                            await Task.Run(() => NormalizeIcon(bytes, target)).ConfigureAwait(false);
-                        }
-                    }
-                    catch { /* no bundled sprite for this id */ }
-                }));
+                await Task.WhenAll(chunk.Select(NormalizeIconAsync)).ConfigureAwait(false);
+                await Task.Delay(60).ConfigureAwait(false); // let the UI and the fan breathe
             }
         }
         catch { /* icon preparation is optional; the picker remains usable without it */ }
+        finally
+        {
+            _iconSweepDone = true;
+        }
+    }
+
+    private static async Task NormalizeIconAsync(int id)
+    {
+        try
+        {
+            var target = IconCachePath(id);
+            Stream asset;
+            try
+            {
+                asset = await FileSystem.OpenAppPackageFileAsync($"sprites/b_{id}.png");
+            }
+            catch (FileNotFoundException)
+            {
+                // Gen 9 has no pixel sprites; PKHeX shows official artwork.
+                asset = await FileSystem.OpenAppPackageFileAsync($"artwork/a_{id}.png");
+            }
+            await using (asset)
+            using (var buffer = new MemoryStream())
+            {
+                await asset.CopyToAsync(buffer).ConfigureAwait(false);
+                var bytes = buffer.ToArray();
+                await Task.Run(() => NormalizeIcon(bytes, target)).ConfigureAwait(false);
+            }
+        }
+        catch { /* no bundled sprite for this id */ }
     }
 
     private static string IconCachePath(int species) =>

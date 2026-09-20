@@ -68,6 +68,8 @@ public sealed class PokeparkResidentCard : IPadHandler
         notes.Add(Section("PERSONALITY", trait));
         notes.Add(Section("FAVORITE LITTLE THINGS", likes));
         notes.Add(Section("MEADOW MEMORY", story));
+        var origin = OriginText(mon);
+        if (origin.Length > 0) notes.Add(Section("ORIGIN", origin));
         notes.Add(new Label { Text = "Park personality is just for fun. Your Pokémon's game data stays unchanged.", FontSize = 10, TextColor = UiTokens.InkSoft });
         var journal = new ScrollView { Content = notes };
         var body = new Grid { ColumnSpacing = 14, ColumnDefinitions = [new(new GridLength(0.36, GridUnitType.Star)), new(new GridLength(0.64, GridUnitType.Star))], Children = { left, journal } };
@@ -99,6 +101,22 @@ public sealed class PokeparkResidentCard : IPadHandler
         _overlay.Unloaded += OverlayUnloaded;
         App.Suspended += Suspended;
         Highlight(0); _router?.Push(this);
+    }
+    /// <summary>Where this resident came from: game, trainer, save or bank, and the
+    /// exact box/slot. Old persisted residents fall back to their stored source line.</summary>
+    private static string OriginText(ParkPokemon mon)
+    {
+        var lines = new List<string>();
+        if (mon.GameName.Length > 0 && mon.TrainerName.Length > 0)
+            lines.Add($"{mon.GameName} · Trainer {mon.TrainerName}");
+        else if (mon.GameName.Length > 0)
+            lines.Add(mon.GameName);
+        if (mon.Origin.Length > 0) lines.Add(mon.Origin);
+        if (mon.Origin.Length > 0 && mon.Source.StartsWith(mon.Origin + " · ", StringComparison.Ordinal))
+            lines.Add(mon.Source[(mon.Origin.Length + 3)..]);
+        else if (mon.Source.Length > 0)
+            lines.Add(mon.Source);
+        return string.Join("\n", lines);
     }
 
     private static View Section(string caption, string text) => new VerticalStackLayout
