@@ -21,6 +21,17 @@ internal static class SaveParser
         if (SaveUtil.TryGetSaveFile(data, out save))
             return true;
 
+        // Emulator SRAM dumps carry trailing padding (VBA-M appends 8 KB of 0xFF, and
+        // the flash's erased tail adds more), which PKHeX's exact-size check rejects.
+        // The payload is untouched; the pad comes back on write.
+        var trimmed = SramPadding.Trim(data);
+        if (trimmed.Length != data.Length)
+        {
+            data = trimmed;
+            if (SaveUtil.TryGetSaveFile(data, out save))
+                return true;
+        }
+
         // Keep the app's Luminescent entry point independent from the upstream
         // detector. This protects Android trimmed builds if a detector branch is
         // removed while the explicitly referenced save type remains available.

@@ -616,7 +616,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         // Every mutation commits to _data immediately; serialization is a plain copy.
-        return RetroArchSaveContainer.Repack(_data, _originalBytes);
+        return SramPadding.Pad(RetroArchSaveContainer.Repack(_data, _originalBytes), _originalBytes);
     }
 
     public IReadOnlyList<int> GetAbilityChoices(int species, int form)

@@ -2224,7 +2224,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public ReadOnlyMemory<byte> Serialize()
     {
         ThrowIfDisposed();
-        return RetroArchSaveContainer.Repack(_save.Write().Span, _originalBytes);
+        return SramPadding.Pad(RetroArchSaveContainer.Repack(_save.Write().Span, _originalBytes), _originalBytes);
     }
 
     public bool ValidateUnchangedRoundTrip() => Serialize().Span.SequenceEqual(_originalBytes);
