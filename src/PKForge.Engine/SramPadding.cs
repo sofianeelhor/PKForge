@@ -5,9 +5,19 @@ namespace PKForge.Engine;
 /// and friends append 8 KB of 0xFF, and the flash's own erased tail adds more on top.
 /// PKHeX checks save sizes exactly, so a perfectly good dump gets rejected outright.
 ///
-/// Trimming never alters one payload byte, and the pad is remembered from the original
-/// file and re-applied on write, so the emulator still finds the file the size it
-/// expects and an unedited save round trips byte-identically.
+/// Two rules keep the patch/unpatch cycle safe, because a save is opened and written
+/// over and over:
+/// <list type="bullet">
+/// <item>An exact chip size is never trimmed. A full-flash Gen 3 save whose second save
+/// slot was never written has an all-0xFF upper half, and PKHeX already models that
+/// shape (half-size flash); trimming it would hand the engine a smaller chip than the
+/// file really is.</item>
+/// <item>Padding is only ever what was dropped, measured from the payload length that
+/// came back out. Nothing is inferred from chip sizes on the write path, so a format
+/// this type was never meant for (a DS save, say) can never be grown.</item>
+/// </list>
+/// An unedited save therefore round trips byte-identically, and edit/write cycles are
+/// stable: the same file in gives the same file out, byte for byte.
 /// </summary>
 internal static class SramPadding
 {
@@ -17,35 +27,45 @@ internal static class SramPadding
     /// <summary>The dump without its trailing padding; the same bytes when there is none.</summary>
     internal static byte[] Trim(byte[] data)
     {
-        var padding = PaddingOf(data);
-        return padding.IsEmpty ? data : data[..^padding.Length];
+        var paddingLength = PaddingLength(data);
+        return paddingLength == 0 ? data : data[..^paddingLength];
     }
 
-    /// <summary>The trailing padding an oversized dump carries, or empty when it is exact.</summary>
-    internal static ReadOnlySpan<byte> PaddingOf(ReadOnlySpan<byte> original)
+    /// <summary>
+    /// How many trailing bytes an oversized dump carries beyond its chip, or 0 when the
+    /// file is an exact chip size or its tail is not an erased run. The largest chip that
+    /// fits wins, so a flash dump whose upper half is erased is never cut down to SRAM.
+    /// </summary>
+    private static int PaddingLength(ReadOnlySpan<byte> original)
     {
+        // An exact chip size means the dump is the chip: nothing was appended, and a
+        // smaller chip must never be inferred from an erased tail.
+        if (Array.IndexOf(ChipSizes, original.Length) >= 0) return 0;
+
         foreach (var size in ChipSizes)
         {
             if (size >= original.Length) continue;
             var pad = original[size..];
-            if (IsUniformPad(pad)) return pad;
+            if (IsUniformPad(pad)) return pad.Length;
         }
-        return default;
+        return 0;
     }
 
     /// <summary>
-    /// Re-applies the original file's padding. An unchanged payload is handed back
-    /// byte-for-byte, so the safe writer's "nothing to write" check still sees equality.
+    /// Re-applies exactly the bytes that were dropped at open, and only when the payload
+    /// is what the rest of the original file already was. An unchanged payload is handed
+    /// back byte-for-byte so the safe writer still sees "nothing changed".
     /// </summary>
     internal static byte[] Pad(ReadOnlySpan<byte> payload, ReadOnlySpan<byte> original)
     {
-        var padding = PaddingOf(original);
-        if (padding.IsEmpty) return payload.ToArray();
-        if (payload.SequenceEqual(original[..^padding.Length])) return original.ToArray();
+        if (payload.Length >= original.Length) return payload.ToArray(); // nothing was dropped
+        var dropped = original[payload.Length..];
+        if (!IsUniformPad(dropped)) return payload.ToArray();            // not ours to re-append
+        if (payload.SequenceEqual(original[..payload.Length])) return original.ToArray();
 
-        var result = new byte[payload.Length + padding.Length];
+        var result = new byte[original.Length];
         payload.CopyTo(result);
-        padding.CopyTo(result.AsSpan(payload.Length));
+        dropped.CopyTo(result.AsSpan(payload.Length));
         return result;
     }
 
