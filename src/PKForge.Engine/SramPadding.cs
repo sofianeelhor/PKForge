@@ -55,10 +55,7 @@ internal static class SramPadding
         if (span.IsEmpty) return false;
         var value = span[0];
         if (value is not (0xFF or 0x00)) return false;
-        foreach (var b in span)
-        {
-            if (b != value) return false;
-        }
-        return true;
+        // Vectorised scan: a multi-megabyte tail is the only case that costs anything.
+        return span.IndexOfAnyExcept(value) < 0;
     }
 }
