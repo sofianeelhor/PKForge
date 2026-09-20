@@ -10,6 +10,38 @@ obj/
 
 # Local tooling / SDKs (not part of the repo)
 .dotnet-home/
+.agents/
+.omp/
+.local-testdata/
+
+# Local environment and editor state
+.env
+.env.*
+!.env.example
+.idea/
+.fleet/
+*.swp
+*.swo
+
+# Generated build, test, packaging, and diagnostic output
+TestResults/
+*.trx
+*.log
+*.apk
+*.aab
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.cer
+*.mobileprovision
+src/PKForge.App/bin/
+src/PKForge.App/obj/
+artifacts/
+coverage/
+tools/**/out/
+tools/**/bin/
+tools/**/obj/
 
 # Read-only reference checkouts used for prior-art mining — never production code
 # (root-anchored so external/PKHeX, the engine submodule, is NOT ignored)
