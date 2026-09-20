@@ -44,6 +44,22 @@ public interface IEmulatorDetectionService
     ValueTask<EmulatorScanResult> ScanAsync(string treeId, EmulatorKind kind, CancellationToken cancellationToken = default);
 }
 
+/// <summary>Optional streaming scan contract for platforms that can publish saves as they are found.</summary>
+public interface IIncrementalEmulatorDetectionService : IEmulatorDetectionService
+{
+    IAsyncEnumerable<EmulatorScanUpdate> ScanIncrementalAsync(
+        string treeId, EmulatorKind kind, CancellationToken cancellationToken = default);
+}
+
+/// <summary>A save discovery or completion event emitted by an incremental scan.</summary>
+public sealed record EmulatorScanUpdate(
+    DetectedSave? Save,
+    bool IsComplete,
+    int FilesSeen = 0,
+    int SavesFound = 0,
+    IReadOnlyList<string>? RejectedCandidates = null,
+    IReadOnlyList<string>? Diagnostics = null);
+
 /// <summary>
 /// Scan outcome plus the evidence: how many files were walked, which looked like saves,
 /// and which candidates failed to parse (the user-visible answer to "why wasn't my save found?").

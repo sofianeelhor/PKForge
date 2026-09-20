@@ -9,6 +9,7 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
 {
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<SKBitmap, FrameBounds> _visibleBounds = new();
     private readonly Dictionary<string, SKBitmap?> _environment = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Lazy<Task>> _environmentLoads = new(StringComparer.Ordinal);
     private readonly object _environmentGate = new();
     private readonly Dictionary<(string Id, int Map), ResidentRoute> _routes = new();
     private sealed class ResidentRoute(ParkWander wander, bool animated)
@@ -128,13 +129,46 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
     public async Task WarmEnvironmentAsync(int environmentIndex)
     {
         var asset = ParkMap.For(environmentIndex).Asset;
-        lock (_environmentGate)
-            if (_environment.ContainsKey(asset)) return;
-        await using var stream = await FileSystem.OpenAppPackageFileAsync($"pokepark/maps/{asset}").ConfigureAwait(false);
-        var bitmap = SKBitmap.Decode(stream) ?? throw new InvalidDataException($"Invalid Poképark map: {asset}");
+        Lazy<Task> pending;
         lock (_environmentGate)
         {
-            if (!_environment.TryAdd(asset, bitmap)) bitmap.Dispose();
+            if (_environment.ContainsKey(asset)) return;
+            if (!_environmentLoads.TryGetValue(asset, out var existing))
+            {
+                pending = new Lazy<Task>(
+                    () => LoadEnvironmentAsync(asset),
+                    LazyThreadSafetyMode.ExecutionAndPublication);
+                _environmentLoads.Add(asset, pending);
+            }
+            else
+                pending = existing;
+        }
+
+        try { await pending.Value.ConfigureAwait(false); }
+        catch
+        {
+            lock (_environmentGate)
+            {
+                if (_environmentLoads.TryGetValue(asset, out var current) && ReferenceEquals(current, pending))
+                    _environmentLoads.Remove(asset);
+            }
+            throw;
+        }
+    }
+
+    private async Task LoadEnvironmentAsync(string asset)
+    {
+        await using var stream = await FileSystem.OpenAppPackageFileAsync($"pokepark/maps/{asset}").ConfigureAwait(false);
+        await using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer).ConfigureAwait(false);
+        var bytes = buffer.ToArray();
+        var bitmap = await Task.Run(() => SKBitmap.Decode(bytes)).ConfigureAwait(false)
+            ?? throw new InvalidDataException($"Invalid Poképark map: {asset}");
+
+        lock (_environmentGate)
+        {
+            if (!_environment.TryAdd(asset, bitmap))
+                bitmap.Dispose();
         }
     }
 

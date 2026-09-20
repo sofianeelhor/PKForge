@@ -245,8 +245,9 @@ public sealed class MainActivity : MauiAppCompatActivity
 /// </summary>
 public sealed class AndroidSecondaryDisplayHost(IServiceProvider services) : ISecondaryDisplayHost
 {
+    private readonly object _showGate = new();
     private PagePresentation? _presentation;
-    private Views.SecondScreenBoxPage? _page;
+    private ContentPage? _page;
     private bool _resumeAfterActivityPause;
 
     public bool IsAvailable => ResolveDisplay() is not null;
@@ -257,25 +258,58 @@ public sealed class AndroidSecondaryDisplayHost(IServiceProvider services) : ISe
         var display = ResolveDisplay() ?? throw new InvalidOperationException("No secondary display is available.");
         var activity = Platform.CurrentActivity ?? throw new InvalidOperationException("No foreground Android activity is available.");
 
-        if (_presentation is { IsShowing: true })
-            return ValueTask.CompletedTask;
+        lock (_showGate)
+        {
+            if (_presentation is { IsShowing: true })
+            {
+                if (_page is Views.PokeparkJournalPage journalPage)
+                    _ = journalPage.RefreshAsync(cancellationToken);
+                return ValueTask.CompletedTask;
+            }
 
-        // A dismissed presentation (SAF picker, sleep) cannot be reshown; rebuild page + presentation.
-        _presentation?.Dismiss();
-        _page?.Cleanup();
-        _page = services.GetRequiredService<Views.SecondScreenBoxPage>();
-        _presentation = new PagePresentation(activity, display, _page, services);
-        _presentation.Show();
+            // A dismissed presentation (SAF picker, sleep) cannot be reshown;
+            // rebuild the page and presentation as one serialized operation.
+            _presentation?.Dismiss();
+            if (_page is Views.SecondScreenBoxPage boxPage)
+                boxPage.Cleanup();
+            else if (_page is Views.PokeparkJournalPage journalPage)
+                journalPage.Cleanup();
+            _page = services.GetRequiredService<Views.SecondScreenBoxPage>();
+            _presentation = new PagePresentation(activity, display, _page, services);
+            _presentation.Show();
+        }
         return ValueTask.CompletedTask;
     }
 
     public ValueTask ShowPokeparkJournalAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        // The existing lower-screen page observes PokeparkJournalState and can switch
-        // to its journal immediately. Rebuilding the Presentation here blanks the
-        // Thor's lower display for several seconds during every park transition.
-        return ShowAsync(cancellationToken);
+        // The lower display is created by HomePage. Never construct a cold Android
+        // Presentation while navigating into Poképark: Presentation/MAUI inflation
+        // is synchronous on the UI thread and can stall the primary window.
+        lock (_showGate)
+        {
+            if (_presentation is { IsShowing: true })
+            {
+                if (_page is Views.SecondScreenBoxPage boxPage)
+                    _ = boxPage.RefreshPokeparkJournalAsync(cancellationToken);
+                else if (_page is Views.PokeparkJournalPage journalPage)
+                    _ = journalPage.RefreshAsync(cancellationToken);
+                return ValueTask.CompletedTask;
+            }
+        }
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask RefreshPokeparkJournalAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_showGate)
+        {
+            if (_presentation is not { IsShowing: true } || _page is not Views.PokeparkJournalPage)
+                return ValueTask.CompletedTask;
+            return ((Views.PokeparkJournalPage)_page).RefreshAsync(cancellationToken);
+        }
     }
 
     public ValueTask DismissAsync(CancellationToken cancellationToken = default)
@@ -304,10 +338,16 @@ public sealed class AndroidSecondaryDisplayHost(IServiceProvider services) : ISe
 
     private void Dismiss()
     {
-        _presentation?.Dismiss();
-        _presentation = null;
-        _page?.Cleanup();
-        _page = null;
+        lock (_showGate)
+        {
+            _presentation?.Dismiss();
+            _presentation = null;
+            if (_page is Views.SecondScreenBoxPage boxPage)
+                boxPage.Cleanup();
+            else if (_page is Views.PokeparkJournalPage journalPage)
+                journalPage.Cleanup();
+            _page = null;
+        }
     }
 
     private static Display? ResolveDisplay()

@@ -52,6 +52,8 @@ public partial class SavePickerViewModel : ObservableObject
     /// <summary>The shelf view: saves grouped by game. Rebuilt on every scan.</summary>
     public ObservableCollection<SaveGroup> Groups { get; } = [];
 
+    private readonly HashSet<string> _saveIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<DetectedSave>> _groupMembers = new(StringComparer.Ordinal);
     private readonly List<string> _rejectedCandidates = [];
     private readonly List<string> _scanDiagnostics = [];
 
@@ -117,6 +119,9 @@ public partial class SavePickerViewModel : ObservableObject
         {
             IsBusy = true;
             Saves.Clear();
+            Groups.Clear();
+            _saveIds.Clear();
+            _groupMembers.Clear();
             var filesSeen = 0;
             _rejectedCandidates.Clear();
             _scanDiagnostics.Clear();
@@ -130,16 +135,40 @@ public partial class SavePickerViewModel : ObservableObject
                 Status = $"Scanning {root.Kind} unit · {root.DisplayName}…";
                 try
                 {
-                    var result = await _detection.ScanAsync(root.TreeId, root.Kind);
-                    filesSeen += result.FilesSeen;
-                    if (result.Diagnostics is { } diagnostics)
-                        _scanDiagnostics.AddRange(diagnostics);
-                    foreach (var rejected in result.RejectedCandidates)
-                        _rejectedCandidates.Add($"{root.Kind}: {rejected}");
-                    _scanDiagnostics.Add($"RESULT files={result.FilesSeen} saves={result.Saves.Count} rejected={result.RejectedCandidates.Count}");
-                    foreach (var save in result.Saves)
-                        if (!Saves.Any(x => x.DocumentId == save.DocumentId))
-                            Saves.Add(save);
+                    if (_detection is IIncrementalEmulatorDetectionService incremental)
+                    {
+                        await foreach (var update in incremental.ScanIncrementalAsync(root.TreeId, root.Kind))
+                        {
+                            if (!update.IsComplete)
+                            {
+                                if (update.Save is { } save)
+                                    AddSave(save);
+                                continue;
+                            }
+
+                            filesSeen += update.FilesSeen;
+                            if (update.Diagnostics is { } diagnostics)
+                                _scanDiagnostics.AddRange(diagnostics);
+                            if (update.RejectedCandidates is { } rejectedCandidates)
+                            {
+                                foreach (var rejected in rejectedCandidates)
+                                    _rejectedCandidates.Add($"{root.Kind}: {rejected}");
+                            }
+                            _scanDiagnostics.Add($"RESULT files={update.FilesSeen} saves={update.SavesFound} rejected={update.RejectedCandidates?.Count ?? 0}");
+                        }
+                    }
+                    else
+                    {
+                        var result = await _detection.ScanAsync(root.TreeId, root.Kind);
+                        filesSeen += result.FilesSeen;
+                        if (result.Diagnostics is { } diagnostics)
+                            _scanDiagnostics.AddRange(diagnostics);
+                        foreach (var rejected in result.RejectedCandidates)
+                            _rejectedCandidates.Add($"{root.Kind}: {rejected}");
+                        _scanDiagnostics.Add($"RESULT files={result.FilesSeen} saves={result.Saves.Count} rejected={result.RejectedCandidates.Count}");
+                        foreach (var save in result.Saves)
+                            AddSave(save);
+                    }
                 }
                 catch (Exception error)
                 {
@@ -147,10 +176,6 @@ public partial class SavePickerViewModel : ObservableObject
                     Status = $"Scan of {root.Kind} failed: {error.Message}";
                 }
             }
-            Groups.Clear();
-            foreach (var group in Saves.GroupBy(s => s.GameLabel).OrderBy(g => g.Key))
-                Groups.Add(new SaveGroup(group.Key, group.First().Generation, group.First().Emulator,
-                    group.First().TrainerName, group.First().PlayTime, group.ToArray()));
             Status = Saves.Count == 0
                 ? $"No games found. Scanned {filesSeen} file(s), {_rejectedCandidates.Count} looked like saves but did not parse."
                 : $"{Saves.Count} game(s) on the shelf. Scanned {filesSeen} file(s).";
@@ -158,6 +183,40 @@ public partial class SavePickerViewModel : ObservableObject
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    private void AddSave(DetectedSave save)
+    {
+        if (!_saveIds.Add(save.DocumentId))
+            return;
+
+        Saves.Add(save);
+        if (!_groupMembers.TryGetValue(save.GameLabel, out var members))
+        {
+            members = [];
+            _groupMembers.Add(save.GameLabel, members);
+        }
+
+        members.Add(save);
+        var first = members[0];
+        var replacement = new SaveGroup(first.GameLabel, first.Generation, first.Emulator,
+            first.TrainerName, first.PlayTime, members.ToArray());
+        var index = -1;
+        for (var i = 0; i < Groups.Count; i++)
+        {
+            if (Groups[i].GameLabel == save.GameLabel)
+            {
+                index = i;
+                break;
+            }
+        }
+        if (index >= 0)
+            Groups[index] = replacement;
+        else
+        {
+            var insertAt = Groups.TakeWhile(group => string.CompareOrdinal(group.GameLabel, save.GameLabel) < 0).Count();
+            Groups.Insert(insertAt, replacement);
         }
     }
 

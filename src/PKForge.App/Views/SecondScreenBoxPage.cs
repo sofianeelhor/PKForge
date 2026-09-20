@@ -32,6 +32,7 @@ public sealed class SecondScreenBoxPage : ContentPage
     private readonly PokeparkJournalState? _journalState;
     private readonly PropertyChangedEventHandler? _secondScreenHandler;
     private readonly PropertyChangedEventHandler? _journalHandler;
+    private Func<Task>? _swapAsync;
     private bool _cleanedUp;
 
     private readonly Label _name = null!; // the maroon header strip's label, captured in the ctor
@@ -163,6 +164,11 @@ public sealed class SecondScreenBoxPage : ContentPage
             idle.IsVisible = !journal.IsVisible && !dex.IsVisible && !summary.IsVisible && !hero.IsVisible;
         }
 
+        _swapAsync = () =>
+        {
+            SwapAsync();
+            return Task.CompletedTask;
+        };
         Content = new Grid { Children = { DsChrome.GridBackground(), hero, summary, journal, dex, idle } };
         SwapAsync();
 
@@ -184,7 +190,15 @@ public sealed class SecondScreenBoxPage : ContentPage
         }
     }
 
-    private static View BuildPokeparkJournal(PokeparkJournalState? state, out PropertyChangedEventHandler? handler)
+    public ValueTask RefreshPokeparkJournalAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_cleanedUp) return ValueTask.CompletedTask;
+        MainThread.BeginInvokeOnMainThread(() => _swapAsync?.Invoke());
+        return ValueTask.CompletedTask;
+    }
+
+    private View BuildPokeparkJournal(PokeparkJournalState? state, out PropertyChangedEventHandler? handler)
     {
         var title = new Label { Text = "POKÉPARK  /  FIELD JOURNAL", FontSize = 18, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0 };
         var name = new Label { FontSize = 28, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.IndigoInk };
@@ -195,7 +209,11 @@ public sealed class SecondScreenBoxPage : ContentPage
         var card = new Border { BackgroundColor = UiTokens.Paper, Stroke = UiTokens.ShellEdge, StrokeThickness = 2, StrokeShape = new RoundRectangle { CornerRadius = 12 }, Padding = 18, Margin = 14,
             Content = new VerticalStackLayout { Spacing = 10, Children = { title, name, mood, new BoxView { HeightRequest = 2, Color = UiTokens.SelectBorder }, activity, journal, likes, new Label { Text = "This journal is a playful Poképark story. Game data stays unchanged.", FontSize = 12, TextColor = UiTokens.InkSoft } } } };
         void Update() { var m = state?.Resident; name.Text = m is null ? "Poképark" : (m.Name + (m.Shiny ? " ★" : "")); mood.Text = m is null ? "" : $"Mood: {state!.Mood}"; activity.Text = m is null ? "" : $"Right now: {state!.Activity}"; journal.Text = m is null ? "" : $"PERSONALITY  {state!.Trait}\n\nMEADOW MEMORY  {state!.Story}"; likes.Text = m is null ? "" : $"FAVORITE LITTLE THINGS  {state!.Likes}"; }
-        handler = state is null ? null : (_, _) => MainThread.BeginInvokeOnMainThread(Update);
+        handler = state is null ? null : (_, _) => MainThread.BeginInvokeOnMainThread(() =>
+        {
+            Update();
+            _swapAsync?.Invoke();
+        });
         if (handler is not null) state!.PropertyChanged += handler;
         Update();
         return card;
@@ -211,6 +229,7 @@ public sealed class SecondScreenBoxPage : ContentPage
             _secondScreenState.PropertyChanged -= _secondScreenHandler;
         if (_journalState is not null && _journalHandler is not null)
             _journalState.PropertyChanged -= _journalHandler;
+        _swapAsync = null;
         SetAnimating(false);
     }
 

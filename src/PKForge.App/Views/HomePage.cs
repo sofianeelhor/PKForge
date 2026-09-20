@@ -19,6 +19,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     private DsCard[] _cards = [];
     private int _zone;       // 0 = game shelf, 1 = the destination cards
     private int _cardIndex;
+    private PokeparkPage? _parkPage;
     private int _parkNavigationPending;
 
     public HomePage(SavePickerViewModel viewModel)
@@ -103,7 +104,6 @@ public sealed class HomePage : ContentPage, IPadHandler
 
         _hostGrid = new Grid { Children = { root } };
         Content = _hostGrid;
-        App.Resumed += OnAppResumed;
     }
 
     private Grid _hostGrid = null!;
@@ -128,6 +128,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     private bool _scannedOnce;
     private bool _updateCheckQueued;
     private bool _isAppearing;
+    private bool _resumeSubscribed;
     private AvailableAppUpdate? _pendingAuthorizedUpdate;
 
     /// <summary>The Thor's lower screen is on from launch - the app *is* dual-screen.</summary>
@@ -135,6 +136,11 @@ public sealed class HomePage : ContentPage, IPadHandler
     {
         base.OnAppearing();
         _isAppearing = true;
+        if (!_resumeSubscribed)
+        {
+            App.Resumed += OnAppResumed;
+            _resumeSubscribed = true;
+        }
         _zone = 0;
         ClearCardFocus();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Push(this);
@@ -142,6 +148,15 @@ public sealed class HomePage : ContentPage, IPadHandler
         if (!_scannedOnce)
         {
             _scannedOnce = true;
+            var park = IPlatformApplication.Current?.Services.GetService<PokeparkService>();
+            if (park is not null)
+            {
+                _ = Task.Run(() =>
+                {
+                    park.EnsureInitialized();
+                    HabitatCatalog.Warm(park.LoadRoster().Select(mon => (mon.Species, mon.Form)));
+                });
+            }
             _viewModel.RescanCommand.Execute(null);
         }
         var host = IPlatformApplication.Current?.Services.GetService<ISecondaryDisplayHost>();
@@ -149,6 +164,14 @@ public sealed class HomePage : ContentPage, IPadHandler
         {
             try { _ = host.ShowAsync(); }
             catch { }
+        }
+        if (_parkPage is null)
+        {
+            Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(250), () =>
+            {
+                if (_parkPage is null)
+                    _parkPage = IPlatformApplication.Current?.Services.GetService<PokeparkPage>();
+            });
         }
 
         // Returning from Android's install-unknown-apps screen finishes an update the
@@ -202,6 +225,11 @@ public sealed class HomePage : ContentPage, IPadHandler
     {
         base.OnDisappearing();
         _isAppearing = false;
+        if (_resumeSubscribed)
+        {
+            App.Resumed -= OnAppResumed;
+            _resumeSubscribed = false;
+        }
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
     }
 
@@ -904,7 +932,8 @@ public sealed class HomePage : ContentPage, IPadHandler
         {
             var services = IPlatformApplication.Current?.Services
                 ?? throw new InvalidOperationException("MAUI services are unavailable.");
-            await Navigation.PushAsync(services.GetRequiredService<PokeparkPage>());
+            _parkPage ??= services.GetRequiredService<PokeparkPage>();
+            await Navigation.PushAsync(_parkPage);
         }
         finally
         {

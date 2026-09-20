@@ -71,12 +71,17 @@ public sealed class PokedexPicker : IPadHandler
 
     public static async Task<PickItem?> ShowAsync(Grid host, IGameDataService data, ISaveEngineSession session)
     {
-        await EnsureIconsAsync(host, data);
-        return await new PokedexPicker(host, data, session)._result.Task;
+        // Icon preparation and per-species engine metadata are intentionally
+        // decoupled from opening the picker. The first visit must show the UI
+        // immediately even when the bundled icon cache is cold.
+        _ = EnsureIconsAsync(data);
+        var picker = new PokedexPicker(host);
+        _ = picker.InitializeAsync(data, session);
+        return await picker._result.Task;
     }
 
-    /// <summary>First run copies all bundled mini sprites to cache behind the cute loader.</summary>
-    private static async Task EnsureIconsAsync(Grid host, IGameDataService data)
+    /// <summary>First run copies bundled mini sprites to cache without blocking the picker.</summary>
+    private static async Task EnsureIconsAsync(IGameDataService data)
     {
         var missing = new List<int>();
         for (var id = 1; id < data.SpeciesNames.Count; id++)
@@ -86,10 +91,8 @@ public sealed class PokedexPicker : IPadHandler
         }
         if (missing.Count < 30) return; // negligible: let them fill lazily
 
-        var overlay = LoadingOverlay.Show(host, "OPENING THE POKéDEX…", "Preparing the sprite index (one time only).");
         try
         {
-            var done = 0;
             foreach (var chunk in missing.Chunk(64))
             {
                 await Task.WhenAll(chunk.Select(async id =>
@@ -108,19 +111,18 @@ public sealed class PokedexPicker : IPadHandler
                             asset = await FileSystem.OpenAppPackageFileAsync($"artwork/a_{id}.png");
                         }
                         await using (asset)
-                            NormalizeIcon(asset, target);
+                        using (var buffer = new MemoryStream())
+                        {
+                            await asset.CopyToAsync(buffer).ConfigureAwait(false);
+                            var bytes = buffer.ToArray();
+                            await Task.Run(() => NormalizeIcon(bytes, target)).ConfigureAwait(false);
+                        }
                     }
                     catch { /* no bundled sprite for this id */ }
                 }));
-                done += chunk.Length;
-                overlay.Report(done, missing.Count);
-                if (overlay.Cancellation.IsCancellationRequested) return;
             }
         }
-        finally
-        {
-            overlay.Close();
-        }
+        catch { /* icon preparation is optional; the picker remains usable without it */ }
     }
 
     private static string IconCachePath(int species) =>
@@ -130,20 +132,25 @@ public sealed class PokedexPicker : IPadHandler
     /// Crops transparent padding, scales every species to one visual footprint, then
     /// anchors it to a shared baseline. Evolution families no longer jump in apparent size.
     /// </summary>
-    private static void NormalizeIcon(Stream source, string target)
+    private static void NormalizeIcon(byte[] sourceBytes, string target)
     {
-        using var bitmap = SKBitmap.Decode(source);
+        using var bitmap = SKBitmap.Decode(sourceBytes);
         if (bitmap is null) return;
 
         var left = bitmap.Width;
         var top = bitmap.Height;
         var right = -1;
         var bottom = -1;
+        var pixels = bitmap.GetPixelSpan();
+        var bpp = bitmap.BytesPerPixel;
+        if (pixels.IsEmpty || bpp < 4)
+            return;
         for (var y = 0; y < bitmap.Height; y++)
         {
+            var rowStart = y * bitmap.RowBytes;
             for (var x = 0; x < bitmap.Width; x++)
             {
-                if (bitmap.GetPixel(x, y).Alpha <= 8) continue;
+                if (pixels[rowStart + x * bpp + 3] <= 8) continue;
                 left = Math.Min(left, x);
                 top = Math.Min(top, y);
                 right = Math.Max(right, x);
@@ -178,28 +185,33 @@ public sealed class PokedexPicker : IPadHandler
         encoded.SaveTo(output);
     }
 
-    private PokedexPicker(Grid host, IGameDataService data, ISaveEngineSession session)
+    private static List<DexEntry> BuildEntries(IGameDataService data, ISaveEngineSession session)
+    {
+        var entries = new List<DexEntry>(data.SpeciesNames.Count);
+        for (var id = 1; id < data.SpeciesNames.Count; id++)
+        {
+            if (!Services.HaXMode.IsOn && id > session.MaxSpeciesId) break;
+            if (data.SpeciesNames[id].Length == 0) continue;
+            var icon = IconCachePath(id);
+            var genIndex = Array.FindIndex(GenRanges, r => id >= r.First && id <= r.Last);
+            var forms = id < data.FormFlags.Count
+                ? data.FormFlags[id]
+                : new SpeciesFormFlags(false, false, false, false);
+            entries.Add(new DexEntry(id, data.SpeciesNames[id], File.Exists(icon) ? icon : null,
+                session.GetSpeciesTypes(id), genIndex >= 0 ? GenRanges[genIndex].Gen : 9,
+                session.GetBaseStats(id), forms));
+        }
+        return entries;
+    }
+
+    private PokedexPicker(Grid host)
     {
         _host = host;
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
         _state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
 
-        _all = new List<DexEntry>(data.SpeciesNames.Count);
-        for (var id = 1; id < data.SpeciesNames.Count; id++)
-        {
-            // Only what this save format can hold: a Gen 7 game never gains Gen 8+
-            // species, whatever the cartridge mod advertises. HaX mode shows the
-            // full national list and generation carries the warning.
-            if (!Services.HaXMode.IsOn && id > session.MaxSpeciesId) break;
-            if (data.SpeciesNames[id].Length == 0) continue;
-            var icon = IconCachePath(id);
-            var genIndex = Array.FindIndex(GenRanges, r => id >= r.First && id <= r.Last);
-            var forms = id < data.FormFlags.Count ? data.FormFlags[id] : new SpeciesFormFlags(false, false, false, false);
-            _all.Add(new DexEntry(id, data.SpeciesNames[id], File.Exists(icon) ? icon : null,
-                session.GetSpeciesTypes(id), genIndex >= 0 ? GenRanges[genIndex].Gen : 9,
-                session.GetBaseStats(id), forms));
-        }
-        _filtered = ApplyFilters();
+        _all = [];
+        _filtered = [];
 
         var search = new Entry
         {
@@ -255,6 +267,25 @@ public sealed class PokedexPicker : IPadHandler
 
         Highlight(0);
         _router?.Push(this);
+    }
+
+    private async Task InitializeAsync(IGameDataService data, ISaveEngineSession session)
+    {
+        try
+        {
+            var entries = await Task.Run(() => BuildEntries(data, session));
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                _all.AddRange(entries);
+                _filtered = ApplyFilters();
+                _grid.ItemsSource = _filtered;
+                Highlight(0);
+            });
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Debug.WriteLine($"Pokédex initialization: {error}");
+        }
     }
 
     private static readonly string[] RomanGens = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX"];

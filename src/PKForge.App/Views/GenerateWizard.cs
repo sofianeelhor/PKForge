@@ -28,7 +28,7 @@ public static class GenerateWizard
         {
             if (index != 0 && forms[index].Length == 0) continue;
             var label = index == 0 || forms[index].Length == 0 ? "Standard" : forms[index];
-            formOptions.Add(new PadOption(label, IconPath: FormSpritePath(species.Id, index)));
+            formOptions.Add(new PadOption(label, IconPath: await FormSpritePathAsync(species.Id, index)));
         }
         if (formOptions.Count > 1)
         {
@@ -43,25 +43,25 @@ public static class GenerateWizard
         return await ShowFeaturesFormAsync(host, data, session, species, form);
     }
 
-    /// <summary>Caches the bundled form sprite (b_479-5.png style) as a file the menu can show.</summary>
-    private static string? FormSpritePath(int species, int form)
+    /// <summary>Caches the bundled form sprite (b_479-5.png style) without blocking the UI thread.</summary>
+    private static async Task<string?> FormSpritePathAsync(int species, int form)
     {
         var source = form == 0 ? $"sprites/b_{species}.png" : $"sprites/b_{species}-{form}.png";
         var target = System.IO.Path.Combine(FileSystem.CacheDirectory, $"form-{species}-{form}.png");
         if (File.Exists(target)) return target;
         try
         {
-            var asset = TryOpen(source);
+            var asset = await TryOpenAsync(source);
             if (asset is null)
             {
                 // Gen 9 forms: PKHeX ships artwork, not pixel sprites.
                 var artwork = form == 0 ? $"artwork/a_{species}.png" : $"artwork/a_{species}-{form}.png";
-                asset = TryOpen(artwork);
+                asset = await TryOpenAsync(artwork);
             }
             if (asset is null) return null;
-            using (asset)
-            using (var output = File.Create(target))
-                asset.CopyTo(output);
+            await using (asset)
+            await using (var output = File.Create(target))
+                await asset.CopyToAsync(output).ConfigureAwait(false);
             return target;
         }
         catch
@@ -70,9 +70,9 @@ public static class GenerateWizard
         }
     }
 
-    private static Stream? TryOpen(string source)
+    private static async Task<Stream?> TryOpenAsync(string source)
     {
-        try { return FileSystem.OpenAppPackageFileAsync(source).GetAwaiter().GetResult(); }
+        try { return await FileSystem.OpenAppPackageFileAsync(source).ConfigureAwait(false); }
         catch (FileNotFoundException) { return null; }
     }
 

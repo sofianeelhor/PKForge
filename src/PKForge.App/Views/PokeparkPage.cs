@@ -24,8 +24,10 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
     private readonly Stopwatch _clock = new();
     private readonly SemaphoreSlim _widgetPublishGate = new(1, 1);
     private readonly object _renderGate = new();
+    private CancellationTokenSource? _secondaryShowCts;
     private bool _active;
     private bool _menuOpen;
+    private long _lastJournalUpdate;
     private int _widgetRevision;
     private int _publishedWidgetRevision;
     private bool _loading;
@@ -81,10 +83,11 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
         _host = new Grid { Children = { DsChrome.GridBackground(), root } };
         Content = _host;
         _timer = Dispatcher.CreateTimer();
-        _timer.Interval = TimeSpan.FromMilliseconds(80);
+        _timer.Interval = TimeSpan.FromMilliseconds(33);
         _timer.Tick += (_, _) =>
         {
-            UpdateJournal();
+            if (_clock.ElapsedMilliseconds - _lastJournalUpdate >= 250)
+                UpdateJournal();
             _canvas.InvalidateSurface();
         };
     }
@@ -104,18 +107,27 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
         // HomePage. Ensure Thor's lower display is alive and observing the journal.
         var secondary = IPlatformApplication.Current?.Services.GetService<PKForge.Domain.ISecondaryDisplayHost>();
         if (secondary?.IsAvailable == true)
-            _ = ShowSecondaryJournalAsync(secondary);
+        {
+            _secondaryShowCts?.Cancel();
+            _secondaryShowCts?.Dispose();
+            _secondaryShowCts = new CancellationTokenSource();
+            _ = ShowSecondaryJournalAsync(secondary, _secondaryShowCts.Token);
+        }
     }
 
-    private static async Task ShowSecondaryJournalAsync(PKForge.Domain.ISecondaryDisplayHost host)
+    private static async Task ShowSecondaryJournalAsync(PKForge.Domain.ISecondaryDisplayHost host, CancellationToken cancellationToken)
     {
-        try { await host.ShowPokeparkJournalAsync(); }
+        try { await host.ShowPokeparkJournalAsync(cancellationToken); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Poképark second screen: {ex.Message}"); }
     }
     protected override void OnDisappearing()
     {
         _offlineJournal.MarkCurrent();
         _active = false; _timer.Stop(); _clock.Stop();
+        _secondaryShowCts?.Cancel();
+        _secondaryShowCts?.Dispose();
+        _secondaryShowCts = null;
         App.Resumed -= Resume; App.Suspended -= Suspend;
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
         if (WidgetDirty) _ = PublishWidgetAsync();
@@ -229,6 +241,7 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
 
     private void UpdateJournal()
     {
+        _lastJournalUpdate = _clock.ElapsedMilliseconds;
         var journal = IPlatformApplication.Current?.Services.GetService<PokeparkJournalState>();
         if (journal is null || _scene.Residents.Count == 0 || !IsVisibleInHabitat(_selected))
         {

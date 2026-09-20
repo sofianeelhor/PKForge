@@ -9,28 +9,46 @@ namespace PKForge.App.Views;
 /// </summary>
 public static class PixelFont
 {
+    private static readonly object Gate = new();
     private static SKTypeface? _face;
+    private static Task? _loadTask;
 
     public static SKTypeface Face
     {
         get
         {
-            if (_face is not null) return _face;
-            try
-            {
-                using var stream = FileSystem.OpenAppPackageFileAsync("NDS12.ttf").GetAwaiter().GetResult();
-                var bytes = new MemoryStream();
-                stream.CopyTo(bytes);
-                var cache = System.IO.Path.Combine(FileSystem.CacheDirectory, "NDS12.ttf");
-                File.WriteAllBytes(cache, bytes.ToArray());
-                _face = SKTypeface.FromFile(cache);
-            }
-            catch
-            {
-                _face = SKTypeface.Default;
-            }
-            return _face ?? SKTypeface.Default;
+            var face = Volatile.Read(ref _face);
+            if (face is not null) return face;
+            _ = WarmAsync();
+            // Font loading must never block a Skia paint callback. The next timer
+            // repaint automatically picks up the bundled face after it is ready.
+            return SKTypeface.Default;
         }
+    }
+
+    public static Task WarmAsync()
+    {
+        lock (Gate)
+            return _loadTask ??= Task.Run(Load);
+    }
+
+    private static void Load()
+    {
+        SKTypeface face;
+        try
+        {
+            using var stream = FileSystem.OpenAppPackageFileAsync("NDS12.ttf").GetAwaiter().GetResult();
+            using var bytes = new MemoryStream();
+            stream.CopyTo(bytes);
+            var cache = System.IO.Path.Combine(FileSystem.CacheDirectory, "NDS12.ttf");
+            File.WriteAllBytes(cache, bytes.ToArray());
+            face = SKTypeface.FromFile(cache) ?? SKTypeface.Default;
+        }
+        catch
+        {
+            face = SKTypeface.Default;
+        }
+        Volatile.Write(ref _face, face);
     }
 
     /// <summary>The pixel face at a size, with antialiasing off-ish (it is a pixel font).</summary>

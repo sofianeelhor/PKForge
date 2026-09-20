@@ -18,7 +18,7 @@ public sealed class PokeparkSpriteService
     private readonly Dictionary<string, List<Action>> _pending = new();
     private readonly Dictionary<string, DateTime> _retryAfter = new();
     private readonly Queue<string> _order = new();
-    private sealed record Animation(SKBitmap Bitmap, int Width, int Height, int[] Durations);
+    private sealed record Animation(SKBitmap Bitmap, int Width, int Height, int[] Durations, int TotalDurationMs);
     private sealed record Sheet(Animation Walk, Animation? Idle, string Credits, SKRect Bounds);
 
     // PMDCollab form IDs are not PKHeX form IDs. Until explicit mappings exist, use
@@ -45,7 +45,7 @@ public sealed class PokeparkSpriteService
             if (key is null || !_sheets.TryGetValue(key, out sheet) || sheet is null) return null;
         var animation = isWalking ? sheet.Walk : sheet.Idle ?? sheet.Walk;
         // Missing Idle must hold a pose, never play a walking cycle while stationary.
-        var time = !isWalking && sheet.Idle is null ? 0 : (int)(Math.Max(0, elapsedMs) % animation.Durations.Sum());
+        var time = !isWalking && sheet.Idle is null ? 0 : (int)(Math.Max(0, elapsedMs) % animation.TotalDurationMs);
         var frame = 0;
         while (frame < animation.Durations.Length - 1 && time >= animation.Durations[frame]) time -= animation.Durations[frame++];
         var row = animation.Bitmap.Height == animation.Height ? 0 : ((direction % 8) + 8) % 8;
@@ -105,7 +105,7 @@ public sealed class PokeparkSpriteService
                     (codec.Info.Height != height && codec.Info.Height != height * 8) ||
                     (long)codec.Info.Width * codec.Info.Height > 262_144) return null;
                 var bitmap = SKBitmap.Decode(png);
-                return bitmap is null ? null : new(bitmap, width, height, durations);
+                return bitmap is null ? null : new(bitmap, width, height, durations, durations.Sum());
             }
             var walk = await LoadAnimation("Walk").ConfigureAwait(false);
             if (walk is null) return;

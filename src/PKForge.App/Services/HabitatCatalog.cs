@@ -7,6 +7,8 @@ public sealed record HabitatProfile(string Name, string Subtitle, string Ground,
 
 public static class HabitatCatalog
 {
+    private static readonly object CacheGate = new();
+    private static readonly Dictionary<(int Species, int Form), IReadOnlyList<int>> TypeCache = new();
     // Park snapshots have species and form, but no source generation. Prefer modern
     // typing, then a game that actually contains this form (including regional forms).
     private static readonly IPersonalTable[] Tables =
@@ -15,19 +17,39 @@ public static class HabitatCatalog
     /// <summary>Canonical 1–18 park type IDs for a species/form. Never returns raw PKHeX values.</summary>
     public static IReadOnlyList<int> TypesFor(int species, int form = 0)
     {
+        lock (CacheGate)
+            if (TypeCache.TryGetValue((species, form), out var cached))
+                return cached;
+
+        IReadOnlyList<int> result;
         if (species <= 0 || species > ushort.MaxValue || form < 0 || form > byte.MaxValue)
-            return [ParkType.Unknown];
-        foreach (var table in Tables)
+            result = [ParkType.Unknown];
+        else
         {
-            if (!table.IsPresentInGame((ushort)species, (byte)form)) continue;
-            var entry = table.GetFormEntry((ushort)species, (byte)form);
-            var first = ParkType.FromPkhex(entry.Type1);
-            var second = ParkType.FromPkhex(entry.Type2);
-            // Single-typed forms report the same type twice; collapse to one entry.
-            return first == second ? [first] : [first, second];
+            result = [ParkType.Unknown];
+            foreach (var table in Tables)
+            {
+                if (!table.IsPresentInGame((ushort)species, (byte)form)) continue;
+                var entry = table.GetFormEntry((ushort)species, (byte)form);
+                var first = ParkType.FromPkhex(entry.Type1);
+                var second = ParkType.FromPkhex(entry.Type2);
+                // Single-typed forms report the same type twice; collapse to one entry.
+                result = first == second ? [first] : [first, second];
+                break;
+            }
+            // Invalid/stale form metadata must not accidentally select another species.
+            if (result.Count == 1 && result[0] == ParkType.Unknown && form != 0)
+                result = TypesFor(species);
         }
-        // Invalid/stale form metadata must not accidentally select another species.
-        return form == 0 ? [ParkType.Unknown] : TypesFor(species);
+        lock (CacheGate)
+            return TypeCache[(species, form)] = result;
+    }
+
+    /// <summary>Warms PKHeX personal tables and park type lookups off the UI thread.</summary>
+    public static void Warm(IEnumerable<(int Species, int Form)> forms)
+    {
+        foreach (var (species, form) in forms.Distinct())
+            _ = TypesFor(species, form);
     }
 
     public static HabitatProfile Profile(IReadOnlyList<int> types)
