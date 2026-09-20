@@ -37,6 +37,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     public SaveSnapshot Snapshot { get; }
 
     public int Generation => 3;
+    public IReadOnlyList<string> GameNames => ["Unbound"];
     public int MaxSpeciesId => 1267;
     public int BoxCount => Boxes;
     public int BoxSlotCount => 30;
@@ -706,6 +707,12 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     public DexProgress GetDexProgress() => new(0, 0, 1);
     public void CompleteDex() => throw NotYet("The Unbound Pokédex editor");
     public IReadOnlyList<NuzlockeCatch> GetNuzlockeReport() => [];
+
+    // Unbound's custom maps and encounter tables are not in the pinned Core's
+    // database, so vanilla Emerald encounters would be misinformation.
+    public IReadOnlyList<EncounterCard> GetEncounterCards(int species, int form) => [];
+    public GenerationOutcome PlaceEncounter(int species, int form, int cardIndex, int targetBox, int targetSlot) =>
+        throw NotYet("Unbound encounter cards");
 
     public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null) =>
         throw NotYet("Unbound box sorting");

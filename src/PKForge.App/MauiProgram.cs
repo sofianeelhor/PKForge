@@ -32,6 +32,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IGenerationOwnershipSettings>(sp => sp.GetRequiredService<TrainerProfileStore>());
         builder.Services.AddSingleton<ILegalizerService, LegalizerService>();
         builder.Services.AddSingleton<IEventDatabaseService, EventDatabaseService>();
+        builder.Services.AddSingleton<IEncounterLookup, EncounterLookupService>();
         builder.Services.AddSingleton<IBackupService>(_ =>
             new FileBackupService(Path.Combine(FileSystem.AppDataDirectory, "backups")));
         builder.Services.AddSingleton<IBankService>(_ =>

@@ -468,6 +468,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Import Showdown team", IconPath: "script"),
             new PadOption("Export box to Showdown", IconPath: "script"),
             new PadOption("Generate Living Dex", IconPath: "pokedex"),
+            new PadOption("How to get a Pokémon…", IconPath: "search"),
             new PadOption("Egg factory…", IconPath: "pokedex"),
             new PadOption("Day Care / Nursery", IconPath: "pokedex"),
             new PadOption("Batch editor", IconPath: "script"),
@@ -475,6 +476,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Trainer profiles…", IconPath: "trainer"),
             new PadOption("Nuzlocke report", IconPath: "skull"),
             new PadOption("Manage boxes…", IconPath: "storage"),
+            new PadOption("Collection dex…", IconPath: "pokedex"),
             new PadOption("Sort boxes…", IconPath: "restore"));
         switch (choice)
         {
@@ -494,6 +496,15 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             case "Generate Living Dex":
                 await GenerateLivingDexAsync();
                 return;
+            case "How to get a Pokémon…":
+            {
+                // Game-scoped on purpose: this is "how do I get it in the game I'm editing".
+                // The all-games answer lives in the bank/living dex.
+                var session = _sessionsFor();
+                if (session is not null)
+                    await EncounterGallery.ShowGameScopedAsync(_hostGrid, _viewModel, session, () => _canvas.InvalidateSurface());
+                return;
+            }
             case "Egg factory…":
                 await ShowEggFactoryAsync();
                 return;
@@ -522,6 +533,15 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             case "Sort boxes…":
                 await ShowSortMenuAsync();
                 return;
+            case "Collection dex…":
+            {
+                var services = IPlatformApplication.Current?.Services;
+                var data = services?.GetService<IGameDataService>();
+                var sprites = services?.GetService<ISpriteService>();
+                if (data is not null && sprites is not null)
+                    await CollectionDexPage.ShowAsync(_hostGrid, _viewModel, data, sprites);
+                return;
+            }
         }
     }
 
@@ -2701,7 +2721,6 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         {
             case "Send to Poképark":
                 _viewModel.Status = IPlatformApplication.Current!.Services.GetRequiredService<PokeparkService>().AddSaveVisitor(_viewModel.BoxIndex, slot);
-                await PadMenu.ShowAsync(_hostGrid, "POKÉPARK", _viewModel.Status, new PadOption("OK"));
                 return;
             case "Edit":
                 EnterEditorFocusMode();

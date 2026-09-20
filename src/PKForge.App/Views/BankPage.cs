@@ -63,16 +63,20 @@ public sealed class BankPage : ContentPage, IPadHandler
         var addBox = Kit.Capsule("+ Box", UiTokens.Green);
         addBox.Clicked += (_, _) => { _bank.AddBox(); UpdatePageLabel(); _canvas.InvalidateSurface(); };
 
+        var livingDex = Kit.Capsule("LIVING DEX", UiTokens.MenuBlue);
+        livingDex.Clicked += (_, _) => _ = OpenLivingDexAsync();
+
         var strip = new Grid
         {
             Padding = new Thickness(12, 6, 12, 0),
             ColumnSpacing = 8,
-            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto)],
-            Children = { _pageLabel, previous, next, addBox },
+            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto)],
+            Children = { _pageLabel, previous, next, addBox, livingDex },
         };
         Grid.SetColumn(previous, 1);
         Grid.SetColumn(next, 2);
         Grid.SetColumn(addBox, 3);
+        Grid.SetColumn(livingDex, 4);
 
         var screen = Kit.LcdPanel(_canvas, padding: 4);
         var content = new Grid { Padding = new Thickness(12, 8, 12, 10), Children = { screen } };
@@ -115,6 +119,14 @@ public sealed class BankPage : ContentPage, IPadHandler
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
         var state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
         if (state is not null) state.PreviewSpecies = null;
+    }
+
+    private async Task OpenLivingDexAsync()
+    {
+        var services = IPlatformApplication.Current?.Services;
+        var data = services?.GetService<IGameDataService>();
+        if (data is null) return;
+        await CollectionDexPage.ShowAsync(_hostGrid, _boxViewModel, data, _sprites);
     }
 
 

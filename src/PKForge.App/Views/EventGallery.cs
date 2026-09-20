@@ -51,7 +51,7 @@ public static class EventGallery
     }
 
     /// <summary>Sprite centered and scaled (nearest-neighbor) into a box; a faint ball while it loads.</summary>
-    private static void PaintMon(SKCanvas canvas, SKImageInfo info, SKBitmap? bitmap, float maxSize)
+    internal static void PaintMon(SKCanvas canvas, SKImageInfo info, SKBitmap? bitmap, float maxSize)
     {
         canvas.Clear(SKColors.Transparent);
         var cx = info.Width / 2f;
@@ -74,7 +74,7 @@ public static class EventGallery
     }
 
     /// <summary>Shrink text to a pixel width with an ellipsis tail.</summary>
-    private static string Fit(SKFont font, string text, float maxWidth)
+    internal static string Fit(SKFont font, string text, float maxWidth)
     {
         if (font.MeasureText(text) <= maxWidth) return text;
         while (text.Length > 1 && font.MeasureText(text[..^1] + "…") > maxWidth)

@@ -35,7 +35,8 @@ so the structure never has to be rethought, only filled in. **Status current as 
 | LEGALIZE · SHOWDOWN · EXPORT .pk · QR | DONE |
 | Legality verdict + plain-language report | DONE |
 | Tera · Hyper Training · ability slot | DONE (v0.23.0, PotentialEditor) |
-| Relearn moves | **NEXT (Tier 1)** |
+| Relearn moves | DONE (MoveDetailsEditor) |
+| **How to get a Pokémon…** (save-free: every mainline game grouped by generation, per-game ways, card wall with repeats collapsed; CATCH when that game is open) | DONE |
 | Ribbons/marks · form · size/scale · memories · Dynamax · contest stats | Tier 2 (see HANDOFF §6) |
 
 ### Bank (dual-screen vault)
@@ -44,10 +45,12 @@ so the structure never has to be rethought, only filled in. **Status current as 
 | Themed animated boxes, carry/place, unlimited boxes | DONE |
 | Edit / Send-to-game / Move / Export / Release | DONE |
 | Create / Paste-Showdown / Import into empty slot | DONE |
+| **Living dex tracker** (collection dex: national + shiny living dex, per-gen scopes, this-game scope; counts bank + open save; jump into "How to get" from any missing species) | DONE |
 | Restore points / search / archive export | TODO |
 
-`EncounterMovesetGenerator` ("how do I get this?" cards) · `EntityBatchEditor` (batch editor) ·
-`BoxManipulator` (sort/clear/heal) · ribbon/mark/form/memory applicators · LiveHeX (Injection lib).
+`EntityBatchEditor` (batch editor) · `BoxManipulator` (sort/clear/heal) ·
+ribbon/mark/form/memory applicators · LiveHeX (Injection lib).
+`EncounterMovesetGenerator` ships as the encounter cards surface (on main).
 Full roadmap with API names in **docs/HANDOFF.md §6**.
 
 ## Rule

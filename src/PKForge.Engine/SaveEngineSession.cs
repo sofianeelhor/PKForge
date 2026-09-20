@@ -560,6 +560,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public int Generation => _save.Generation;
 
+    /// <summary>Every concrete game this save file can be. Group ids have no display
+    /// name of their own (a Diamond/Pearl file reports DP), so the name comes from the
+    /// concrete games behind it.</summary>
+    public IReadOnlyList<string> GameNames =>
+        [.. EncounterDatabase.ConcreteVersions(_save.Version).Select(GameInfo.GetVersionName)];
+
     public int PlaceLivingDex(byte[] compressedBundle)
     {
         ThrowIfDisposed();
@@ -1172,6 +1178,82 @@ public sealed class SaveEngineSession : ISaveEngineSession
             }
         }
         return report;
+    }
+
+    // ── Encounter cards ──
+
+    public IReadOnlyList<EncounterCard> GetEncounterCards(int species, int form)
+    {
+        ThrowIfDisposed();
+        return BuildEncounterCards(species, form).Cards;
+    }
+
+    /// <summary>
+    /// Cards plus their source encounters, in gallery order. A saved game keeps its pair
+    /// id (Diamond/Pearl files both report DP), so every concrete game behind that id is
+    /// described and identical entries collapse. Placement indexes the SAME list, so a
+    /// card the user picked always materializes as the encounter they saw.
+    /// </summary>
+    private (List<EncounterCard> Cards, List<IEncounterable> Encounters) BuildEncounterCards(int species, int form)
+    {
+        var cards = new List<EncounterCard>();
+        var encounters = new List<IEncounterable>();
+        var seen = new HashSet<(string Kind, string Location, int Min, int Max)>();
+        foreach (var version in EncounterDatabase.ConcreteVersions(_save.Version))
+        {
+            foreach (var encounter in EncounterDatabase.Enumerate(_save, species, form, version))
+            {
+                var card = EncounterDatabase.ToCard(encounter);
+                if (!seen.Add((card.Kind, card.Location, card.LevelMin, card.LevelMax)))
+                    continue;
+                cards.Add(card);
+                encounters.Add(encounter);
+            }
+        }
+
+        var order = Enumerable.Range(0, cards.Count).ToList();
+        order.Sort((x, y) => EncounterDatabase.Compare(cards[x], cards[y]));
+        return ([.. order.Select(i => cards[i])], [.. order.Select(i => encounters[i])]);
+    }
+
+    public GenerationOutcome PlaceEncounter(int species, int form, int cardIndex, int targetBox, int targetSlot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(targetBox, targetSlot);
+        if (targetBox != -1 && GetEntityCore(targetBox, targetSlot).Species != 0)
+            return new GenerationOutcome(false, "The destination slot is occupied.");
+
+        var (_, encounters) = BuildEncounterCards(species, form);
+        if ((uint)cardIndex >= (uint)encounters.Count)
+            return new GenerationOutcome(false, "That encounter card no longer exists.");
+        var enc = encounters[cardIndex];
+        if (enc is not IEncounterConvertible convertible)
+            return new GenerationOutcome(false, "This encounter cannot be turned into a Pokémon.");
+
+        PKM placed;
+        try { placed = convertible.ConvertToPKM(_save); }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException or FormatException)
+        {
+            return new GenerationOutcome(false, "This encounter could not be converted for this save.");
+        }
+        if (placed.Species == 0 || !new LegalityAnalysis(placed).Valid)
+            return new GenerationOutcome(false, "The converted Pokémon would not be legal, so nothing was changed.");
+
+        if (targetBox == -1)
+        {
+            if (_save.PartyCount >= 6)
+                return new GenerationOutcome(false, "The party is full.");
+            InsertParty(placed);
+        }
+        else
+        {
+            SetEntityCore(targetBox, targetSlot, placed);
+        }
+
+        var card = EncounterDatabase.ToCard(enc);
+        var name = SpeciesName.GetSpeciesName(placed.Species, (int)LanguageID.English);
+        var where = string.IsNullOrEmpty(card.Location) ? card.Kind.ToLowerInvariant() : $"from {card.Location}";
+        return new GenerationOutcome(true, $"Placed a legal {name} {where}.");
     }
 
     public void ReleaseSlot(int box, int slot)

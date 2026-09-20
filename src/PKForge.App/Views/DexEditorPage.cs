@@ -217,7 +217,7 @@ public sealed class DexEditorPage : IPadHandler
             }
             else
             {
-                _sprites.Warm(id, 0, false, _canvas.InvalidateSurface);
+                _sprites.Warm(id, 0, false, () => MainThread.BeginInvokeOnMainThread(_canvas.InvalidateSurface));
                 PksmPaint.CenterText(canvas, _data.SpeciesNames[id], rect.MidX, rect.MidY, font, SKColors.White, shadow, SKTextAlign.Center);
             }
 
@@ -384,12 +384,16 @@ public sealed class DexEditorPage : IPadHandler
         }
 
         var choice = await PadMenu.ShowAsync(_host, "DEX ACTIONS", null,
+            new PadOption("How to get this one", IconPath: "search"),
             new PadOption("Mark everything seen", IconPath: "pokedex"),
             new PadOption("Complete the Pokédex", IconPath: "pokedex"),
             new PadOption("Switch to living dex gaps", IconPath: "storage"),
             new PadOption("Discard staged changes", IconPath: "hex"));
         switch (choice)
         {
+            case "How to get this one":
+                await EncounterGallery.ShowForSpeciesAsync(_host, _viewModel, _session, IdAt(_page, _cursor), 0, () => _canvas.InvalidateSurface());
+                return;
             case "Mark everything seen":
                 foreach (var id in _orderedIds)
                     _staged[id] = (true, _staged.TryGetValue(id, out var current) && current.Caught);

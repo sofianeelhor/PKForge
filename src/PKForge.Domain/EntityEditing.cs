@@ -14,6 +14,10 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Console generation of the open save (1-9): selects the living dex bundle.</summary>
     int Generation { get; }
 
+    /// <summary>Display names of every game the open save can be (a Diamond/Pearl file
+    /// stands for both), for surfaces that compare this game against others.</summary>
+    IReadOnlyList<string> GameNames { get; }
+
     /// <summary>The open game's own item name table, indexed by its item ids. Modern
     /// lists misname Gen 1-4 ids (Rare Candy et al); this is per-context truth.</summary>
     IReadOnlyList<string> GetItemNames();
@@ -214,8 +218,21 @@ public interface ISaveEngineSession : IDisposable
     bool SupportsCompassSettings { get; }
     /// <summary>Editable Compass settings with their confirmed value tables; empty on vanilla saves.</summary>
     IReadOnlyList<CompassSetting> GetCompassSettings();
+
     /// <summary>Applies a choice index to a setting in-session; commit through the usual safe write.</summary>
     bool SetCompassSetting(string id, int choiceIndex);
+
+    // ── Encounter cards: every legal way to obtain a species line ──
+    /// <summary>Every way this species line can legally be obtained in the open game,
+    /// including pre-evolution encounters (Raichu via Pichu). Species-first on purpose:
+    /// the question is asked about Pokémon you do not have yet. Read-only; the save is
+    /// never mutated. Unsupported formats return an empty list.</summary>
+    IReadOnlyList<EncounterCard> GetEncounterCards(int species, int form);
+
+    /// <summary>Builds a legal Pokémon from one encounter card and places it in the
+    /// target slot (which must be empty). Nothing is read from or written to any other
+    /// slot.</summary>
+    GenerationOutcome PlaceEncounter(int species, int form, int cardIndex, int targetBox, int targetSlot);
 }
 
 /// <summary>One Pokémon Compass setting: its choices (display labels) and the current one.</summary>
@@ -490,6 +507,35 @@ public sealed record TrainingCaps(int IvMax, int EvMax);
 public sealed record EggOptions(bool MaxIv, bool Shiny);
 
 public sealed record NuzlockeCatch(string Route, int Species, string Name, bool FirstCatch, string? MetDate);
+
+/// <summary>One legal way to obtain a species line in the open game: where, at which
+/// levels, and through which method (hatched, caught, traded, or received).</summary>
+public sealed record EncounterCard(
+    string Kind,
+    string Location,
+    int LevelMin,
+    int LevelMax,
+    string GameName,
+    string Detail,
+    bool ShinyGuaranteed,
+    bool ShinyLocked);
+
+/// <summary>One game's answer to "can I get this species here, and how?".</summary>
+public sealed record GameEncounterListing(
+    string GameName,
+    int Generation,
+    bool Obtainable,
+    IReadOnlyList<EncounterCard> Cards);
+
+/// <summary>
+/// "How do I get this?" without an open save: describes every mainline game where a
+/// species line can be obtained, using the offline encounter database. Read-only,
+/// independent of the currently open save.
+/// </summary>
+public interface IEncounterLookup
+{
+    IReadOnlyList<GameEncounterListing> Describe(int species, int form);
+}
 
 public sealed record BagPouch(string Name, IReadOnlyList<BagItem> Items);
 

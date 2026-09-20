@@ -1,196 +1,139 @@
-# PKForge continuation handoff
+# PKForge Continuation Notes
 
-Updated: 2026-09-20
+Date: September 20, 2026
 
-This is the working handoff for continuing PKForge after the v2.2.0 release. The
-current work is local only. Do not push, force-push, or create a remote branch from
-this checkout unless the owner explicitly asks for that later.
+## Current state
 
-## Current repository state
+- Repository: /Users/sof/work/pkforge
+- Stable branch: main
+- Current stable release: 2.2.1
+- Release tag: v2.2.1
+- Latest stable commit: c543f5c
+- main is the authoritative branch.
+- Do not modify or publish release history without explicit approval.
 
-- Repository: `/Users/sof/work/pkforge`
-- Active local branch: `dev`
-- `dev` is based on local `main` at `f00dbaa` (`v2.2.0`).
-- `origin/dev` is stale at the 2.1.0 release; do not merge it over this work.
-- Latest local commits:
-  - `3e23147 perf: remove pokepark work from home startup`
-  - `dcb00a3 fix: smooth pokepark transitions and gen4 bag writes`
-- Working tree should be clean after this handoff commit.
-- `docs/HANDOFF.md` did not exist in the v2.2.0 tree; this file is the source of
-  truth for the continuation described below.
+## Project architecture
 
-## Project shape
+- Android-first .NET MAUI application.
+- UI is C# code-behind with SkiaSharp.
+- There are no XAML views.
+- `src/PKForge.Domain` contains domain contracts and behavior.
+- `src/PKForge.Engine` integrates with PKHeX.
+- `src/PKForge.Infrastructure` handles persistence and backups.
+- `src/PKForge.App` contains MAUI UI, ViewModels, rendering, and Android code.
+- `external/PKHeX` must never be edited.
 
-PKForge is an Android-first .NET MAUI app for the AYN Thor. Views are code-behind
-MAUI plus SkiaSharp; there are no XAML views.
+## Engineering rules
 
-- `src/PKForge.Domain`: engine-neutral contracts, records, and domain behavior.
-- `src/PKForge.Engine`: adapter around the pristine `external/PKHeX` submodule.
-- `src/PKForge.Infrastructure`: atomic writes, backups, banks, settings, and file
-  persistence.
-- `src/PKForge.App`: MAUI pages, ViewModels, SkiaSharp rendering, Android glue, and
-  DI composition in `MauiProgram.cs`.
-- `tests/PKForge.Engine.Tests`: save/engine and regression tests.
-- `tests/PKForge.Domain.Tests`: pure domain tests.
-- `external/PKHeX`: pinned upstream input. Never edit it.
-
-Read these before changing architecture or persistence:
-
-1. `docs/DEVELOPMENT.md`
-2. `docs/ARCHITECTURE.md`
-3. `docs/UI_DESIGN.md`
-4. `docs/PRODUCT_MAP.md`
-5. `docs/BANK_MODEL.md`
-6. `docs/EMULATOR_LINKING.md`
-
-## Build and test
-
-The repository uses a bundled .NET installation. The exact Android build used for
-device testing is:
-
-```bash
-/tmp/pkforge-dotnet/dotnet build src/PKForge.App/PKForge.App.csproj \
-  -f net10.0-android -r android-arm64
-```
-
-Run the complete host-side test pass:
-
-```bash
-/tmp/pkforge-dotnet/dotnet test tests/PKForge.Engine.Tests/PKForge.Engine.Tests.csproj --no-restore
-/tmp/pkforge-dotnet/dotnet test tests/PKForge.Domain.Tests/PKForge.Domain.Tests.csproj --no-restore
-```
-
-For a side-by-side device APK that does not overwrite production `org.pkforge.app`:
-
-```bash
-/tmp/pkforge-dotnet/dotnet build src/PKForge.App/PKForge.App.csproj \
-  -f net10.0-android -r android-arm64 \
-  -p:DiagnosticBuild=true -p:AndroidKeyStore=false
-```
-
-The diagnostic APK is normally:
-`src/PKForge.App/bin/Debug/net10.0-android/android-arm64/org.pkforge.app.debug-Signed.apk`.
-Install it with `adb install -r`. It uses package ID `org.pkforge.app.debug` and
-therefore has separate app-private settings/data.
-
-The normal local debug APK is signed with the Android debug key. It cannot update a
-production APK signed by PKForge's permanent release certificate. Production
-updates require the tagged GitHub Actions release workflow and its protected
-keystore secrets. Never copy keys into this repository.
-
-## Important safety rules
-
+- Inspect the repository before editing.
+- Preserve all existing user changes.
+- Do not use destructive Git commands.
+- Do not force-push.
+- Do not push, tag, publish, or merge to main without explicit approval.
+- Use `apply_patch` for source changes.
+- Keep changes focused.
+- Measure performance before optimizing.
+- Do not block the UI thread with file I/O, save parsing, image decoding, or PKHeX initialization.
+- Do not use `.Result`, `.Wait()`, or `.GetAwaiter().GetResult()` in UI paths.
+- Preserve save safety:
+  `validate -> backup -> atomic write`.
 - Never edit `external/PKHeX`.
-- Every save mutation must remain validate → backup → atomic write.
-- Preserve the user's existing uncommitted work; inspect `git status` before edits.
-- Use `apply_patch` for source edits.
-- Keep all work on local `dev`; never push to `origin`.
-- Treat APKs and save files as user data. Do not delete them casually.
-- `TreatWarningsAsErrors=true`; XML documentation containing raw `<` or `&` can fail
-  the build.
+- Never add keys, passwords, tokens, APKs, save files, logs, or local tooling state to Git.
 
-## What the recent work changed
-
-### PokePark and navigation
-
-- `HomePage` no longer starts PokePark save candidate discovery during Home startup.
-  Save scanning is expensive on a handheld and competed with cartridge discovery.
-- `PokeparkPage` displays the persisted roster immediately. Existing rosters do not
-  trigger a candidate scan when opening the park.
-- First-use auto-fill is delayed until after the first navigation frame and runs only
-  when the roster is empty.
-- Candidate discovery uses `SaveEngineSession.Snapshot` metadata. It does not call
-  `ReadEntity`, `ExportSlot`, or SHA-256 for every populated slot.
-- `PokeparkScene` loads only the active habitat map rather than all maps at entry.
-- The lower Thor presentation switches into the journal in place. It no longer
-  dismisses and reconstructs the entire Presentation when entering PokePark.
-- `PokeparkJournalState.IsOpen` distinguishes an open empty park from Home/Storage.
-- Home PokePark navigation has a reentrancy guard.
-- Widget rendering is skipped when no launcher widget exists and is not run every
-  animation tick while the park is visible.
-
-### Gen IV bag / Rare Candy
-
-`SaveEngineSession.SetItemCount` now creates a clean pouch entry and calls
-`InventoryPouch.ClearCount0()` after mutations. This restores the canonical occupied
-prefix / empty tail layout expected by Gen IV games. PKHeX can parse entries after a
-zero-count gap, but Diamond's bag UI can stop at that gap; this explained Potion
-working while newly-added Rare Candy was invisible in-game. Regression coverage is in
-`tests/PKForge.Engine.Tests/AddItemProbe.cs`.
-
-### Second-screen lifecycle
-
-`SecondScreenBoxPage` stores and detaches its `PropertyChanged` handlers in `Cleanup`.
-This prevents old Thor presentation pages from accumulating and receiving every
-PokePark journal update.
-
-## Current known tradeoffs / follow-up work
-
-1. Auto-filled save-backed PokePark names fall back to `Pokémon #<species>` when the
-   snapshot has no nickname. This is intentional for speed; a future metadata cache
-   can add localized species names without reparsing every slot.
-2. The first-use auto-fill still performs a full candidate enumeration, but it is
-   delayed until after navigation and is now snapshot-only. Consider adding a cached
-   candidate list keyed by save document ID plus save revision if first-use scans are
-   still noticeable.
-3. The live Skia scene still allocates some LINQ tuples, sorting state, paints, fonts,
-   and parsed colors per frame. The next performance pass should measure before
-   rewriting it; target frame timing on the Thor rather than optimizing by assumption.
-4. Widget rendering still shares scene state with the live page, although it is no
-   longer run continuously while the park is open. A robust next step is to render
-   from an immutable scene snapshot on an independent worker scene.
-5. The app has no automated AYN Thor Perfetto trace yet. Capture navigation-to-first-
-   paint, save scan duration, frame p95/p99, and secondary Presentation show time
-   before making another broad optimization.
-6. `docs/PRODUCT_MAP.md` and the older development documents describe the product
-   roadmap; update them when adding a new user-facing surface.
-
-## Recommended next investigation
-
-Use the diagnostic APK and measure these separately:
-
-1. Home launch until the first cartridge card is visible.
-2. Home PokePark tap until the first primary canvas paint.
-3. Home PokePark tap until the lower screen shows the journal.
-4. First-use auto-fill completion versus opening an already-populated park.
-5. Repeated enter/leave cycles, with and without an active launcher widget.
-
-Add temporary `Stopwatch` logs around `HomePage.OnAppearing`, `RescanCommand`,
-`PokeparkPage.OnAppearing`, `LoadParkAsync`, `WarmEnvironmentAsync`, and
-`AndroidSecondaryDisplayHost.ShowAsync`. Remove or gate diagnostics before release.
-
-## Device testing checklist
-
-- Install the diagnostic package alongside production; do not uninstall production
-  unless its data has been backed up.
-- Confirm cartridges appear while the Home screen remains responsive.
-- Confirm PokePark opens with an existing roster without a multi-second pause.
-- Confirm the lower screen does not blank during Home → PokePark.
-- Confirm an empty PokePark still shows the journal mode on the lower screen.
-- Switch all four habitats and verify each map appears after its first load.
-- Enter/leave PokePark repeatedly and watch for stale lower-screen pages or growing
-  memory use.
-- In a Pokémon Diamond save, add Rare Candy and Potion, restart the game, and verify
-  both are visible in-game. Also test deleting a middle pouch entry.
-- Re-run both test projects and the Android build after every engine or navigation
-  change.
-
-## Git continuation recipe
+## Validation commands
 
 ```bash
-cd /Users/sof/work/pkforge
 git status --short --branch
-git log --oneline --decorate -5
-git switch dev
-# make focused changes
-git diff --check
-/tmp/pkforge-dotnet/dotnet test tests/PKForge.Engine.Tests/PKForge.Engine.Tests.csproj --no-restore
-/tmp/pkforge-dotnet/dotnet test tests/PKForge.Domain.Tests/PKForge.Domain.Tests.csproj --no-restore
-/tmp/pkforge-dotnet/dotnet build src/PKForge.App/PKForge.App.csproj -f net10.0-android -r android-arm64
-git add <only-intended-files>
-git commit -m "<local change description>"
-git status --short --branch
-```
 
-Do not run `git push`. If another agent needs to continue, hand them the current
-commit hash and this file.
+/tmp/pkforge-dotnet/dotnet test \
+  tests/PKForge.Engine.Tests/PKForge.Engine.Tests.csproj \
+  --no-restore --nologo
+
+/tmp/pkforge-dotnet/dotnet test \
+  tests/PKForge.Domain.Tests/PKForge.Domain.Tests.csproj \
+  --no-restore --nologo
+
+/tmp/pkforge-dotnet/dotnet build \
+  src/PKForge.App/PKForge.App.csproj \
+  -f net10.0-android \
+  -r android-arm64 \
+  --no-restore --nologo
+
+## Session note (September 20, 2026): encounter cards
+
+PKSM gap analysis chose the Tier-1 roadmap item "How do I get this?" and it now
+ships end to end:
+
+- Domain: `EncounterCard` record plus `GetEncounterCards` / `PlaceEncounter` on
+  `ISaveEngineSession` (`src/PKForge.Domain/EntityEditing.cs`).
+- Engine: `SaveEngineSession` enumerates the pinned `EncounterMovesetGenerator`
+  with empty moves (whole species line, including pre-evolutions), scoped to the
+  open game, de-duplicated for display, cloned so the source mon is never touched.
+  `PlaceEncounter` materializes a card via `IEncounterConvertible.ConvertToPKM`,
+  gates on `LegalityAnalysis.Valid`, and refuses occupied/full destinations.
+  Unbound returns no cards (custom maps are not in the pinned database).
+- App: `EncounterGallery` (mon menu: "How to get this?") shows the grouped card
+  wall with a close-up pane; A confirms a CATCH into the first empty slot through
+  the usual validate -> backup -> atomic write.
+- Verification: 6 new engine tests (`EncounterCardTests`) covering Trophy Garden
+  ground truth in Platinum, determinism, no source mutation, legal placement,
+  serialize round trip, refusal paths, and Unbound/empty-slot behavior.
+  Suites: 297 engine + 76 domain tests green; Android arm64 build clean.
+  Timing probe (since removed): worst cases (Bidoof/Pt, Sobble and Caterpie
+  lines/Sword) each enumerate in tens of milliseconds off the UI thread.
+
+PKSM-inspired backlog that remains: storage filter/search (bank search TODO),
+QR import, multiple banks, event flags editor, mon hex editor.
+
+## Session note 2 (September 20, 2026): picker perf, encounter UX, Poképark, collection dex
+
+- **Pokédex picker CPU fix:** the cold-cache icon sweep (`EnsureIconsAsync`) ran
+  ~1000 sprite decodes at 64-way parallelism on first open, starving the UI and the
+  offline legalizer (the fan-screaming Create flow on fresh installs). It now runs
+  8-wide with pauses, once per process.
+- **Encounter cards rework:** species-first (TOOLS -> "How to get a Pokémon…" ->
+  Pokédex picker -> form -> cards), two-column 280px cards with 22px location text,
+  hero sprite beside the title; `GetEncounterCards(species, form)` /
+  `PlaceEncounter` on `ISaveEngineSession` build the rough criteria entity from
+  `_save.BlankPKM`. CATCH places through the usual backed-up write.
+- **Poképark:** auto-invited residents no longer fall back to "Pokémon #N" (species
+  names everywhere); persisted rosters self-heal on load (`IsLegacyFallbackName`).
+  Residents now carry GameName/TrainerName/Origin captured at invite; the resident
+  journal shows an ORIGIN section at the bottom.
+- **Collection dex (living dex tracker):** `CollectionDex.Compute` in Domain (pure,
+  tested), `CollectionDexPage` in App: national + shiny living dex over bank plus
+  open save, per-gen and this-game scopes, missing-only filter, "How to get" jump
+  from any species. Entries: Bank strip "LIVING DEX" capsule and TOOLS ->
+  "Collection dex…".
+- Verification: 298 engine + 79 domain tests green (3 new `CollectionDexTests`);
+  diagnostic arm64 APK builds clean. Not yet device-verified: tracker layout on the
+  Thor, Poképark migration on real data.
+
+Backlog added from user feedback: Android home-screen widget showing a rotating
+bank Pokémon; storage filter/search; QR import; multiple banks.
+
+## Session note 3 (September 20, 2026): save-free encounter guide, sprite threading, tracker
+
+- **Sprites were missing on the collection dex** because `CollectionDexPage` passed a
+  raw `_canvas.InvalidateSurface` to `SpriteService.Warm`, whose callback runs on a
+  thread-pool thread; repaints never landed. Now marshalled through
+  `MainThread.BeginInvokeOnMainThread` (same fix applied at `DexEditorPage`).
+- **"How to get" no longer needs a save open**: `IEncounterLookup` /
+  `EncounterLookupService` walk one blank save per mainline game (37 concrete games)
+  and describe each. Verified: 37 games in ~195 ms, per-species cached (0 ms repeat);
+  Sprigatito only in Scarlet/Violet.
+- **PKHeX version-group trap**: `BlankSaveFile.Get(D)` returns a save whose version is
+  the lumped `DP`, which `EncounterPossible4` rejects with
+  `ArgumentOutOfRangeException`. `EncounterDatabase.Enumerate/Describe` now take an
+  explicit `GameVersion`, and `ConcreteVersions` maps groups (DP→D/P, HGSS→HG/SS, …).
+  Same trap would have crashed real Diamond/Pearl saves through the session path.
+- **Diamond vs Pearl asymmetry explained and pinned**: wild/egg/trade are mirrored
+  (both list Trophy Garden Lv16/18); the delta is PKHeX's per-version Gen 4 event-gift
+  tables. Regression test `DiamondAndPearlAreMirroredForWildEncounters` guards it.
+- **New UI**: species → game list grouped by generation (`N ways · Wild, Eggs, …` or
+  "Not obtainable here", THIS GAME flagged and promoted) → that game's card wall, with
+  repeated (kind, place) sightings collapsed into one card carrying a level span and a
+  "N spots" count. CATCH appears only for a game the open save can be; other games stay
+  informational. `ISaveEngineSession.GameNames` (plural, group-expanded) drives that.
+- Verification: 303 engine + 79 domain tests green; diagnostic arm64 APK builds clean.
+  Still device-unverified: the new guide layout and the collapsed-SV case.
