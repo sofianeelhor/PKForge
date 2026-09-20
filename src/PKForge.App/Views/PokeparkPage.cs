@@ -163,13 +163,19 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
         _loading = true;
         try
         {
-            // Save-backed candidate discovery reads and hashes every populated slot.
-            // Keep it off the UI thread so entering the park does not stall navigation.
-            await Task.WhenAll(
-                Task.Run(_park.EnsureInitialized),
-                _scene.WarmEnvironmentsAsync()).ConfigureAwait(true);
+            var needsInitialization = _scene.Residents.Count == 0;
+            await _scene.WarmEnvironmentAsync(_scene.EnvironmentIndex).ConfigureAwait(true);
             if (!_active) return;
-            Reload();
+            _canvas.InvalidateSurface();
+            if (needsInitialization)
+            {
+                // Let the navigation animation and first frame complete before doing
+                // optional first-use population work.
+                await Task.Delay(350).ConfigureAwait(true);
+                await Task.Run(_park.EnsureInitialized).ConfigureAwait(true);
+                if (!_active) return;
+                Reload();
+            }
             RunOfflineLife();
         }
         catch (Exception ex)
@@ -359,6 +365,20 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
         SelectResident(0);
         _status.Text = $"{_scene.EnvironmentName}  ·  L/R switch habitats";
         MarkWidgetDirty();
+        _ = WarmCurrentEnvironmentAsync();
+    }
+
+    private async Task WarmCurrentEnvironmentAsync()
+    {
+        try
+        {
+            await _scene.WarmEnvironmentAsync(_scene.EnvironmentIndex);
+            if (_active) _canvas.InvalidateSurface();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Poképark map load: {ex.Message}");
+        }
     }
 
     private bool WidgetDirty => Volatile.Read(ref _widgetRevision) != Volatile.Read(ref _publishedWidgetRevision);

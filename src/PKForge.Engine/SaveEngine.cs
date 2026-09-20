@@ -21,7 +21,7 @@ public sealed class SaveEngine : ISaveEngine
                 var entity = save.GetBoxSlotAtIndex(box, slot);
                 slots.Add(new SlotSummary(box, slot, entity.Species == 0 ? null : entity.Species,
                     entity.IsNicknamed ? entity.Nickname : null, entity.IsShiny,
-                    entity.Species == 0 || entity.Valid, entity.Form));
+                    entity.Species == 0 || entity.Valid, entity.Form, entity.IsEgg));
             }
         }
 

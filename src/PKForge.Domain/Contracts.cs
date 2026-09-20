@@ -112,7 +112,7 @@ public sealed record SaveSnapshot(
     IReadOnlyList<SlotSummary> Slots,
     string? DisplayName);
 
-public sealed record SlotSummary(int Box, int Slot, int? Species, string? Nickname, bool IsShiny, bool IsLegal, int Form = 0);
+public sealed record SlotSummary(int Box, int Slot, int? Species, string? Nickname, bool IsShiny, bool IsLegal, int Form = 0, bool IsEgg = false);
 
 public sealed record BackupReceipt(string BackupId, DateTimeOffset CreatedUtc, string Sha256);
 

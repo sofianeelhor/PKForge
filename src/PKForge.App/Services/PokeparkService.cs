@@ -35,26 +35,13 @@ public sealed class PokeparkService(IBankService bank, ISaveSessionService saves
         var documentId = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(document.DocumentId)))[..16];
         // Include the party as well as PC boxes. Party entries use Box == -1
         // and are valid save-backed Poképark candidates.
-        foreach (var slot in session.Snapshot.Slots.Where(s => s.Species is > 0))
+        foreach (var slot in session.Snapshot.Slots.Where(s => s.Species is > 0 && !s.IsEgg))
         {
-            try
-            {
-                if (session.GetMetInfo(slot.Box, slot.Slot).IsEgg) continue;
-                var detail = session.ReadEntity(slot.Box, slot.Slot);
-                var data = session.ExportSlot(slot.Box, slot.Slot).Data;
-                var fingerprint = Convert.ToHexString(SHA256.HashData(data));
-                result.Add(new ParkPokemon($"save:{documentId}:{slot.Box}:{slot.Slot}:{fingerprint}",
-                    detail.Species, detail.Form, detail.IsShiny,
-                    string.IsNullOrWhiteSpace(detail.Nickname) ? detail.SpeciesName : detail.Nickname,
-                    $"{document.DisplayName} · {(slot.Box < 0 ? "Party" : $"Box {slot.Box + 1}")} · Slot {slot.Slot + 1}"));
-            }
-            catch (Exception ex)
-            {
-                // A malformed or unsupported slot must not hide the rest of
-                // the save, nor prevent bank-backed auto-fill.
-                System.Diagnostics.Debug.WriteLine(
-                    $"Poképark skipped save slot {slot.Box}:{slot.Slot}: {ex.Message}");
-            }
+            var species = slot.Species!.Value;
+            result.Add(new ParkPokemon($"save:{documentId}:{slot.Box}:{slot.Slot}",
+                species, slot.Form, slot.IsShiny,
+                string.IsNullOrWhiteSpace(slot.Nickname) ? $"Pokémon #{species}" : slot.Nickname,
+                $"{document.DisplayName} · {(slot.Box < 0 ? "Party" : $"Box {slot.Box + 1}")} · Slot {slot.Slot + 1}"));
         }
         return result;
     }

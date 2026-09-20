@@ -19,7 +19,6 @@ public sealed class HomePage : ContentPage, IPadHandler
     private DsCard[] _cards = [];
     private int _zone;       // 0 = game shelf, 1 = the destination cards
     private int _cardIndex;
-    private PokeparkPage? _parkPage;
     private int _parkNavigationPending;
 
     public HomePage(SavePickerViewModel viewModel)
@@ -143,10 +142,6 @@ public sealed class HomePage : ContentPage, IPadHandler
         if (!_scannedOnce)
         {
             _scannedOnce = true;
-            // Candidate discovery can inspect and hash every populated save slot.
-            // Do not make the home-to-park navigation wait for that scan.
-            var park = IPlatformApplication.Current?.Services.GetService<PokeparkService>();
-            if (park is not null) _ = Task.Run(park.EnsureInitialized);
             _viewModel.RescanCommand.Execute(null);
         }
         var host = IPlatformApplication.Current?.Services.GetService<ISecondaryDisplayHost>();
@@ -154,16 +149,6 @@ public sealed class HomePage : ContentPage, IPadHandler
         {
             try { _ = host.ShowAsync(); }
             catch { }
-        }
-        // Build the code-behind park view after Home's first frame, not in the input
-        // handler. This removes page construction from the tap-to-transition path.
-        if (_parkPage is null)
-        {
-            Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(250), () =>
-            {
-                if (_parkPage is not null) return;
-                _parkPage = IPlatformApplication.Current?.Services.GetService<PokeparkPage>();
-            });
         }
 
         // Returning from Android's install-unknown-apps screen finishes an update the
@@ -919,8 +904,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         {
             var services = IPlatformApplication.Current?.Services
                 ?? throw new InvalidOperationException("MAUI services are unavailable.");
-            _parkPage ??= services.GetRequiredService<PokeparkPage>();
-            await Navigation.PushAsync(_parkPage);
+            await Navigation.PushAsync(services.GetRequiredService<PokeparkPage>());
         }
         finally
         {

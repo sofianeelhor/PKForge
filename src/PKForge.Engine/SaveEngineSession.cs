@@ -2216,13 +2216,13 @@ public sealed class SaveEngineSession : ISaveEngineSession
             var entity = _save.GetBoxSlotAtIndex(box, slot);
             slots.Add(new SlotSummary(box, slot, entity.Species == 0 ? null : entity.Species,
                 entity.IsNicknamed ? entity.Nickname : null, entity.IsShiny,
-                entity.Species == 0 || entity.Valid, entity.Form));
+                entity.Species == 0 || entity.Valid, entity.Form, entity.IsEgg));
         }
         for (var i = 0; i < _save.PartyCount && i < 6; i++)
         {
             var partyMon = _save.GetPartySlotAtIndex(i);
             slots.Add(new SlotSummary(-1, i, partyMon.Species == 0 ? null : partyMon.Species,
-                partyMon.Species == 0 ? null : partyMon.Nickname, partyMon.IsShiny, true, partyMon.Form));
+                partyMon.Species == 0 ? null : partyMon.Nickname, partyMon.IsShiny, true, partyMon.Form, partyMon.IsEgg));
         }
         return new SaveSnapshot(_save.Context.ToString(), _save.Generation, _originalBytes, slots, displayName);
     }

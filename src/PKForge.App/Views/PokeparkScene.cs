@@ -125,20 +125,17 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
     public void DrawWidgetFrame(SKCanvas c, int width, int height, int frame) =>
         Draw(c, width, height, frame * 400L, labels: false, ambient: true);
 
-    public async Task WarmEnvironmentsAsync()
+    public async Task WarmEnvironmentAsync(int environmentIndex)
     {
-        var assets = Enumerable.Range(0, 4).Select(index => ParkMap.For(index).Asset).Distinct().ToArray();
-        await Task.WhenAll(assets.Select(async asset =>
+        var asset = ParkMap.For(environmentIndex).Asset;
+        lock (_environmentGate)
+            if (_environment.ContainsKey(asset)) return;
+        await using var stream = await FileSystem.OpenAppPackageFileAsync($"pokepark/maps/{asset}").ConfigureAwait(false);
+        var bitmap = SKBitmap.Decode(stream) ?? throw new InvalidDataException($"Invalid Poképark map: {asset}");
+        lock (_environmentGate)
         {
-            lock (_environmentGate)
-                if (_environment.ContainsKey(asset)) return;
-            await using var stream = await FileSystem.OpenAppPackageFileAsync($"pokepark/maps/{asset}").ConfigureAwait(false);
-            var bitmap = SKBitmap.Decode(stream) ?? throw new InvalidDataException($"Invalid Poképark map: {asset}");
-            lock (_environmentGate)
-            {
-                if (!_environment.TryAdd(asset, bitmap)) bitmap.Dispose();
-            }
-        })).ConfigureAwait(false);
+            if (!_environment.TryAdd(asset, bitmap)) bitmap.Dispose();
+        }
     }
 
     public void Draw(SKCanvas c, int width, int height, long time, bool labels = true, bool ambient = false)
