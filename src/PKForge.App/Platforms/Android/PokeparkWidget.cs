@@ -23,6 +23,15 @@ public static class PokeparkWidgetPublisher
     internal static string SnapshotPath(Context context) =>
         System.IO.Path.Combine(context.FilesDir!.AbsolutePath, "pokepark-widget.zip");
 
+    public static bool HasActiveWidgets()
+    {
+        var context = Android.App.Application.Context;
+        var manager = AppWidgetManager.GetInstance(context);
+        if (manager is null) return false;
+        using var component = new ComponentName(context, Java.Lang.Class.FromType(typeof(PokeparkWidgetProvider)));
+        return manager.GetAppWidgetIds(component) is { Length: > 0 };
+    }
+
     /// <summary>Accepts up to eight PNG frames. An empty list clears the park.</summary>
     public static void Publish(IReadOnlyList<byte[]> pngFrames)
     {

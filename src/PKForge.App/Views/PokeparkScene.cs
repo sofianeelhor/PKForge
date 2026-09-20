@@ -9,6 +9,7 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
 {
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<SKBitmap, FrameBounds> _visibleBounds = new();
     private readonly Dictionary<string, SKBitmap?> _environment = new(StringComparer.Ordinal);
+    private readonly object _environmentGate = new();
     private readonly Dictionary<(string Id, int Map), ResidentRoute> _routes = new();
     private sealed class ResidentRoute(ParkWander wander, bool animated)
     {
@@ -124,6 +125,22 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
     public void DrawWidgetFrame(SKCanvas c, int width, int height, int frame) =>
         Draw(c, width, height, frame * 400L, labels: false, ambient: true);
 
+    public async Task WarmEnvironmentsAsync()
+    {
+        var assets = Enumerable.Range(0, 4).Select(index => ParkMap.For(index).Asset).Distinct().ToArray();
+        await Task.WhenAll(assets.Select(async asset =>
+        {
+            lock (_environmentGate)
+                if (_environment.ContainsKey(asset)) return;
+            await using var stream = await FileSystem.OpenAppPackageFileAsync($"pokepark/maps/{asset}").ConfigureAwait(false);
+            var bitmap = SKBitmap.Decode(stream) ?? throw new InvalidDataException($"Invalid Poképark map: {asset}");
+            lock (_environmentGate)
+            {
+                if (!_environment.TryAdd(asset, bitmap)) bitmap.Dispose();
+            }
+        })).ConfigureAwait(false);
+    }
+
     public void Draw(SKCanvas c, int width, int height, long time, bool labels = true, bool ambient = false)
     {
         c.Clear(SKColor.Parse("#233a39"));
@@ -226,14 +243,11 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
     private void DrawMap(SKCanvas canvas, SKPaint paint)
     {
         var asset = ParkMap.For(EnvironmentIndex).Asset;
-        if (!_environment.TryGetValue(asset, out var bitmap))
-        {
-            using var stream = FileSystem.OpenAppPackageFileAsync($"pokepark/maps/{asset}").GetAwaiter().GetResult();
-            _environment[asset] = bitmap = SKBitmap.Decode(stream)
-                ?? throw new InvalidDataException($"Invalid Poképark map: {asset}");
-        }
+        SKBitmap? bitmap;
+        lock (_environmentGate) _environment.TryGetValue(asset, out bitmap);
+        if (bitmap is null) return; // loading frame keeps paint non-blocking
         paint.Color = SKColors.White;
-        canvas.DrawBitmap(bitmap!, new SKRect(0, 0, 480, 270), paint);
+        canvas.DrawBitmap(bitmap, new SKRect(0, 0, 480, 270), paint);
     }
 
     private void DrawActivity(SKCanvas c, SKPaint p, SKPoint pos, ParkInteraction activity, long time)

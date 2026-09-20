@@ -1377,15 +1377,19 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (existing is not null)
         {
             existing.Count = count;
-            if (count <= 0) existing.Index = 0;
+            if (count <= 0) existing.Clear();
         }
         else if (count > 0)
         {
-            var empty = pouch.Items.FirstOrDefault(i => i.Index == 0)
-                ?? throw new InvalidOperationException("The pouch is full.");
-            empty.Index = itemId;
-            empty.Count = count;
+            var emptyIndex = Array.FindIndex(pouch.Items, i => i.Index == 0 || i.Count <= 0);
+            if (emptyIndex < 0) throw new InvalidOperationException("The pouch is full.");
+            // Create a clean entry instead of retaining format-specific flags from a
+            // stale zero-count slot. Gen IV in particular expects occupied entries to
+            // form one dense prefix; PKHeX can parse entries beyond a hole that the
+            // games themselves do not show.
+            pouch.Items[emptyIndex] = pouch.GetEmpty(itemId, count);
         }
+        pouch.ClearCount0();
         bag.CopyTo(_save);
         return count;
     }

@@ -272,12 +272,9 @@ public sealed class AndroidSecondaryDisplayHost(IServiceProvider services) : ISe
     public ValueTask ShowPokeparkJournalAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        // A normal mirror may still be showing from Home/Storage.  Reusing that
-        // Presentation leaves its old hero (for example a Pokémon Black logo)
-        // visible until Android happens to recreate the window.  Rebuild the
-        // surface synchronously whenever Poképark is entered so the journal page
-        // is the first frame on the lower display.
-        Dismiss();
+        // The existing lower-screen page observes PokeparkJournalState and can switch
+        // to its journal immediately. Rebuilding the Presentation here blanks the
+        // Thor's lower display for several seconds during every park transition.
         return ShowAsync(cancellationToken);
     }
 

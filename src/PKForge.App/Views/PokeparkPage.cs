@@ -22,10 +22,13 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
     private readonly Label _status;
     private readonly IDispatcherTimer _timer;
     private readonly Stopwatch _clock = new();
+    private readonly SemaphoreSlim _widgetPublishGate = new(1, 1);
+    private readonly object _renderGate = new();
     private bool _active;
     private bool _menuOpen;
-    private bool _widgetDirty;
-    private long _lastPublished;
+    private int _widgetRevision;
+    private int _publishedWidgetRevision;
+    private bool _loading;
     private int _selected;
 
     public PokeparkPage(PokeparkService park, ISpriteService sprites, PokeparkSpriteService walking,
@@ -55,7 +58,11 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
             if (index >= 0) { SelectResident(index); _ = DetailsAsync(); }
             e.Handled = true;
         };
-        _canvas.PaintSurface += (_, e) => _scene.Draw(e.Surface.Canvas, e.Info.Width, e.Info.Height, _clock.ElapsedMilliseconds);
+        _canvas.PaintSurface += (_, e) =>
+        {
+            lock (_renderGate)
+                _scene.Draw(e.Surface.Canvas, e.Info.Width, e.Info.Height, _clock.ElapsedMilliseconds);
+        };
         var panel = Kit.LcdPanel(_canvas, padding: 0);
         panel.Margin = new Thickness(12, 4, 12, 0);
         panel.HorizontalOptions = LayoutOptions.Fill;
@@ -79,20 +86,20 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
         {
             UpdateJournal();
             _canvas.InvalidateSurface();
-            if (_widgetDirty && _clock.ElapsedMilliseconds - _lastPublished > 2000) PublishWidget();
         };
     }
 
     protected override void OnAppearing()
     {
         base.OnAppearing(); _active = true;
+        IPlatformApplication.Current?.Services.GetService<PokeparkJournalState>()?.Open();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Push(this);
         App.Resumed += Resume; App.Suspended += Suspend;
         _clock.Start(); _timer.Start();
-        _park.EnsureInitialized();
-        _park.RefreshAutoFill();
+        // The persisted roster is cheap and gives the first paint immediately.
+        // Initialization only scans on first use and refreshes this view afterwards.
         Reload();
-        RunOfflineLife();
+        _ = LoadParkAsync();
         // A park can be opened from the widget/deep link without passing through
         // HomePage. Ensure Thor's lower display is alive and observing the journal.
         var secondary = IPlatformApplication.Current?.Services.GetService<PKForge.Domain.ISecondaryDisplayHost>();
@@ -111,7 +118,7 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
         _active = false; _timer.Stop(); _clock.Stop();
         App.Resumed -= Resume; App.Suspended -= Suspend;
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
-        if (_widgetDirty) PublishWidget();
+        if (WidgetDirty) _ = PublishWidgetAsync();
         IPlatformApplication.Current?.Services.GetService<PokeparkJournalState>()?.Clear();
         base.OnDisappearing();
     }
@@ -119,7 +126,7 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
     private void Suspend()
     {
         _offlineJournal.MarkCurrent();
-        _timer.Stop(); _clock.Stop(); if (_widgetDirty) PublishWidget();
+        _timer.Stop(); _clock.Stop(); if (WidgetDirty) _ = PublishWidgetAsync();
     }
 
     private void RunOfflineLife()
@@ -150,6 +157,28 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
         });
     }
 
+    private async Task LoadParkAsync()
+    {
+        if (_loading) return;
+        _loading = true;
+        try
+        {
+            // Save-backed candidate discovery reads and hashes every populated slot.
+            // Keep it off the UI thread so entering the park does not stall navigation.
+            await Task.WhenAll(
+                Task.Run(_park.EnsureInitialized),
+                _scene.WarmEnvironmentsAsync()).ConfigureAwait(true);
+            if (!_active) return;
+            Reload();
+            RunOfflineLife();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Poképark load: {ex.Message}");
+        }
+        finally { _loading = false; }
+    }
+
     private void Reload()
     {
         _scene.Residents = _park.LoadRoster();
@@ -163,14 +192,14 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
             _sprites.Warm(mon.Species, mon.Form, mon.Shiny, AssetsLoaded);
             _walking.Warm(mon.Species, mon.Form, mon.Shiny, AssetsLoaded);
         }
-        _widgetDirty = true;
+        MarkWidgetDirty();
         _canvas.InvalidateSurface();
     }
     private void AssetsLoaded() => MainThread.BeginInvokeOnMainThread(() =>
     {
-        _widgetDirty = true;
+        MarkWidgetDirty();
         if (_active) _canvas.InvalidateSurface();
-        else PublishWidget();
+        else _ = PublishWidgetAsync();
     });
     private void SelectResident(int index)
     {
@@ -204,22 +233,38 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
         journal.Resident = mon; journal.Mood = state.Mood; journal.Activity = state.Activity; journal.Trait = p.Trait; journal.Likes = p.Likes; journal.Story = p.Story;
     }
 
-    private void PublishWidget()
+    private async Task PublishWidgetAsync()
     {
-        var frames = new List<byte[]>();
-        using var bitmap = new SKBitmap(PokeparkWidgetPublisher.FrameWidth, PokeparkWidgetPublisher.FrameHeight);
-        using var canvas = new SKCanvas(bitmap);
-        for (var frame = 0; frame < PokeparkWidgetPublisher.FrameCount; frame++)
+        if (!PokeparkWidgetPublisher.HasActiveWidgets())
         {
-            _scene.DrawWidgetFrame(canvas, bitmap.Width, bitmap.Height, frame);
-            using var image = SKImage.FromBitmap(bitmap);
-            using var data = image.Encode(SKEncodedImageFormat.Png, 90);
-            frames.Add(data.ToArray());
+            Volatile.Write(ref _publishedWidgetRevision, Volatile.Read(ref _widgetRevision));
+            return;
         }
-        try { PokeparkWidgetPublisher.Publish(frames); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        { System.Diagnostics.Debug.WriteLine($"Poképark widget: {ex.Message}"); }
-        _widgetDirty = false; _lastPublished = _clock.ElapsedMilliseconds;
+        if (!await _widgetPublishGate.WaitAsync(0).ConfigureAwait(false)) return;
+        try
+        {
+            var revision = Volatile.Read(ref _widgetRevision);
+            var frames = await Task.Run(() =>
+            {
+                var result = new List<byte[]>(PokeparkWidgetPublisher.FrameCount);
+                using var bitmap = new SKBitmap(PokeparkWidgetPublisher.FrameWidth, PokeparkWidgetPublisher.FrameHeight);
+                using var canvas = new SKCanvas(bitmap);
+                for (var frame = 0; frame < PokeparkWidgetPublisher.FrameCount; frame++)
+                {
+                    lock (_renderGate)
+                        _scene.DrawWidgetFrame(canvas, bitmap.Width, bitmap.Height, frame);
+                    using var image = SKImage.FromBitmap(bitmap);
+                    using var data = image.Encode(SKEncodedImageFormat.Png, 90);
+                    result.Add(data.ToArray());
+                }
+                return result;
+            }).ConfigureAwait(false);
+            try { PokeparkWidgetPublisher.Publish(frames); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { Debug.WriteLine($"Poképark widget: {ex.Message}"); }
+            Volatile.Write(ref _publishedWidgetRevision, revision);
+        }
+        finally { _widgetPublishGate.Release(); }
     }
 
     private async Task OptionsAsync()
@@ -250,7 +295,11 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
                     _ => PokeparkSource.Both
                 };
                 _park.SaveSettings(_park.Settings with { Source = source });
-                _park.EnsureInitialized();
+                await Task.Run(() =>
+                {
+                    _park.EnsureInitialized();
+                    _park.RefreshAutoFill();
+                });
                 Reload();
             }
             if (choice == "Invite Pokémon") await PokeparkSpeechBubble.ShowAsync(_host, "Park guide", "Open a Pokémon’s action menu in your save boxes or Bank, then choose Send to Poképark. Its original stays right where it is.");
@@ -309,8 +358,11 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
         _scene.EnvironmentIndex = (_scene.EnvironmentIndex + delta + 4) % 4;
         SelectResident(0);
         _status.Text = $"{_scene.EnvironmentName}  ·  L/R switch habitats";
-        _widgetDirty = true;
+        MarkWidgetDirty();
     }
+
+    private bool WidgetDirty => Volatile.Read(ref _widgetRevision) != Volatile.Read(ref _publishedWidgetRevision);
+    private void MarkWidgetDirty() => Interlocked.Increment(ref _widgetRevision);
 
     private bool IsVisibleInHabitat(int index)
     {

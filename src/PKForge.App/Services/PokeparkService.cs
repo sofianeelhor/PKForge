@@ -18,6 +18,7 @@ public sealed record PokeparkSettings
 /// <summary>Visual visitors only: never modifies a Pokémon, save, or bank entry.</summary>
 public sealed class PokeparkService(IBankService bank, ISaveSessionService saves)
 {
+    private readonly object _initializationGate = new();
     private const string SettingsKey = "pkforge.pokepark.settings.v1";
     private const string ResidentsKey = "pkforge.pokepark.residents.v1";
     private const string RosterKey = "pkforge.pokepark.roster.v1";
@@ -65,15 +66,20 @@ public sealed class PokeparkService(IBankService bank, ISaveSessionService saves
     /// <summary>Called once at app startup. Opening the park never chooses new residents.</summary>
     public void EnsureInitialized()
     {
-        if (Read<bool>(InitializedKey)) return;
-        var roster = LoadRoster();
-        if (roster.Count == 0 && Settings.Source != PokeparkSource.Disabled)
+        lock (_initializationGate)
         {
-            var candidates = GetCandidates().Where(p => Settings.Source == PokeparkSource.Both ||
-                p.Id.StartsWith(Settings.Source == PokeparkSource.Bank ? "bank:" : "save:"));
-            roster = ParkSelection.Select(candidates, p => p.Id, true, Settings.Count, []);
+            // Home and a deep-linked park can appear nearly together. Only one of
+            // them may enumerate/export/hash the open save at a time.
+            if (Read<bool>(InitializedKey)) return;
+            var roster = LoadRoster();
+            if (roster.Count == 0 && Settings.Source != PokeparkSource.Disabled)
+            {
+                var candidates = GetCandidates().Where(p => Settings.Source == PokeparkSource.Both ||
+                    p.Id.StartsWith(Settings.Source == PokeparkSource.Bank ? "bank:" : "save:"));
+                roster = ParkSelection.Select(candidates, p => p.Id, true, Settings.Count, []);
+            }
+            SaveRoster(roster);
         }
-        SaveRoster(roster);
     }
 
     public int AutoFillIfEmpty()

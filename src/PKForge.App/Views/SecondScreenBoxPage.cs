@@ -28,6 +28,11 @@ public sealed class SecondScreenBoxPage : ContentPage
     private readonly ISpriteService _sprites;
     private readonly SKCanvasView _sprite;
     private readonly PropertyChangedEventHandler _viewModelHandler;
+    private readonly SecondScreenState? _secondScreenState;
+    private readonly PokeparkJournalState? _journalState;
+    private readonly PropertyChangedEventHandler? _secondScreenHandler;
+    private readonly PropertyChangedEventHandler? _journalHandler;
+    private bool _cleanedUp;
 
     private readonly Label _name = null!; // the maroon header strip's label, captured in the ctor
     private readonly Image _gender = new() { WidthRequest = 24, HeightRequest = 24, VerticalOptions = LayoutOptions.Center, IsVisible = false };
@@ -129,16 +134,16 @@ public sealed class SecondScreenBoxPage : ContentPage
             },
         };
 
-        var state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
-        var journalState = IPlatformApplication.Current?.Services.GetService<PokeparkJournalState>();
-        var journal = BuildPokeparkJournal(journalState);
+        var state = _secondScreenState = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
+        var journalState = _journalState = IPlatformApplication.Current?.Services.GetService<PokeparkJournalState>();
+        var journal = BuildPokeparkJournal(journalState, out _journalHandler);
         var dex = BuildDexView();
 
         async void SwapAsync()
         {
             var detail = _viewModel.Selected;
             // The Pokédex preview outranks everything while the picker is open.
-            var showJournal = journalState?.Resident is not null;
+            var showJournal = journalState?.IsOpen == true;
             var showDex = !showJournal && state?.PreviewSpecies is not null;
             var showSummary = !showJournal && !showDex && detail is { IsEmpty: false };
             if (showDex) UpdateDex(state!.PreviewSpecies!.Value);
@@ -173,10 +178,13 @@ public sealed class SecondScreenBoxPage : ContentPage
         };
         _viewModel.PropertyChanged += _viewModelHandler;
         if (state is not null)
-            state.PropertyChanged += (_, _) => MainThread.BeginInvokeOnMainThread(SwapAsync);
+        {
+            _secondScreenHandler = (_, _) => MainThread.BeginInvokeOnMainThread(SwapAsync);
+            state.PropertyChanged += _secondScreenHandler;
+        }
     }
 
-    private static View BuildPokeparkJournal(PokeparkJournalState? state)
+    private static View BuildPokeparkJournal(PokeparkJournalState? state, out PropertyChangedEventHandler? handler)
     {
         var title = new Label { Text = "POKÉPARK  /  FIELD JOURNAL", FontSize = 18, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0 };
         var name = new Label { FontSize = 28, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.IndigoInk };
@@ -187,13 +195,22 @@ public sealed class SecondScreenBoxPage : ContentPage
         var card = new Border { BackgroundColor = UiTokens.Paper, Stroke = UiTokens.ShellEdge, StrokeThickness = 2, StrokeShape = new RoundRectangle { CornerRadius = 12 }, Padding = 18, Margin = 14,
             Content = new VerticalStackLayout { Spacing = 10, Children = { title, name, mood, new BoxView { HeightRequest = 2, Color = UiTokens.SelectBorder }, activity, journal, likes, new Label { Text = "This journal is a playful Poképark story. Game data stays unchanged.", FontSize = 12, TextColor = UiTokens.InkSoft } } } };
         void Update() { var m = state?.Resident; name.Text = m is null ? "Poképark" : (m.Name + (m.Shiny ? " ★" : "")); mood.Text = m is null ? "" : $"Mood: {state!.Mood}"; activity.Text = m is null ? "" : $"Right now: {state!.Activity}"; journal.Text = m is null ? "" : $"PERSONALITY  {state!.Trait}\n\nMEADOW MEMORY  {state!.Story}"; likes.Text = m is null ? "" : $"FAVORITE LITTLE THINGS  {state!.Likes}"; }
-        if (state is not null) state.PropertyChanged += (_, _) => MainThread.BeginInvokeOnMainThread(Update); Update(); return card;
+        handler = state is null ? null : (_, _) => MainThread.BeginInvokeOnMainThread(Update);
+        if (handler is not null) state!.PropertyChanged += handler;
+        Update();
+        return card;
     }
 
     /// <summary>Detach from the shared view model before the presentation is discarded.</summary>
     public void Cleanup()
     {
+        if (_cleanedUp) return;
+        _cleanedUp = true;
         _viewModel.PropertyChanged -= _viewModelHandler;
+        if (_secondScreenState is not null && _secondScreenHandler is not null)
+            _secondScreenState.PropertyChanged -= _secondScreenHandler;
+        if (_journalState is not null && _journalHandler is not null)
+            _journalState.PropertyChanged -= _journalHandler;
         SetAnimating(false);
     }
 
