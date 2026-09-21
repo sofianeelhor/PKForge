@@ -24,27 +24,39 @@ Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
 
 ## Features
 
-- **Game library:** Linked saves appear as cartridge shelves, filterable by release
-  order, alphabetically, by console, or by generation. Gamepad-first navigation with
-  distinct cursor and selection states.
-- **Full Pokémon editor:** Stats, IVs, EVs, moves, Met/Origin, Tera type, Hyper
-  Training, shininess, and more, with a live legality check as you edit.
-- **Cross-game Bank:** Unlimited themed boxes across every generation, with gamepad
-  grab, move, and organize.
-- **Living Dex tracker:** Track your collection across all 1025 Pokémon, generation by
-  generation, including shiny variants.
-- **Mystery Gift database:** The full event database, fully offline. Browse and inject
-  Wonder Cards into your save.
-- **Bag editor:** Edit any pouch, any item, any quantity.
-- **RNG tools:** Inspect PID, IVs, and nature, and reroll a nature while keeping
-  shininess.
-- **Poképark:** A living habitat where your Pokémon wander while you're away.
-- **One-tap legalize:** Auto Legality Mod, offline.
-- **Showdown import/export** and QR codes.
-- **Trainer card editor:** Name, IDs, money, gender.
-- **Nuzlocke report:** Track first encounters and dupes per route.
-- **Encounter browser:** Every way to catch a species, per game.
-- **Restore points** and safe, atomic save writes.
+**Manage your Pokémon.** Open any save from a linked emulator or a single file and take
+full control of your team and boxes. Edit stats, IVs, EVs, moves, Met/Origin, Tera type,
+Hyper Training, shininess, and more, with a live legality check as you go. One tap
+legalizes a Pokémon with the Auto Legality Mod, fully offline.
+
+**Move Pokémon between games.** Grab a Pokémon from one save and drop it into another —
+across generations, from a Gen 3 cartridge to a Gen 9 one. PKForge handles the transfer
+smoothly, so your team can travel with you from game to game.
+
+**A Bank like Pokémon Home.** Store your whole collection in a cross-game Bank with
+unlimited themed boxes. Organize with the gamepad, keep living dexes, and pull anything
+back out into any save whenever you need it.
+
+**Track your collection.** The Living Dex tracker follows all 1025 Pokémon across every
+generation, including shiny variants, so you always know what you still need.
+
+**Browse and inject events.** The full Mystery Gift database is bundled and works
+offline. Browse Wonder Cards from old distributions and inject them straight into your
+save.
+
+**Edit everything else.** The bag editor handles any pouch, any item, any quantity. The
+trainer card editor changes your name, IDs, money, and gender. RNG tools inspect PID,
+IVs, and nature, and can reroll a nature while keeping shininess.
+
+**Play with your Pokémon.** The Poképark is a living habitat where your Pokémon wander
+while you're away. The Nuzlocke report tracks first encounters and dupes per route, and
+the encounter browser shows every way to catch a species in each game.
+
+**Share your teams.** Import and export Showdown sets, and generate QR codes to move a
+set between devices.
+
+**Keep your saves safe.** Every write follows validate → backup → atomic write, and
+restore points capture every change exactly, so nothing is ever lost.
 
 ## Screenshots
 
