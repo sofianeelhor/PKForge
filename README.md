@@ -121,12 +121,6 @@ Link a storage unit and PKForge finds your saves automatically:
 
 You can also open a single save file directly.
 
-## Save safety
-
-Every write follows **validate, backup, then atomic write**. No exceptions, even for bulk
-operations. An invalid candidate means no backup and no write. Your saves are never at
-risk.
-
 ## Installation
 
 Download the APK from [Releases](https://github.com/sofianeelhor/PKForge/releases) and
@@ -173,10 +167,10 @@ docs/                       architecture, bank model, development, art direction
 - [PKHeX-Plugins / Auto Legality Mod](https://github.com/santacrab2/PKHeX-Plugins), the
   offline legalizer compiled in-process
 - [PKSM](https://github.com/FlagBrew/PKSM), the pixel chrome this UI builds on (GPL-3,
-  see src/PKForge.App/Resources/UI/ATTRIBUTION.md)
+  see [UI attribution](src/PKForge.App/Resources/UI/ATTRIBUTION.md))
 - [SteamGridDB](https://www.steamgriddb.com), cartridge icons, second-screen logos, and
   hero banners for the game library (community submissions; see
-  src/PKForge.App/Resources/GameArt/ATTRIBUTION.md)
+  [game art attribution](src/PKForge.App/Resources/GameArt/ATTRIBUTION.md))
 - [PokeAPI](https://pokeapi.co), item art fetched at runtime and cached on device
 - [game-icons.net](https://game-icons.net) (CC-BY 3.0, © Lorc, Delapouite, Guard13007,
   Carl Olsen and other contributing artists), UI symbols
