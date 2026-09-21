@@ -83,31 +83,27 @@ Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
 PKForge reads and edits saves from every mainline generation, plus the GameCube side
 games and popular romhacks:
 
-| Generation | Games |
-|---|---|
-| I | Red, Blue, Green (JP), Yellow |
-| II | Gold, Silver, Crystal |
-| III | Ruby, Sapphire, Emerald, FireRed, LeafGreen, Pokémon Box: Ruby & Sapphire, Colosseum, XD: Gale of Darkness |
-| IV | Diamond, Pearl, Platinum, HeartGold, SoulSilver |
-| V | Black, White, Black 2, White 2 |
-| VI | X, Y, Omega Ruby, Alpha Sapphire |
-| VII | Sun, Moon, Ultra Sun, Ultra Moon, Let's Go Pikachu, Let's Go Eevee |
-| VIII | Sword, Shield, Brilliant Diamond, Shining Pearl, Legends: Arceus |
-| IX | Scarlet, Violet |
-| Romhacks | Pokémon Unbound, Luminescent Platinum, Pokémon Compass |
+- **Generation I:** Red, Blue, Green (JP), Yellow
+- **Generation II:** Gold, Silver, Crystal
+- **Generation III:** Ruby, Sapphire, Emerald, FireRed, LeafGreen, Pokémon Box: Ruby & Sapphire, Colosseum, XD: Gale of Darkness
+- **Generation IV:** Diamond, Pearl, Platinum, HeartGold, SoulSilver
+- **Generation V:** Black, White, Black 2, White 2
+- **Generation VI:** X, Y, Omega Ruby, Alpha Sapphire
+- **Generation VII:** Sun, Moon, Ultra Sun, Ultra Moon, Let's Go Pikachu, Let's Go Eevee
+- **Generation VIII:** Sword, Shield, Brilliant Diamond, Shining Pearl, Legends: Arceus
+- **Generation IX:** Scarlet, Violet
+- **Romhacks:** Pokémon Unbound, Luminescent Platinum, Pokémon Compass
 
 ## Supported emulators
 
 Link a storage unit and PKForge finds your saves automatically:
 
-| Platform | Emulators |
-|---|---|
-| Game Boy / Game Boy Color | RetroArch, Linkboy, Pizza Boy C |
-| Game Boy Advance | RetroArch, Linkboy, Pizza Boy A |
-| Nintendo DS | melonDS, DraStic, RetroArch |
-| GameCube | Dolphin |
-| Nintendo 3DS | Azahar |
-| Nintendo Switch | Eden |
+- **Game Boy / Game Boy Color:** RetroArch, Linkboy, Pizza Boy C
+- **Game Boy Advance:** RetroArch, Linkboy, Pizza Boy A
+- **Nintendo DS:** melonDS, DraStic, RetroArch
+- **GameCube:** Dolphin
+- **Nintendo 3DS:** Azahar
+- **Nintendo Switch:** Eden
 
 You can also open a single save file directly.
 
@@ -129,7 +125,7 @@ Join for updates, support, bug reports, feature requests, or just to chat about 
 
 👉 **[Join the PKForge Discord](https://discord.gg/bMtzZmTDfu)**
 
-<iframe src="https://discord.com/widget?id=1542192456018427926&theme=dark" width="350" height="500" allowtransparency="true" frameborder="0" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"></iframe>
+[![Discord](https://discordapp.com/api/guilds/1542192456018427926/widget.png?style=banner3&time-)](https://discord.gg/bGKEyfY)
 
 ## Building
 
