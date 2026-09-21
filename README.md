@@ -10,6 +10,7 @@
 
 ---
 
+
 A Pokémon save editor and cross-generation Bank for Android, tuned for dual-screen
 handhelds like the AYN Thor. The whole interface is drawn with SkiaSharp in the visual
 language of the DS-era games: box wallpapers, pixel sprites, gamepad controls, and a
@@ -122,15 +123,13 @@ Download the APK from [Releases](https://github.com/sofianeelhor/PKForge/release
 allow installs from unknown sources. First run walks you through linking an emulator
 (RetroArch, melonDS, Azahar, Eden) or opening a single save file.
 
-## Support
+## 💬 Discord
 
-For updates, support, bug reports, feature requests, or just to chat about the project,
-[join the PKForge Discord](https://discord.gg/bMtzZmTDfu).
+Join for updates, support, bug reports, feature requests, or just to chat about the project.
 
-- 🚀 **Announcements** — new releases and features
-- 🐛 **Bug reports** — get help and report issues
-- 💡 **Feature requests** — shape what comes next
-- 💬 **Community chat** — show off your teams and boxes
+👉 **[Join the PKForge Discord](https://discord.gg/bMtzZmTDfu)**
+
+<iframe src="https://discord.com/widget?id=1542192456018427926&theme=dark" width="350" height="500" allowtransparency="true" frameborder="0" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"></iframe>
 
 ## Building
 
