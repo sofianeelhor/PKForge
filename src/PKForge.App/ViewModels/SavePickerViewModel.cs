@@ -176,6 +176,7 @@ public partial class SavePickerViewModel : ObservableObject
                     Status = $"Scan of {root.Kind} failed: {error.Message}";
                 }
             }
+            RebuildGroups();
             Status = Saves.Count == 0
                 ? $"No games found. Scanned {filesSeen} file(s), {_rejectedCandidates.Count} looked like saves but did not parse."
                 : $"{Saves.Count} game(s) on the shelf. Scanned {filesSeen} file(s).";
@@ -197,28 +198,112 @@ public partial class SavePickerViewModel : ObservableObject
             members = [];
             _groupMembers.Add(save.GameLabel, members);
         }
-
         members.Add(save);
-        var first = members[0];
-        var replacement = new SaveGroup(first.GameLabel, first.Generation, first.Emulator,
-            first.TrainerName, first.PlayTime, members.ToArray());
-        var index = -1;
-        for (var i = 0; i < Groups.Count; i++)
-        {
-            if (Groups[i].GameLabel == save.GameLabel)
-            {
-                index = i;
-                break;
-            }
-        }
-        if (index >= 0)
-            Groups[index] = replacement;
-        else
-        {
-            var insertAt = Groups.TakeWhile(group => string.CompareOrdinal(group.GameLabel, save.GameLabel) < 0).Count();
-            Groups.Insert(insertAt, replacement);
-        }
     }
+
+    /// <summary>Caption of the active shelf filter, for the home screen chip.</summary>
+    public partial class FilterState : ObservableObject
+    {
+        [ObservableProperty] private string _caption = "ALL";
+    }
+
+    public FilterState Filter { get; } = new();
+    private string _filterKey = "all";
+
+    /// <summary>
+    /// Applies a shelf filter: "all", "az", "gen1".."gen9", or a console bucket
+    /// ("gb", "gba", "ds", "3ds", "switch"). The unfiltered list is always kept in
+    /// _groupMembers; only the shelf view narrows.
+    /// </summary>
+    public void ApplyFilter(string key, string caption)
+    {
+        _filterKey = key;
+        Filter.Caption = caption;
+        RebuildGroups();
+    }
+
+    private void RebuildGroups()
+    {
+        Groups.Clear();
+        IEnumerable<SaveGroup> groups = _groupMembers.Values
+            .Select(m => (First: m[0], Members: m))
+            .Select(x => new SaveGroup(x.First.GameLabel, x.First.Generation, x.First.Emulator,
+                x.First.TrainerName, x.First.PlayTime, x.Members.ToArray()));
+
+        groups = _filterKey switch
+        {
+            "release" => groups.OrderBy(ReleaseRank),
+            "az" => groups.OrderBy(g => g.GameLabel, StringComparer.OrdinalIgnoreCase),
+            "gen1" or "gen2" or "gen3" or "gen4" or "gen5" or "gen6" or "gen7" or "gen8" or "gen9"
+                => groups.Where(g => g.Generation == int.Parse(_filterKey[3..])),
+            "gb" => groups.Where(g => ConsoleOf(g) == "Game Boy"),
+            "gba" => groups.Where(g => ConsoleOf(g) == "GBA"),
+            "ds" => groups.Where(g => ConsoleOf(g) == "DS"),
+            "3ds" => groups.Where(g => ConsoleOf(g) == "3DS"),
+            "switch" => groups.Where(g => ConsoleOf(g) == "Switch"),
+            _ => groups,
+        };
+        foreach (var group in groups)
+            Groups.Add(group);
+    }
+
+    /// <summary>Console a game belongs to. Let's Go is a Switch game despite being
+    /// generation 7 with the 3DS pair.</summary>
+    private static string ConsoleOf(SaveGroup group) => group.GameLabel.StartsWith("Pokémon Let's Go", StringComparison.Ordinal)
+        ? "Switch"
+        : group.Generation switch
+        {
+            1 or 2 => "Game Boy",
+            3 => "GBA",
+            4 or 5 => "DS",
+            6 or 7 => "3DS",
+            _ => "Switch",
+        };
+
+    /// <summary>
+    /// Chronological shelf order: Red/Blue (1996) through Legends: Z-A, with the
+    /// GameCube side games and romhacks slotted next to the era they belong to.
+    /// Unknown labels fall back to generation order.
+    /// </summary>
+    private static int ReleaseRank(SaveGroup group)
+    {
+        var label = group.GameLabel;
+        return label switch
+        {
+            // Substring traps first: FireRed contains "Red", HeartGold contains "Gold",
+            // Omega Ruby contains "Ruby", Brilliant Diamond contains "Diamond"...
+            _ when label.Contains("FireRed", StringComparison.Ordinal) || label.Contains("LeafGreen", StringComparison.Ordinal) ||
+                    label.Contains("Unbound", StringComparison.Ordinal) => 2004,
+            _ when label.Contains("HeartGold", StringComparison.Ordinal) || label.Contains("SoulSilver", StringComparison.Ordinal) => 2009,
+            _ when label.Contains("Black 2", StringComparison.Ordinal) || label.Contains("White 2", StringComparison.Ordinal) => 2012,
+            _ when label.Contains("Omega", StringComparison.Ordinal) || label.Contains("Alpha", StringComparison.Ordinal) => 2014,
+            _ when label.Contains("Ultra", StringComparison.Ordinal) => 2017,
+            _ when label.Contains("Let's Go", StringComparison.Ordinal) => 2018,
+            _ when label.Contains("Brilliant", StringComparison.Ordinal) || label.Contains("Shining", StringComparison.Ordinal) ||
+                    label.Contains("Luminescent", StringComparison.Ordinal) => 2021,
+            _ when label.Contains("Legends: Arceus", StringComparison.Ordinal) => 2022,
+            _ when label.Contains("Legends: Z-A", StringComparison.Ordinal) => 2025,
+            _ when label.Contains("Colosseum", StringComparison.Ordinal) => 2003,
+            _ when label.Contains("XD", StringComparison.Ordinal) => 2005,
+            _ when label.Contains("Box", StringComparison.Ordinal) => 2002,
+            _ when label.Contains("Red", StringComparison.Ordinal) || label.Contains("Blue", StringComparison.Ordinal) ||
+                    label.Contains("Green", StringComparison.Ordinal) => 1996,
+            _ when label.Contains("Yellow", StringComparison.Ordinal) => 1998,
+            _ when label.Contains("Gold", StringComparison.Ordinal) || label.Contains("Silver", StringComparison.Ordinal) => 1999,
+            _ when label.Contains("Crystal", StringComparison.Ordinal) => 2000,
+            _ when label.Contains("Ruby", StringComparison.Ordinal) || label.Contains("Sapphire", StringComparison.Ordinal) => 2002,
+            _ when label.Contains("Emerald", StringComparison.Ordinal) => 2004,
+            _ when label.Contains("Diamond", StringComparison.Ordinal) || label.Contains("Pearl", StringComparison.Ordinal) => 2006,
+            _ when label.Contains("Platinum", StringComparison.Ordinal) => 2008,
+            _ when label.Contains("Black", StringComparison.Ordinal) || label.Contains("White", StringComparison.Ordinal) => 2010,
+            _ when label.Contains("X", StringComparison.Ordinal) || label.Contains("Y", StringComparison.Ordinal) => 2013,
+            _ when label.Contains("Sun", StringComparison.Ordinal) || label.Contains("Moon", StringComparison.Ordinal) => 2016,
+            _ when label.Contains("Scarlet", StringComparison.Ordinal) || label.Contains("Violet", StringComparison.Ordinal) ||
+                    label.Contains("Compass", StringComparison.Ordinal) => 2022,
+            _ => group.Generation * 1000,
+        };
+    }
+
 
     /// <summary>Direct link to a single save file (the escape hatch when detection can't find it).</summary>
     [RelayCommand]
@@ -281,4 +366,5 @@ public partial class SavePickerViewModel : ObservableObject
             IsBusy = false;
         }
     }
+
 }

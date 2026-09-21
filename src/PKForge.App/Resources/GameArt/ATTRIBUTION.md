@@ -32,3 +32,11 @@ logo by NESDUB (https://www.steamgriddb.com/logo/159625, transparent second-scre
 logo). Included solely as bundled game-library artwork.
 SteamGridDB hosts no transparent logo for this game. Included solely as bundled
 game-library artwork.
+
+# Hand-picked art refresh (September 21, 2026)
+
+The cartridge icons (`GameArt/`) and second-screen logos (`GameLogo/`) for 49 games
+were re-picked by hand from SteamGridDB by the project owner, replacing the
+automatically fetched set. Source art remains SteamGridDB community submissions under
+their respective licenses; individual asset credits stay on steamgriddb.com. Hero
+banners (`GameHero/`) are unchanged. Bundled art cache version bumped to v7.
