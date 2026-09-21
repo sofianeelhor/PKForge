@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/images/logo-transparent.png" alt="PKForge" width="140" /></p>
 
-<p align="center"><b>A Pokémon save editor and bank for Android, built for dual-screen handhelds.</b></p>
+<p align="center"><b>A Pokémon save editor and bank for Android, support dual-screen handhelds.</b></p>
 
 <p align="center">
   <a href="https://discord.gg/bMtzZmTDfu"><img src="https://img.shields.io/badge/Discord-Join%20the%20server-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
@@ -12,10 +12,7 @@
 
 
 A Pokémon save editor and cross-generation Bank for Android, tuned for dual-screen
-handhelds like the AYN Thor. The whole interface is drawn with SkiaSharp in the visual
-language of the DS-era games: box wallpapers, pixel sprites, gamepad controls, and a
-second screen that shows a live summary of whatever is under the cursor.
-
+handhelds like the AYN Thor.
 Built on [PKHeX.Core](https://github.com/kwsch/PKHeX) with the
 [Auto Legality Mod](https://github.com/santacrab2/PKHeX-Plugins) compiled in-process, so
 legalizing a Pokémon works fully offline, on device.
@@ -24,39 +21,32 @@ Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
 
 ## Features
 
-**Manage your Pokémon.** Open any save from a linked emulator or a single file and take
-full control of your team and boxes. Edit stats, IVs, EVs, moves, Met/Origin, Tera type,
-Hyper Training, shininess, and more, with a live legality check as you go. One tap
-legalizes a Pokémon with the Auto Legality Mod, fully offline.
-
-**Move Pokémon between games.** Grab a Pokémon from one save and drop it into another —
-across generations, from a Gen 3 cartridge to a Gen 9 one. PKForge handles the transfer
-smoothly, so your team can travel with you from game to game.
-
-**A Bank like Pokémon Home.** Store your whole collection in a cross-game Bank with
-unlimited themed boxes. Organize with the gamepad, keep living dexes, and pull anything
-back out into any save whenever you need it.
-
-**Track your collection.** The Living Dex tracker follows all 1025 Pokémon across every
-generation, including shiny variants, so you always know what you still need.
-
-**Browse and inject events.** The full Mystery Gift database is bundled and works
-offline. Browse Wonder Cards from old distributions and inject them straight into your
-save.
-
-**Edit everything else.** The bag editor handles any pouch, any item, any quantity. The
-trainer card editor changes your name, IDs, money, and gender. RNG tools inspect PID,
-IVs, and nature, and can reroll a nature while keeping shininess.
-
-**Play with your Pokémon.** The Poképark is a living habitat where your Pokémon wander
-while you're away. The Nuzlocke report tracks first encounters and dupes per route, and
-the encounter browser shows every way to catch a species in each game.
-
-**Share your teams.** Import and export Showdown sets, and generate QR codes to move a
-set between devices.
-
-**Keep your saves safe.** Every write follows validate → backup → atomic write, and
-restore points capture every change exactly, so nothing is ever lost.
+- **Manage your Pokémon.** Open any save from a linked emulator or a single file and
+  take full control of your team and boxes. Edit stats, IVs, EVs, moves, Met/Origin,
+  Tera type, Hyper Training, shininess, and more, with a live legality check as you go.
+- **One-tap legalize.** The Auto Legality Mod is compiled in-process, so legalizing a
+  Pokémon works fully offline, on device.
+- **Move Pokémon between games.** Grab a Pokémon from one save and drop it into another
+  — across generations, from a Gen 3 cartridge to a Gen 9 one. PKForge handles the
+  transfer smoothly, so your team can travel with you from game to game.
+- **A Bank like Pokémon Home.** Store your whole collection in a cross-game Bank with
+  unlimited themed boxes. Organize with the gamepad, keep living dexes, and pull
+  anything back out into any save whenever you need it.
+- **Track your collection.** The Living Dex tracker follows all 1025 Pokémon across
+  every generation, including shiny variants, so you always know what you still need.
+- **Browse and inject events.** The full Mystery Gift database is bundled and works
+  offline. Browse Wonder Cards from old distributions and inject them straight into
+  your save.
+- **Edit everything else.** The bag editor handles any pouch, any item, any quantity.
+  The trainer card editor changes your name, IDs, money, and gender. RNG tools inspect
+  PID, IVs, and nature, and can reroll a nature while keeping shininess.
+- **Play with your Pokémon.** The Poképark is a living habitat where your Pokémon
+  wander while you're away. The Nuzlocke report tracks first encounters and dupes per
+  route, and the encounter browser shows every way to catch a species in each game.
+- **Share your teams.** Import and export Showdown sets, and generate QR codes to move
+  a set between devices.
+- **Keep your saves safe.** Every write follows validate → backup → atomic write, and
+  restore points capture every change exactly, so nothing is ever lost.
 
 ## Screenshots
 
