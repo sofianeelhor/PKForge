@@ -77,6 +77,39 @@ Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
   <img src="docs/screenshots/encounters.png" alt="Encounter browser" width="49%" />
 </p>
 
+## Supported games
+
+PKForge reads and edits saves from every mainline generation, plus the GameCube side
+games and popular romhacks:
+
+| Generation | Games |
+|---|---|
+| I | Red, Blue, Green (JP), Yellow |
+| II | Gold, Silver, Crystal |
+| III | Ruby, Sapphire, Emerald, FireRed, LeafGreen, Pokémon Box: Ruby & Sapphire, Colosseum, XD: Gale of Darkness |
+| IV | Diamond, Pearl, Platinum, HeartGold, SoulSilver |
+| V | Black, White, Black 2, White 2 |
+| VI | X, Y, Omega Ruby, Alpha Sapphire |
+| VII | Sun, Moon, Ultra Sun, Ultra Moon, Let's Go Pikachu, Let's Go Eevee |
+| VIII | Sword, Shield, Brilliant Diamond, Shining Pearl, Legends: Arceus |
+| IX | Scarlet, Violet |
+| Romhacks | Pokémon Unbound, Luminescent Platinum, Pokémon Compass |
+
+## Supported emulators
+
+Link a storage unit and PKForge finds your saves automatically:
+
+| Platform | Emulators |
+|---|---|
+| Game Boy / Game Boy Color | RetroArch, Linkboy, Pizza Boy C |
+| Game Boy Advance | RetroArch, Linkboy, Pizza Boy A |
+| Nintendo DS | melonDS, DraStic, RetroArch |
+| GameCube | Dolphin |
+| Nintendo 3DS | Azahar |
+| Nintendo Switch | Eden |
+
+You can also open a single save file directly.
+
 ## Save safety
 
 Every write follows **validate → backup → atomic write**. No exceptions, even for bulk
@@ -93,6 +126,11 @@ allow installs from unknown sources. First run walks you through linking an emul
 
 For updates, support, bug reports, feature requests, or just to chat about the project,
 [join the PKForge Discord](https://discord.gg/bMtzZmTDfu).
+
+- 🚀 **Announcements** — new releases and features
+- 🐛 **Bug reports** — get help and report issues
+- 💡 **Feature requests** — shape what comes next
+- 💬 **Community chat** — show off your teams and boxes
 
 ## Building
 
@@ -123,8 +161,17 @@ docs/                       architecture, bank model, development, art direction
 ## Credits
 
 - [PKHeX](https://github.com/kwsch/PKHeX), the engine everything runs on
+- [PKHeX-Plugins / Auto Legality Mod](https://github.com/santacrab2/PKHeX-Plugins), the
+  offline legalizer compiled in-process
 - [PKSM](https://github.com/FlagBrew/PKSM), the pixel chrome this UI builds on (GPL-3,
   see src/PKForge.App/Resources/UI/ATTRIBUTION.md)
+- [SteamGridDB](https://www.steamgriddb.com), cartridge icons, second-screen logos, and
+  hero banners for the game library (community submissions; see
+  src/PKForge.App/Resources/GameArt/ATTRIBUTION.md)
+- [PokeAPI](https://pokeapi.co), item art fetched at runtime and cached on device
+- [game-icons.net](https://game-icons.net) (CC-BY 3.0, © Lorc, Delapouite, Guard13007,
+  Carl Olsen and other contributing artists), UI symbols
+- [Bulbagarden Archives](https://archives.bulbagarden.net), Pokérus status sprites
 - Sprites and Pokémon names © Nintendo, Creatures Inc., GAME FREAK inc.
 
 ## License
