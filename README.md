@@ -1,50 +1,122 @@
-# PKForge
+<p align="center">
+  <img src="docs/images/logo-transparent.png" alt="PKForge" width="140">
+</p>
 
-Join the PKForge Discord for updates, support, bug reports, feature requests, and community chat.
+<h1 align="center">PKForge</h1>
 
-[![PKForge](https://discordapp.com/assets/07dca80a102d4149e9736d4b162cff6f.ico)](https://discord.gg/bMtzZmTDfu)
+<p align="center">
+  <b>A Pokémon save editor and bank for Android, built for dual-screen handhelds.</b><br>
+  The whole interface is drawn with SkiaSharp in the visual language of the DS-era games.
+</p>
 
-A Pokémon save editor and bank for Android, built for dual-screen handhelds like the
-AYN Thor. The whole interface is drawn with SkiaSharp in the visual language of the
-DS-era games: box wallpapers, pixel sprites, gamepad controls, and a second screen that
-shows a live summary of whatever is under the cursor.
+<p align="center">
+  <a href="https://discord.gg/bMtzZmTDfu"><img alt="Discord" src="https://img.shields.io/badge/Discord-Join%20the%20server-5865F2?logo=discord&logoColor=white"></a>
+  <a href="https://github.com/sofianeelhor/PKForge/releases"><img alt="Releases" src="https://img.shields.io/badge/Download-APK-2B4E95"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-GPLv3-blue"></a>
+</p>
 
-![Home, both screens](docs/screenshots/home.png)
+---
 
-Built on [PKHeX.Core](https://github.com/kwsch/PKHeX)
-with the [Auto Legality Mod](https://github.com/santacrab2/PKHeX-Plugins) compiled
-in-process, so legalizing a Pokémon works offline, on device.
+**PKForge** is a Pokémon save editor and cross-generation Bank for Android, tuned for
+dual-screen handhelds like the AYN Thor. Box wallpapers, pixel sprites, gamepad controls,
+and a second screen that shows a live summary of whatever is under the cursor — all
+rendered in the visual language of the DS-era games.
 
-Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
+Built on [PKHeX.Core](https://github.com/kwsch/PKHeX) with the
+[Auto Legality Mod](https://github.com/santacrab2/PKHeX-Plugins) compiled in-process, so
+legalizing a Pokémon works **fully offline, on device**.
 
-## What it does
+> Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
 
-- Open saves from linked emulators (RetroArch, melonDS, Azahar, Eden) or single files
-- Edit any Pokémon: stats, moves, Met/Origin, Tera type, Hyper Training, ribbons soon
-- One-tap legalize, Showdown import/export, QR codes
-- A cross-game bank with unlimited themed boxes
-- The mystery-gift database, fully offline, plus community event boxes
-- Bag editor, trainer card, Pokédex, restore points
-<img width="952" height="908" alt="image" src="https://github.com/user-attachments/assets/5c1db1a7-fe74-4799-9f82-8f1e39352f06" />
+---
 
-<img width="1312" height="1062" alt="image" src="https://github.com/user-attachments/assets/060bd9f5-b163-45a2-bd13-9aa48f5879b6" />
+## ✨ Features
 
+### 🎮 A home that feels like a game
+Your linked saves appear as cartridge shelves — filter by release order, alphabetically,
+by console, or by generation. Gamepad-first: the cursor and selection are distinct, and
+every action has a button.
 
-We do not support cheating at the expense of others. Do not use significantly edited
-Pokémon in battle or in trades with people who do not know they are edited.
+![Home](docs/screenshots/home.png)
 
-## Install
+### ✏️ Edit any Pokémon
+Stats, IVs, EVs, moves, Met/Origin, Tera type, Hyper Training, shininess, and more —
+with a live legality check as you go.
+
+![Editor](docs/screenshots/editor.png)
+
+### 🏦 A cross-game Bank
+Unlimited themed boxes across every generation. Grab, move, deposit, and organize with
+the gamepad.
+
+![Bank](docs/screenshots/bank.png)
+
+### 🧬 Living Dex tracker
+Track your collection across all 1025 Pokémon, generation by generation, including
+shiny variants.
+
+![Living Dex](docs/screenshots/living-dex.png)
+
+### 🎁 Mystery Gift database
+The full event database, fully offline — browse and inject Wonder Cards into your save.
+
+![Mystery Gift](docs/screenshots/mystery-gift.png)
+
+### 🎒 Bag editor
+Edit any pouch, any item, any quantity.
+
+![Bag](docs/screenshots/bag.png)
+
+### 🧪 RNG tools
+Inspect PID, IVs, and nature — and reroll a nature while keeping shininess.
+
+![RNG](docs/screenshots/rng.png)
+
+### 🏞️ Poképark
+A living habitat where your Pokémon wander while you're away.
+
+![Poképark](docs/screenshots/pokepark.png)
+
+### And more
+
+| | |
+|---|---|
+| **Trainer card** — name, IDs, money, gender | **Showdown QR** — export a set as a QR code |
+| ![Trainer card](docs/screenshots/trainer-card.png) | ![Showdown QR](docs/screenshots/showdown-qr.png) |
+| **Nuzlocke report** — first encounters and dupes per route | **Encounter browser** — every way to catch a species |
+| ![Nuzlocke](docs/screenshots/nuzlocke.png) | ![Encounters](docs/screenshots/encounters.png) |
+
+- **One-tap legalize** — Auto Legality Mod, offline
+- **Showdown import/export** and **QR codes**
+- **Restore points** and safe, atomic save writes
+
+---
+
+## 🛡️ Save safety
+
+Every write follows **validate → backup → atomic write**. No exceptions, even for bulk
+operations. An invalid candidate means no backup and no write. Your saves are never at
+risk.
+
+---
+
+## 📥 Install
 
 Download the APK from [Releases](https://github.com/sofianeelhor/PKForge/releases) and
-allow installs from unknown sources. First run walks you through linking an emulator.
+allow installs from unknown sources. First run walks you through linking an emulator
+(RetroArch, melonDS, Azahar, Eden) or opening a single save file.
 
-## Discord
+---
+
+## 💬 Discord
 
 Join for updates, support, bug reports, feature requests, or just to chat about the project.
 
 👉 **[Join the PKForge Discord](https://discord.gg/bMtzZmTDfu)**
 
-## Build
+---
+
+## 🛠️ Build
 
 .NET 10 SDK with the `maui-android` workload, Android SDK (API 36).
 
@@ -57,7 +129,7 @@ dotnet build src/PKForge.App/PKForge.App.csproj -f net10.0-android
 
 Version tags build and publish the APK from CI.
 
-## Layout
+### Layout
 
 ```
 src/PKForge.Domain          contracts and DTOs, no engine or Android dependencies
@@ -70,13 +142,15 @@ tools/ChromePreview         renders the design system off-device
 docs/                       architecture, bank model, development, art direction
 ```
 
-## Credits
+---
+
+## 🙏 Credits
 
 - [PKHeX](https://github.com/kwsch/PKHeX), the engine everything runs on
 - [PKSM](https://github.com/FlagBrew/PKSM), the pixel chrome this UI builds on (GPL-3,
   see src/PKForge.App/Resources/UI/ATTRIBUTION.md)
 - Sprites and Pokémon names © Nintendo, Creatures Inc., GAME FREAK inc.
 
-## License
+## 📄 License
 
 GPLv3 or later, inherited from PKHeX.Core. See [LICENSE](LICENSE).
