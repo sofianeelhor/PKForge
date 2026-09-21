@@ -64,6 +64,15 @@ public sealed class SaveEngineSession : ISaveEngineSession
     /// handler state change only through their explicit editors and flows.</summary>
     private static readonly EntityImportSettings ImportNone = EntityImportSettings.None;
 
+    /// <summary>
+    /// For a Pokémon that ARRIVES from outside (bank transfer, .pk import, a catch):
+    /// the engine's own dex routine, exactly as the game registers something you
+    /// obtained. Handler and record rewrites stay off, so the mon is not silently
+    /// re-stamped as traded, and edits to mons already in the save remain surgical.
+    /// </summary>
+    private static readonly EntityImportSettings ImportReceived =
+        new(EntityImportOption.Disable, EntityImportOption.Enable, EntityImportOption.Disable);
+
     public EntityDetail ReadEntity(int box, int slot)
     {
         ThrowIfDisposed();
@@ -538,9 +547,9 @@ public sealed class SaveEngineSession : ISaveEngineSession
     }
 
     /// <summary>Appends a mon to the party (compacting, like the games).</summary>
-    private void InsertParty(PKM pk)
+    private void InsertParty(PKM pk, EntityImportSettings? settings = null)
     {
-        _save.SetPartySlotAtIndex(pk, Math.Min(_save.PartyCount, 5), ImportNone);
+        _save.SetPartySlotAtIndex(pk, Math.Min(_save.PartyCount, 5), settings ?? ImportNone);
     }
 
     /// <summary>Empties a slot; party slots compact instead of leaving a hole.</summary>
@@ -1243,11 +1252,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
         {
             if (_save.PartyCount >= 6)
                 return new GenerationOutcome(false, "The party is full.");
-            InsertParty(placed);
+            InsertParty(placed, ImportReceived);
         }
         else
         {
-            SetEntityCore(targetBox, targetSlot, placed);
+            // Caught here, so the save's dex registers it the way the game would.
+            _save.SetBoxSlotAtIndex(placed, targetBox, targetSlot, ImportReceived);
         }
 
         var card = EncounterDatabase.ToCard(enc);
@@ -1276,10 +1286,11 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (box == -1)
         {
             if (_save.PartyCount >= 6) return false;
-            InsertParty(converted);
+            InsertParty(converted, ImportReceived);
             return true;
         }
-        _save.SetBoxSlotAtIndex(converted, box, slot, ImportNone);
+        // Received, so the save's dex registers it the way the game would.
+        _save.SetBoxSlotAtIndex(converted, box, slot, ImportReceived);
         return true;
     }
 
