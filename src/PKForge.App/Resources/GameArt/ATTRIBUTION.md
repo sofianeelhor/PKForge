@@ -15,6 +15,15 @@ banners (`GameHero/`) were fetched once from SteamGridDB at build time using a
 local, gitignored API key. Prefer the `icons` asset type for cartridges and the
 `logos` asset type for the square second screen; logos must keep transparency.
 
+
+# Pokémon Radical Red artwork
+
+`radical-red.png` (cartridge icon) and the transparent second-screen logo use
+artwork published on SteamGridDB:
+icon https://cdn2.steamgriddb.com/icon/9d818a0585a5b089adc25793fd466874.png and
+logo https://cdn2.steamgriddb.com/logo/89c30ca363566155b1dec2102063c957.png.
+Included solely as bundled game-library artwork.
+
 # Pokémon Compass artwork
 
 `compass.png` uses the Pokémon Compass artwork by Xrles, published on
