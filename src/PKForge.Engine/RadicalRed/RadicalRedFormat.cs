@@ -160,6 +160,19 @@ internal static class RadicalRedFormat
     public static int RawFileOffset(int regionOffset) =>
         regionOffset < 0xFF0 ? RawRegionFile + regionOffset : RawRegionFile + 0x1000 + (regionOffset - 0xFF0);
 
+    // ── Bag (the CFRU bag expansion, engine src/item.c) ──
+    // Five pockets of 4-byte ItemSlots (item u16, quantity u16 XOR the security key),
+    // zero-id terminated, parked at RAM 0x203BB20 in game order Items/Key/Balls/TM/
+    // Berries with capacities 450/75/50/128/75. The run begins inside section 13's
+    // parasite tail and only 0x518 bytes fit before the sector data ends; everything
+    // past RAM 0x203C038 continues into the raw sector-30/31 region, which is why
+    // key items, balls, TMs and berries live at fixed file offsets in the 0x1E000
+    // area. The section 13 checksum window (0x450) stops right where the bag begins,
+    // so the in-sector bag bytes ride the parasite, checksum-free like the rest of it.
+    public const int BagSection = 13;
+    public const int BagImageOffset = 0xAD8; // bag image start inside section 13's data
+    public const int BagImageInSector = 0x518; // (0xFF0 - 0xAD8); slots past this spill into the raw region
+
     /// <summary>
     /// Structural Radical Red test (there is no magic signature): every live section
     /// validates against the CFRU window table while at least one vintage FRLG window

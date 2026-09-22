@@ -18,10 +18,14 @@ namespace PKForge.Engine.RadicalRed;
 /// </summary>
 internal static class RadicalRedData
 {
-    private static Dictionary<int, string>? _species;
-    private static Dictionary<int, string>? _items;
+    // The app opens sessions from worker threads, so every lazy table publishes a
+    // fully-built object behind a volatile guard; a half-filled table would make
+    // even save detection flunk (IsKnownSpecies feeds IsRadicalRed).
+    private static readonly object LoadGate = new();
+    private static volatile Dictionary<int, string>? _species;
+    private static volatile Dictionary<int, string>? _items;
     private static Dictionary<string, int>? _speciesByName;
-    private static Dictionary<string, int>? _nationalByName;
+    private static volatile Dictionary<string, int>? _nationalByName;
     private static string[] _speciesList = [];
     private static string[] _moveList = [];
     private static string[] _abilityList = [];
@@ -60,6 +64,88 @@ internal static class RadicalRedData
             LoadItems();
             return _maxItem;
         }
+    }
+
+    // ── Bag pockets ──
+    // The engine routes every item to one of the five bag pockets through its ROM
+    // item table, which is not extractable without the ROM. This map mixes retail
+    // zones with name rules and is validated entry-for-entry against the champion
+    // save — all 294 stored items agree (including Radical Red's own quirks: Exp.
+    // Share is a key item here, the Primal Orbs are hold items, and Light/Smoke/Iron
+    // "Balls" are not balls). Balls are retail ids 1..12 plus the CFRU block
+    // 239..253; berries and TM/HM machines match by name; key items are the FireRed
+    // key zones 259..265 and 347..374 plus Exp. Share (182). Everything else —
+    // including the unreachable Hoenn leftovers at 266..288 — reads as the Items
+    // pocket, exactly as observed.
+    private static volatile BagPocketSets? _pockets;
+
+    /// <summary>Item ids that belong to a bag pocket family.</summary>
+    public static IReadOnlyCollection<int> PocketIds(string family)
+    {
+        var pockets = Pockets();
+        return family switch
+        {
+            "ball" => pockets.Ball,
+            "berry" => pockets.Berry,
+            "tm" => pockets.Machine,
+            "key" => pockets.Key,
+            _ => [],
+        };
+    }
+
+    /// <summary>True unless the item belongs to the balls/berries/TM/key pockets.</summary>
+    public static bool IsSpecialPocketItem(int itemId)
+    {
+        var pockets = Pockets();
+        return pockets.Ball.Contains(itemId) || pockets.Berry.Contains(itemId)
+            || pockets.Machine.Contains(itemId) || pockets.Key.Contains(itemId);
+    }
+
+    /// <summary>ROM filler slots ("-DONT USE- -", "Free Space*") never enter a picker.</summary>
+    public static bool IsFillerItem(int item)
+    {
+        LoadItems();
+        return !_items!.TryGetValue(item, out var name) || name.Length == 0 || name == "."
+            || name.StartsWith('-') || name.Contains("Free Space", StringComparison.Ordinal);
+    }
+
+    private static BagPocketSets Pockets()
+    {
+        if (_pockets is not null) return _pockets;
+        lock (LoadGate)
+        {
+            if (_pockets is not null) return _pockets;
+            LoadItems();
+            var ball = new HashSet<int>();
+            var berry = new HashSet<int>();
+            var machine = new HashSet<int>();
+            var key = new HashSet<int>();
+            foreach (var (id, name) in _items!)
+            {
+                if (id is >= 1 and <= 12 or >= 239 and <= 253)
+                    ball.Add(id);
+                else if (name.EndsWith(" Berry", StringComparison.Ordinal))
+                    berry.Add(id);
+                else if (IsMachineName(name))
+                    machine.Add(id);
+                else if (id is >= 259 and <= 265 or >= 347 and <= 374 or 182)
+                    key.Add(id);
+            }
+            _pockets = new BagPocketSets(ball, berry, machine, key);
+            return _pockets;
+        }
+    }
+
+    private sealed record BagPocketSets(HashSet<int> Ball, HashSet<int> Berry, HashSet<int> Machine, HashSet<int> Key);
+
+    private static bool IsMachineName(string name)
+    {
+        if (name.Length < 3 || name[1] != 'M' || name[0] is not ('T' or 'H'))
+            return false;
+        foreach (var c in name[2..])
+            if (!char.IsAsciiDigit(c))
+                return false;
+        return true;
     }
 
     public static bool IsKnownSpecies(int species)
@@ -133,14 +219,19 @@ internal static class RadicalRedData
     private static void LoadStrings()
     {
         if (_nationalByName is not null) return;
-        var strings = GameInfo.GetStrings("en");
-        _speciesList = strings.specieslist;
-        _moveList = strings.movelist;
-        _abilityList = strings.abilitylist;
-        _nationalByName = new Dictionary<string, int>(_speciesList.Length, StringComparer.OrdinalIgnoreCase);
-        for (var id = 1; id < _speciesList.Length; id++)
-            if (_speciesList[id].Length > 0 && !_nationalByName.ContainsKey(_speciesList[id]))
-                _nationalByName[_speciesList[id]] = id;
+        lock (LoadGate)
+        {
+            if (_nationalByName is not null) return;
+            var strings = GameInfo.GetStrings("en");
+            var national = new Dictionary<string, int>(strings.specieslist.Length, StringComparer.OrdinalIgnoreCase);
+            for (var id = 1; id < strings.specieslist.Length; id++)
+                if (strings.specieslist[id].Length > 0 && !national.ContainsKey(strings.specieslist[id]))
+                    national[strings.specieslist[id]] = id;
+            _speciesList = strings.specieslist;
+            _moveList = strings.movelist;
+            _abilityList = strings.abilitylist;
+            _nationalByName = national;
+        }
     }
 
     // ── National-table derived data (base stats, growth, gender, abilities) ──
@@ -260,24 +351,38 @@ internal static class RadicalRedData
     private static void LoadSpecies()
     {
         if (_species is not null) return;
-        _species = [];
-        foreach (var (id, name) in LoadTable("radicalred.species.txt"))
+        lock (LoadGate)
         {
-            _species[id] = name;
-            if (id > _maxSpecies)
-                _maxSpecies = id;
+            if (_species is not null) return;
+            var species = new Dictionary<int, string>();
+            var max = 0;
+            foreach (var (id, name) in LoadTable("radicalred.species.txt"))
+            {
+                species[id] = name;
+                if (id > max)
+                    max = id;
+            }
+            _maxSpecies = max;
+            _species = species;
         }
     }
 
     private static void LoadItems()
     {
         if (_items is not null) return;
-        _items = [];
-        foreach (var (id, name) in LoadTable("radicalred.items.txt"))
+        lock (LoadGate)
         {
-            _items[id] = name;
-            if (id > _maxItem)
-                _maxItem = id;
+            if (_items is not null) return;
+            var items = new Dictionary<int, string>();
+            var max = 0;
+            foreach (var (id, name) in LoadTable("radicalred.items.txt"))
+            {
+                items[id] = name;
+                if (id > max)
+                    max = id;
+            }
+            _maxItem = max;
+            _items = items;
         }
     }
 

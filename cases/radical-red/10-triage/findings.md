@@ -224,6 +224,7 @@ regions, which this RR save has no evidence of (those boxes are simply empty).
 
 | file | purpose |
 |---|---|
+
 | `rrlib.py` | shared lib: sector/trailer model, fold32 checksum, window discovery, G3 charmap (parsed from PKHeX `StringConverter3`), internal→national species table (from PKHeX `SpeciesConverter`), Unbound CFRU name table, vanilla-crypto Mon parser |
 | `01_envelope.py` | trailer dump, both slot maps, newer-slot detection, checksum verification + window discovery + hand recomputation |
 | `02_sections.py` | definitive content dissection under the discovered model (trainer/party/bag/PC/boxes/others) |
@@ -234,12 +235,35 @@ regions, which this RR save has no evidence of (those boxes are simply empty).
 | `02f_section13_hof.py` | section 13 nonzero map, box-name table, full HoF decode vs party |
 | `03_strings.py` | stream-boundary continuity proof, ASCII + G3 string scans, marker search |
 | `04_mon_crypto.py` | full field dumps (party mon 0, PC mons 0–1), plaintext proof, HoF cross-check, checksum recomputation |
+| `05_bag_layout.py` | decodes the CFRU bag (five pockets) from the parasite/raw regions; validates money, checksums and item names |
 
-## 8. Open items (not needed for a first working session, noted for later)
+
+## 8. The bag (supersedes two earlier guesses)
+
+`05_bag_layout.py` plus the engine source (`src/item.c` of both Skeli789's CFRU
+and RR's own build tree) pin the bag exactly:
+
+- Five pockets of 4-byte `ItemSlot {u16 item; u16 quantity}` (quantity XOR the
+  u16 security key — 0 here), **zero-id terminated**, at RAM **0x203BB20** in
+  game order: Items **450** slots, Key **75**, Balls **50**, TM/HM **128**,
+  Berries **75**.
+- The run starts in **sector 13's parasite tail** (data +0xAD8 = P3+0x688) and
+  crosses into the **raw sector-30/31 region** after 326 item slots, so key items,
+  balls, TMs and berries live at file 0x1E1F0/0x1E31C/0x1E3E4/0x1E5E4 — identical
+  to Unbound's known offsets (same engine).
+- Consequences: the "0x1E000 = CFRU dex/flag extension block" guess in §1 was
+  wrong (it is the bag plus engine runtime state), and the "bag @Large+0x298"
+  note in §3 actually describes `pcItems` (the item PC), not the bag.
+- Champion decode: 143 items (Rare Candy ×305, Ability Pill ×295, megastones,
+  Z-crystals), 19 key items (incl. **Exp. Share**, a key item in RR), 8 balls,
+  94 TM/HM discs (×1 each — reusable), 30 berries (Pomeg ×300).
+
+## 9. Open items (not needed for a first working session, noted for later)
 
 1. Exact wallpaper storage (candidate: byte pairs after the name table).
 2. Contents/roles of the unverified stashes (sec 0 @0xF24, sec 4 @0xDAC–0xFC9,
-   sec 13 @0x530–0xD13 incl. the 42-byte records) and the 0x1E000 block.
+   sec 13 @0x530–0xD13 incl. the 42-byte records). The 0x1E000 region is now
+   understood (§8: the bag + runtime state); its non-bag bytes remain unidentified.
 3. RR's full species/move/item name tables (nicknames cover the divergent ids
    present in this save; the ROM tables would close the gap).
 4. Whether boxes 8–25 stream into sections 8–12 (consistent with the layout,

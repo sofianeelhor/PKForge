@@ -100,18 +100,21 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
             : new RadicalRedMon(_rawBoxes, location.Value.Offset, party: false);
     }
 
-    private void CommitSection1()
+    private void CommitSection(int sectionId)
     {
-        // The party AND the dex live in section 1: mirror the whole sector (footer
-        // included, like the Unbound session) into every rotating copy, then recompute
-        // each copy's checksum over the CFRU window.
-        foreach (var copy in AllSectionOffsets(_data, PartySection))
+        // Mirror the whole live sector (footer included, like the Unbound session)
+        // into every rotating copy, then recompute each copy's checksum over the CFRU
+        // window. Section 1 covers the party and dex; section 13 covers the bag's
+        // parasite tail, whose bytes the checksum window never reaches but whose
+        // every copy still has to agree.
+        var live = _sections[sectionId];
+        foreach (var copy in AllSectionOffsets(_data, sectionId))
         {
-            if (copy == PartyBase) continue;
-            _data.AsSpan(PartyBase, SectorSize).CopyTo(_data.AsSpan(copy));
+            if (copy == live) continue;
+            _data.AsSpan(live, SectorSize).CopyTo(_data.AsSpan(copy));
         }
-        foreach (var copy in AllSectionOffsets(_data, PartySection))
-            WriteChecksum(_data, copy, CfruWindows[PartySection]);
+        foreach (var copy in AllSectionOffsets(_data, sectionId))
+            WriteChecksum(_data, copy, CfruWindows[sectionId]);
     }
 
     private void CommitPc(SlotLocation? location)
@@ -194,7 +197,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
         if (edit.Gender is 0 or 1)
             RerollPid(mon, gender: edit.Gender);
 
-        if (box == -1) CommitSection1();
+        if (box == -1) CommitSection(PartySection);
         else CommitPc(location);
     }
 
@@ -313,7 +316,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
         if (toBox == -1)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(_data.AsSpan(PartyBase + PartyCountOffset), (uint)(PartyCount + 1));
-            CommitSection1();
+            CommitSection(PartySection);
         }
         else CommitPc(location);
         return true;
@@ -337,7 +340,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
             BinaryPrimitives.WriteUInt32LittleEndian(_data.AsSpan(PartyBase + PartyCountOffset), (uint)(PartyCount + 1));
             if (fromBox == -1) CompactPartyFrom(fromSlot); // party-to-party: reorder in place
             else ClearSlot(fromBox, fromSlot);
-            CommitSection1();
+            CommitSection(PartySection);
             return;
         }
 
@@ -369,7 +372,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
             destinationBytes.AsSpan(0, source.Size).CopyTo(source.Buffer.AsSpan(source.Offset, source.Size));
         }
 
-        if (fromBox == -1) CommitSection1();
+        if (fromBox == -1) CommitSection(PartySection);
         else CommitPc(ResolveSlot(fromBox, fromSlot));
         CommitPc(target);
     }
@@ -391,7 +394,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
         if (box == -1)
         {
             CompactPartyFrom(slot);
-            CommitSection1();
+            CommitSection(PartySection);
             return;
         }
         ClearSlot(box, slot);
@@ -473,7 +476,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
             _data.AsSpan(party.Offset, PartyMonSize).Clear();
             FromPk3(pk3, party);
             BinaryPrimitives.WriteUInt32LittleEndian(_data.AsSpan(PartyBase + PartyCountOffset), (uint)(PartyCount + 1));
-            CommitSection1();
+            CommitSection(PartySection);
             return true;
         }
 
@@ -628,7 +631,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
             var party = new RadicalRedMon(_data, PartyBase + PartyOffset + PartyCount * PartyMonSize, party: true);
             CopyBetween(mon, party);
             BinaryPrimitives.WriteUInt32LittleEndian(_data.AsSpan(PartyBase + PartyCountOffset), (uint)(PartyCount + 1));
-            CommitSection1();
+            CommitSection(PartySection);
         }
         else
         {
@@ -652,6 +655,11 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
 
     // ── Trainer / boxes / dex ──
 
+    /// <summary>SaveBlock2's key at section 0 + 0xF20: money XORs with the whole
+    /// word, item quantities with its low half (PKHeX's InventoryPouch3 agrees).
+    /// Zero in every Radical Red save seen, but the arithmetic must hold anyway.</summary>
+    private uint SecurityKey => BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(_sections[0] + 0xF20));
+
     public TrainerInfo GetTrainer()
     {
         var sec0 = _sections[0];
@@ -659,9 +667,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
         var gender = _data[sec0 + 0x8];
         var tid = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(sec0 + 0xA));
         var sid = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(sec0 + 0xC));
-        // Money sits in section 1 XORed with SaveBlock2's security key (0 in practice).
-        var key = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(sec0 + 0xF20));
-        var money = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(PartyBase + 0x290)) ^ key;
+        var money = BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(PartyBase + 0x290)) ^ SecurityKey;
         return new TrainerInfo(name.Length > 0 ? name : "PKForge", tid, sid, money, gender);
     }
 
@@ -692,7 +698,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
         if (nationalSpecies is < 1 or > DexCapacity) return;
         SetDexBit(DexSeenOffset, nationalSpecies, seen);
         SetDexBit(DexCaughtOffset, nationalSpecies, caught);
-        CommitSection1();
+        CommitSection(PartySection);
     }
 
     public DexProgress GetDexProgress() => new(CountDexBits(DexSeenOffset), CountDexBits(DexCaughtOffset), DexCapacity);
@@ -827,7 +833,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
         if (mon is null || !mon.LooksValid) return false;
         var location = box == -1 ? null : ResolveSlot(box, slot);
         RerollPid(mon, nature: nature);
-        if (box == -1) CommitSection1();
+        if (box == -1) CommitSection(PartySection);
         else CommitPc(location);
         return true;
     }
@@ -844,7 +850,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
             ? (uint)((trainer.SID << 16) | (trainer.TID & 0xFFFF))
             : (uint)((profile.SID << 16) | (profile.TID & 0xFFFF));
         WriteOtName(mon, name);
-        if (box == -1) CommitSection1();
+        if (box == -1) CommitSection(PartySection);
         else CommitPc(location);
         return new GenerationOutcome(true, $"{mon.Nickname} now belongs to {name}.");
     }
@@ -864,10 +870,103 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
     public void SwapBoxes(int a, int b) => throw NotYet("Radical Red box swapping");
     public void DeleteBox(int box) => throw NotYet("Radical Red box management");
 
-    // The CFRU bag layout is not covered by the verified spec; refuse honestly.
-    public IReadOnlyList<BagPouch> GetBag() => [];
-    public IReadOnlyList<int> GetPouchLegalItems(string pouchName) => [];
-    public int SetItemCount(string pouchName, int itemId, int count) => throw NotYet("The Radical Red bag editor");
+    // ── Bag (the CFRU bag expansion) ──
+    // Ground truth: the engine's src/item.c RAM map, cross-checked slot-for-slot
+    // against the champion save. The five pockets sit back to back at RAM 0x203BB20
+    // in game order with CFRU capacities 450/75/50/128/75; the run crosses from
+    // section 13's parasite tail into the raw sector-30/31 region after 326 item
+    // slots, so key items and beyond land at fixed offsets in the 0x1E000 area —
+    // the same map the Unbound session reads, at Unbound's identical offsets.
+    private readonly record struct BagLayout(string Name, int Offset, int Capacity);
+
+    private static readonly BagLayout[] BagLayouts =
+    [
+        new("Items", 0x000, 450),
+        new("Key Items", 0x708, 75),
+        new("Balls", 0x834, 50),
+        new("TMs", 0x8FC, 128),
+        new("Berries", 0xAFC, 75),
+    ];
+
+    /// <summary>File offset of a bag-image byte: the first 0x518 live in section
+    /// 13's parasite tail, the rest in the raw sector-30/31 region.</summary>
+    private int BagFileOffset(int imageOffset) => imageOffset < BagImageInSector
+        ? _sections[BagSection] + BagImageOffset + imageOffset
+        : RawFileOffset(imageOffset - BagImageInSector);
+
+    private List<BagItem> ReadPouch(BagLayout layout)
+    {
+        var items = new List<BagItem>();
+        var key = (ushort)SecurityKey;
+        for (var slot = 0; slot < layout.Capacity; slot++)
+        {
+            var offset = BagFileOffset(layout.Offset + slot * 4);
+            var id = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(offset));
+            var count = (ushort)(BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(offset + 2)) ^ key);
+            if (id == 0 || id > RadicalRedData.MaxItemId || count is < 1 or > 999)
+                break; // zero-id terminator; anything past it is slack or stale state
+            items.Add(new BagItem(id, count));
+        }
+        return items;
+    }
+
+    public IReadOnlyList<BagPouch> GetBag() =>
+        [.. BagLayouts.Select(layout => new BagPouch(layout.Name, ReadPouch(layout)))];
+
+    public IReadOnlyList<int> GetPouchLegalItems(string pouchName) => pouchName.ToLowerInvariant() switch
+    {
+        "balls" => [.. RadicalRedData.PocketIds("ball").OrderBy(id => id)],
+        "berries" => [.. RadicalRedData.PocketIds("berry").OrderBy(id => id)],
+        "tms" => [.. RadicalRedData.PocketIds("tm").OrderBy(id => id)],
+        "key items" => [.. RadicalRedData.PocketIds("key").OrderBy(id => id)],
+        "items" => [.. Enumerable.Range(1, RadicalRedData.MaxItemId)
+            .Where(id => !RadicalRedData.IsSpecialPocketItem(id) && !RadicalRedData.IsFillerItem(id))],
+        _ => [],
+    };
+
+    public int SetItemCount(string pouchName, int itemId, int count)
+    {
+        var layout = Array.Find(BagLayouts, pouch => pouch.Name.Equals(pouchName, StringComparison.OrdinalIgnoreCase));
+        if (layout.Name is null) return 0;
+
+        var items = ReadPouch(layout);
+        var index = items.FindIndex(item => item.Id == itemId);
+        if (count <= 0)
+        {
+            if (index < 0) return 0;
+            items.RemoveAt(index);
+        }
+        else if (index >= 0)
+        {
+            items[index] = new BagItem(itemId, Math.Min(count, 999));
+        }
+        else
+        {
+            if (items.Count >= layout.Capacity) return 0;
+            items.Add(new BagItem(itemId, Math.Min(count, 999)));
+        }
+
+        // Rebuild the whole run — entries, then zeroed slack — so no stale slot
+        // survives a removal, then mirror section 13 so the parasite's bag tail is
+        // identical in every rotating copy the console might load next.
+        var key = (ushort)SecurityKey;
+        for (var slot = 0; slot < layout.Capacity; slot++)
+        {
+            var offset = BagFileOffset(layout.Offset + slot * 4);
+            if (slot < items.Count)
+            {
+                BinaryPrimitives.WriteUInt16LittleEndian(_data.AsSpan(offset), (ushort)items[slot].Id);
+                BinaryPrimitives.WriteUInt16LittleEndian(_data.AsSpan(offset + 2), (ushort)(items[slot].Count ^ key));
+            }
+            else
+            {
+                _data.AsSpan(offset, 4).Clear();
+            }
+        }
+        CommitSection(BagSection);
+
+        return items.FirstOrDefault(item => item.Id == itemId) is { } stored ? stored.Count : 0;
+    }
 
     public IReadOnlyList<CountedEntry> GetPokeBeans() => [];
     public int SetPokeBeanCount(int index, int count) => 0;
@@ -917,7 +1016,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
         {
             var location = box == -1 ? null : ResolveSlot(box, slot);
             SetAbility(mon, want == 1 ? RadicalRedData.AbilityIds(mon.Species).A2 : RadicalRedData.AbilityIds(mon.Species).A1);
-            if (box == -1) CommitSection1();
+            if (box == -1) CommitSection(PartySection);
             else CommitPc(location);
         }
     }
@@ -963,7 +1062,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
                 packed |= Math.Clamp(ups[i], 0, 3) << (i * 2);
             mon.Buffer[mon.Offset + 0x28] = (byte)packed;
         }
-        CommitSection1();
+        CommitSection(PartySection);
     }
 
     public MoveShopInfo GetMoveShop(int box, int slot) => new(false, []);

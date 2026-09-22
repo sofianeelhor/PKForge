@@ -275,8 +275,6 @@ public sealed class RadicalRedSessionTests
         Assert.Throws<NotSupportedException>(() => session.CompleteDex());
         Assert.Throws<NotSupportedException>(() => session.SetTrainer(new TrainerInfo("X", 1, 2, 0, 0)));
         Assert.Throws<NotSupportedException>(() => session.SortBoxes(SortCriteria.DexNumber));
-        Assert.Throws<NotSupportedException>(() => session.SetItemCount("Items", 1, 10));
-        Assert.Empty(session.GetBag());
         Assert.Empty(session.GetEncounterCards(25, 0));
     }
 
