@@ -3160,18 +3160,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         }
         _lastAimSlot = -1;
 
-        // Party A is the games' summary flow: open the mon's actions (Edit leads into the
-        // stats editor). The PC-hand grab belongs to the boxes; party members move through
-        // the menu's Move entry so A never silently starts dragging a team member.
-        if (_viewModel.BoxIndex == -1)
-        {
-            var slots = _viewModel.VisibleSlots;
-            if (slot < slots.Count && slots[slot].Species is not null)
-            {
-                _ = ShowMonActionsAsync(slot);
-                return true;
-            }
-        }
+        // A is the hand everywhere, party included: grab, carry, place or swap
+        // (the party drop is the two-step aim). The mon's actions stay on Start.
 
         if (_viewModel.BeginCarry())
         {

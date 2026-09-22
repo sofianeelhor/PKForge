@@ -18,7 +18,8 @@ public static class PartyView
     private const int Columns = 2;
     private const int Rows = 3;
 
-    private static SKFont? _nameFont;
+    private static SKFont? _nameFontPixel;
+    private static SKFont? _nameFontFallback;
     private static SKFont? _smallFont;
     private static SKFont? _labelFont;
 
@@ -194,10 +195,9 @@ public static class PartyView
         var textRight = r.Right - 16;
         var nameColor = fainted ? FaintName : SKColors.White;
 
-        var nameFont = _nameFont ??= FontFor(detail.Nickname, Math.Max(20f, r.Height * 0.175f));
+        var nameFont = NameFontFor(detail.Nickname, Math.Max(20f, r.Height * 0.175f));
         var smallFont = _smallFont ??= FontFor("Lv.", Math.Max(15f, r.Height * 0.13f));
         var labelFont = _labelFont ??= FontFor("HP", Math.Max(12f, r.Height * 0.105f));
-
         using (var fg = new SKPaint { Color = nameColor, IsAntialias = true })
             canvas.DrawText(detail.Nickname, tx, r.Top + r.Height * 0.3f, SKTextAlign.Left, nameFont, fg);
         if (detail.Gender is 0 or 1)
@@ -256,6 +256,18 @@ public static class PartyView
         return path;
     }
 
+
+    /// <summary>The nickname font: the pixel face when it covers every glyph of the
+    /// text, else the system face (Japanese and accented nicknames). Cached per kind —
+    /// one static font chosen from the first nickname ever painted would pin every
+    /// later CJK nickname to a face that cannot draw it.</summary>
+    private static SKFont NameFontFor(string text, float size)
+    {
+        var pixel = _nameFontPixel ??= new SKFont(PixelFont.Face, size) { Edging = SKFontEdging.Antialias, Embolden = true };
+        return text.All(c => pixel.Typeface.GetGlyph(c) != 0)
+            ? pixel
+            : _nameFontFallback ??= new SKFont(SKTypeface.Default, size) { Edging = SKFontEdging.Antialias };
+    }
     private static SKFont FontFor(string text, float size) => PixelFont.For(text, size);
 
     /// <summary>The gender glyphs as clean vectors: blue male arrow, pink female cross.</summary>
