@@ -115,4 +115,14 @@ internal static class SaveParser
         }
         return stamps >= 8; // a full main half stamps 14 sectors; extras never carry it
     }
+
+    /// <summary>
+    /// True when the bytes are a Pokémon Radical Red save. Radical Red keeps the retail
+    /// FireRed envelope AND signature, so stock PKHeX parses it as plain SAV3FRLG with a
+    /// wrong PC and party; the only safe separator is structural (CFRU checksum windows
+    /// vs vanilla). Unbound must be tested FIRST wherever both apply - it shares the
+    /// CFRU window table but stamps its own signature.
+    /// </summary>
+    internal static bool IsPokemonRadicalRed(ReadOnlySpan<byte> data) =>
+        RadicalRed.RadicalRedFormat.IsRadicalRed(data);
 }
