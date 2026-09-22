@@ -22,9 +22,44 @@ public sealed class EventDatabaseService : IEventDatabaseService
                 x.Gift.CardHeader,
                 x.Gift.Species,
                 x.Gift.LevelMin,
-                x.Gift.IsShiny))
+                x.Gift.IsShiny,
+                x.Gift.CardID,
+                x.Gift.Generation,
+                CardLanguage(x.Gift),
+                CardYear(x.Gift)))
             .ToList();
     }
+
+    public EventGiftSaveProfile? GetSaveProfile(ISaveEngineSession session) =>
+        session is SaveEngineSession engineSession
+            ? new EventGiftSaveProfile(
+                engineSession.SaveFile.Generation,
+                engineSession.SaveFile.Language,
+                engineSession.GameNames.Count > 0 ? engineSession.GameNames[0] : engineSession.SaveFile.Version.ToString())
+            : null;
+
+    /// <summary>The card's language restriction, the way distributions expressed it: gen 5
+    /// PGFs and gen 6/7 wonder cards carry a RestrictLanguage byte (0 = every language).
+    /// Gen 4 cards have none and gen 8+ cards are multilingual (per-language OT slots that
+    /// the receive path resolves itself), so both report 0 = never blocked by language.</summary>
+    private static int CardLanguage(MysteryGift gift) => gift switch
+    {
+        PGF pgf => pgf.RestrictLanguage,
+        WC6 wc6 => wc6.RestrictLanguage,
+        WC7 wc7 => wc7.RestrictLanguage,
+        _ => 0,
+    };
+
+    /// <summary>The year on the card itself, when the format stores a distribution date;
+    /// gen 4 cards and gen 8+ cards carry none, so they report null (undated).</summary>
+    private static int? CardYear(MysteryGift gift) => gift switch
+    {
+        PGF pgf => pgf.Date?.Year,
+        WC6 wc6 => wc6.Date?.Year,
+        WC7 wc7 => wc7.Date?.Year,
+        WB7 wb7 => wb7.Date?.Year,
+        _ => null,
+    };
 
     public GenerationOutcome Receive(ISaveEngineSession session, int giftId, int box, int slot)
     {

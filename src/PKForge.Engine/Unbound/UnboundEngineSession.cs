@@ -19,6 +19,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     private readonly byte[] _originalBytes;
     private readonly int[] _sections;
     private readonly byte[] _stream;
+    private readonly string? _displayName;
     private bool _disposed;
 
     public const int Boxes = 25; // 0-18 stream, 19-23 fragmented, 24 preset
@@ -31,10 +32,12 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
             throw new InvalidDataException("These bytes are not a Pokémon Unbound save.");
         _sections = SectionOffsets(_data);
         _stream = ReadStream(_data, _sections);
-        Snapshot = BuildSnapshot(displayName);
+        _displayName = displayName;
     }
 
-    public SaveSnapshot Snapshot { get; }
+    /// <summary>Built on demand so slot reads reflect mutations, not open-time state.</summary>
+    public SaveSnapshot Snapshot => BuildSnapshot(_displayName);
+
 
     public int Generation => 3;
     public IReadOnlyList<string> GameNames => ["Unbound"];
@@ -123,7 +126,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         var moves = mon.Moves;
         return new EntityDetail(
             box, slot, false,
-            species,
+            UnboundData.NationalIdOf(species),
             UnboundData.SpeciesName(species),
             0,
             mon.Nickname,
@@ -599,14 +602,14 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         {
             var mon = TryMon(box, slot);
             slots.Add(mon is { LooksValid: true } valid
-                ? new SlotSummary(box, slot, valid.Species, valid.Nickname, valid.IsShiny, true)
+                ? new SlotSummary(box, slot, UnboundData.NationalIdOf(valid.Species), valid.Nickname, valid.IsShiny, true)
                 : new SlotSummary(box, slot, null, null, false, true));
         }
         for (var slot = 0; slot < 6; slot++)
         {
             var mon = TryMon(-1, slot);
             slots.Add(mon is { LooksValid: true } valid
-                ? new SlotSummary(-1, slot, valid.Species, valid.Nickname, valid.IsShiny, true)
+                ? new SlotSummary(-1, slot, UnboundData.NationalIdOf(valid.Species), valid.Nickname, valid.IsShiny, true)
                 : new SlotSummary(-1, slot, null, null, false, true));
         }
         return new SaveSnapshot("UNBOUND", 3, _originalBytes.ToArray(), slots, displayName);
@@ -714,13 +717,17 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     public GenerationOutcome PlaceEncounter(int species, int form, int cardIndex, int targetBox, int targetSlot) =>
         throw NotYet("Unbound encounter cards");
 
-    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null) =>
+    public bool SupportsBoxTools => false;
+    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false) =>
         throw NotYet("Unbound box sorting");
 
     public int PlaceLivingDex(byte[] compressedBundle) =>
         throw NotYet("The Unbound living dex (its species table needs Unbound-legal templates)");
 
     public int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null) =>
+        throw NotYet("The Unbound batch editor");
+
+    public int BatchApplySlots(IReadOnlyList<(int Box, int Slot)> slots, IReadOnlyList<string> instructions) =>
         throw NotYet("The Unbound batch editor");
 
     public string GetBoxName(int box) => $"BOX {box + 1}";
@@ -903,6 +910,10 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     public void UnlockAllLegalFashion() { }
     public MysteryGiftInbox GetMysteryGiftInbox() => new(false, []);
     public TrainerRecordsInfo GetTrainerRecords() => new(false, []);
+    public TrainerStats GetTrainerStats() => new(false, 0, 0, 0, false, 0, 0, false, 0, 0);
+    public void SetTrainerStats(TrainerStatsEdit edit) => throw NotYet("Unbound trainer statistics");
+    public bool SupportsRTCRepair => false;
+    public void RepairRTC() { }
 
     public MetInfo GetMetInfo(int box, int slot) => throw NotYet("Unbound met/origin editing");
     public void ApplyMetEdit(int box, int slot, MetEdit edit) => throw NotYet("Unbound met/origin editing");
@@ -996,6 +1007,10 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     public void SetRibbon(int box, int slot, string id, int value) { }
     public AffixedRibbonInfo GetAffixedRibbon(int box, int slot) => new(false, -1, string.Empty, []);
     public void SetAffixedRibbon(int box, int slot, int ribbonIndex) { }
+    public IReadOnlyDictionary<string, int> GetObtainableRibbonMaxima(int box, int slot) =>
+        new Dictionary<string, int>();
+    public int AwardAllObtainableRibbons(int box, int slot) => 0;
+    public bool SupportsLegalityAnalysis => false;
 
     public bool SupportsCompassSettings => false;
     public IReadOnlyList<CompassSetting> GetCompassSettings() => [];

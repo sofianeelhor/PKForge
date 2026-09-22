@@ -10,6 +10,8 @@ public sealed class SaveEngine : ISaveEngine
     {
         if (SaveParser.IsPokemonUnbound(RetroArchSaveContainer.Decode(bytes.Span)))
             return OpenUnbound(bytes, displayName).Snapshot;
+        if (SaveParser.IsPokemonRadicalRed(RetroArchSaveContainer.Decode(bytes.Span)))
+            return OpenRadicalRed(bytes, displayName).Snapshot;
         if (!SaveParser.TryGetSaveFile(bytes.ToArray(), out var save) || save is null)
             throw new InvalidDataException("The selected bytes are not a recognized save file.");
 
@@ -32,17 +34,33 @@ public sealed class SaveEngine : ISaveEngine
     {
         if (SaveParser.IsPokemonUnbound(RetroArchSaveContainer.Decode(bytes.Span)))
             return OpenUnbound(bytes, displayName);
+        if (SaveParser.IsPokemonRadicalRed(RetroArchSaveContainer.Decode(bytes.Span)))
+            return OpenRadicalRed(bytes, displayName);
         return new SaveEngineSession(bytes, displayName);
     }
 
     private static Unbound.UnboundEngineSession OpenUnbound(ReadOnlyMemory<byte> bytes, string? displayName) =>
         new(bytes, displayName);
 
+    private static RadicalRed.RadicalRedEngineSession OpenRadicalRed(ReadOnlyMemory<byte> bytes, string? displayName) =>
+        new(bytes, displayName);
+
     public ReadOnlyMemory<byte> Serialize(SaveSnapshot snapshot) => snapshot.OriginalBytes.ToArray();
 
     public bool Validate(ReadOnlyMemory<byte> bytes)
     {
-        try { return SaveParser.TryGetSaveFile(bytes.ToArray(), out _); }
+        // Route exactly like Open/OpenSession: SafeSaveWriter gates every write on this,
+        // so a candidate is valid precisely when the engine would reopen it. Stock
+        // PKHeX rejects Unbound's CFRU sector signature outright, and Radical Red only
+        // separates from vanilla FRLG structurally — both (and the RetroArch containers
+        // they ride in) must clear the romhack routes before the stock parser runs.
+        try
+        {
+            var decoded = RetroArchSaveContainer.Decode(bytes.Span);
+            if (SaveParser.IsPokemonUnbound(decoded)) return true;
+            if (SaveParser.IsPokemonRadicalRed(decoded)) return true;
+            return SaveParser.TryGetSaveFile(bytes.ToArray(), out _);
+        }
         catch (InvalidDataException) { return false; }
     }
 
@@ -128,6 +146,11 @@ public sealed class SaveEngine : ISaveEngine
 
         if (SaveParser.IsPokemonUnbound(raw))
             return new SaveDescription("Unbound", save.Generation, save.OT, save.PlayTimeString);
+
+        // Radical Red keeps the FireRed envelope; the CFRU window signature tells it
+        // apart from every stock FRLG save (see RadicalRedFormat.IsRadicalRed).
+        if (SaveParser.IsPokemonRadicalRed(raw))
+            return new SaveDescription("Radical Red", save.Generation, save.OT, save.PlayTimeString);
 
         // GameCube-only versions sit outside the handheld game-name table.
         var sideGameName = save switch

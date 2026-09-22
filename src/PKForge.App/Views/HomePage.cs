@@ -34,7 +34,32 @@ public sealed class HomePage : ContentPage, IPadHandler
         var gamesLabel = new Label
         {
             Text = "Games", FontFamily = DsChrome.PixelFont, FontSize = 14,
-            TextColor = UiTokens.Ink1,
+            TextColor = UiTokens.Ink1, VerticalOptions = LayoutOptions.Center,
+        };
+        var filterCaption = new Label
+        {
+            FontFamily = DsChrome.PixelFont, FontSize = 12, FontAttributes = FontAttributes.Bold,
+            TextColor = UiTokens.Ink0, VerticalOptions = LayoutOptions.Center,
+        };
+        filterCaption.SetBinding(Label.TextProperty, new Binding("Caption",
+            source: _viewModel.Filter, stringFormat: "FILTER: {0}"));
+        var filterChip = new Border
+        {
+            BackgroundColor = UiTokens.ShellPress,
+            Stroke = UiTokens.ShellEdge,
+            StrokeThickness = 1,
+            StrokeShape = new RoundRectangle { CornerRadius = 6 },
+            Padding = new Thickness(9, 3),
+            Content = filterCaption,
+            HorizontalOptions = LayoutOptions.End,
+        };
+        var filterTap = new TapGestureRecognizer();
+        filterTap.Tapped += (_, _) => _ = ShowFilterMenuAsync();
+        filterChip.GestureRecognizers.Add(filterTap);
+        var headerRow = new Grid
+        {
+            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto)],
+            Children = { gamesLabel, filterChip },
         };
         _shelfItems = new HorizontalStackLayout
         {
@@ -55,7 +80,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         {
             RowSpacing = 6,
             RowDefinitions = [new(GridLength.Auto), new(GridLength.Star)],
-            Children = { gamesLabel, _shelf },
+            Children = { headerRow, _shelf },
         };
         Grid.SetRow(_shelf, 1);
         BlockNativeFocus(_shelf);
@@ -89,6 +114,7 @@ public sealed class HomePage : ContentPage, IPadHandler
 
         var footer = DsChrome.Footer(
             ("A", "Open", null),
+            ("L", "Filter", () => _ = ShowFilterMenuAsync()),
             ("Y", "Link", () => _ = ShowLinkMenuAsync()),
             ("X", "File", () => _ = LinkFileAsync()),
             ("+", "Settings", () => _ = ShowSettingsAsync()));
@@ -255,6 +281,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             case PadButton.A:
                 if (_zone == 1) { _cards[_cardIndex].Tapped?.Invoke(); return true; }
                 return OpenShelfSelection();
+            case PadButton.L: _ = ShowFilterMenuAsync(); return true;
             case PadButton.X: _ = LinkFileAsync(); return true;
             case PadButton.Y: _ = ShowLinkMenuAsync(); return true;
             case PadButton.R: _ = PushAsync<BackupHistoryPage>(); return true;
@@ -306,6 +333,47 @@ public sealed class HomePage : ContentPage, IPadHandler
         if (_shelfIndex < 0 || _shelfIndex >= _viewModel.Groups.Count) return MoveShelf(0);
         _ = OpenGroupAsync(_viewModel.Groups[_shelfIndex]);
         return true;
+    }
+
+    /// <summary>Narrows the cartridge shelf: every game, one generation, one console,
+    /// or plain alphabetical.</summary>
+    private async Task ShowFilterMenuAsync()
+    {
+        var choice = await PadMenu.ShowAsync(_hostGrid, "FILTER GAMES", null,
+            new PadOption("All games", IconPath: "hex"),
+            new PadOption("Release order", IconPath: "restore"),
+            new PadOption("Alphabetical (A-Z)", IconPath: "script"),
+            new PadOption("Game Boy (Gen I-II)", IconPath: "platform-gb"),
+            new PadOption("GBA (Gen III)", IconPath: "platform-gba"),
+            new PadOption("DS (Gen IV-V)", IconPath: "platform-ds"),
+            new PadOption("3DS (Gen VI-VII)", IconPath: "hex"),
+            new PadOption("Switch (Gen VII-IX)", IconPath: "hex"),
+            new PadOption("Gen I", IconPath: "pokedex"),
+            new PadOption("Gen II", IconPath: "pokedex"),
+            new PadOption("Gen III", IconPath: "pokedex"),
+            new PadOption("Gen IV", IconPath: "pokedex"),
+            new PadOption("Gen V", IconPath: "pokedex"),
+            new PadOption("Gen VI", IconPath: "pokedex"),
+            new PadOption("Gen VII", IconPath: "pokedex"),
+            new PadOption("Gen VIII", IconPath: "pokedex"),
+            new PadOption("Gen IX", IconPath: "pokedex"));
+        var (key, caption) = choice switch
+        {
+            "All games" => ("all", "ALL"),
+            "Release order" => ("release", "RELEASE"),
+            "Alphabetical (A-Z)" => ("az", "A-Z"),
+            "Game Boy (Gen I-II)" => ("gb", "GAME BOY"),
+            "GBA (Gen III)" => ("gba", "GBA"),
+            "DS (Gen IV-V)" => ("ds", "DS"),
+            "3DS (Gen VI-VII)" => ("3ds", "3DS"),
+            "Switch (Gen VII-IX)" => ("switch", "SWITCH"),
+            { } gen when gen is not null && gen.StartsWith("Gen ", StringComparison.Ordinal) && int.TryParse(gen[4..], out var n)
+                => ($"gen{n}", $"GEN {gen[4..]}"),
+            _ => ("all", "ALL"),
+        };
+        _viewModel.ApplyFilter(key, caption);
+        // Groups were replaced wholesale: re-run selection so a cartridge is highlighted.
+        MoveShelf(_shelfIndex);
     }
 
     /// <summary>One save opens directly; several saves of one game get a folder picker.</summary>

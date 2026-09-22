@@ -21,5 +21,9 @@
     <!-- Pokémon Unbound ROM-truth tables from the MIT-licensed PUSE project
          (github.com/Zannael/PUSE), vendored as data; see Unbound/Data/README.md. -->
     <EmbeddedResource Include="Unbound/Data/*" LogicalName="unbound.%(Filename)%(Extension)" />
+    <!-- Pokémon Radical Red v4.1 species/item tables (CFRU internal ids), extracted by
+         eliyahu1702/Rad-Red-4.1-Team-Exporter and cross-checked against the owner's
+         device save; see RadicalRed/Data/README.md. -->
+    <EmbeddedResource Include="RadicalRed/Data/*" LogicalName="radicalred.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

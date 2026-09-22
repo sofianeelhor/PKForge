@@ -92,6 +92,9 @@ public static class BoxGridRenderer
         using var font = new SKFont { Size = cell * 0.15f, Edging = SKFontEdging.Antialias };
 
         var slots = viewModel.VisibleSlots;
+
+        var verdicts = viewModel.CurrentBoxLegality;
+
         for (var index = 0; index < Columns * Rows; index++)
         {
             var rect = SlotRect(info, index);
@@ -136,6 +139,10 @@ public static class BoxGridRenderer
 
             if (occupied && lockedSlots is not null && lockedSlots.Contains(index))
                 DrawLockBadge(canvas, rect, Math.Min(rect.Width, rect.Height));
+
+            if (occupied && verdicts is not null && verdicts.TryGetValue(index, out var legal))
+                DrawLegalityDot(canvas, rect, legal);
+
 
             if (viewModel.SelectMode && occupied && viewModel.IsMarked(viewModel.BoxIndex, index))
             {
@@ -209,6 +216,20 @@ public static class BoxGridRenderer
         path.LineTo(cx - waist, cy - waist);
         path.Close();
         canvas.DrawPath(path, paint);
+    }
+
+    /// <summary>The legality sweep's verdict pip: green (legal) or red (illegal),
+    /// bottom-left with a dark rim so it reads on any wallpaper.</summary>
+    public static void DrawLegalityDot(SKCanvas canvas, SKRect rect, bool legal)
+    {
+        var size = Math.Min(rect.Width, rect.Height);
+        var radius = size * 0.10f;
+        var cx = rect.Left + size * 0.16f;
+        var cy = rect.Bottom - size * 0.16f;
+        using var rim = new SKPaint { Color = Pksm.LogoVoid, IsAntialias = true };
+        using var fill = new SKPaint { Color = legal ? Pksm.Legal : Pksm.Illegal, IsAntialias = true };
+        canvas.DrawCircle(cx, cy, radius * 1.35f, rim);
+        canvas.DrawCircle(cx, cy, radius, fill);
     }
 
     /// <summary>Maps a touch to a slot using the same square-cell layout; -1 outside the grid.</summary>

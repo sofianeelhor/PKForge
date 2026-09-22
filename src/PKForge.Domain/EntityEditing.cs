@@ -83,25 +83,32 @@ public interface ISaveEngineSession : IDisposable
 
     /// <summary>Empties the slot (release). Irreversible except via restore points.</summary>
     void ReleaseSlot(int box, int slot);
-
-    /// <summary>
-    /// Sorts the given boxes (null = every box). Mons compact to the front of the
-    /// FIRST target box, overflow continues into the next; empties pool at the end.
-    /// Party is untouched. One write on Save.
-    /// </summary>
-    /// <returns>How many mons were placed.</returns>
     /// <summary>
     /// Fills the storage with the pre-generated living dex bundle (built by tools/DexGen,
     /// shipped as an asset): one of each species, copied byte-for-byte. Zero on-device
     /// legalization. Returns how many mons were placed.
     /// </summary>
     int PlaceLivingDex(byte[] compressedBundle);
-
-    int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null);
+    /// <summary>
+    /// Sorts the given boxes (null = every box). Mons compact to the front of the
+    /// FIRST target box, overflow continues into the next; empties pool at the end.
+    /// <paramref name="reverse"/> flips the final order (e.g. weakest first).
+    /// Party is untouched. One write on Save.
+    /// </summary>
+    /// <returns>How many mons were placed.</returns>
+    int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false);
 
     /// <summary>Applies an instruction ("Prop=Value", $suggest/$rand/$shiny) to every non-empty
-    /// slot in the given boxes (null = all boxes). Returns how many mons were touched.</summary>
+    /// slot in the given boxes (null = all boxes; -1 = the party). Returns how many mons were touched.</summary>
     int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null);
+
+    /// <summary>Applies batch instructions to an explicit slot list (box -1 = the party);
+    /// empty and out-of-range slots are skipped. Returns how many mons were touched.</summary>
+    int BatchApplySlots(IReadOnlyList<(int Box, int Slot)> slots, IReadOnlyList<string> instructions);
+
+    /// <summary>Whether this session implements the box-level bulk tools (sort, batch
+    /// editor, battle prep). Romhack sessions refuse them; the UI hides those entries.</summary>
+    bool SupportsBoxTools { get; }
 
     /// <summary>Display name of a box (wallpaper names like HEAL, FOREST); "BOX" default.</summary>
     string GetBoxName(int box);
@@ -126,6 +133,24 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>Makes a Pokémon owned by the current save or a named trainer profile.
     /// Fixed-OT encounters are refused and the edit is committed only when it remains legal.</summary>
     GenerationOutcome MakeMine(int box, int slot, TrainerProfile? profile = null);
+
+    // ── Trainer statistics: playtime and currency counters ──
+    /// <summary>Playtime, Battle Points, and coins with per-field support flags and
+    /// storage maxima; the UI only offers what the open format actually keeps.
+    /// Money stays on <see cref="TrainerInfo"/>, the identity surface that already writes it.</summary>
+    TrainerStats GetTrainerStats();
+    /// <summary>Partial mutation: only non-null fields apply, each clamped to the
+    /// format's storage maximum. Unsupported fields are ignored.</summary>
+    void SetTrainerStats(TrainerStatsEdit edit);
+
+    // ── Real-time clock repair ──
+    /// <summary>Whether the open format's real-time clock can be repaired from save
+    /// data: Gen 2 (Gold/Silver/Crystal) and Gen 3 (Ruby/Sapphire/Emerald).</summary>
+    bool SupportsRTCRepair { get; }
+    /// <summary>Arms the game's own clock-reset flow so the player re-enters the time
+    /// at next boot - Gen 2's cartridge-clock repair bit, Gen 3's password-protected
+    /// reset after a battery swap. Commit through the usual safe write.</summary>
+    void RepairRTC();
 
     // ── Pokédex ──
     DexProgress GetDexProgress();
@@ -212,6 +237,17 @@ public interface ISaveEngineSession : IDisposable
     AffixedRibbonInfo GetAffixedRibbon(int box, int slot);
     /// <summary>Selects an already-owned ribbon/mark as the Pokémon's title; use -1 to clear it.</summary>
     void SetAffixedRibbon(int box, int slot, int ribbonIndex);
+    /// <summary>Which ribbons and marks this Pokémon can legally earn, from PKHeX's
+    /// per-encounter tables: id → the maximum legal value (0 when this species/form
+    /// can never hold it). Formats without ribbon data return an empty map.</summary>
+    IReadOnlyDictionary<string, int> GetObtainableRibbonMaxima(int box, int slot);
+    /// <summary>Awards every obtainable ribbon (see <see cref="GetObtainableRibbonMaxima"/>)
+    /// in place. Returns how many ribbon values changed.</summary>
+    int AwardAllObtainableRibbons(int box, int slot);
+
+    /// <summary>Whether offline legality analysis covers this save: stock engine formats
+    /// yes; romhack sessions have no legality tables, so their surfaces skip the flows.</summary>
+    bool SupportsLegalityAnalysis { get; }
 
     // ── Pokémon Compass (S/V romhack) ──
     /// <summary>True when the open save carries Compass-only blocks (the romhack's marker).</summary>
@@ -402,7 +438,6 @@ public interface IGameDataService
     IReadOnlyList<string> AbilityNames { get; }
     IReadOnlyList<string> NatureNames { get; }
     IReadOnlyList<string> BallNames { get; }
-
     /// <summary>Form facts per species id (index 0 unused), derived from the modern form tables.</summary>
     IReadOnlyList<SpeciesFormFlags> FormFlags { get; }
 }
@@ -414,6 +449,11 @@ public sealed record SpeciesFormFlags(bool HasForms, bool Mega, bool Gigantamax,
 public interface ILegalityService
 {
     LegalityReport Analyze(ISaveEngineSession session, int box, int slot);
+
+    /// <summary>One verdict per occupied slot across the party and every box, with the
+    /// full PKHeX report retained for drill-in. CPU-heavy; callers run it off-thread.</summary>
+    IReadOnlyList<SlotLegality> Sweep(ISaveEngineSession session,
+        Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -428,6 +468,10 @@ public interface ILegalizerService
     /// table directly, without legality and without guarantees.</param>
     GenerationOutcome GenerateFromShowdown(ISaveEngineSession session, int box, int slot, string showdownText, bool allowUnsupportedSpecies = false);
     GenerationOutcome LegalizeSlot(ISaveEngineSession session, int box, int slot);
+    /// <summary>Legalizes every given slot (box -1 = the party) in one mutation: legal
+    /// and empty slots are skipped. Progress reports (done, total) as slots are examined.</summary>
+    GenerationOutcome LegalizeSlots(ISaveEngineSession session, IReadOnlyList<(int Box, int Slot)> slots,
+        Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
 
     /// <summary>Fills the PC from box 0 slot 0 with a legal living dex (overwrites; caller confirms + backs up).</summary>
     GenerationOutcome FillLivingDex(ISaveEngineSession session, byte[] compressedBundle, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
@@ -455,9 +499,20 @@ public interface IEventDatabaseService
 {
     IReadOnlyList<EventGift> GetGifts(ISaveEngineSession session);
     GenerationOutcome Receive(ISaveEngineSession session, int giftId, int box, int slot);
+    /// <summary>The open save's identity for the gallery's compatibility filter and
+    /// injected-history keys; null when the session is not an engine save (compatibility
+    /// then can never apply and browsing stays unchanged).</summary>
+    EventGiftSaveProfile? GetSaveProfile(ISaveEngineSession session);
 }
 
-public sealed record EventGift(int Id, string Title, string Header, int Species, int Level, bool Shiny);
+/// <summary>One distributable wondercard. Id is the receive index into the open save's
+/// card table (unstable); CardId is the distribution's own card number. Language is the
+/// card's language restriction (0 = distributed in every language) and Year comes from the
+/// card date when the format carries one - the facts the gallery filters and the
+/// injected-history ledger key on.</summary>
+public sealed record EventGift(
+    int Id, string Title, string Header, int Species, int Level, bool Shiny,
+    int CardId, int Generation, int Language, int? Year);
 
 /// <summary>What the user asked for; null fields mean "let the legalizer decide".</summary>
 public sealed record GenerationRequest(
@@ -481,6 +536,20 @@ public sealed record TrainerInfo(string Name, int TID, int SID, uint Money, int 
 
 /// <summary>A reusable ownership identity. DisplayName labels the preset and is never written into a save.</summary>
 public sealed record TrainerProfile(string Id, string DisplayName, string OriginalTrainer, int TID, int SID, int Gender);
+
+/// <summary>Trainer-card counters with per-field support flags and storage maxima.
+/// PlayTimeHoursMax is 255 on Gen 1's one-byte counter, 65535 on later formats.</summary>
+public sealed record TrainerStats(
+    bool SupportsPlayTime, int PlayTimeHours, int PlayTimeMinutes, int PlayTimeHoursMax,
+    bool SupportsBP, int BP, int BPMax,
+    bool SupportsCoins, int Coins, int CoinsMax);
+
+/// <summary>Partial trainer-stat mutation; only non-null fields apply.</summary>
+public sealed record TrainerStatsEdit(
+    int? PlayTimeHours = null,
+    int? PlayTimeMinutes = null,
+    int? BP = null,
+    int? Coins = null);
 
 /// <summary>App-owned generation preference consumed by the engine without depending on MAUI.</summary>
 public interface IGenerationOwnershipSettings

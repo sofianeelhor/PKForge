@@ -57,3 +57,5 @@ tools/ChromePreview/out/
 
 # Local docs, never committed
 /docs/*.md
+dist-diagnostic/
+dist/

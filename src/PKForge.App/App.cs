@@ -29,6 +29,11 @@ public sealed class App : Application
     {
         Trace("App ctor");
 
+        // Warm both Skia faces off the ctor: the party view paints before the first
+        // save opens, and its cached nickname font must never pin the placeholder.
+        _ = Views.PixelFont.WarmAsync();
+        _ = Views.PixelFont.WarmFallbackAsync();
+
         // The DS system font (NDS12/"PixelUI") is the app's voice everywhere. Symbol glyphs
         // that NDS12 lacks (Ⓐ, ♂, ▼, ◓ ...) are pinned to "Rounded" at their few call sites.
         Style FontStyle(Type target, BindableProperty property) =>

@@ -24,6 +24,8 @@ public static class EventGallery
         if (services is null || service is null) return;
         var sprites = services.GetRequiredService<ISpriteService>();
         var data = services.GetRequiredService<IGameDataService>();
+        var history = services.GetService<InjectedGiftHistory>() ?? new InjectedGiftHistory(null);
+        var profile = service.GetSaveProfile(session);
 
         var gifts = service.GetGifts(session);
         if (gifts.Count == 0)
@@ -35,7 +37,7 @@ public static class EventGallery
 
         while (true)
         {
-            var gift = await GiftShelf.ShowAsync(host, gifts, sprites, data);
+            var gift = await GiftShelf.ShowAsync(host, gifts, sprites, data, profile, history);
             if (gift is null) return;
 
             var slot = targetSlot ?? viewModel.VisibleSlots.FirstOrDefault(s => s.Species is null)?.Slot ?? -1;
@@ -44,7 +46,9 @@ public static class EventGallery
                 viewModel.Status = "No empty slot in this box for the gift.";
                 return;
             }
-            await viewModel.RunMutationAsync(s => service.Receive(s, gift.Id, viewModel.BoxIndex, slot), slot);
+            var received = await viewModel.RunMutationAsync(s => service.Receive(s, gift.Id, viewModel.BoxIndex, slot), slot);
+            if (received && profile is not null)
+                history.Record(InjectedGiftHistory.KeyFor(gift, profile));
             repaint();
             return;
         }
@@ -159,33 +163,42 @@ public static class EventGallery
         // which overflowed the 640x360 logical screen.
         private readonly float _cardW;
         private readonly float _cardH;
-
         private readonly TaskCompletionSource<EventGift?> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Grid _host;
         private readonly Grid _overlay;
+        private readonly Grid _content;
         private readonly GamepadRouter? _router;
         private readonly IReadOnlyList<EventGift> _gifts;
+        private readonly EventGiftSaveProfile? _profile;
+        private readonly InjectedGiftHistory _history;
         private readonly ISpriteService _sprites;
         private readonly IGameDataService _data;
         private readonly SKCanvasView _wall;
         private readonly SKCanvasView _preview;
         private readonly Label _giftTitle;
         private readonly Label _giftFacts;
+        private EventGiftFilter _filter = new();
+        private IReadOnlyList<EventGift> _view;
         private int _index;
         private int _scrollRow;
         private int _cols = 4;
         private int _visibleRows = 2;
         private bool _busy;
 
-        public static Task<EventGift?> ShowAsync(Grid host, IReadOnlyList<EventGift> gifts, ISpriteService sprites, IGameDataService data) =>
-            new GiftShelf(host, gifts, sprites, data)._result.Task;
+        public static Task<EventGift?> ShowAsync(Grid host, IReadOnlyList<EventGift> gifts, ISpriteService sprites,
+            IGameDataService data, EventGiftSaveProfile? profile, InjectedGiftHistory history) =>
+            new GiftShelf(host, gifts, sprites, data, profile, history)._result.Task;
 
-        private GiftShelf(Grid host, IReadOnlyList<EventGift> gifts, ISpriteService sprites, IGameDataService data)
+        private GiftShelf(Grid host, IReadOnlyList<EventGift> gifts, ISpriteService sprites, IGameDataService data,
+            EventGiftSaveProfile? profile, InjectedGiftHistory history)
         {
             _host = host;
             _gifts = gifts;
+            _profile = profile;
+            _history = history;
             _sprites = sprites;
             _data = data;
+            _view = gifts;
             _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
 
             // Fit the Thor's 640x360 logical screen: every extent comes from the host's
@@ -203,7 +216,12 @@ public static class EventGallery
             _preview = new SKCanvasView { HeightRequest = 96, HorizontalOptions = LayoutOptions.Fill };
             _preview.PaintSurface += (_, args) =>
             {
-                var gift = _gifts[_index];
+                if (_view.Count == 0)
+                {
+                    PaintMon(args.Surface.Canvas, args.Info, null, Math.Min(args.Info.Width, args.Info.Height) * 0.9f);
+                    return;
+                }
+                var gift = _view[_index];
                 var bitmap = _sprites.GetSprite(gift.Species, 0, gift.Shiny);
                 if (bitmap is null) _sprites.Warm(gift.Species, 0, gift.Shiny, Repaint);
                 PaintMon(args.Surface.Canvas, args.Info, bitmap, Math.Min(args.Info.Width, args.Info.Height) * 0.9f);
@@ -248,11 +266,15 @@ public static class EventGallery
                 {
                     Kit.HeaderBar($"MYSTERY GIFT · {gifts.Count}"),
                     body,
-                    Kit.HintBar(("A", "WONDERCARD", null), ("B", "BACK", () => Close(null))),
+                    Kit.HintBar(
+                        ("A", "WONDERCARD", null),
+                        ("Y", "FILTER", () => _ = ShowFilterMenuAsync()),
+                        ("B", "BACK", () => Close(null))),
                 },
             };
             content.SetRow(body, 1);
             content.SetRow((View)content.Children[2], 2);
+            _content = content;
 
             // The gift world itself: a pink panel washed with fixed white sparkles -
             // the white cards and preview pane float on top of it.
@@ -297,10 +319,116 @@ public static class EventGallery
 
         private void RefreshPreview()
         {
-            var gift = _gifts[_index];
+            if (_view.Count == 0)
+            {
+                _giftTitle.Text = "NO CARDS MATCH";
+                _giftFacts.Text = "Relax the filters to see the archive again.";
+                _preview.InvalidateSurface();
+                return;
+            }
+            var gift = _view[_index];
             _giftTitle.Text = gift.Title;
-            _giftFacts.Text = $"No. {gift.Species:000} · {SpeciesName(gift.Species)} · Lv. {gift.Level}{(gift.Shiny ? " · SHINY" : "")}";
+            _giftFacts.Text = $"No. {gift.Species:000} · {SpeciesName(gift.Species)} · Lv. {gift.Level}" +
+                $"{(gift.Shiny ? " · SHINY" : "")}{(IsInjected(gift) ? " · INJECTED" : "")}";
             _preview.InvalidateSurface();
+        }
+
+        private bool IsInjected(EventGift gift) =>
+            _profile is not null && _history.IsInjected(InjectedGiftHistory.KeyFor(gift, _profile));
+
+        // ── Filters: PKHeX-style QoL over the archive, never a blocker ──────────────
+
+        private void ApplyFilter()
+        {
+            _view = _gifts.Where(g => _filter.Matches(g, _profile)).ToArray();
+            _index = 0;
+            _scrollRow = 0;
+            RefreshHeader();
+            RefreshPreview();
+            _wall.InvalidateSurface();
+        }
+
+        /// <summary>The count in the maroon strip: totals normally, shown/total once a
+        /// filter narrows the shelf.</summary>
+        private void RefreshHeader()
+        {
+            var title = _filter.IsActive ? $"MYSTERY GIFT · {_view.Count}/{_gifts.Count} SHOWN" : $"MYSTERY GIFT · {_gifts.Count}";
+            _content.Children[0] = Kit.HeaderBar(title);
+        }
+
+        private async Task ShowFilterMenuAsync()
+        {
+            var options = new List<PadOption>();
+            if (_profile is not null)
+                options.Add(new PadOption((_filter.CompatibleOnly ? "✓ " : "") + "Compatible with this save", IconPath: "heart"));
+            if (_gifts.Select(g => g.Generation).Distinct().Skip(1).Any())
+                options.Add(new PadOption($"Generation: {(_filter.Generation is { } gen ? $"Gen {gen}" : "Any")}", IconPath: "pokedex"));
+            if (_gifts.Any(g => g.Year is not null))
+                options.Add(new PadOption($"Year: {_filter.Year?.ToString() ?? "Any"}", IconPath: "spark"));
+            if (_filter.IsActive)
+                options.Add(new PadOption("Clear all filters", IconPath: "quit"));
+            options.Add(new PadOption($"Clear injected history ({_history.Count})", IconPath: "restore"));
+
+            var choice = await PadMenu.ShowAsync(_host, "FILTER CARDS",
+                "Filters and markers are quality of life: every card stays receivable.", options.ToArray());
+            switch (choice)
+            {
+                case null:
+                    return;
+                case "Compatible with this save" or "✓ Compatible with this save":
+                    _filter = _filter with { CompatibleOnly = !_filter.CompatibleOnly };
+                    ApplyFilter();
+                    return;
+                case { } picked when picked.StartsWith("Generation", StringComparison.Ordinal):
+                    await ShowGenerationMenuAsync();
+                    return;
+                case { } picked when picked.StartsWith("Year", StringComparison.Ordinal):
+                    await ShowYearMenuAsync();
+                    return;
+                case "Clear all filters":
+                    _filter = new EventGiftFilter();
+                    ApplyFilter();
+                    return;
+                case { } picked when picked.StartsWith("Clear injected history", StringComparison.Ordinal):
+                    await ClearHistoryAsync();
+                    return;
+            }
+        }
+
+        private async Task ShowGenerationMenuAsync()
+        {
+            var items = _gifts.Select(g => g.Generation).Distinct().Order()
+                .Select(gen => new PickItem(gen, $"Gen {gen} · {Kit.ConsoleCode(gen)}"))
+                .Prepend(new PickItem(0, "Any generation"))
+                .ToArray();
+            var picked = await PickerMenu.ShowAsync(_host, "GENERATION", items, currentId: _filter.Generation ?? 0);
+            if (picked is null) return;
+            _filter = _filter with { Generation = picked.Id == 0 ? null : picked.Id };
+            ApplyFilter();
+        }
+
+        private async Task ShowYearMenuAsync()
+        {
+            var items = _gifts.Where(g => g.Year is not null).Select(g => g.Year!.Value).Distinct().OrderDescending()
+                .Select(year => new PickItem(year, year.ToString()))
+                .Prepend(new PickItem(0, "Any year"))
+                .ToArray();
+            var picked = await PickerMenu.ShowAsync(_host, "YEAR", items, currentId: _filter.Year ?? 0);
+            if (picked is null) return;
+            _filter = _filter with { Year = picked.Id == 0 ? null : picked.Id };
+            ApplyFilter();
+        }
+
+        private async Task ClearHistoryAsync()
+        {
+            if (_history.Count == 0) return;
+            var confirmed = await PadMenu.ConfirmAsync(_host, "CLEAR INJECTED HISTORY",
+                $"Forget all {_history.Count} recorded injections? The markers disappear; receiving again still works.",
+                "Clear");
+            if (!confirmed) return;
+            _history.Clear();
+            RefreshPreview();
+            _wall.InvalidateSurface();
         }
 
         private void PaintWall(object? sender, SKPaintSurfaceEventArgs args)
@@ -320,10 +448,10 @@ public static class EventGallery
             using var cardEdge = new SKPaint { Color = Pksm.PaperEdge, Style = SKPaintStyle.Stroke, StrokeWidth = 2f, IsAntialias = true };
 
             var first = _scrollRow * _cols;
-            var last = Math.Min(_gifts.Count, first + _visibleRows * _cols);
+            var last = Math.Min(_view.Count, first + _visibleRows * _cols);
             for (var i = first; i < last; i++)
             {
-                var gift = _gifts[i];
+                var gift = _view[i];
                 var local = i - first;
                 var x = Pad + local % _cols * (_cardW + Gap);
                 var y = Pad + local / _cols * (_cardH + Gap);
@@ -356,6 +484,9 @@ public static class EventGallery
                         new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
                 }
 
+                if (IsInjected(gift))
+                    PaintInjectedBadge(canvas, rect);
+
                 if (gift.Shiny)
                     PaintSparkle(canvas, x + _cardW - 14, y + 14, 6f);
 
@@ -368,6 +499,21 @@ public static class EventGallery
             }
         }
 
+        /// <summary>The "you were there" mark: a small gift-red pill on cards this app has
+        /// already delivered to the open game. It never blocks receiving again.</summary>
+        private static void PaintInjectedBadge(SKCanvas canvas, SKRect card)
+        {
+            const string text = "INJECTED";
+            using var font = new SKFont { Size = 8.5f, Edging = SKFontEdging.Antialias, Embolden = true };
+            using var fill = new SKPaint { Color = Pksm.GiftRed, Style = SKPaintStyle.Fill, IsAntialias = true };
+            using var ink = new SKPaint { Color = Pksm.Ink, IsAntialias = true };
+            var w = font.MeasureText(text) + 10f;
+            var rect = new SKRect(card.Left + 5, card.Top + 5, card.Left + 5 + w, card.Top + 18f);
+            using (var round = new SKRoundRect(rect, 3f))
+                canvas.DrawRoundRect(round, fill);
+            canvas.DrawText(text, rect.Left + 5, rect.Bottom - 3.5f, SKTextAlign.Left, font, ink);
+        }
+
         private void OnWallTouch(object? sender, SKTouchEventArgs args)
         {
             if (args.ActionType == SKTouchAction.Pressed) { args.Handled = true; return; }
@@ -377,7 +523,7 @@ public static class EventGallery
             var col = (int)((args.Location.X - Pad) / (_cardW + Gap));
             var row = _scrollRow + (int)((args.Location.Y - Pad) / (_cardH + Gap));
             var index = row * _cols + col;
-            if (col < 0 || col >= _cols || (uint)index >= (uint)_gifts.Count) return;
+            if (col < 0 || col >= _cols || (uint)index >= (uint)_view.Count) return;
             _index = index;
             RefreshPreview();
             _wall.InvalidateSurface();
@@ -393,6 +539,7 @@ public static class EventGallery
                 case PadButton.Up: Move(_index - _cols); return true;
                 case PadButton.Down: Move(_index + _cols); return true;
                 case PadButton.A: OpenWonderCard(); return true;
+                case PadButton.Y: _ = ShowFilterMenuAsync(); return true;
                 case PadButton.B: Close(null); return true;
                 default: return true; // the shelf owns the pad while open
             }
@@ -400,7 +547,8 @@ public static class EventGallery
 
         private void Move(int index)
         {
-            _index = Math.Clamp(index, 0, _gifts.Count - 1);
+            if (_view.Count == 0) return;
+            _index = Math.Clamp(index, 0, _view.Count - 1);
             var row = _index / _cols;
             if (row < _scrollRow) _scrollRow = row;
             else if (row >= _scrollRow + _visibleRows) _scrollRow = row - _visibleRows + 1;
@@ -410,12 +558,12 @@ public static class EventGallery
 
         private async void OpenWonderCard()
         {
-            if (_busy) return;
+            if (_busy || _view.Count == 0) return;
             _busy = true;
             try
             {
-                var gift = _gifts[_index];
-                var receive = await WonderCard.ShowAsync(_host, gift, _sprites, SpeciesName(gift.Species));
+                var gift = _view[_index];
+                var receive = await WonderCard.ShowAsync(_host, gift, _sprites, SpeciesName(gift.Species), IsInjected(gift));
                 if (receive) Close(gift);
             }
             finally
@@ -432,6 +580,7 @@ public static class EventGallery
         }
     }
 
+
     // ── The wondercard: white panel, maroon header, big sprite, RECEIVE ────────
 
     private sealed class WonderCard : IPadHandler
@@ -441,10 +590,10 @@ public static class EventGallery
         private readonly Grid _overlay;
         private readonly GamepadRouter? _router;
 
-        public static Task<bool> ShowAsync(Grid host, EventGift gift, ISpriteService sprites, string speciesName) =>
-            new WonderCard(host, gift, sprites, speciesName)._result.Task;
+        public static Task<bool> ShowAsync(Grid host, EventGift gift, ISpriteService sprites, string speciesName, bool injected) =>
+            new WonderCard(host, gift, sprites, speciesName, injected)._result.Task;
 
-        private WonderCard(Grid host, EventGift gift, ISpriteService sprites, string speciesName)
+        private WonderCard(Grid host, EventGift gift, ISpriteService sprites, string speciesName, bool injected)
         {
             _host = host;
             _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
@@ -494,7 +643,7 @@ public static class EventGallery
                     },
                     new Label
                     {
-                        Text = $"No. {gift.Species:000} · {speciesName} · Lv. {gift.Level}{(gift.Shiny ? " · SHINY" : "")}",
+                        Text = $"No. {gift.Species:000} · {speciesName} · Lv. {gift.Level}{(gift.Shiny ? " · SHINY" : "")}{(injected ? " · ALREADY INJECTED" : "")}",
                         TextColor = UiTokens.Ink1,
                         FontFamily = DsChrome.PixelFont,
                         FontSize = 12,

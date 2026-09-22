@@ -3,6 +3,7 @@ using PKForge.App.Theme;
 using PKForge.App.ViewModels;
 using PKForge.Chrome;
 using PKForge.Domain;
+using PKHeX.Core;
 using SkiaSharp;
 using SkiaSharp.Views.Maui;
 using SkiaSharp.Views.Maui.Controls;
@@ -462,22 +463,36 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             await ShowOrganizerMenuAsync();
             return;
         }
-        var choice = await PadMenu.ShowAsync(_hostGrid, "STORAGE TOOLS", null,
-            new PadOption("Organizer (multi-select)", IconPath: "storage"),
-            new PadOption("Import .pk files", IconPath: "folder"),
-            new PadOption("Import Showdown team", IconPath: "script"),
-            new PadOption("Export box to Showdown", IconPath: "script"),
-            new PadOption("Generate Living Dex", IconPath: "pokedex"),
-            new PadOption("How to get a Pokémon…", IconPath: "search"),
-            new PadOption("Egg factory…", IconPath: "pokedex"),
-            new PadOption("Day Care / Nursery", IconPath: "pokedex"),
-            new PadOption("Batch editor", IconPath: "script"),
-            new PadOption("Presets…", IconPath: "gears"),
-            new PadOption("Trainer profiles…", IconPath: "trainer"),
-            new PadOption("Nuzlocke report", IconPath: "skull"),
-            new PadOption("Manage boxes…", IconPath: "storage"),
-            new PadOption("Collection dex…", IconPath: "pokedex"),
-            new PadOption("Sort boxes…", IconPath: "restore"));
+        // Box-level bulk tools run on the stock engine only: romhack sessions refuse
+        // sort/batch ops, so their entries are hidden instead of failing mid-flow.
+        var boxTools = _sessionsFor()?.SupportsBoxTools == true;
+        var options = new List<PadOption>
+        {
+            new("Organizer (multi-select)", IconPath: "storage"),
+            new("Import .pk files", IconPath: "folder"),
+            new("Import Showdown team", IconPath: "script"),
+            new("Export box to Showdown", IconPath: "script"),
+            new("Generate Living Dex", IconPath: "pokedex"),
+            new("How to get a Pokémon…", IconPath: "search"),
+            new("Egg factory…", IconPath: "pokedex"),
+            new("Day Care / Nursery", IconPath: "pokedex"),
+        };
+        if (boxTools)
+        {
+            options.Add(new("Battle prep", IconPath: "sword"));
+            options.Add(new("Batch editor", IconPath: "script"));
+            options.Add(new("Batch rename / OT…", IconPath: "trainer"));
+            options.Add(new("Random team…", IconPath: "dice"));
+        }
+        options.Add(new("Presets…", IconPath: "gears"));
+        options.Add(new("Trainer profiles…", IconPath: "trainer"));
+        options.Add(new("Legality check", IconPath: "search"));
+        options.Add(new("Audit report", IconPath: "hex"));
+        options.Add(new("Nuzlocke report", IconPath: "skull"));
+        options.Add(new("Collection dex…", IconPath: "pokedex"));
+        if (boxTools)
+            options.Add(new("Sort boxes…", IconPath: "restore"));
+        var choice = await PadMenu.ShowAsync(_hostGrid, "STORAGE TOOLS", null, options.ToArray());
         switch (choice)
         {
             case "Organizer (multi-select)":
@@ -505,6 +520,9 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                     await EncounterGallery.ShowGameScopedAsync(_hostGrid, _viewModel, session, () => _canvas.InvalidateSurface());
                 return;
             }
+            case "Battle prep":
+                await ShowBattlePrepAsync();
+                return;
             case "Egg factory…":
                 await ShowEggFactoryAsync();
                 return;
@@ -518,11 +536,23 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             case "Batch editor":
                 await RunBatchEditorAsync();
                 return;
+            case "Batch rename / OT…":
+                await ShowBatchRenameAsync();
+                return;
+            case "Random team…":
+                await ShowRandomTeamAsync();
+                return;
             case "Presets…":
                 await ShowPresetsMenuAsync();
                 return;
             case "Trainer profiles…":
                 await ShowTrainerProfilesAsync();
+                return;
+            case "Legality check":
+                await ShowLegalityCheckAsync();
+                return;
+            case "Audit report":
+                await ShowAuditReportAsync();
                 return;
             case "Nuzlocke report":
                 await ShowNuzlockeReportAsync();
@@ -820,6 +850,14 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                     $"{_viewModel.MarkedCount} Pokémon will leave this box and join {target.GameLabel}. Mons that cannot enter that format stay here.", "Move all");
                 if (!confirm) return;
 
+                // Bulk preview: the first marked mon's conversion diff stands for the
+                // batch (per-mon prompts over N mons would be a questionnaire).
+                var firstMarked = _viewModel.MarkedSlots.First();
+                var firstExport = session.ExportSlot(firstMarked.Box, firstMarked.Slot);
+                var firstPreview = await transfer.PreviewAsync(firstExport.Data, firstExport.FileName, target);
+                if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, firstPreview,
+                        $"1 of {_viewModel.MarkedCount} Pokémon", target.GameLabel)) return;
+
                 var sentSlots = new List<(int Box, int Slot)>();
                 var skipped = 0;
                 foreach (var (box, markedSlot) in _viewModel.MarkedSlots.ToArray())
@@ -1099,7 +1137,12 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var scope = await PadMenu.ShowAsync(_hostGrid, "SORT", "Which boxes?",
             new PadOption("This box", IconPath: "storage"),
             new PadOption("All boxes", IconPath: "storage"));
-        if (scope is null) return;
+
+        var direction = await PadMenu.ShowAsync(_hostGrid, "SORT", "Which direction?",
+            new PadOption("Normal order", IconPath: "restore"),
+            new PadOption("Reversed", IconPath: "restore"));
+        if (direction is null) return;
+        var reverse = direction == "Reversed";
 
         var criteria = choice switch
         {
@@ -1113,10 +1156,12 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         };
         IReadOnlyList<int>? boxes = scope == "This box" ? [_viewModel.BoxIndex] : null;
 
+        var directionNote = reverse ? " (reversed)" : "";
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "SORT NOW?",
-            scope == "This box"
+            (scope == "This box"
                 ? "This box's Pokémon are reordered and compacted to the top."
-                : "Every box's Pokémon are pooled, ordered, and compacted from box 1. Empties gather at the end.",
+                : "Every box's Pokémon are pooled, ordered, and compacted from box 1. Empties gather at the end.")
+            + directionNote,
             "Sort");
         if (!confirmed) return;
 
@@ -1129,8 +1174,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 if (locked.Count > 0)
                     boxes = Enumerable.Range(0, _viewModel.BoxCount).Where(box => !locked.Contains(box)).ToList();
             }
-            var placed = session.SortBoxes(criteria, boxes);
-            return new GenerationOutcome(true, $"Sorted {placed} Pokémon.");
+            var placed = session.SortBoxes(criteria, boxes, reverse);
+            return new GenerationOutcome(true, $"Sorted {placed} Pokémon{directionNote}.");
         }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
         if (sorted)
             _viewModel.RefreshAllSlots();
@@ -1366,6 +1411,257 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         await done.Task;
     }
 
+    /// <summary>The whole-save legality sweep: off-thread scan behind the walking
+    /// overlay, cached per write-generation so reopening the tool is instant until the
+    /// save changes. Dots appear on the current box; illegal mons offer repairs.</summary>
+    private async Task ShowLegalityCheckAsync()
+    {
+        var session = _sessionsFor();
+        if (session is null) { _viewModel.Status = "Open a save first."; return; }
+        if (!session.SupportsLegalityAnalysis)
+        {
+            await PadMenu.ShowAsync(_hostGrid, "LEGALITY CHECK",
+                "This save is a romhack format without offline legality tables - nothing to check here.", "OK");
+            return;
+        }
+
+        var overlay = default(LoadingOverlay);
+        using var cancellation = new CancellationTokenSource();
+        try
+        {
+            var results = await _viewModel.GetLegalitySweepAsync(
+                () =>
+                {
+                    overlay = LoadingOverlay.Show(_hostGrid, "CHECKING LEGALITY…", "Scanning the party and every box.");
+                    overlay.Cancellation.Token.Register(cancellation.Cancel);
+                },
+                (done, total) => overlay?.Report(done, total),
+                cancellation.Token);
+            if (results.Count == 0)
+            {
+                _viewModel.Status = "This save stores no Pokémon.";
+                return;
+            }
+            var illegal = results.Where(r => !r.Valid).ToList();
+
+            var choice = illegal.Count == 0
+                ? await PadMenu.ShowAsync(_hostGrid, "LEGALITY CHECK", $"All {results.Count} Pokémon are legal.", "OK")
+                : await PadMenu.ShowAsync(_hostGrid, "LEGALITY CHECK",
+                    $"{illegal.Count} illegal of {results.Count}. The red-dotted slots in this box fail PKHeX's checks.",
+                    new PadOption("Legalize all illegal", IconPath: "restore"), new PadOption("Close"));
+            if (choice == "Legalize all illegal")
+                await LegalizeAllIllegalAsync(illegal);
+        }
+        catch (OperationCanceledException)
+        {
+            _viewModel.Status = "Legality check cancelled.";
+        }
+        finally
+        {
+            overlay?.Close();
+        }
+    }
+
+    /// <summary>One confirmed, backed-up write that repairs every flagged slot: the
+    /// engine legalizes each mon in place inside a single mutation.</summary>
+    private async Task LegalizeAllIllegalAsync(IReadOnlyList<SlotLegality> illegal)
+    {
+        var session = _sessionsFor();
+        var legalizer = IPlatformApplication.Current?.Services.GetService<ILegalizerService>();
+        if (session is null || legalizer is null) return;
+
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "LEGALIZE ALL ILLEGAL?",
+            $"{illegal.Count} Pokémon will be rewritten to their closest legal versions. " +
+            "The current state stays available as a restore point.", "LEGALIZE");
+        if (!confirmed) return;
+
+        var targets = illegal.Select(v => (v.Box, v.Slot)).ToList();
+        var overlay = LoadingOverlay.Show(_hostGrid, "LEGALIZING…", "Repairing every flagged Pokémon in one write.");
+        try
+        {
+            var ok = await _viewModel.RunMutationAsync(
+                s => legalizer.LegalizeSlots(s, targets, (done, total) => overlay.Report(done, total)),
+                Math.Max(0, _viewModel.SelectedSlot),
+                refreshSlot: false,
+                changeDescription: $"Legalize {targets.Count} flagged Pokémon");
+            _viewModel.RefreshAllSlots();
+            _canvas.InvalidateSurface();
+            if (!ok)
+                await PadMenu.ShowAsync(_hostGrid, "LEGALIZE ALL", _viewModel.Status, "OK");
+        }
+        finally
+        {
+            overlay.Close();
+        }
+    }
+
+    /// <summary>The clone/hack audit: identical (EC,PID) or (PID,OT,TID) groups across
+    /// the whole save plus impossible values from the legality sweep, as one scrollable
+    /// report. The bank is excluded on purpose: its entries keep no EC/PID fingerprints.</summary>
+    private async Task ShowAuditReportAsync()
+    {
+        var session = _sessionsFor();
+        if (session is null) { _viewModel.Status = "Open a save first."; return; }
+        if (!session.SupportsLegalityAnalysis)
+        {
+            await PadMenu.ShowAsync(_hostGrid, "AUDIT REPORT",
+                "This save is a romhack format without offline legality tables - nothing to audit here.", "OK");
+            return;
+        }
+
+        var overlay = default(LoadingOverlay);
+        using var cancellation = new CancellationTokenSource();
+        IReadOnlyList<SlotLegality> sweep;
+        IReadOnlyList<MonFingerprint> fingerprints;
+        try
+        {
+            sweep = await _viewModel.GetLegalitySweepAsync(
+                () =>
+                {
+                    overlay = LoadingOverlay.Show(_hostGrid, "AUDITING…", "Fingerprinting every Pokémon and checking values.");
+                    overlay.Cancellation.Token.Register(cancellation.Cancel);
+                },
+                (done, total) => overlay?.Report(done, total),
+                cancellation.Token);
+            fingerprints = await Task.Run(() => CollectFingerprints(session), cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            _viewModel.Status = "Audit cancelled.";
+            overlay?.Close();
+            return;
+        }
+        finally
+        {
+            overlay?.Close();
+        }
+
+        var clones = CollectionAudit.GroupClones(fingerprints);
+        var illegal = sweep.Where(r => !r.Valid).ToList();
+        _viewModel.Status = clones.Count == 0 && illegal.Count == 0
+            ? "AUDIT: NO CLONES, NO IMPOSSIBLE VALUES"
+            : $"AUDIT: {clones.Count} CLONE GROUPS, {illegal.Count} FLAGGED";
+
+        var report = BuildAuditReport(clones, illegal, fingerprints.Count);
+        var rows = new VerticalStackLayout { Spacing = 4 };
+        foreach (var line in report)
+        {
+            var isHeader = line.StartsWith("## ", StringComparison.Ordinal);
+            rows.Children.Add(new Label
+            {
+                Text = isHeader ? line[3..].ToUpperInvariant() : line,
+                FontFamily = DsChrome.PixelFont,
+                FontSize = isHeader ? 14 : 12,
+                TextColor = isHeader ? UiTokens.Maroon : UiTokens.Ink0,
+            });
+        }
+
+        var share = Kit.Capsule("SHARE REPORT", UiTokens.Cyan);
+        var close = Kit.Capsule("CLOSE", UiTokens.Ink1);
+        var buttons = new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.Center, Children = { share, close } };
+        var content = new VerticalStackLayout
+        {
+            Spacing = 8,
+            Children = { Kit.HeaderBar("AUDIT REPORT"), new ScrollView { Content = rows, MaximumHeightRequest = 420 }, buttons },
+        };
+
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Grid overlayGrid = null!;
+        PadOverlay pad = null!;
+        void Close()
+        {
+            _hostGrid.Remove(overlayGrid);
+            pad?.Dispose();
+            done.TrySetResult();
+        }
+        overlayGrid = Kit.AttachOverlay(_hostGrid, Kit.OverlayWindow(_hostGrid, content), Close);
+        pad = new PadOverlay(Close, Close);
+        close.Clicked += (_, _) => Close();
+        share.Clicked += async (_, _) => await ShareAuditReportAsync(string.Join(Environment.NewLine, report.Select(Strip)));
+        await done.Task;
+
+        static string Strip(string line) => line.StartsWith("## ", StringComparison.Ordinal) ? line[3..] : line;
+    }
+
+    /// <summary>The identity facts the clone grouping runs on, for every occupied slot.</summary>
+    private static IReadOnlyList<MonFingerprint> CollectFingerprints(Domain.ISaveEngineSession session)
+    {
+        var fingerprints = new List<MonFingerprint>();
+        foreach (var summary in session.Snapshot.Slots)
+        {
+            if (summary.Species is null) continue;
+            var rng = session.GetRngInfo(summary.Box, summary.Slot);
+            var detail = session.ReadEntity(summary.Box, summary.Slot);
+            var tid = session.GetMetInfo(summary.Box, summary.Slot).TID;
+            fingerprints.Add(new MonFingerprint(
+                rng.Pid, rng.EncryptionConstant, detail.OriginalTrainer, tid,
+                summary.Box == -1 ? $"Party {summary.Slot + 1}" : $"B{summary.Box + 1}-{summary.Slot + 1}",
+                detail.Nickname is { Length: > 0 } ? detail.Nickname : detail.SpeciesName));
+        }
+        return fingerprints;
+    }
+
+    /// <summary>Plain-text audit body: clone sections then impossible values.</summary>
+    private static IReadOnlyList<string> BuildAuditReport(
+        IReadOnlyList<CloneGroup> clones, IReadOnlyList<SlotLegality> illegal, int total)
+    {
+        var lines = new List<string>
+        {
+            $"{total} Pokémon audited in this save.",
+            string.Empty,
+        };
+        if (clones.Count == 0)
+        {
+            lines.Add("No clones: every Pokémon has a unique identity fingerprint.");
+        }
+        else
+        {
+            lines.Add($"## Clones ({clones.Count} groups)");
+            foreach (var group in clones)
+            {
+                lines.Add($"{group.KeyKind} match ×{group.Members.Count}:");
+                lines.AddRange(group.Members.Select(m => $"   {m.SlotLabel} - {m.DisplayName}"));
+            }
+        }
+        lines.Add(string.Empty);
+        if (illegal.Count == 0)
+        {
+            lines.Add("No impossible values: every Pokémon passed PKHeX's checks.");
+        }
+        else
+        {
+            lines.Add($"## Impossible values ({illegal.Count})");
+            foreach (var verdict in illegal)
+            {
+                var label = verdict.Box == -1 ? $"Party {verdict.Slot + 1}" : $"B{verdict.Box + 1}-{verdict.Slot + 1}";
+                lines.Add($"{label} - {verdict.Problem}");
+            }
+        }
+        lines.Add(string.Empty);
+        lines.Add("Bank audit is future work: bank entries keep no EC/PID fingerprint.");
+        return lines;
+    }
+
+    /// <summary>Hands the audit text to Android's share sheet as a file (the .pk export path).</summary>
+    private static async Task ShareAuditReportAsync(string text)
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(FileSystem.CacheDirectory, "pkforge-audit.txt");
+            await File.WriteAllTextAsync(path, text);
+            await Share.Default.RequestAsync(new ShareFileRequest
+            {
+                Title = "PKForge audit report",
+                File = new ShareFile(path),
+            });
+        }
+        catch (Exception error)
+        {
+            // Sharing is best-effort; the on-screen report is the source of truth.
+            _ = error.Message;
+        }
+    }
+
     /// <summary>Mass egg generation: living egg dex, or one species filling this box.</summary>
     private async Task ShowEggFactoryAsync()
     {
@@ -1412,40 +1708,247 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         finally { overlay.Close(); }
     }
 
+    /// <summary>One-tap battle preparation: heal, PP Max, flat rules - one backed-up write per action.</summary>
+    private async Task ShowBattlePrepAsync()
+    {
+        var session = _sessionsFor();
+        if (session is null) return;
+        var choice = await PadMenu.ShowAsync(_hostGrid, "BATTLE PREP", "Every action is one backed-up write.",
+            new PadOption("Heal party", IconPath: "heart"),
+            new PadOption("Heal all (party + boxes)", IconPath: "heart"),
+            new PadOption("PP Max all moves", IconPath: "spark"),
+            new PadOption("Set party to Lv50 (flat rules)", IconPath: "sword"),
+            new PadOption("Set all to Lv100", IconPath: "sword"));
+        if (choice is null) return;
+
+        var party = new[] { -1 };
+        var everywhere = PartyAndUnlockedBoxes();
+        var everywhereText = everywhere.Count == 1
+            ? "the party only (every box is locked)"
+            : "the party and every unlocked box";
+        IReadOnlyList<string> instructions;
+        IReadOnlyList<int> boxes;
+        string what;
+        if (choice == "Heal party")
+        {
+            instructions = ["Heal"];
+            boxes = party;
+            what = "the party";
+        }
+        else if (choice == "Heal all (party + boxes)")
+        {
+            instructions = ["Heal"];
+            boxes = everywhere;
+            what = everywhereText;
+        }
+        else if (choice == "PP Max all moves")
+        {
+            // PP Ups persist even in box storage; current PP only lives in party data,
+            // so HealPP tops off the party and is a no-op write for boxed mons.
+            instructions = ["Move1_PPUps=3", "Move2_PPUps=3", "Move3_PPUps=3", "Move4_PPUps=3", "HealPP"];
+            boxes = everywhere;
+            what = everywhereText;
+        }
+        else if (choice == "Set party to Lv50 (flat rules)")
+        {
+            instructions = ["Level=50"];
+            boxes = party;
+            what = "the party";
+        }
+        else
+        {
+            instructions = ["Level=100"];
+            boxes = everywhere;
+            what = everywhereText;
+        }
+
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, $"{choice.ToUpperInvariant()}?",
+            $"Applies to {what}. Backed up first.", choice);
+        if (!confirmed) return;
+
+        await _viewModel.RunMutationAsync(s =>
+        {
+            var touched = s.BatchApply(instructions, boxes);
+            return touched > 0
+                ? new GenerationOutcome(true, $"{choice} applied to {touched} Pokémon.")
+                : new GenerationOutcome(false, "Nothing to edit there.");
+        }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+        _viewModel.RefreshAllSlots();
+        _canvas.InvalidateSurface();
+    }
+
+    /// <summary>The party plus every unlocked box: battle prep's whole-save scope.</summary>
+    private IReadOnlyList<int> PartyAndUnlockedBoxes()
+    {
+        var docId = DocumentId;
+        return [-1, .. Enumerable.Range(0, _viewModel.BoxCount)
+            .Where(box => docId is null || !Protection.IsBoxLocked(docId, box))];
+    }
+
     /// <summary>
-    /// The batch editor: instructions like "Level=100", "IV_HP=31", "Shiny=Yes" applied to
-    /// every mon in the current box (or all boxes), one safe write. PKHeX syntax.
+    /// The batch editor: stack operations as chips (level, IVs, EV spread, heal, training,
+    /// friendship, nicknames), then apply them to a scope - the organizer selection, one
+    /// box, or every box - in a single backed-up write. The PKHeX instruction strings are
+    /// shown before the write; experts can paste their own on top.
     /// </summary>
     private async Task RunBatchEditorAsync()
     {
         var session = _sessionsFor();
         if (session is null) return;
         var caps = session.GetTrainingCaps();
-        var scope = await PadMenu.ShowAsync(_hostGrid, "BATCH EDITOR", "Apply to which boxes?",
-            new PadOption("This box", IconPath: "storage"),
-            new PadOption("All boxes", IconPath: "storage"));
+        var statKind = caps.IvMax == 15 ? "DVs" : "IVs";
+
+        // Scope first. Locked boxes refuse batch edits (same rule as sort and presets).
+        var scopeOptions = new List<PadOption>();
+        if (_viewModel.MarkedCount > 0)
+            scopeOptions.Add(new($"Selected Pokémon ({_viewModel.MarkedCount})", IconPath: "storage"));
+        scopeOptions.Add(new("This box", IconPath: "storage"));
+        scopeOptions.Add(new("All boxes", IconPath: "storage"));
+        var scope = await PadMenu.ShowAsync(_hostGrid, "BATCH EDITOR", "Apply to which Pokémon?", scopeOptions.ToArray());
         if (scope is null) return;
+        var selection = scope.StartsWith("Selected", StringComparison.Ordinal);
 
-        var text = await TextPopup.ShowAsync(_hostGrid, "INSTRUCTIONS",
-            $"One per line, PKHeX style:\nLevel=100\nIV_HP={caps.IvMax}\nShiny=Yes\nEV_ATK={caps.EvMax}");
-        if (string.IsNullOrWhiteSpace(text)) return;
+        IReadOnlyList<(int Box, int Slot)>? slots = null;
+        IReadOnlyList<int>? boxes = null;
+        if (selection)
+        {
+            var docId = DocumentId;
+            slots = _viewModel.MarkedSlots
+                .Where(m => docId is null || !Protection.IsBoxLocked(docId, m.Box))
+                .ToList();
+            if (slots.Count == 0) { _viewModel.Status = "EVERY MARKED BOX IS LOCKED"; return; }
+        }
+        else if (scope == "This box")
+        {
+            if (DocumentId is { } docId && _viewModel.BoxIndex >= 0 && Protection.IsBoxLocked(docId, _viewModel.BoxIndex))
+            {
+                _viewModel.Status = "THIS BOX IS LOCKED";
+                return;
+            }
+            boxes = [_viewModel.BoxIndex];
+        }
+        else
+        {
+            var docId = DocumentId;
+            boxes = Enumerable.Range(0, _viewModel.BoxCount)
+                .Where(box => docId is null || !Protection.IsBoxLocked(docId, box)).ToList();
+            if (boxes.Count == 0) { _viewModel.Status = "EVERY BOX IS LOCKED"; return; }
+        }
 
-        var instructions = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (instructions.Length == 0) return;
+        // Chip flow: each entry toggles; the menu re-opens until Apply or Cancel.
+        var level = false;
+        var maxIvs = false;
+        var heal = false;
+        var train = false;
+        var friendship = false;
+        var speciesNames = false;
+        string[]? evSpread = null;
+        var evSummary = "none";
+        IReadOnlyList<string>? expertLines = null;
+        while (true)
+        {
+            PadOption Chip(string label, bool on, string icon) => new($"{(on ? "✓ " : "")}{label}", IconPath: icon);
+            var levelChip = Chip("Level = 100", level, "sword");
+            var ivChip = Chip($"Max {statKind} ({caps.IvMax} everywhere)", maxIvs, "spark");
+            var evChip = new PadOption($"EV spread: {evSummary}", IconPath: "spark");
+            var healChip = Chip("Heal + PP Max", heal, "heart");
+            var trainChip = Chip("Hyper Train (legal $suggest)", train, "gears");
+            var friendChip = Chip("Max friendship", friendship, "heart");
+            var nameChip = Chip("Nicknames → species names", speciesNames, "script");
+            var pick = await PadMenu.ShowAsync(_hostGrid, "BATCH EDITOR", "Toggle operations, then apply.",
+                levelChip, ivChip, evChip, healChip, trainChip, friendChip, nameChip,
+                new PadOption("Expert instructions…", IconPath: "script"),
+                new PadOption("Apply", IconPath: "restore"),
+                new PadOption("Cancel", IconPath: "hex"));
+            if (pick is null or "Cancel") return;
+            if (pick == "Apply") break;
+            if (pick == levelChip.Label) level = !level;
+            else if (pick == ivChip.Label) maxIvs = !maxIvs;
+            else if (pick == healChip.Label) heal = !heal;
+            else if (pick == trainChip.Label) train = !train;
+            else if (pick == friendChip.Label) friendship = !friendship;
+            else if (pick == nameChip.Label) speciesNames = !speciesNames;
+            else if (pick == evChip.Label)
+            {
+                var spreads = new (string Label, string Summary, string[] Instructions)[]
+                {
+                    ("Physical sweeper (252 Atk / 252 Spe / 4 HP)", "Atk/Spe 252+4", ["EV_HP=4", "EV_ATK=252", "EV_SPE=252"]),
+                    ("Special sweeper (252 SpA / 252 Spe / 4 HP)", "SpA/Spe 252+4", ["EV_HP=4", "EV_SPA=252", "EV_SPE=252"]),
+                    ("Physical wall (252 HP / 252 Def / 4 SpD)", "HP/Def 252+4", ["EV_HP=252", "EV_DEF=252", "EV_SPD=4"]),
+                    ("Special wall (252 HP / 252 SpD / 4 Def)", "HP/SpD 252+4", ["EV_HP=252", "EV_SPD=252", "EV_DEF=4"]),
+                    ("Reset EVs (all zero)", "reset", ["EV_HP=0", "EV_ATK=0", "EV_DEF=0", "EV_SPA=0", "EV_SPD=0", "EV_SPE=0"]),
+                    ("Keep EVs as they are", "none", []),
+                };
+                var spreadPick = await PadMenu.ShowAsync(_hostGrid, "EV SPREAD", "One spread replaces the previous choice.",
+                    spreads.Select(s => new PadOption(s.Label, IconPath: "spark")).ToArray());
+                var chosen = spreads.FirstOrDefault(s => s.Label == spreadPick);
+                if (chosen.Label is not null)
+                {
+                    evSpread = chosen.Instructions;
+                    evSummary = chosen.Summary;
+                }
+            }
+            else
+            {
+                var text = await TextPopup.ShowAsync(_hostGrid, "EXPERT INSTRUCTIONS",
+                    $"One per line, PKHeX style, added on top of the chips:\nLevel=100\nIV_HP={caps.IvMax}\nShiny=Yes\nEV_ATK={caps.EvMax}");
+                if (!string.IsNullOrWhiteSpace(text))
+                    expertLines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            }
+        }
 
-        IReadOnlyList<int>? boxes = scope == "This box" ? [_viewModel.BoxIndex] : null;
-        var preview = scope == "This box" ? $"box {_viewModel.BoxIndex + 1}" : "every box";
+        var plan = new List<string>();
+        if (level) plan.Add("Level=100");
+        if (maxIvs)
+            foreach (var stat in new[] { "HP", "ATK", "DEF", "SPA", "SPD", "SPE" })
+                plan.Add($"IV_{stat}={caps.IvMax}");
+        if (evSpread is { Length: > 0 }) plan.AddRange(evSpread);
+        if (heal)
+        {
+            // PP Ups first so Heal's built-in PP refill tops off at the raised maximum.
+            plan.AddRange(["Move1_PPUps=3", "Move2_PPUps=3", "Move3_PPUps=3", "Move4_PPUps=3", "Heal"]);
+        }
+        if (train) plan.Add("HyperTrain=$suggest");
+        if (friendship) plan.Add("Friendship=255");
+        if (speciesNames) plan.Add("IsNicknamed=false");
+        if (expertLines is not null) plan.AddRange(expertLines.Where(line => line.Length > 0));
+        if (plan.Count == 0) { _viewModel.Status = "NO OPERATIONS SELECTED"; return; }
+
+        var mons = 0;
+        if (slots is not null)
+        {
+            mons = slots.Count(s => !session.ReadEntity(s.Box, s.Slot).IsEmpty);
+        }
+        else
+        {
+            foreach (var box in boxes!)
+            {
+                var slotCount = box == -1 ? 6 : BoxGridRenderer.Columns * BoxGridRenderer.Rows;
+                for (var slot = 0; slot < slotCount; slot++)
+                    if (!session.ReadEntity(box, slot).IsEmpty) mons++;
+            }
+        }
+        var scopeText = selection
+            ? $"{slots!.Count} selected Pokémon"
+            : boxes!.Count == 1
+                ? (_viewModel.BoxIndex == -1 ? "the party" : $"box {boxes[0] + 1:00}")
+                : (boxes.Count == _viewModel.BoxCount ? "every box" : $"{boxes.Count} unlocked boxes");
+
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "APPLY BATCH EDIT?",
-            $"{instructions.Length} instruction(s) to every Pokémon in {preview}. Backed up first.", "Apply");
+            $"Will apply {plan.Count} operation(s) to {mons} Pokémon in {scopeText}:\n{string.Join(" · ", plan)}\n" +
+            "One backed-up write. Legality is not re-checked afterwards.",
+            "Apply");
         if (!confirmed) return;
 
-        await _viewModel.RunMutationAsync(session =>
+        var ok = await _viewModel.RunMutationAsync(s =>
         {
-            var touched = session.BatchApply(instructions, boxes);
+            var touched = slots is not null ? s.BatchApplySlots(slots, plan) : s.BatchApply(plan, boxes);
             return touched > 0
-                ? new GenerationOutcome(true, $"Batch edit applied to {touched} Pokémon.")
-                : new GenerationOutcome(false, "Nothing to edit in those boxes.");
-        }, Math.Max(0, _viewModel.SelectedSlot));
+                ? new GenerationOutcome(true, $"Batch applied to {touched} Pokémon (legality not re-checked).")
+                : new GenerationOutcome(false, "Nothing to edit in that scope.");
+        }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+        if (ok)
+            _viewModel.RefreshAllSlots();
         _canvas.InvalidateSurface();
     }
 
@@ -1460,6 +1963,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Pokédex", IconPath: "pokedex"),
             new PadOption("Fashion", IconPath: "trainer"),
             new PadOption("Trainer records", IconPath: "trainer"),
+            new PadOption("Byte manipulation", IconPath: "hex"),
             new PadOption("Wonder cards", IconPath: "events"),
             new PadOption("Export modified save", IconPath: "folder"),
             new PadOption("Restore points", IconPath: "credits"),
@@ -1478,7 +1982,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             case "Pokédex": await ShowDexMenuAsync(); return;
             case "Fashion": await ShowFashionAsync(); return;
             case "Trainer records": await ShowTrainerRecordsAsync(); return;
-            case "Export modified save": await ExportModifiedSaveAsync(session); return;
+            case "Byte manipulation": await HexEditorPage.ShowAsync(_hostGrid, _viewModel, session); return;
             case "Wonder cards":
             {
                 var wonderChoice = await PadMenu.ShowAsync(_hostGrid, "WONDER CARDS", null,
@@ -2656,18 +3160,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         }
         _lastAimSlot = -1;
 
-        // Party A is the games' summary flow: open the mon's actions (Edit leads into the
-        // stats editor). The PC-hand grab belongs to the boxes; party members move through
-        // the menu's Move entry so A never silently starts dragging a team member.
-        if (_viewModel.BoxIndex == -1)
-        {
-            var slots = _viewModel.VisibleSlots;
-            if (slot < slots.Count && slots[slot].Species is not null)
-            {
-                _ = ShowMonActionsAsync(slot);
-                return true;
-            }
-        }
+        // A is the hand everywhere, party included: grab, carry, place or swap
+        // (the party drop is the two-step aim). The mon's actions stay on Start.
 
         if (_viewModel.BeginCarry())
         {
@@ -2698,11 +3192,40 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         return true;
     }
 
+    /// <summary>The slot's verdict: the sweep's cached answer when fresh, else a one-slot
+    /// analysis off-thread (the same report the side panel shows).</summary>
+    private async Task<SlotLegality?> CurrentLegalityAsync(int slot)
+    {
+        var cached = _viewModel.LegalitySweep?.FirstOrDefault(v => v.Box == _viewModel.BoxIndex && v.Slot == slot);
+        if (cached is not null) return cached;
+        var session = _sessionsFor();
+        var legality = IPlatformApplication.Current?.Services.GetService<ILegalityService>();
+        if (session is null || legality is null || !session.SupportsLegalityAnalysis) return null;
+        return await Task.Run(() =>
+        {
+            var report = legality.Analyze(session, _viewModel.BoxIndex, slot);
+            return new SlotLegality(_viewModel.BoxIndex, slot, report.Valid,
+                report.Valid ? string.Empty : report.Lines.FirstOrDefault() ?? "Illegal.", report.Lines);
+        });
+    }
+
+
     /// <summary>What you can do with the mon under the cursor. Editing is live in the side panel already.</summary>
     private async Task ShowMonActionsAsync(int slot)
     {
         var nickname = _viewModel.Selected?.Nickname is { Length: > 0 } nick ? nick : $"slot {slot + 1}";
-        var choice = await PadMenu.ShowAsync(_hostGrid, nickname.ToUpperInvariant(), null,
+        // An illegal mon leads with its repairs; the sweep's cached verdict answers
+        // instantly, otherwise this one slot is analyzed before the menu opens.
+        var verdict = await CurrentLegalityAsync(slot);
+        var options = new List<PadOption>();
+        if (verdict is { Valid: false })
+        {
+            options.Add(new("Explain legality", IconPath: "search"));
+            options.Add(new("Legalize this one", IconPath: "restore"));
+            options.Add(new("Legalize all illegal", IconPath: "restore"));
+        }
+        options.AddRange(new[]
+        {
             new PadOption("Edit", IconPath: "editor"),
             new PadOption("Send to Poképark", IconPath: "heart"),
             new PadOption("Move", IconPath: "storage"),
@@ -2714,11 +3237,34 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Export .pk file", IconPath: "folder"),
             new PadOption("Show as Showdown set", IconPath: "script"),
             new PadOption("Show as QR code", IconPath: "search"),
+            new PadOption("Show as .pk QR", IconPath: "bank"),
             new PadOption("RNG / IVs", IconPath: "dice"),
             new PadOption("Lock / Unlock release", IconPath: "padlock"),
-            new PadOption("Release", IconPath: "release"));
+            new PadOption("Release", IconPath: "release"),
+        });
+        var choice = await PadMenu.ShowAsync(_hostGrid, nickname.ToUpperInvariant(),
+            verdict is { Valid: false } ? verdict.Problem : null, options.ToArray());
         switch (choice)
         {
+            case "Explain legality":
+            {
+                var detail = string.IsNullOrWhiteSpace(_viewModel.LegalityText)
+                    ? verdict?.Problem ?? "No legality details were reported."
+                    : _viewModel.LegalityText;
+                await ShowLegalityReportAsync(detail);
+                return;
+            }
+            case "Legalize this one":
+            {
+                var overlay = LoadingOverlay.Show(_hostGrid, "LEGALIZING…", "Finding the closest real, legal version of this Pokémon.");
+                try
+                {
+                    await _viewModel.RunLegalizerAsync((service, s) => service.LegalizeSlot(s, _viewModel.BoxIndex, slot), slot);
+                    _canvas.InvalidateSurface();
+                }
+                finally { overlay.Close(); }
+                return;
+            }
             case "Send to Poképark":
                 _viewModel.Status = IPlatformApplication.Current!.Services.GetRequiredService<PokeparkService>().AddSaveVisitor(_viewModel.BoxIndex, slot);
                 return;
@@ -2743,11 +3289,37 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             case "Copy to another game…":
                 await SendSlotToAnotherGameAsync(slot, nickname, copyInsteadOfMove: true);
                 return;
+            case "Legalize all illegal":
+            {
+                var overlay = default(LoadingOverlay);
+                IReadOnlyList<SlotLegality> sweep;
+                try
+                {
+                    sweep = await _viewModel.GetLegalitySweepAsync(
+                        () => overlay = LoadingOverlay.Show(_hostGrid, "CHECKING LEGALITY…", "Scanning the party and every box."),
+                        (done, total) => overlay?.Report(done, total));
+                }
+                finally
+                {
+                    overlay?.Close();
+                }
+                var illegal = sweep.Where(r => !r.Valid).ToList();
+                if (illegal.Count == 0) { _viewModel.Status = "Nothing else is flagged."; return; }
+                await LegalizeAllIllegalAsync(illegal);
+                return;
+            }
+            case "Show as .pk QR":
+            {
+                var session = _sessionsFor();
+                if (session is null) return;
+                var export = session.ExportSlot(_viewModel.BoxIndex, slot);
+                var detail = session.ReadEntity(_viewModel.BoxIndex, slot);
+                await QrPopup.ShowBinaryAsync(_hostGrid, $"{detail.SpeciesName.ToUpperInvariant()} · .PK QR",
+                    Services.QrEntityService.MakePayload(export.Data, session.Generation, detail.SpeciesName));
+                return;
+            }
             case "Export .pk file":
                 await ExportSlotAsync(slot);
-                return;
-            case "Show as Showdown set":
-                await ShowShowdownAsync(slot);
                 return;
             case "Show as QR code":
                 await ShowQrAsync(slot);
@@ -2809,6 +3381,163 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     }
 
     /// <summary>
+    /// Batch identity toolkit: reset nicknames to species names, or adopt the
+    /// connected trainer's OT across a scope. One write, one restore point; the
+    /// confirmation says plainly that legality is not re-checked afterwards.
+    /// </summary>
+    private async Task ShowBatchRenameAsync()
+    {
+        var session = _sessionsFor();
+        if (session is null) return;
+
+        var scope = _viewModel.MarkedCount > 0
+            ? await PadMenu.ShowAsync(_hostGrid, "APPLY TO…", null,
+                $"Marked Pokémon ({_viewModel.MarkedCount})", "This box", "All boxes", "Cancel")
+            : await PadMenu.ShowAsync(_hostGrid, "APPLY TO…", null, "This box", "All boxes", "Cancel");
+        if (scope is null or "Cancel") return;
+
+        var op = await PadMenu.ShowAsync(_hostGrid, "WHICH OPERATION?", null,
+            "Reset nicknames to species names",
+            "Set OT to mine (adopt my trainer ID)",
+            "Cancel");
+        if (op is null or "Cancel") return;
+
+        var marked = _viewModel.MarkedSlots.ToArray();
+        var slots = scope.StartsWith("Marked", StringComparison.Ordinal) ? marked
+            : scope == "This box"
+                ? _viewModel.Save?.Slots.Where(x => x.Box == _viewModel.BoxIndex)
+                    .Select(x => x.Slot).Distinct().OrderBy(x => x)
+                    .Select(s => (_viewModel.BoxIndex, Slot: s)).ToArray()
+                    ?? Enumerable.Range(0, 30).Select(s => (_viewModel.BoxIndex, Slot: s)).ToArray()
+                : null; // all boxes: the engine walks every slot itself
+        var affected = slots?.Length ?? -1;
+
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "APPLY TO EVERY MATCHING POKÉMON?",
+            $"{op} · {(affected < 0 ? "party + every box" : $"{affected} slot(s)")}\n" +
+            "Nickname and OT changes are NOT legality-re-checked afterwards.", "Apply");
+        if (!confirmed) return;
+
+        var overlay = LoadingOverlay.Show(_hostGrid, "APPLYING…", "One write, one restore point.");
+        try
+        {
+            if (op.StartsWith("Reset nicknames", StringComparison.Ordinal))
+            {
+                await _viewModel.RunMutationAsync(s =>
+                {
+                    var touched = slots is null ? s.BatchApply(["IsNicknamed=false"]) : s.BatchApplySlots(slots, ["IsNicknamed=false"]);
+                    return new GenerationOutcome(touched > 0, $"Nicknames reset for {touched} Pokémon (legality not re-checked).");
+                }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+            }
+            else
+            {
+                var profileStore = IPlatformApplication.Current!.Services.GetRequiredService<TrainerProfileStore>();
+                var profile = profileStore.Profiles.FirstOrDefault(); // null = MakeMine derives from the save itself
+                await _viewModel.RunMutationAsync(s =>
+                {
+                    var targets = slots is null
+                        ? s.Snapshot.Slots.Where(x => x.Box >= 0 && x.Species is > 0).Select(x => (x.Box, x.Slot)).ToArray()
+                        : slots!;
+                    var touched = 0;
+                    foreach (var (box, monSlot) in targets)
+                        if (s.ReadEntity(box, monSlot).Species > 0 && s.MakeMine(box, monSlot, profile).Success) touched++;
+                    return new GenerationOutcome(touched > 0, $"OT adopted for {touched} Pokémon (legality not re-checked).");
+                }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+            }
+            _viewModel.RefreshAllSlots();
+            _canvas.InvalidateSurface();
+        }
+        finally { overlay.Close(); }
+    }
+
+    /// <summary>
+    /// Rolls a random legal team from the game's own species pool and offers to
+    /// place it in the party (overwriting) or the first empty box slots.
+    /// </summary>
+    private async Task ShowRandomTeamAsync()
+    {
+        var session = _sessionsFor();
+        var services = IPlatformApplication.Current?.Services;
+        var data = services?.GetService<IGameDataService>();
+        var legalizer = services?.GetService<ILegalizerService>();
+        if (session is null || data is null || legalizer is null) return;
+
+        var countChoice = await PadMenu.ShowAsync(_hostGrid, "TEAM SIZE", null, "1", "2", "3", "4", "5", "6");
+        if (countChoice is null || !int.TryParse(countChoice, out var count)) return;
+        var levelChoice = await PadMenu.ShowAsync(_hostGrid, "LEVEL BAND", null,
+            "Lv 50", "Lv 100", "Wild card (5-70)");
+        if (levelChoice is null) return;
+        var (lo, hi) = levelChoice switch
+        {
+            "Lv 50" => (50, 50),
+            "Lv 100" => (100, 100),
+            _ => (5, 70),
+        };
+        var filters = await PadMenu.ShowAsync(_hostGrid, "FILTERS", null,
+            "No restrictions", "No legendaries", "No duplicates", "No legendaries, no duplicates");
+        if (filters is null) return;
+        var noLegendaries = filters.Contains("legendary", StringComparison.OrdinalIgnoreCase);
+        var noDuplicates = filters.Contains("duplicate", StringComparison.OrdinalIgnoreCase);
+
+        // The game's own pool: species the engine can produce for this save.
+        var max = session.MaxSpeciesId;
+        var pool = new List<int>(max);
+        for (var species = 1; species <= max; species++)
+            if (species < data.SpeciesNames.Count && data.SpeciesNames[species].Length > 0)
+                pool.Add(species);
+        var options = new RandomTeamOptions(count, lo, hi, noLegendaries, noDuplicates, AllowNfe: true);
+        var team = RandomTeamPlanner.Plan(pool, new HashSet<int>(), options, Random.Shared);
+
+        var roster = string.Join(", ", team.Select(t => $"{data.SpeciesNames[t.Species]} Lv{t.Level}"));
+        var placement = await PadMenu.ShowAsync(_hostGrid, "ROLL THIS TEAM?",
+            roster + "\nEach mon is generated legal for this game.", "Into the party", "Into first empty box slots", "Cancel");
+        if (placement is null or "Cancel") return;
+
+        var overlay = LoadingOverlay.Show(_hostGrid, "GENERATING TEAM…", "The offline legalizer is at work.");
+        try
+        {
+            var generated = new List<(byte[] Data, int Level, string Name)>();
+            foreach (var (species, level) in team)
+            {
+                var mon = await Task.Run(() => legalizer.GenerateData(session,
+                    new GenerationRequest(species, level, Shiny: false, null, null, null, null)));
+                if (mon is not null) generated.Add((mon.Data, level, data.SpeciesNames[species]));
+            }
+            if (generated.Count == 0) { _viewModel.Status = "The legalizer could not build this team."; return; }
+
+            if (placement == "Into the party")
+            {
+                var ok = await _viewModel.RunMutationAsync(s =>
+                {
+                    for (var i = 0; i < generated.Count; i++)
+                        s.ImportSlot(-1, i, generated[i].Data);
+                    return new GenerationOutcome(true, $"Random team of {generated.Count} now in the party.");
+                }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+                if (!ok) return;
+            }
+            else
+            {
+                var empties = _viewModel.Save?.Slots.Where(x => x.Box >= 0 && x.Species is null)
+                    .Select(x => (x.Box, x.Slot)).Take(generated.Count).ToArray();
+                if (empties is null || empties.Length < generated.Count)
+                {
+                    _viewModel.Status = $"Not enough empty box slots ({generated.Count} needed).";
+                    return;
+                }
+                var ok = await _viewModel.RunMutationAsync(s =>
+                {
+                    for (var i = 0; i < generated.Count; i++)
+                        s.ImportSlot(empties[i].Box, empties[i].Slot, generated[i].Data);
+                    return new GenerationOutcome(true, $"Random team of {generated.Count} placed in the boxes.");
+                }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+                if (!ok) return;
+            }
+            _viewModel.RefreshAllSlots();
+            _canvas.InvalidateSurface();
+        }
+        finally { overlay.Close(); }
+    }
+
+    /// <summary>
     /// Game-to-game: pick any other detected save, the transfer service converts and
     /// writes there, then the mon leaves this box (a real move, not a copy).
     /// </summary>
@@ -2838,6 +3567,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         if (!confirm) return;
 
         var export = session.ExportSlot(_viewModel.BoxIndex, slot);
+        // Cross-generation conversions change things; the diff preview is the trust
+        // step before the write. Same-generation sends show an empty diff.
+        var preview = await transfer.PreviewAsync(export.Data, nickname, target);
+        if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, preview, nickname, target.GameLabel)) return;
         var outcome = await transfer.SendToGameAsync(export.Data, nickname, target);
         _viewModel.Status = outcome.Message;
         if (!outcome.Success || copyInsteadOfMove) return;
@@ -3170,6 +3903,9 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         cosmetics.Clicked += async (_, _) => await RunSubEditorAsync(CosmeticsEditor.ShowAsync, "Cosmetics updated");
         var awards = FocusButton(Kit.Capsule("AWARDS", UiTokens.Cyan), "AWARDS");
         awards.Clicked += async (_, _) => await RunSubEditorAsync(AwardsEditor.ShowAsync, "Awards updated");
+        var ribbonAlbum = FocusButton(Kit.Capsule("RIBBON ALBUM", UiTokens.Cyan), "RIBBON ALBUM");
+        ribbonAlbum.Clicked += async (_, _) => await RunSubEditorAsync(
+            (host, session, box, slot) => ShowRibbonAlbumAsync(host, session, box, slot), "Ribbon album updated");
 
         var lastFieldIndex = Array.FindLastIndex(EditorFocusTargets, target => target.Neighbors is null && target.View is Border);
         int IndexOfCaption(string caption) => Array.FindIndex(EditorFocusTargets, target => target.Caption == caption);
@@ -3184,6 +3920,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var moveShopIndex = IndexOfCaption("MOVE SHOP");
         var potentialIndex = IndexOfCaption("POTENTIAL");
         var cosmeticsIndex = IndexOfCaption("COSMETICS");
+        var ribbonAlbumIndex = IndexOfCaption("RIBBON ALBUM");
         var awardsIndex = IndexOfCaption("AWARDS");
 
         EditorFocusTargets = EditorFocusTargets
@@ -3199,14 +3936,14 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 "MOVE DETAILS" => target with { Neighbors = new EditorFocusNeighbors(metIndex, moveShopIndex, exportIndex, index) },
                 "MOVE SHOP" => target with { Neighbors = new EditorFocusNeighbors(moveDetailsIndex, potentialIndex, exportIndex, index) },
                 "POTENTIAL" => target with { Neighbors = new EditorFocusNeighbors(moveShopIndex, cosmeticsIndex, exportIndex, index) },
-                "COSMETICS" => target with { Neighbors = new EditorFocusNeighbors(potentialIndex, awardsIndex, exportIndex, index) },
-                "AWARDS" => target with { Neighbors = new EditorFocusNeighbors(cosmeticsIndex, index, qrIndex, index) },
+                "AWARDS" => target with { Neighbors = new EditorFocusNeighbors(cosmeticsIndex, ribbonAlbumIndex, qrIndex, index) },
+                "RIBBON ALBUM" => target with { Neighbors = new EditorFocusNeighbors(awardsIndex, index, qrIndex, index) },
                 _ => target,
             })
             .ToArray();
 
         var monActions = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap, Margin = new Thickness(0, 4, 0, 0) };
-        foreach (var button in new[] { legalize, makeMine, showdown, exportPk, qr, met, moveDetails, moveShop, potential, cosmetics, awards })
+        foreach (var button in new[] { legalize, makeMine, showdown, exportPk, qr, met, moveDetails, moveShop, potential, cosmetics, awards, ribbonAlbum })
         {
             button.FontSize = 11;
             button.Padding = new Thickness(10, 6);
@@ -3266,6 +4003,213 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         overlay = Kit.AttachOverlay(_hostGrid, window, Close);
         pad = new PadOverlay(Close, Close);
         return done.Task;
+    }
+
+    /// <summary>The ribbon album: every ribbon the format stores as tappable tiles with
+    /// the legal-obtainable set lit (PKHeX's own per-encounter rules), an award-all
+    /// shortcut, and marking chips that stamp the whole organizer selection at once.</summary>
+    private async Task<bool> ShowRibbonAlbumAsync(Grid host, Domain.ISaveEngineSession session, int box, int slot)
+    {
+        var ribbons = session.GetRibbons(box, slot);
+        if (ribbons.Count == 0)
+        {
+            await EditorMenu.ShowAsync(host, "RIBBON ALBUM", "This Pokémon format stores no ribbons or marks.", "OK");
+            return false;
+        }
+
+        // Ribbon legality runs a full PKHeX analysis per Pokémon: keep it off the UI thread.
+        var loading = LoadingOverlay.Show(host, "RIBBON ALBUM", "Checking which ribbons this Pokémon can legally earn…");
+        IReadOnlyDictionary<string, int> maxima;
+        try
+        {
+            maxima = await Task.Run(() => session.GetObtainableRibbonMaxima(box, slot));
+        }
+        finally
+        {
+            loading.Close();
+        }
+
+        var dirty = false;
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Grid overlay = null!;
+        PadOverlay pad = null!;
+        void Close()
+        {
+            host.Remove(overlay);
+            pad?.Dispose();
+            done.TrySetResult();
+        }
+
+        var summary = Kit.LcdLabel(12);
+        void UpdateSummary(IReadOnlyList<RibbonAlbumEntry> entries)
+        {
+            var owned = entries.Count(e => e.Value != 0);
+            var obtainable = entries.Count(e => e.Obtainable);
+            summary.Text = $"{owned} owned · {obtainable} more obtainable · lit = legal for this Pokémon";
+        }
+
+        var tiles = new FlexLayout
+        {
+            Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap,
+            JustifyContent = Microsoft.Maui.Layouts.FlexJustify.SpaceBetween,
+            AlignItems = Microsoft.Maui.Layouts.FlexAlignItems.Center,
+        };
+
+        async Task ToggleAsync(RibbonAlbumEntry entry)
+        {
+            if (entry.MaxValue == 1)
+            {
+                session.SetRibbon(box, slot, entry.Id, entry.Value == 0 ? 1 : 0);
+                dirty = true;
+            }
+            else
+            {
+                var value = await StatsPopup.ShowSingleAsync(host, entry.Name, entry.Value, entry.MaxValue);
+                if (value is not { } count || count == entry.Value) return;
+                session.SetRibbon(box, slot, entry.Id, count);
+                dirty = true;
+            }
+            Rebuild();
+        }
+
+        void Rebuild()
+        {
+            var entries = RibbonAlbum.Build(session.GetRibbons(box, slot), maxima);
+            UpdateSummary(entries);
+            tiles.Children.Clear();
+            foreach (var entry in entries)
+            {
+                var current = entry;
+                var image = new Image { WidthRequest = 30, HeightRequest = 30, HorizontalOptions = LayoutOptions.Center };
+                var path = RibbonIconPath(entry.Id);
+                if (path is not null) image.Source = ImageSource.FromFile(path);
+                var name = new Label
+                {
+                    Text = entry.Name,
+                    TextColor = UiTokens.Ink0,
+                    FontSize = 7,
+                    FontFamily = DsChrome.PixelFont,
+                    HorizontalTextAlignment = TextAlignment.Center,
+                    LineBreakMode = LineBreakMode.TailTruncation,
+                    MaxLines = 1,
+                };
+                var tile = new Border
+                {
+                    WidthRequest = 52,
+                    HeightRequest = 52,
+                    Padding = new Thickness(2),
+                    StrokeThickness = entry.Value != 0 ? 2.5f : 1.5f,
+                    Stroke = entry.Value != 0 ? UiTokens.Gold : entry.Obtainable ? UiTokens.Green : UiTokens.ShellEdge,
+                    StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 6 },
+                    Content = new VerticalStackLayout { Children = { image, name } },
+                    Opacity = entry.Value != 0 || entry.Obtainable ? 1 : 0.35,
+                };
+                var tap = new TapGestureRecognizer();
+                tap.Tapped += async (_, _) => await ToggleAsync(current);
+                tile.GestureRecognizers.Add(tap);
+                tiles.Children.Add(tile);
+            }
+        }
+
+        // Marking chips: the organizer's stamps. With a marked selection they stamp
+        // every marked mon (one write on close); otherwise just this Pokémon.
+        var markings = session.GetCosmetics(box, slot).Markings;
+        var targets = _viewModel.MarkedCount > 0
+            ? _viewModel.MarkedSlots.ToList()
+            : new List<(int Box, int Slot)> { (box, slot) };
+        var markRow = new FlexLayout { Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap, Direction = Microsoft.Maui.Layouts.FlexDirection.Row };
+        var markCaption = new Label
+        {
+            Text = _viewModel.MarkedCount > 0 ? $"MARKS →{_viewModel.MarkedCount} MARKED:" : "MARKS →",
+            TextColor = UiTokens.Ink1,
+            FontFamily = DsChrome.PixelFont,
+            FontSize = 9,
+            VerticalTextAlignment = TextAlignment.Center,
+        };
+        markRow.Children.Add(markCaption);
+        for (var i = 0; i < markings.Count; i++)
+        {
+            var index = i;
+            var marking = markings[i];
+            var chip = Kit.Capsule(marking.Name.ToUpperInvariant(), MarkingColor(marking.Value));
+            chip.FontSize = 9;
+            chip.Padding = new Thickness(8, 4);
+            chip.Margin = new Thickness(0, 0, 4, 4);
+            chip.Clicked += (_, _) =>
+            {
+                // Cycle off → blue → pink (where the format has it) → off.
+                var next = (marking.Value + 1) % (marking.MaxValue + 1);
+                foreach (var target in targets)
+                {
+                    var cosmetics = session.GetCosmetics(target.Box, target.Slot);
+                    var values = cosmetics.Markings.Select(m => m.Value).ToArray();
+                    if (index >= values.Length) continue;
+                    values[index] = next;
+                    session.ApplyCosmeticEdit(target.Box, target.Slot, new CosmeticEdit(Markings: values));
+                }
+                dirty = true;
+                marking = markings[index] with { Value = next };
+                chip.BackgroundColor = MarkingColor(next);
+            };
+            markRow.Children.Add(chip);
+        }
+
+        var awardAll = Kit.Capsule("AWARD ALL OBTAINABLE", UiTokens.Green);
+        awardAll.Clicked += (_, _) =>
+        {
+            var changed = session.AwardAllObtainableRibbons(box, slot);
+            if (changed > 0) dirty = true;
+            summary.Text = changed > 0
+                ? $"Awarded {changed} more ribbons."
+                : "Nothing more this Pokémon can legally earn.";
+            Rebuild();
+        };
+        var close = Kit.Capsule("DONE", UiTokens.Ink1);
+
+        var content = new VerticalStackLayout
+        {
+            Spacing = 8,
+            Children =
+            {
+                Kit.HeaderBar("RIBBON ALBUM"),
+                summary,
+                new ScrollView { Content = tiles, MaximumHeightRequest = 260 },
+                markings.Count > 0 ? markRow : new BoxView { HeightRequest = 0 },
+                new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.Center, Children = { awardAll, close } },
+                Kit.HintBar(("TAP", "Toggle ribbon", null), ("B", "Back", Close)),
+            },
+        };
+
+        Rebuild();
+        overlay = Kit.AttachOverlay(host, Kit.OverlayWindow(host, content, preferredMaxWidth: 440, padding: 12), Close);
+        pad = new PadOverlay(Close, Close);
+        await done.Task;
+        return dirty;
+    }
+
+    private static Color MarkingColor(int value) => value switch
+    {
+        1 => UiTokens.MenuBlue,
+        2 => UiTokens.GiftPinkLight,
+        _ => UiTokens.Ink1,
+    };
+
+    /// <summary>Bundled ribbon artwork copied to cache once so Image can load it by file path.</summary>
+    private static string? RibbonIconPath(string id)
+    {
+        var cache = System.IO.Path.Combine(FileSystem.CacheDirectory, $"ribbon-{id.ToLowerInvariant()}.png");
+        if (File.Exists(cache)) return cache;
+        try
+        {
+            using var asset = FileSystem.OpenAppPackageFileAsync($"ribbons/{id.ToLowerInvariant()}.png").GetAwaiter().GetResult();
+            using var output = File.Create(cache);
+            asset.CopyTo(output);
+            return cache;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private void FocusEntry(View row)
@@ -3761,12 +4705,6 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         if (slot < slots.Count && slots[slot].Species is null)
         {
             _ = OfferAddPokemonAsync(slot);
-            return;
-        }
-        if (_viewModel.BoxIndex == -1)
-        {
-            // Same rule as the pad: a party tap opens the mon's actions, never a grab.
-            _ = ShowMonActionsAsync(slot);
             return;
         }
         if (wasSelected && _viewModel.BeginCarry())

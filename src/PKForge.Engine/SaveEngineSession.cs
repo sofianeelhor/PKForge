@@ -10,6 +10,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 {
     private readonly SaveFile _save;
     private readonly byte[] _originalBytes;
+    private readonly string? _displayName;
     private bool _disposed;
 
     public SaveEngineSession(ReadOnlyMemory<byte> bytes, string? displayName = null)
@@ -21,8 +22,8 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (!SaveParser.TryGetSaveFile(_originalBytes.ToArray(), out var save) || save is null)
             throw new InvalidDataException("The selected bytes are not a recognized save file.");
         _save = save;
+        _displayName = displayName;
         SaveParser.ApplyVersionHint(_save, displayName);
-        Snapshot = BuildSnapshot(displayName);
     }
 
     /// <summary>
@@ -35,10 +36,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         _save = save;
         _originalBytes = [];
-        Snapshot = BuildSnapshot(displayName);
+        _displayName = displayName;
     }
 
-    public SaveSnapshot Snapshot { get; }
+    /// <summary>Built on demand: every read must reflect writes made through this
+    /// session (generate, import, move), not the state of the file at open time.</summary>
+    public SaveSnapshot Snapshot => BuildSnapshot(_displayName);
 
     internal PKM GetEntity(int box, int slot)
     {
@@ -63,6 +66,15 @@ public sealed class SaveEngineSession : ISaveEngineSession
     /// by contract, so every slot write disables all three; the dex, records, and
     /// handler state change only through their explicit editors and flows.</summary>
     private static readonly EntityImportSettings ImportNone = EntityImportSettings.None;
+
+    /// <summary>
+    /// For a Pokémon that ARRIVES from outside (bank transfer, .pk import, a catch):
+    /// the engine's own dex routine, exactly as the game registers something you
+    /// obtained. Handler and record rewrites stay off, so the mon is not silently
+    /// re-stamped as traded, and edits to mons already in the save remain surgical.
+    /// </summary>
+    private static readonly EntityImportSettings ImportReceived =
+        new(EntityImportOption.Disable, EntityImportOption.Enable, EntityImportOption.Disable);
 
     public EntityDetail ReadEntity(int box, int slot)
     {
@@ -375,6 +387,51 @@ public sealed class SaveEngineSession : ISaveEngineSession
         StoreEntity(box, slot, entity);
     }
 
+    // Ribbon legality comes from PKHeX's own per-encounter tables (RibbonApplicator
+    // over a LegalityAnalysis), so the obtainable set is exactly what the pinned
+    // engine considers legal for this species/form/origin — computed offline.
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "PKHeX.Core is preserve=all in the Android linker descriptor; ribbon properties are retained.")]
+    public IReadOnlyDictionary<string, int> GetObtainableRibbonMaxima(int box, int slot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0)
+            throw new InvalidOperationException("Cannot inspect an empty slot.");
+
+        var probe = entity.Clone();
+        RibbonApplicator.SetAllValidRibbons(probe);
+        return RibbonValues(probe);
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "PKHeX.Core is preserve=all in the Android linker descriptor; ribbon properties are retained.")]
+    public int AwardAllObtainableRibbons(int box, int slot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0)
+            throw new InvalidOperationException("Cannot edit an empty slot.");
+
+        var before = RibbonValues(entity);
+        RibbonApplicator.SetAllValidRibbons(entity);
+        var after = RibbonValues(entity);
+        var changed = 0;
+        foreach (var (id, value) in after)
+            if (!before.TryGetValue(id, out var prior) || prior != value)
+                changed++;
+        StoreEntity(box, slot, entity);
+        return changed;
+    }
+
+    private static Dictionary<string, int> RibbonValues(PKM entity) => RibbonInfo.GetRibbonInfo(entity)
+        .ToDictionary(
+            r => r.Name,
+            r => r.Type == RibbonValueType.Boolean ? (r.HasRibbon ? 1 : 0) : r.RibbonCount);
+
     public AffixedRibbonInfo GetAffixedRibbon(int box, int slot)
     {
         ThrowIfDisposed();
@@ -538,9 +595,9 @@ public sealed class SaveEngineSession : ISaveEngineSession
     }
 
     /// <summary>Appends a mon to the party (compacting, like the games).</summary>
-    private void InsertParty(PKM pk)
+    private void InsertParty(PKM pk, EntityImportSettings? settings = null)
     {
-        _save.SetPartySlotAtIndex(pk, Math.Min(_save.PartyCount, 5), ImportNone);
+        _save.SetPartySlotAtIndex(pk, Math.Min(_save.PartyCount, 5), settings ?? ImportNone);
     }
 
     /// <summary>Empties a slot; party slots compact instead of leaving a hole.</summary>
@@ -595,7 +652,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         return placed;
     }
 
-    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null)
+    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false)
     {
         ThrowIfDisposed();
         var targetBoxes = boxes ?? Enumerable.Range(0, _save.BoxCount).ToList();
@@ -629,6 +686,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
             SortCriteria.ShinyFirst => mons.OrderByDescending(m => m.IsShiny ? 1 : 0).ThenBy(m => m.Species).ThenBy(m => m.Form).ToList(),
             _ => mons,
         };
+        if (reverse) mons.Reverse();
 
         // Compact: write back into the target boxes front-first, then blank the tails.
         var placed = 0;
@@ -645,6 +703,9 @@ public sealed class SaveEngineSession : ISaveEngineSession
         return mons.Count;
     }
 
+    public bool SupportsBoxTools => true;
+    public bool SupportsLegalityAnalysis => true;
+
     public int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null)
     {
         ThrowIfDisposed();
@@ -652,22 +713,41 @@ public sealed class SaveEngineSession : ISaveEngineSession
         var touched = 0;
         foreach (var box in targetBoxes)
         {
-            if ((uint)box >= (uint)_save.BoxCount) continue;
-            for (var slot = 0; slot < _save.BoxSlotCount; slot++)
-            {
-                var entity = GetEntityCore(box, slot);
-                if (entity.Species == 0) continue;
-                // Gen 3-5 box slots are stored encrypted: the entity we hold is a
-                // decrypted copy, so every touched mon must be written back (re-encrypted)
-                // or the batch edit lands raw plaintext into the save's storage bytes.
-                if (ApplyInstructions(entity, instructions))
-                {
-                    SetEntityCore(box, slot, entity);
+            // Box -1 rides along: battle prep heals the party in the same write.
+            var slotCount = box == -1 ? 6 : _save.BoxSlotCount;
+            if (box != -1 && (uint)box >= (uint)_save.BoxCount) continue;
+            for (var slot = 0; slot < slotCount; slot++)
+                if (ApplyBatchToSlot(box, slot, instructions))
                     touched++;
-                }
-            }
         }
         return touched;
+    }
+
+    public int BatchApplySlots(IReadOnlyList<(int Box, int Slot)> slots, IReadOnlyList<string> instructions)
+    {
+        ThrowIfDisposed();
+        var touched = 0;
+        foreach (var (box, slot) in slots)
+        {
+            if (box != -1 && (uint)box >= (uint)_save.BoxCount) continue;
+            if (slot < 0 || slot >= (box == -1 ? 6 : _save.BoxSlotCount)) continue;
+            if (ApplyBatchToSlot(box, slot, instructions))
+                touched++;
+        }
+        return touched;
+    }
+
+    /// <summary>Applies instructions to one slot; false when empty or nothing changed.</summary>
+    private bool ApplyBatchToSlot(int box, int slot, IReadOnlyList<string> instructions)
+    {
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0) return false;
+        // Gen 3-5 box slots are stored encrypted: the entity we hold is a
+        // decrypted copy, so every touched mon must be written back (re-encrypted)
+        // or the batch edit lands raw plaintext into the save's storage bytes.
+        if (!ApplyInstructions(entity, instructions)) return false;
+        SetEntityCore(box, slot, entity);
+        return true;
     }
 
     /// <summary>Parses ".Prop=Value" instructions against one entity, PKHeX batch-editor style.</summary>
@@ -711,7 +791,36 @@ public sealed class SaveEngineSession : ISaveEngineSession
                 break;
             }
             case "hypertrain" when entity is IHyperTrain ht:
-                ht.HT_HP = ht.HT_ATK = ht.HT_DEF = ht.HT_SPA = ht.HT_SPD = ht.HT_SPE = true;
+                if (value.Equals("$suggest", StringComparison.OrdinalIgnoreCase))
+                {
+                    // PKHeX's suggested training (BatchMods "HyperTrainFlags=$suggest"):
+                    // only flawed IVs get trained, and the flags clear again when the
+                    // mon is too low-level to hyper train - stays legal per mon.
+                    entity.SetSuggestedHyperTrainingData();
+                }
+                else
+                {
+                    ht.HT_HP = ht.HT_ATK = ht.HT_DEF = ht.HT_SPA = ht.HT_SPD = ht.HT_SPE = true;
+                }
+                changed = true;
+                break;
+            case "heal" or "healpokemon":
+                // PKHeX batch op "Heal" (BatchMods): full HP, status cured, stats
+                // refreshed, and PP refilled to each move's current maximum.
+                entity.Heal();
+                changed = true;
+                break;
+            case "healpp":
+                entity.HealPP();
+                changed = true;
+                break;
+            case "move1_ppups": entity.Move1_PPUps = (byte)Math.Clamp(ParseValue(), 0, 3); changed = true; break;
+            case "move2_ppups": entity.Move2_PPUps = (byte)Math.Clamp(ParseValue(), 0, 3); changed = true; break;
+            case "move3_ppups": entity.Move3_PPUps = (byte)Math.Clamp(ParseValue(), 0, 3); changed = true; break;
+            case "move4_ppups": entity.Move4_PPUps = (byte)Math.Clamp(ParseValue(), 0, 3); changed = true; break;
+            case "isnicknamed" when value is "false" or "no" or "0":
+                // PKHeX's nickname reset: back to the species name in the mon's language.
+                entity.SetDefaultNickname();
                 changed = true;
                 break;
                 case "friendship": entity.CurrentFriendship = (byte)Math.Clamp(ParseValue(), 0, 255); changed = true; break;
@@ -1243,11 +1352,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
         {
             if (_save.PartyCount >= 6)
                 return new GenerationOutcome(false, "The party is full.");
-            InsertParty(placed);
+            InsertParty(placed, ImportReceived);
         }
         else
         {
-            SetEntityCore(targetBox, targetSlot, placed);
+            // Caught here, so the save's dex registers it the way the game would.
+            _save.SetBoxSlotAtIndex(placed, targetBox, targetSlot, ImportReceived);
         }
 
         var card = EncounterDatabase.ToCard(enc);
@@ -1276,10 +1386,11 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (box == -1)
         {
             if (_save.PartyCount >= 6) return false;
-            InsertParty(converted);
+            InsertParty(converted, ImportReceived);
             return true;
         }
-        _save.SetBoxSlotAtIndex(converted, box, slot, ImportNone);
+        // Received, so the save's dex registers it the way the game would.
+        _save.SetBoxSlotAtIndex(converted, box, slot, ImportReceived);
         return true;
     }
 
@@ -1680,6 +1791,126 @@ public sealed class SaveEngineSession : ISaveEngineSession
         for (var i = 0; i < entries.Length; i++)
             entries[i] = new TrainerRecordEntry(i, records.GetRecord(i), records.GetRecordMax(i));
         return new TrainerRecordsInfo(true, entries);
+    }
+
+    // ── Trainer statistics: playtime and currency counters ────────────────
+
+    /// <summary>Every BP-bearing format caps at 9999 in-game, and the raw storages
+    /// (u16 Gen 4-8, u32 Gen 7/BDSP) all hold it comfortably.</summary>
+    private const int MaxBattlePoints = 9999;
+
+    private bool SupportsBattlePoints => _save is SAV3E or SAV4 or SAV5 or SAV6 or SAV7 or SAV8SWSH or SAV8BS;
+    private bool SupportsCoins => _save is SAV1 or SAV2 or SAV3 or SAV4;
+
+    public TrainerStats GetTrainerStats()
+    {
+        ThrowIfDisposed();
+        return new TrainerStats(
+            SupportsPlayTime: true,
+            PlayTimeHours: _save.PlayedHours,
+            PlayTimeMinutes: _save.PlayedMinutes,
+            PlayTimeHoursMax: _save is SAV1 ? byte.MaxValue : ushort.MaxValue,
+            SupportsBP: SupportsBattlePoints,
+            BP: SupportsBattlePoints ? ReadBattlePoints() : 0,
+            BPMax: MaxBattlePoints,
+            SupportsCoins: SupportsCoins,
+            Coins: SupportsCoins ? ReadCoins() : 0,
+            CoinsMax: _save.MaxCoins);
+    }
+
+    public void SetTrainerStats(TrainerStatsEdit edit)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(edit);
+        // Hours are clamped before PKHeX sees them: Gen 1's raw setter wipes the
+        // minute/second counters when an over-range value reaches it unclamped.
+        if (edit.PlayTimeHours is int hours)
+            _save.PlayedHours = Math.Clamp(hours, 0, _save is SAV1 ? byte.MaxValue : ushort.MaxValue);
+        if (edit.PlayTimeMinutes is int minutes)
+            _save.PlayedMinutes = Math.Clamp(minutes, 0, 59);
+        if (edit.BP is int bp && SupportsBattlePoints)
+            WriteBattlePoints(bp);
+        if (edit.Coins is int coins && SupportsCoins)
+            WriteCoins(coins);
+    }
+
+    private int ReadBattlePoints() => _save switch
+    {
+        SAV3E e => e.SmallBlock.BP,
+        SAV4 s4 => s4.BP,
+        SAV5 s5 => s5.BattleSubway.BP,
+        SAV6 s6 => s6.BP,
+        SAV7 s7 => (int)s7.Misc.BP,
+        SAV8SWSH sw => sw.Misc.BP,
+        SAV8BS bd => (int)bd.BattleTower.BP,
+        _ => 0,
+    };
+
+    private void WriteBattlePoints(int value)
+    {
+        var clamped = Math.Clamp(value, 0, MaxBattlePoints);
+        switch (_save)
+        {
+            case SAV3E e: e.SmallBlock.BP = (ushort)clamped; break;
+            case SAV4 s4: s4.BP = clamped; break;
+            case SAV5 s5: s5.BattleSubway.BP = clamped; break;
+            case SAV6 s6: s6.BP = clamped; break;
+            case SAV7 s7: s7.Misc.BP = (uint)clamped; break;
+            case SAV8SWSH sw: sw.Misc.BP = clamped; break;
+            case SAV8BS bd: bd.BattleTower.BP = (uint)clamped; break;
+        }
+    }
+
+    private int ReadCoins() => _save switch
+    {
+        SAV1 s1 => (int)s1.Coin,
+        SAV2 s2 => (int)s2.Coin,
+        SAV3 s3 => (int)s3.Coin,
+        SAV4 s4 => (int)s4.Coin,
+        _ => 0,
+    };
+
+    private void WriteCoins(int value)
+    {
+        var clamped = (uint)Math.Clamp(value, 0, _save.MaxCoins);
+        switch (_save)
+        {
+            case SAV1 s1: s1.Coin = clamped; break;
+            case SAV2 s2: s2.Coin = clamped; break;
+            case SAV3 s3: s3.Coin = clamped; break;
+            case SAV4 s4: s4.Coin = clamped; break;
+        }
+    }
+
+    // ── Real-time clock repair ────────────────────────────────────────────
+
+    // Gen 3 script variable 0x402C (pret VAR_ENABLE_RESET_RTC) and the value the
+    // game checks for (RESET_RTC_ENABLED); PKHeX indexes the work array raw,
+    // so the slot is 0x2C. FireRed/LeafGreen have no real-time clock to reset.
+    private const int ResetRTCWork = 0x2C;
+    private const ushort ResetRTCEnabled = 2336;
+
+    public bool SupportsRTCRepair => _save is SAV2 or SAV3RS or SAV3E;
+
+    public void RepairRTC()
+    {
+        ThrowIfDisposed();
+        switch (_save)
+        {
+            // Gen 2: the cartridge clock lives outside save data; arming the
+            // game's own "set the clock at next boot" bit is the whole repair.
+            case SAV2 sav2:
+                sav2.ResetRTC();
+                return;
+            // Gen 3: a dead battery zeroes the clock; the game offers the password
+            // protected reset dialog only while this variable holds its magic.
+            case SAV3 rse when rse is SAV3RS or SAV3E:
+                rse.SetWork(ResetRTCWork, ResetRTCEnabled);
+                return;
+            default:
+                throw new NotSupportedException(
+                    "RTC repair is available for Gen 2 (Gold/Silver/Crystal) and Gen 3 (Ruby/Sapphire/Emerald) saves only.");
+        }
     }
 
     public MetInfo GetMetInfo(int box, int slot)
@@ -2347,5 +2578,30 @@ public sealed class LegalityService : ILegalityService
         var report = analysis.Report(verbose: false);
         var lines = report.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return new LegalityReport(analysis.Valid, lines.Length == 0 ? ["No findings."] : lines);
+    }
+
+    public IReadOnlyList<SlotLegality> Sweep(ISaveEngineSession session,
+        Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (session is not SaveEngineSession engineSession)
+            throw new ArgumentException("Session was not created by this engine.", nameof(session));
+
+        // Snapshot once: it re-parses every slot, and the verdicts must describe one
+        // consistent generation of the save even if the UI mutates mid-sweep.
+        var occupied = engineSession.Snapshot.Slots.Where(s => s.Species is not null).ToList();
+        var results = new List<SlotLegality>(occupied.Count);
+        for (var i = 0; i < occupied.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var summary = occupied[i];
+            var report = Analyze(engineSession, summary.Box, summary.Slot);
+            results.Add(new SlotLegality(
+                summary.Box, summary.Slot, report.Valid,
+                report.Valid ? string.Empty : report.Lines.FirstOrDefault() ?? "Illegal.",
+                report.Lines));
+            onProgress?.Invoke(i + 1, occupied.Count);
+        }
+        return results;
     }
 }

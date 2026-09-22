@@ -19,6 +19,7 @@ public sealed class PadMenu : IPadHandler
     private readonly Grid _host;
     private readonly Grid _overlay;
     private readonly GamepadRouter? _router;
+    private readonly ScrollView _scroll = null!;
     private int _index;
     private int _columns = 1;
 
@@ -43,16 +44,15 @@ public sealed class PadMenu : IPadHandler
         _options = options;
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
 
-        // Menus columnize by size: 1-4 options stay a single column, 5-12 split in two,
-        // bigger menus go three-wide. Long labels force the single column so text fits.
-        var longLabels = options.Any(o => o.Label.Length > 30);
+        // Menus columnize by what the labels need: the longest label decides how many
+        // columns fit without marqueeing (~16 chars per 200dp column at 15px).
+        var longest = options.Length == 0 ? 0 : options.Max(o => o.Label.Length);
         _columns = options.Length switch
         {
             <= 4 => 1,
-            <= 12 => 2,
-            _ => 3,
+            <= 12 => longest > 24 ? 1 : 2,
+            _ => longest > 16 ? 2 : 3,
         };
-        if (longLabels) _columns = 1;
         var buttonHeight = _columns == 1 ? 58.0 : _columns == 2 ? 52.0 : 46.0;
 
         var grid = new Grid { ColumnSpacing = 8, RowSpacing = 8 };
@@ -69,7 +69,6 @@ public sealed class PadMenu : IPadHandler
             Grid.SetRow(button, i / _columns);
             Grid.SetColumn(button, i % _columns);
         }
-        View list = grid;
 
         var content = new VerticalStackLayout { Spacing = 10 };
         content.Children.Add(Kit.HeaderBar(title));
@@ -83,14 +82,15 @@ public sealed class PadMenu : IPadHandler
                 LineBreakMode = LineBreakMode.WordWrap,
             });
         }
-        content.Children.Add(list);
+        content.Children.Add(grid);
         content.Children.Add(Kit.HintBar(("A", "CHOOSE", null), ("B", "CANCEL", () => Close(null))));
 
+        // PadMenu owns the ScrollView (same structure as OverlayWindow's default) so
+        // Highlight can scroll the cursor into view; the window caps to the host.
+        View list = _scroll = new ScrollView { Content = content };
         // Fit-to-host: the window is capped to the Thor's actual screen (host.Height - 16),
-        // never a fixed 460 that overflowed a ~360dp-tall screen. Shared scrim + pop-in.
-        var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 460);
+        var window = Kit.OverlayWindow(host, list, preferredMaxWidth: 640, scroll: false);
         _overlay = Kit.AttachOverlay(host, window, () => Close(null));
-
         Highlight(0);
         _router?.Push(this);
     }
@@ -116,8 +116,10 @@ public sealed class PadMenu : IPadHandler
         // scaling clipped the folder against its container. The band IS the cursor.
         for (var i = 0; i < _optionViews.Count; i++)
             _optionViews[i].Selected = i == _index;
+        // Tall menus scroll; the highlight must ride along or the cursor vanishes
+        // below the fold.
+        _scroll.ScrollToAsync(_optionViews[_index], ScrollToPosition.MakeVisible, animated: false);
     }
-
     private void Close(string? result)
     {
         if (_router is not null) _router.Remove(this);
