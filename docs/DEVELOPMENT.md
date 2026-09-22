@@ -33,6 +33,12 @@ dotnet test tests/PKForge.Domain.Tests
 dotnet build src/PKForge.App/PKForge.App.csproj -f net10.0-android
 # Release APK:
 dotnet publish src/PKForge.App/PKForge.App.csproj -f net10.0-android -c Release -o dist/
+# Self-contained diagnostic APK for on-device testing (adb install -r):
+# Debug builds use Fast Deployment (assemblies live outside the APK) and crash
+# on plain adb install; Release embeds them and debug-keystore signing lets it
+# update a previously installed diagnostic build in place.
+dotnet publish src/PKForge.App/PKForge.App.csproj -f net10.0-android -c Release -o dist-diagnostic/
+adb install -r dist-diagnostic/org.pkforge.app-Signed.apk
 ```
 
 - `TreatWarningsAsErrors=true` everywhere — warnings fail the build. A raw `&` or `<`
