@@ -137,3 +137,30 @@ bank Pokémon; storage filter/search; QR import; multiple banks.
   informational. `ISaveEngineSession.GameNames` (plural, group-expanded) drives that.
 - Verification: 303 engine + 79 domain tests green; diagnostic arm64 APK builds clean.
   Still device-unverified: the new guide layout and the collapsed-SV case.
+
+## Session note 4 (September 22, 2026): bank search + archive export/import
+
+- **Bank search** (`BankSearchPage`, Bank strip "SEARCH" capsule): whole-bank overlay
+  following the CollectionDexPage overlay/IPadHandler pattern. Filters: species-name or
+  nickname substring (live Entry), shiny-only (Y), generation and source game (PadMenus
+  scoped to values present in the bank); sorts: dex #, A-Z, generation, newest/oldest
+  (`BankEntry.AddedUtc` — already persisted, no index change). Result grid reuses the
+  box-slot renderer; A or tap jumps the vault to the hit's box/slot. Illegal-flag filter
+  skipped: `BankEntryInfo` carries no legality, and hashing it in would need a reparsing
+  index migration.
+- **Archive** (`BankArchive` in Infrastructure + `IFolderFileAccess` in Domain,
+  `AndroidFolderFileAccess` SAF impl): EXPORT writes whole bank or current box into a
+  picked SAF folder as `NNN - Nickname <id8>.pkN` files plus camelCase `manifest.json`
+  (app, schemaVersion, per-entry species/nickname/shiny/gen/box/slot/sha256 — the
+  loose-folder subset of the BANK_MODEL.md archive plan). Same-name writes overwrite, so
+  re-exports update in place. IMPORT merge-scans the folder (`.pk`/`.pk1`–`.pk9`
+  prefilter), parses via `ISaveEngine.TryDescribeEntity`, and skips exact SHA-256
+  duplicates of banked mons and of files already imported this batch; status reports
+  N imported · M skipped · K unreadable.
+- Tests: `BankArchiveTests` (manifest round-trip, unique/path-safe naming, dedupe
+  counting, extension prefilter) and `FileBankServiceTests` (old PascalCase index.json
+  still loads; index missing a field still loads — STJ note: Guids must stay dashed,
+  hex-only "N" strings are rejected by System.Text.Json). 85 domain tests green.
+  App builds clean for net10.0-android except sibling in-flight EventGallery errors.
+- Not yet device-verified: SAF folder write path (create/overwrite), overlay layout on
+  the Thor, and the strip fitting with five capsules + LIVING DEX.

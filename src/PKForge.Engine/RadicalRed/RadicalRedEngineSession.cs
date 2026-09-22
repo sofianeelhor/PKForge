@@ -861,11 +861,14 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
     public IReadOnlyList<EncounterCard> GetEncounterCards(int species, int form) => [];
     public GenerationOutcome PlaceEncounter(int species, int form, int cardIndex, int targetBox, int targetSlot) =>
         throw NotYet("Radical Red encounter cards");
-    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null) =>
+    public bool SupportsBoxTools => false;
+    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false) =>
         throw NotYet("Radical Red box sorting");
     public int PlaceLivingDex(byte[] compressedBundle) =>
         throw NotYet("The Radical Red living dex (its species table needs Radical Red-legal templates)");
     public int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null) =>
+        throw NotYet("The Radical Red batch editor");
+    public int BatchApplySlots(IReadOnlyList<(int Box, int Slot)> slots, IReadOnlyList<string> instructions) =>
         throw NotYet("The Radical Red batch editor");
     public void SwapBoxes(int a, int b) => throw NotYet("Radical Red box swapping");
     public void DeleteBox(int box) => throw NotYet("Radical Red box management");
@@ -978,6 +981,10 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
     public void UnlockAllLegalFashion() { }
     public MysteryGiftInbox GetMysteryGiftInbox() => new(false, []);
     public TrainerRecordsInfo GetTrainerRecords() => new(false, []);
+    public TrainerStats GetTrainerStats() => new(false, 0, 0, 0, false, 0, 0, false, 0, 0);
+    public void SetTrainerStats(TrainerStatsEdit edit) => throw NotYet("Radical Red trainer statistics");
+    public bool SupportsRTCRepair => false;
+    public void RepairRTC() { }
 
     public MetInfo GetMetInfo(int box, int slot) => throw NotYet("Radical Red met/origin editing");
     public void ApplyMetEdit(int box, int slot, MetEdit edit) => throw NotYet("Radical Red met/origin editing");

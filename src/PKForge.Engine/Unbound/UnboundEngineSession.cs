@@ -717,13 +717,17 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     public GenerationOutcome PlaceEncounter(int species, int form, int cardIndex, int targetBox, int targetSlot) =>
         throw NotYet("Unbound encounter cards");
 
-    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null) =>
+    public bool SupportsBoxTools => false;
+    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false) =>
         throw NotYet("Unbound box sorting");
 
     public int PlaceLivingDex(byte[] compressedBundle) =>
         throw NotYet("The Unbound living dex (its species table needs Unbound-legal templates)");
 
     public int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null) =>
+        throw NotYet("The Unbound batch editor");
+
+    public int BatchApplySlots(IReadOnlyList<(int Box, int Slot)> slots, IReadOnlyList<string> instructions) =>
         throw NotYet("The Unbound batch editor");
 
     public string GetBoxName(int box) => $"BOX {box + 1}";
@@ -906,6 +910,10 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     public void UnlockAllLegalFashion() { }
     public MysteryGiftInbox GetMysteryGiftInbox() => new(false, []);
     public TrainerRecordsInfo GetTrainerRecords() => new(false, []);
+    public TrainerStats GetTrainerStats() => new(false, 0, 0, 0, false, 0, 0, false, 0, 0);
+    public void SetTrainerStats(TrainerStatsEdit edit) => throw NotYet("Unbound trainer statistics");
+    public bool SupportsRTCRepair => false;
+    public void RepairRTC() { }
 
     public MetInfo GetMetInfo(int box, int slot) => throw NotYet("Unbound met/origin editing");
     public void ApplyMetEdit(int box, int slot, MetEdit edit) => throw NotYet("Unbound met/origin editing");

@@ -462,22 +462,33 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             await ShowOrganizerMenuAsync();
             return;
         }
-        var choice = await PadMenu.ShowAsync(_hostGrid, "STORAGE TOOLS", null,
-            new PadOption("Organizer (multi-select)", IconPath: "storage"),
-            new PadOption("Import .pk files", IconPath: "folder"),
-            new PadOption("Import Showdown team", IconPath: "script"),
-            new PadOption("Export box to Showdown", IconPath: "script"),
-            new PadOption("Generate Living Dex", IconPath: "pokedex"),
-            new PadOption("How to get a Pokémon…", IconPath: "search"),
-            new PadOption("Egg factory…", IconPath: "pokedex"),
-            new PadOption("Day Care / Nursery", IconPath: "pokedex"),
-            new PadOption("Batch editor", IconPath: "script"),
-            new PadOption("Presets…", IconPath: "gears"),
-            new PadOption("Trainer profiles…", IconPath: "trainer"),
-            new PadOption("Nuzlocke report", IconPath: "skull"),
-            new PadOption("Manage boxes…", IconPath: "storage"),
-            new PadOption("Collection dex…", IconPath: "pokedex"),
-            new PadOption("Sort boxes…", IconPath: "restore"));
+        // Box-level bulk tools run on the stock engine only: romhack sessions refuse
+        // sort/batch ops, so their entries are hidden instead of failing mid-flow.
+        var boxTools = _sessionsFor()?.SupportsBoxTools == true;
+        var options = new List<PadOption>
+        {
+            new("Organizer (multi-select)", IconPath: "storage"),
+            new("Import .pk files", IconPath: "folder"),
+            new("Import Showdown team", IconPath: "script"),
+            new("Export box to Showdown", IconPath: "script"),
+            new("Generate Living Dex", IconPath: "pokedex"),
+            new("How to get a Pokémon…", IconPath: "search"),
+            new("Egg factory…", IconPath: "pokedex"),
+            new("Day Care / Nursery", IconPath: "pokedex"),
+        };
+        if (boxTools)
+        {
+            options.Add(new("Battle prep", IconPath: "sword"));
+            options.Add(new("Batch editor", IconPath: "script"));
+        }
+        options.Add(new("Presets…", IconPath: "gears"));
+        options.Add(new("Trainer profiles…", IconPath: "trainer"));
+        options.Add(new("Nuzlocke report", IconPath: "skull"));
+        options.Add(new("Manage boxes…", IconPath: "storage"));
+        options.Add(new("Collection dex…", IconPath: "pokedex"));
+        if (boxTools)
+            options.Add(new("Sort boxes…", IconPath: "restore"));
+        var choice = await PadMenu.ShowAsync(_hostGrid, "STORAGE TOOLS", null, options.ToArray());
         switch (choice)
         {
             case "Organizer (multi-select)":
@@ -505,6 +516,9 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                     await EncounterGallery.ShowGameScopedAsync(_hostGrid, _viewModel, session, () => _canvas.InvalidateSurface());
                 return;
             }
+            case "Battle prep":
+                await ShowBattlePrepAsync();
+                return;
             case "Egg factory…":
                 await ShowEggFactoryAsync();
                 return;
@@ -1099,7 +1113,12 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var scope = await PadMenu.ShowAsync(_hostGrid, "SORT", "Which boxes?",
             new PadOption("This box", IconPath: "storage"),
             new PadOption("All boxes", IconPath: "storage"));
-        if (scope is null) return;
+
+        var direction = await PadMenu.ShowAsync(_hostGrid, "SORT", "Which direction?",
+            new PadOption("Normal order", IconPath: "restore"),
+            new PadOption("Reversed", IconPath: "restore"));
+        if (direction is null) return;
+        var reverse = direction == "Reversed";
 
         var criteria = choice switch
         {
@@ -1113,10 +1132,12 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         };
         IReadOnlyList<int>? boxes = scope == "This box" ? [_viewModel.BoxIndex] : null;
 
+        var directionNote = reverse ? " (reversed)" : "";
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "SORT NOW?",
-            scope == "This box"
+            (scope == "This box"
                 ? "This box's Pokémon are reordered and compacted to the top."
-                : "Every box's Pokémon are pooled, ordered, and compacted from box 1. Empties gather at the end.",
+                : "Every box's Pokémon are pooled, ordered, and compacted from box 1. Empties gather at the end.")
+            + directionNote,
             "Sort");
         if (!confirmed) return;
 
@@ -1129,8 +1150,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 if (locked.Count > 0)
                     boxes = Enumerable.Range(0, _viewModel.BoxCount).Where(box => !locked.Contains(box)).ToList();
             }
-            var placed = session.SortBoxes(criteria, boxes);
-            return new GenerationOutcome(true, $"Sorted {placed} Pokémon.");
+            var placed = session.SortBoxes(criteria, boxes, reverse);
+            return new GenerationOutcome(true, $"Sorted {placed} Pokémon{directionNote}.");
         }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
         if (sorted)
             _viewModel.RefreshAllSlots();
@@ -1412,40 +1433,247 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         finally { overlay.Close(); }
     }
 
+    /// <summary>One-tap battle preparation: heal, PP Max, flat rules - one backed-up write per action.</summary>
+    private async Task ShowBattlePrepAsync()
+    {
+        var session = _sessionsFor();
+        if (session is null) return;
+        var choice = await PadMenu.ShowAsync(_hostGrid, "BATTLE PREP", "Every action is one backed-up write.",
+            new PadOption("Heal party", IconPath: "heart"),
+            new PadOption("Heal all (party + boxes)", IconPath: "heart"),
+            new PadOption("PP Max all moves", IconPath: "spark"),
+            new PadOption("Set party to Lv50 (flat rules)", IconPath: "sword"),
+            new PadOption("Set all to Lv100", IconPath: "sword"));
+        if (choice is null) return;
+
+        var party = new[] { -1 };
+        var everywhere = PartyAndUnlockedBoxes();
+        var everywhereText = everywhere.Count == 1
+            ? "the party only (every box is locked)"
+            : "the party and every unlocked box";
+        IReadOnlyList<string> instructions;
+        IReadOnlyList<int> boxes;
+        string what;
+        if (choice == "Heal party")
+        {
+            instructions = ["Heal"];
+            boxes = party;
+            what = "the party";
+        }
+        else if (choice == "Heal all (party + boxes)")
+        {
+            instructions = ["Heal"];
+            boxes = everywhere;
+            what = everywhereText;
+        }
+        else if (choice == "PP Max all moves")
+        {
+            // PP Ups persist even in box storage; current PP only lives in party data,
+            // so HealPP tops off the party and is a no-op write for boxed mons.
+            instructions = ["Move1_PPUps=3", "Move2_PPUps=3", "Move3_PPUps=3", "Move4_PPUps=3", "HealPP"];
+            boxes = everywhere;
+            what = everywhereText;
+        }
+        else if (choice == "Set party to Lv50 (flat rules)")
+        {
+            instructions = ["Level=50"];
+            boxes = party;
+            what = "the party";
+        }
+        else
+        {
+            instructions = ["Level=100"];
+            boxes = everywhere;
+            what = everywhereText;
+        }
+
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, $"{choice.ToUpperInvariant()}?",
+            $"Applies to {what}. Backed up first.", choice);
+        if (!confirmed) return;
+
+        await _viewModel.RunMutationAsync(s =>
+        {
+            var touched = s.BatchApply(instructions, boxes);
+            return touched > 0
+                ? new GenerationOutcome(true, $"{choice} applied to {touched} Pokémon.")
+                : new GenerationOutcome(false, "Nothing to edit there.");
+        }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+        _viewModel.RefreshAllSlots();
+        _canvas.InvalidateSurface();
+    }
+
+    /// <summary>The party plus every unlocked box: battle prep's whole-save scope.</summary>
+    private IReadOnlyList<int> PartyAndUnlockedBoxes()
+    {
+        var docId = DocumentId;
+        return [-1, .. Enumerable.Range(0, _viewModel.BoxCount)
+            .Where(box => docId is null || !Protection.IsBoxLocked(docId, box))];
+    }
+
     /// <summary>
-    /// The batch editor: instructions like "Level=100", "IV_HP=31", "Shiny=Yes" applied to
-    /// every mon in the current box (or all boxes), one safe write. PKHeX syntax.
+    /// The batch editor: stack operations as chips (level, IVs, EV spread, heal, training,
+    /// friendship, nicknames), then apply them to a scope - the organizer selection, one
+    /// box, or every box - in a single backed-up write. The PKHeX instruction strings are
+    /// shown before the write; experts can paste their own on top.
     /// </summary>
     private async Task RunBatchEditorAsync()
     {
         var session = _sessionsFor();
         if (session is null) return;
         var caps = session.GetTrainingCaps();
-        var scope = await PadMenu.ShowAsync(_hostGrid, "BATCH EDITOR", "Apply to which boxes?",
-            new PadOption("This box", IconPath: "storage"),
-            new PadOption("All boxes", IconPath: "storage"));
+        var statKind = caps.IvMax == 15 ? "DVs" : "IVs";
+
+        // Scope first. Locked boxes refuse batch edits (same rule as sort and presets).
+        var scopeOptions = new List<PadOption>();
+        if (_viewModel.MarkedCount > 0)
+            scopeOptions.Add(new($"Selected Pokémon ({_viewModel.MarkedCount})", IconPath: "storage"));
+        scopeOptions.Add(new("This box", IconPath: "storage"));
+        scopeOptions.Add(new("All boxes", IconPath: "storage"));
+        var scope = await PadMenu.ShowAsync(_hostGrid, "BATCH EDITOR", "Apply to which Pokémon?", scopeOptions.ToArray());
         if (scope is null) return;
+        var selection = scope.StartsWith("Selected", StringComparison.Ordinal);
 
-        var text = await TextPopup.ShowAsync(_hostGrid, "INSTRUCTIONS",
-            $"One per line, PKHeX style:\nLevel=100\nIV_HP={caps.IvMax}\nShiny=Yes\nEV_ATK={caps.EvMax}");
-        if (string.IsNullOrWhiteSpace(text)) return;
+        IReadOnlyList<(int Box, int Slot)>? slots = null;
+        IReadOnlyList<int>? boxes = null;
+        if (selection)
+        {
+            var docId = DocumentId;
+            slots = _viewModel.MarkedSlots
+                .Where(m => docId is null || !Protection.IsBoxLocked(docId, m.Box))
+                .ToList();
+            if (slots.Count == 0) { _viewModel.Status = "EVERY MARKED BOX IS LOCKED"; return; }
+        }
+        else if (scope == "This box")
+        {
+            if (DocumentId is { } docId && _viewModel.BoxIndex >= 0 && Protection.IsBoxLocked(docId, _viewModel.BoxIndex))
+            {
+                _viewModel.Status = "THIS BOX IS LOCKED";
+                return;
+            }
+            boxes = [_viewModel.BoxIndex];
+        }
+        else
+        {
+            var docId = DocumentId;
+            boxes = Enumerable.Range(0, _viewModel.BoxCount)
+                .Where(box => docId is null || !Protection.IsBoxLocked(docId, box)).ToList();
+            if (boxes.Count == 0) { _viewModel.Status = "EVERY BOX IS LOCKED"; return; }
+        }
 
-        var instructions = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (instructions.Length == 0) return;
+        // Chip flow: each entry toggles; the menu re-opens until Apply or Cancel.
+        var level = false;
+        var maxIvs = false;
+        var heal = false;
+        var train = false;
+        var friendship = false;
+        var speciesNames = false;
+        string[]? evSpread = null;
+        var evSummary = "none";
+        IReadOnlyList<string>? expertLines = null;
+        while (true)
+        {
+            PadOption Chip(string label, bool on, string icon) => new($"{(on ? "✓ " : "")}{label}", IconPath: icon);
+            var levelChip = Chip("Level = 100", level, "sword");
+            var ivChip = Chip($"Max {statKind} ({caps.IvMax} everywhere)", maxIvs, "spark");
+            var evChip = new PadOption($"EV spread: {evSummary}", IconPath: "spark");
+            var healChip = Chip("Heal + PP Max", heal, "heart");
+            var trainChip = Chip("Hyper Train (legal $suggest)", train, "gears");
+            var friendChip = Chip("Max friendship", friendship, "heart");
+            var nameChip = Chip("Nicknames → species names", speciesNames, "script");
+            var pick = await PadMenu.ShowAsync(_hostGrid, "BATCH EDITOR", "Toggle operations, then apply.",
+                levelChip, ivChip, evChip, healChip, trainChip, friendChip, nameChip,
+                new PadOption("Expert instructions…", IconPath: "script"),
+                new PadOption("Apply", IconPath: "restore"),
+                new PadOption("Cancel", IconPath: "hex"));
+            if (pick is null or "Cancel") return;
+            if (pick == "Apply") break;
+            if (pick == levelChip.Label) level = !level;
+            else if (pick == ivChip.Label) maxIvs = !maxIvs;
+            else if (pick == healChip.Label) heal = !heal;
+            else if (pick == trainChip.Label) train = !train;
+            else if (pick == friendChip.Label) friendship = !friendship;
+            else if (pick == nameChip.Label) speciesNames = !speciesNames;
+            else if (pick == evChip.Label)
+            {
+                var spreads = new (string Label, string Summary, string[] Instructions)[]
+                {
+                    ("Physical sweeper (252 Atk / 252 Spe / 4 HP)", "Atk/Spe 252+4", ["EV_HP=4", "EV_ATK=252", "EV_SPE=252"]),
+                    ("Special sweeper (252 SpA / 252 Spe / 4 HP)", "SpA/Spe 252+4", ["EV_HP=4", "EV_SPA=252", "EV_SPE=252"]),
+                    ("Physical wall (252 HP / 252 Def / 4 SpD)", "HP/Def 252+4", ["EV_HP=252", "EV_DEF=252", "EV_SPD=4"]),
+                    ("Special wall (252 HP / 252 SpD / 4 Def)", "HP/SpD 252+4", ["EV_HP=252", "EV_SPD=252", "EV_DEF=4"]),
+                    ("Reset EVs (all zero)", "reset", ["EV_HP=0", "EV_ATK=0", "EV_DEF=0", "EV_SPA=0", "EV_SPD=0", "EV_SPE=0"]),
+                    ("Keep EVs as they are", "none", []),
+                };
+                var spreadPick = await PadMenu.ShowAsync(_hostGrid, "EV SPREAD", "One spread replaces the previous choice.",
+                    spreads.Select(s => new PadOption(s.Label, IconPath: "spark")).ToArray());
+                var chosen = spreads.FirstOrDefault(s => s.Label == spreadPick);
+                if (chosen.Label is not null)
+                {
+                    evSpread = chosen.Instructions;
+                    evSummary = chosen.Summary;
+                }
+            }
+            else
+            {
+                var text = await TextPopup.ShowAsync(_hostGrid, "EXPERT INSTRUCTIONS",
+                    $"One per line, PKHeX style, added on top of the chips:\nLevel=100\nIV_HP={caps.IvMax}\nShiny=Yes\nEV_ATK={caps.EvMax}");
+                if (!string.IsNullOrWhiteSpace(text))
+                    expertLines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            }
+        }
 
-        IReadOnlyList<int>? boxes = scope == "This box" ? [_viewModel.BoxIndex] : null;
-        var preview = scope == "This box" ? $"box {_viewModel.BoxIndex + 1}" : "every box";
+        var plan = new List<string>();
+        if (level) plan.Add("Level=100");
+        if (maxIvs)
+            foreach (var stat in new[] { "HP", "ATK", "DEF", "SPA", "SPD", "SPE" })
+                plan.Add($"IV_{stat}={caps.IvMax}");
+        if (evSpread is { Length: > 0 }) plan.AddRange(evSpread);
+        if (heal)
+        {
+            // PP Ups first so Heal's built-in PP refill tops off at the raised maximum.
+            plan.AddRange(["Move1_PPUps=3", "Move2_PPUps=3", "Move3_PPUps=3", "Move4_PPUps=3", "Heal"]);
+        }
+        if (train) plan.Add("HyperTrain=$suggest");
+        if (friendship) plan.Add("Friendship=255");
+        if (speciesNames) plan.Add("IsNicknamed=false");
+        if (expertLines is not null) plan.AddRange(expertLines.Where(line => line.Length > 0));
+        if (plan.Count == 0) { _viewModel.Status = "NO OPERATIONS SELECTED"; return; }
+
+        var mons = 0;
+        if (slots is not null)
+        {
+            mons = slots.Count(s => !session.ReadEntity(s.Box, s.Slot).IsEmpty);
+        }
+        else
+        {
+            foreach (var box in boxes!)
+            {
+                var slotCount = box == -1 ? 6 : BoxGridRenderer.Columns * BoxGridRenderer.Rows;
+                for (var slot = 0; slot < slotCount; slot++)
+                    if (!session.ReadEntity(box, slot).IsEmpty) mons++;
+            }
+        }
+        var scopeText = selection
+            ? $"{slots!.Count} selected Pokémon"
+            : boxes!.Count == 1
+                ? (_viewModel.BoxIndex == -1 ? "the party" : $"box {boxes[0] + 1:00}")
+                : (boxes.Count == _viewModel.BoxCount ? "every box" : $"{boxes.Count} unlocked boxes");
+
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "APPLY BATCH EDIT?",
-            $"{instructions.Length} instruction(s) to every Pokémon in {preview}. Backed up first.", "Apply");
+            $"Will apply {plan.Count} operation(s) to {mons} Pokémon in {scopeText}:\n{string.Join(" · ", plan)}\n" +
+            "One backed-up write. Legality is not re-checked afterwards.",
+            "Apply");
         if (!confirmed) return;
 
-        await _viewModel.RunMutationAsync(session =>
+        var ok = await _viewModel.RunMutationAsync(s =>
         {
-            var touched = session.BatchApply(instructions, boxes);
+            var touched = slots is not null ? s.BatchApplySlots(slots, plan) : s.BatchApply(plan, boxes);
             return touched > 0
-                ? new GenerationOutcome(true, $"Batch edit applied to {touched} Pokémon.")
-                : new GenerationOutcome(false, "Nothing to edit in those boxes.");
-        }, Math.Max(0, _viewModel.SelectedSlot));
+                ? new GenerationOutcome(true, $"Batch applied to {touched} Pokémon (legality not re-checked).")
+                : new GenerationOutcome(false, "Nothing to edit in that scope.");
+        }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+        if (ok)
+            _viewModel.RefreshAllSlots();
         _canvas.InvalidateSurface();
     }
 

@@ -46,7 +46,9 @@ so the structure never has to be rethought, only filled in. **Status current as 
 | Edit / Send-to-game / Move / Export / Release | DONE |
 | Create / Paste-Showdown / Import into empty slot | DONE |
 | **Living dex tracker** (collection dex: national + shiny living dex, per-gen scopes, this-game scope; counts bank + open save; jump into "How to get" from any missing species) | DONE |
-| Restore points / search / archive export | TODO |
+| **Search / filter / sort** (whole-bank overlay from the Bank strip: name/nickname text, shiny-only, generation, source game; dex#/A-Z/gen/newest/oldest sort; jump to the hit's box and slot) | DONE |
+| **Archive export/import** (EXPORT: whole bank or current box → folder of .pk files + camelCase manifest.json with per-file sha256; IMPORT: merge from a picked folder, sha256 dedupe, N imported / M skipped) | DONE |
+| Restore points | TODO |
 
 `EntityBatchEditor` (batch editor) · `BoxManipulator` (sort/clear/heal) ·
 ribbon/mark/form/memory applicators · LiveHeX (Injection lib).

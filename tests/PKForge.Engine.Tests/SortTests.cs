@@ -129,4 +129,28 @@ public sealed class SortTests
             last = count;
         }
     }
+
+    [Fact]
+    public void ReverseSortFlipsTheCompactedOrder()
+    {
+        using var session = Open();
+        session.SortBoxes(Domain.SortCriteria.DexNumber, [0]);
+        var ascending = ReadBox(session, 0, 30).Select(m => m.Species).ToList();
+
+        var placed = session.SortBoxes(Domain.SortCriteria.DexNumber, [0], reverse: true);
+        var descending = ReadBox(session, 0, 30).Select(m => m.Species).ToList();
+
+        Assert.Equal(ascending.Count, placed);
+        Assert.Equal(ascending.OrderBy(s => s).ToList(), descending.OrderBy(s => s).ToList());
+        Assert.Equal(descending.OrderByDescending(s => s).ToList(), descending);
+    }
+
+    [Fact]
+    public void ReverseLevelSortPutsWeakestFirst()
+    {
+        using var session = Open();
+        session.SortBoxes(Domain.SortCriteria.LevelDesc, [0], reverse: true);
+        var levels = ReadBox(session, 0, 30).Select(m => m.Level).ToList();
+        Assert.Equal(levels.OrderBy(l => l).ToList(), levels);
+    }
 }

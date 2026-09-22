@@ -4,6 +4,7 @@ using PKForge.App.Theme;
 using PKForge.App.ViewModels;
 using PKForge.Chrome;
 using PKForge.Domain;
+using PKForge.Infrastructure;
 using SkiaSharp;
 using SkiaSharp.Views.Maui;
 using SkiaSharp.Views.Maui.Controls;
@@ -63,6 +64,15 @@ public sealed class BankPage : ContentPage, IPadHandler
         var addBox = Kit.Capsule("+ Box", UiTokens.Green);
         addBox.Clicked += (_, _) => { _bank.AddBox(); UpdatePageLabel(); _canvas.InvalidateSurface(); };
 
+        var exportArchive = Kit.Capsule("EXPORT", UiTokens.Green);
+        exportArchive.Clicked += (_, _) => _ = ExportArchiveAsync();
+
+        var importArchive = Kit.Capsule("IMPORT", UiTokens.Indigo);
+        importArchive.Clicked += (_, _) => _ = ImportArchiveAsync();
+
+        var search = Kit.Capsule("SEARCH", UiTokens.MenuBlue);
+        search.Clicked += (_, _) => _ = OpenSearchAsync();
+
         var livingDex = Kit.Capsule("LIVING DEX", UiTokens.MenuBlue);
         livingDex.Clicked += (_, _) => _ = OpenLivingDexAsync();
 
@@ -70,13 +80,20 @@ public sealed class BankPage : ContentPage, IPadHandler
         {
             Padding = new Thickness(12, 6, 12, 0),
             ColumnSpacing = 8,
-            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto)],
-            Children = { _pageLabel, previous, next, addBox, livingDex },
+            ColumnDefinitions =
+            [
+                new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto),
+                new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto),
+            ],
+            Children = { _pageLabel, previous, next, addBox, exportArchive, importArchive, search, livingDex },
         };
         Grid.SetColumn(previous, 1);
         Grid.SetColumn(next, 2);
         Grid.SetColumn(addBox, 3);
-        Grid.SetColumn(livingDex, 4);
+        Grid.SetColumn(exportArchive, 4);
+        Grid.SetColumn(importArchive, 5);
+        Grid.SetColumn(search, 6);
+        Grid.SetColumn(livingDex, 7);
 
         var screen = Kit.LcdPanel(_canvas, padding: 4);
         var content = new Grid { Padding = new Thickness(12, 8, 12, 10), Children = { screen } };
@@ -127,6 +144,116 @@ public sealed class BankPage : ContentPage, IPadHandler
         var data = services?.GetService<IGameDataService>();
         if (data is null) return;
         await CollectionDexPage.ShowAsync(_hostGrid, _boxViewModel, data, _sprites);
+    }
+
+    private async Task OpenSearchAsync()
+    {
+        var data = IPlatformApplication.Current?.Services?.GetService<IGameDataService>();
+        if (data is null) return;
+        try
+        {
+            await BankSearchPage.ShowAsync(_hostGrid, _bank, data, _sprites, JumpTo);
+        }
+        catch (Exception error)
+        {
+            _boxViewModel.Status = $"Search closed: {error.Message}";
+        }
+    }
+
+    /// <summary>A search hit lands the vault on the mon's box and slot, cursor on it.</summary>
+    private void JumpTo(BankEntry entry)
+    {
+        _boxIndex = Math.Clamp(entry.Box, 0, _bank.BoxCount - 1);
+        _selectedSlot = entry.Slot;
+        RefreshBoxEntries();
+        UpdatePageLabel();
+        UpdatePreview();
+        _canvas.InvalidateSurface();
+    }
+
+    private async Task ExportArchiveAsync()
+    {
+        var services = IPlatformApplication.Current?.Services;
+        var picker = services?.GetService<IFolderPicker>();
+        var files = services?.GetService<IFolderFileAccess>();
+        if (picker is null || files is null) return;
+
+        var choice = await PadMenu.ShowAsync(_hostGrid, "EXPORT ARCHIVE",
+            "A folder of .pk files plus a manifest — readable by PKHeX and PKForge alike.",
+            new PadOption("Whole bank", IconPath: "storage"),
+            new PadOption("This box only", IconPath: "folder"));
+        if (choice is null) return;
+
+        var candidates = choice == "This box only"
+            ? _bank.GetAll().Where(e => e.Box == _boxIndex).ToArray()
+            : null;
+        if (candidates is { Length: 0 })
+        {
+            _boxViewModel.Status = "Nothing to export — this box is empty.";
+            return;
+        }
+
+        var folder = await picker.PickFolderAsync();
+        if (folder is null) return;
+        var overlay = LoadingOverlay.Show(_hostGrid, "PACKING THE ARCHIVE…", $"Writing .pk files to {folder.DisplayName}.");
+        try
+        {
+            var exported = await Task.Run(() => BankArchive.ExportAsync(_bank, files, folder.TreeId, candidates));
+            _boxViewModel.Status = exported == 0
+                ? "Nothing to export — the bank is empty."
+                : $"Archive written: {exported} Pokémon → {folder.DisplayName}.";
+        }
+        catch (Exception error)
+        {
+            _boxViewModel.Status = $"Export failed: {error.Message}";
+        }
+        finally
+        {
+            overlay.Close();
+        }
+    }
+
+    private async Task ImportArchiveAsync()
+    {
+        var services = IPlatformApplication.Current?.Services;
+        var picker = services?.GetService<IFolderPicker>();
+        var files = services?.GetService<IFolderFileAccess>();
+        var engine = services?.GetService<ISaveEngine>();
+        if (picker is null || files is null || engine is null) return;
+
+        var folder = await picker.PickFolderAsync();
+        if (folder is null) return;
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "IMPORT FROM FOLDER?",
+            $"Every recognized .pk file in {folder.DisplayName} joins the bank. Exact copies of mons already stored are skipped.",
+            "Import");
+        if (!confirmed) return;
+
+        var overlay = LoadingOverlay.Show(_hostGrid, "READING THE ARCHIVE…", $"Scanning {folder.DisplayName}.");
+        try
+        {
+            var summary = await Task.Run(() => BankArchive.ImportAsync(_bank,
+                (bytes, name) => engine.TryDescribeEntity(bytes, name),
+                files, folder.TreeId, (done, total) => overlay.Report(done, total), overlay.Cancellation.Token));
+            _boxViewModel.Status = summary.Imported == 0 && summary.SkippedDuplicates == 0
+                ? "No recognizable Pokémon in that folder."
+                : $"{summary.Imported} imported · {summary.SkippedDuplicates} duplicate(s) skipped"
+                  + (summary.Rejected > 0 ? $" · {summary.Rejected} unreadable" : "") + ".";
+        }
+        catch (OperationCanceledException)
+        {
+            _boxViewModel.Status = "Import cancelled.";
+        }
+        catch (Exception error)
+        {
+            _boxViewModel.Status = $"Import failed: {error.Message}";
+        }
+        finally
+        {
+            overlay.Close();
+            RefreshBoxEntries();
+            UpdatePageLabel();
+            _canvas.InvalidateSurface();
+        }
     }
 
 

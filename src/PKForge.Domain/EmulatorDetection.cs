@@ -38,6 +38,20 @@ public interface IFolderPicker
     ValueTask<PickedFolder?> PickFolderAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Reads and writes named files inside an <see cref="IFolderPicker"/> grant (bank
+/// archives, bulk moves). List is flat: only files directly inside the folder.
+/// </summary>
+public interface IFolderFileAccess
+{
+    ValueTask<IReadOnlyList<PickedDocument>> ListFilesAsync(string treeId, CancellationToken cancellationToken = default);
+
+    ValueTask<ReadOnlyMemory<byte>> ReadFileAsync(string documentId, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates a file with that name in the folder, or overwrites the existing one.</summary>
+    ValueTask WriteFileAsync(string treeId, string fileName, ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken = default);
+}
+
 /// <summary>Scans a granted emulator folder for parseable Pokémon saves.</summary>
 public interface IEmulatorDetectionService
 {

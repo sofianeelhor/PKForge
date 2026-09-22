@@ -37,6 +37,8 @@ public static class MauiProgram
             new FileBackupService(Path.Combine(FileSystem.AppDataDirectory, "backups")));
         builder.Services.AddSingleton<IBankService>(_ =>
             new FileBankService(Path.Combine(FileSystem.AppDataDirectory, "bank")));
+        builder.Services.AddSingleton<InjectedGiftHistory>(_ =>
+            new InjectedGiftHistory(Path.Combine(FileSystem.AppDataDirectory, "injected-gifts.json")));
         builder.Services.AddSingleton<ISaveSessionService, SaveSessionService>();
         builder.Services.AddSingleton<Services.ProtectionStore>();
         builder.Services.AddSingleton<ISafeSaveWriter, SafeSaveWriter>();
@@ -63,6 +65,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IDocumentPicker, AndroidDocumentPicker>();
         builder.Services.AddSingleton<ISecondaryDisplayHost, AndroidSecondaryDisplayHost>();
         builder.Services.AddSingleton<IFolderPicker, AndroidFolderPicker>();
+        builder.Services.AddSingleton<IFolderFileAccess, AndroidFolderFileAccess>();
         builder.Services.AddSingleton<IEmulatorDetectionService, AndroidEmulatorScanner>();
 #endif
         builder.Services.AddSingleton<IWatchedRootStore, PreferencesWatchedRootStore>();
