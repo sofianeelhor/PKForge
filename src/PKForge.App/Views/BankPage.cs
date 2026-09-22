@@ -423,7 +423,8 @@ public sealed class BankPage : ContentPage, IPadHandler
         var choice = await PadMenu.ShowAsync(_hostGrid, "ADD TO BANK", null,
             new PadOption("Create a Pokémon", IconPath: "editor"),
             new PadOption("Paste a Showdown set", IconPath: "script"),
-            new PadOption("Import .pk file", IconPath: "folder"));
+            new PadOption("Import .pk file", IconPath: "folder"),
+            new PadOption("Scan a .pk QR", IconPath: "search"));
         switch (choice)
         {
             case "Create a Pokémon" or "Paste a Showdown set" when session is null:
@@ -472,6 +473,15 @@ public sealed class BankPage : ContentPage, IPadHandler
                     Deposit(generated);
                 }
                 finally { overlay.Close(); }
+                return;
+            }
+            case "Scan a .pk QR":
+            {
+                var engine = IPlatformApplication.Current!.Services.GetRequiredService<ISaveEngine>();
+                var received = await Services.QrEntityService.ScanAsync(_hostGrid, engine);
+                if (received is null) return;
+                Deposit(new GeneratedEntity(received.Data, received.Info));
+                _boxViewModel.Status = "Received a Pokémon over QR.";
                 return;
             }
             case "Import .pk file":
@@ -562,6 +572,8 @@ public sealed class BankPage : ContentPage, IPadHandler
         {
             var index = Array.FindIndex(options, o => o.Label == choice) - (connectedLabel is null ? 0 : 1);
             if (index < 0 || index >= detected.Length) return;
+            var preview = await transfer.PreviewAsync(bytes, nickname, detected[index]);
+            if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, preview, nickname, detected[index].GameLabel)) return;
             var outcome = await transfer.SendToGameAsync(bytes, nickname, detected[index]);
             _boxViewModel.Status = outcome.Message;
             if (!outcome.Success) return;

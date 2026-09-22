@@ -3,6 +3,7 @@ using PKForge.App.Theme;
 using PKForge.App.ViewModels;
 using PKForge.Chrome;
 using PKForge.Domain;
+using PKHeX.Core;
 using SkiaSharp;
 using SkiaSharp.Views.Maui;
 using SkiaSharp.Views.Maui.Controls;
@@ -480,6 +481,8 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         {
             options.Add(new("Battle prep", IconPath: "sword"));
             options.Add(new("Batch editor", IconPath: "script"));
+            options.Add(new("Batch rename / OT…", IconPath: "trainer"));
+            options.Add(new("Random team…", IconPath: "dice"));
         }
         options.Add(new("Presets…", IconPath: "gears"));
         options.Add(new("Trainer profiles…", IconPath: "trainer"));
@@ -532,6 +535,12 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 }
             case "Batch editor":
                 await RunBatchEditorAsync();
+                return;
+            case "Batch rename / OT…":
+                await ShowBatchRenameAsync();
+                return;
+            case "Random team…":
+                await ShowRandomTeamAsync();
                 return;
             case "Presets…":
                 await ShowPresetsMenuAsync();
@@ -840,6 +849,14 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 var confirm = await PadMenu.ConfirmAsync(_hostGrid, "MOVE SELECTION?",
                     $"{_viewModel.MarkedCount} Pokémon will leave this box and join {target.GameLabel}. Mons that cannot enter that format stay here.", "Move all");
                 if (!confirm) return;
+
+                // Bulk preview: the first marked mon's conversion diff stands for the
+                // batch (per-mon prompts over N mons would be a questionnaire).
+                var firstMarked = _viewModel.MarkedSlots.First();
+                var firstExport = session.ExportSlot(firstMarked.Box, firstMarked.Slot);
+                var firstPreview = await transfer.PreviewAsync(firstExport.Data, firstExport.FileName, target);
+                if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, firstPreview,
+                        $"1 of {_viewModel.MarkedCount} Pokémon", target.GameLabel)) return;
 
                 var sentSlots = new List<(int Box, int Slot)>();
                 var skipped = 0;
@@ -3230,6 +3247,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Export .pk file", IconPath: "folder"),
             new PadOption("Show as Showdown set", IconPath: "script"),
             new PadOption("Show as QR code", IconPath: "search"),
+            new PadOption("Show as .pk QR", IconPath: "bank"),
             new PadOption("RNG / IVs", IconPath: "dice"),
             new PadOption("Lock / Unlock release", IconPath: "padlock"),
             new PadOption("Release", IconPath: "release"),
@@ -3300,6 +3318,16 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
                 await LegalizeAllIllegalAsync(illegal);
                 return;
             }
+            case "Show as .pk QR":
+            {
+                var session = _sessionsFor();
+                if (session is null) return;
+                var export = session.ExportSlot(_viewModel.BoxIndex, slot);
+                var detail = session.ReadEntity(_viewModel.BoxIndex, slot);
+                await QrPopup.ShowBinaryAsync(_hostGrid, $"{detail.SpeciesName.ToUpperInvariant()} · .PK QR",
+                    Services.QrEntityService.MakePayload(export.Data, session.Generation, detail.SpeciesName));
+                return;
+            }
             case "Export .pk file":
                 await ExportSlotAsync(slot);
                 return;
@@ -3363,6 +3391,160 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     }
 
     /// <summary>
+    /// Batch identity toolkit: reset nicknames to species names, or adopt the
+    /// connected trainer's OT across a scope. One write, one restore point; the
+    /// confirmation says plainly that legality is not re-checked afterwards.
+    /// </summary>
+    private async Task ShowBatchRenameAsync()
+    {
+        var session = _sessionsFor();
+        if (session is null) return;
+
+        var scope = _viewModel.MarkedCount > 0
+            ? await PadMenu.ShowAsync(_hostGrid, "APPLY TO…", null,
+                $"Marked Pokémon ({_viewModel.MarkedCount})", "This box", "All boxes", "Cancel")
+            : await PadMenu.ShowAsync(_hostGrid, "APPLY TO…", null, "This box", "All boxes", "Cancel");
+        if (scope is null or "Cancel") return;
+
+        var op = await PadMenu.ShowAsync(_hostGrid, "WHICH OPERATION?", null,
+            "Reset nicknames to species names",
+            "Set OT to mine (adopt my trainer ID)",
+            "Cancel");
+        if (op is null or "Cancel") return;
+
+        var marked = _viewModel.MarkedSlots.ToArray();
+        var slots = scope.StartsWith("Marked", StringComparison.Ordinal) ? marked
+            : scope == "This box"
+                ? Enumerable.Range(0, 30).Select(s => (_viewModel.BoxIndex, Slot: s)).ToArray()
+                : null; // all boxes: the engine walks every slot itself
+        var affected = slots?.Length ?? -1;
+
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "APPLY TO EVERY MATCHING POKÉMON?",
+            $"{op} · {(affected < 0 ? "party + every box" : $"{affected} slot(s)")}\n" +
+            "Nickname and OT changes are NOT legality-re-checked afterwards.", "Apply");
+        if (!confirmed) return;
+
+        var overlay = LoadingOverlay.Show(_hostGrid, "APPLYING…", "One write, one restore point.");
+        try
+        {
+            if (op.StartsWith("Reset nicknames", StringComparison.Ordinal))
+            {
+                await _viewModel.RunMutationAsync(s =>
+                {
+                    var touched = slots is null ? s.BatchApply(["IsNicknamed=false"]) : s.BatchApplySlots(slots, ["IsNicknamed=false"]);
+                    return new GenerationOutcome(touched > 0, $"Nicknames reset for {touched} Pokémon (legality not re-checked).");
+                }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+            }
+            else
+            {
+                var profileStore = IPlatformApplication.Current!.Services.GetRequiredService<TrainerProfileStore>();
+                var profile = profileStore.Profiles.FirstOrDefault(); // null = MakeMine derives from the save itself
+                await _viewModel.RunMutationAsync(s =>
+                {
+                    var targets = slots is null
+                        ? s.Snapshot.Slots.Where(x => x.Box >= 0 && x.Species is > 0).Select(x => (x.Box, x.Slot)).ToArray()
+                        : slots!;
+                    var touched = 0;
+                    foreach (var (box, monSlot) in targets)
+                        if (s.ReadEntity(box, monSlot).Species > 0 && s.MakeMine(box, monSlot, profile).Success) touched++;
+                    return new GenerationOutcome(touched > 0, $"OT adopted for {touched} Pokémon (legality not re-checked).");
+                }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+            }
+            _viewModel.RefreshAllSlots();
+            _canvas.InvalidateSurface();
+        }
+        finally { overlay.Close(); }
+    }
+
+    /// <summary>
+    /// Rolls a random legal team from the game's own species pool and offers to
+    /// place it in the party (overwriting) or the first empty box slots.
+    /// </summary>
+    private async Task ShowRandomTeamAsync()
+    {
+        var session = _sessionsFor();
+        var services = IPlatformApplication.Current?.Services;
+        var data = services?.GetService<IGameDataService>();
+        var legalizer = services?.GetService<ILegalizerService>();
+        if (session is null || data is null || legalizer is null) return;
+
+        var countChoice = await PadMenu.ShowAsync(_hostGrid, "TEAM SIZE", null, "1", "2", "3", "4", "5", "6");
+        if (countChoice is null || !int.TryParse(countChoice, out var count)) return;
+        var levelChoice = await PadMenu.ShowAsync(_hostGrid, "LEVEL BAND", null,
+            "Lv 50", "Lv 100", "Wild card (5-70)");
+        if (levelChoice is null) return;
+        var (lo, hi) = levelChoice switch
+        {
+            "Lv 50" => (50, 50),
+            "Lv 100" => (100, 100),
+            _ => (5, 70),
+        };
+        var filters = await PadMenu.ShowAsync(_hostGrid, "FILTERS", null,
+            "No restrictions", "No legendaries", "No duplicates", "No legendaries, no duplicates");
+        if (filters is null) return;
+        var noLegendaries = filters.Contains("legendary", StringComparison.OrdinalIgnoreCase);
+        var noDuplicates = filters.Contains("duplicate", StringComparison.OrdinalIgnoreCase);
+
+        // The game's own pool: species the engine can produce for this save.
+        var max = session.MaxSpeciesId;
+        var pool = new List<int>(max);
+        for (var species = 1; species <= max; species++)
+            if (species < data.SpeciesNames.Count && data.SpeciesNames[species].Length > 0)
+                pool.Add(species);
+        var options = new RandomTeamOptions(count, lo, hi, noLegendaries, noDuplicates, AllowNfe: true);
+        var team = RandomTeamPlanner.Plan(pool, new HashSet<int>(), options, Random.Shared);
+
+        var roster = string.Join(", ", team.Select(t => $"{data.SpeciesNames[t.Species]} Lv{t.Level}"));
+        var placement = await PadMenu.ShowAsync(_hostGrid, "ROLL THIS TEAM?",
+            roster + "\nEach mon is generated legal for this game.", "Into the party", "Into first empty box slots", "Cancel");
+        if (placement is null or "Cancel") return;
+
+        var overlay = LoadingOverlay.Show(_hostGrid, "GENERATING TEAM…", "The offline legalizer is at work.");
+        try
+        {
+            var generated = new List<(byte[] Data, int Level, string Name)>();
+            foreach (var (species, level) in team)
+            {
+                var mon = await Task.Run(() => legalizer.GenerateData(session,
+                    new GenerationRequest(species, level, Shiny: false, null, null, null, null)));
+                if (mon is not null) generated.Add((mon.Data, level, data.SpeciesNames[species]));
+            }
+            if (generated.Count == 0) { _viewModel.Status = "The legalizer could not build this team."; return; }
+
+            if (placement == "Into the party")
+            {
+                var ok = await _viewModel.RunMutationAsync(s =>
+                {
+                    for (var i = 0; i < generated.Count; i++)
+                        s.ImportSlot(-1, i, generated[i].Data);
+                    return new GenerationOutcome(true, $"Random team of {generated.Count} now in the party.");
+                }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+                if (!ok) return;
+            }
+            else
+            {
+                var empties = _viewModel.Save?.Slots.Where(x => x.Box >= 0 && x.Species is null)
+                    .Select(x => (x.Box, x.Slot)).Take(generated.Count).ToArray();
+                if (empties is null || empties.Length < generated.Count)
+                {
+                    _viewModel.Status = $"Not enough empty box slots ({generated.Count} needed).";
+                    return;
+                }
+                var ok = await _viewModel.RunMutationAsync(s =>
+                {
+                    for (var i = 0; i < generated.Count; i++)
+                        s.ImportSlot(empties[i].Box, empties[i].Slot, generated[i].Data);
+                    return new GenerationOutcome(true, $"Random team of {generated.Count} placed in the boxes.");
+                }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+                if (!ok) return;
+            }
+            _viewModel.RefreshAllSlots();
+            _canvas.InvalidateSurface();
+        }
+        finally { overlay.Close(); }
+    }
+
+    /// <summary>
     /// Game-to-game: pick any other detected save, the transfer service converts and
     /// writes there, then the mon leaves this box (a real move, not a copy).
     /// </summary>
@@ -3392,6 +3574,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         if (!confirm) return;
 
         var export = session.ExportSlot(_viewModel.BoxIndex, slot);
+        // Cross-generation conversions change things; the diff preview is the trust
+        // step before the write. Same-generation sends show an empty diff.
+        var preview = await transfer.PreviewAsync(export.Data, nickname, target);
+        if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, preview, nickname, target.GameLabel)) return;
         var outcome = await transfer.SendToGameAsync(export.Data, nickname, target);
         _viewModel.Status = outcome.Message;
         if (!outcome.Success || copyInsteadOfMove) return;
