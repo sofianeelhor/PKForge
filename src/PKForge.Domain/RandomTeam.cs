@@ -41,6 +41,7 @@ public static class RandomTeamPlanner
         if (!options.AllowNfe)
             candidates = candidates.Where(id => !notFullyEvolved.Contains(id));
         var pool = candidates.ToList();
+        if (pool.Count == 0) return [];
         // Distinct sampling when asked for and the pool can carry it: partial
         // Fisher-Yates turns the first `count` slots into a uniform distinct sample.
         // Otherwise rolls are independent draws with replacement.

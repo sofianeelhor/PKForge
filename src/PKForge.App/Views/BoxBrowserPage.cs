@@ -3415,7 +3415,10 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         var marked = _viewModel.MarkedSlots.ToArray();
         var slots = scope.StartsWith("Marked", StringComparison.Ordinal) ? marked
             : scope == "This box"
-                ? Enumerable.Range(0, 30).Select(s => (_viewModel.BoxIndex, Slot: s)).ToArray()
+                ? _viewModel.Save?.Slots.Where(x => x.Box == _viewModel.BoxIndex)
+                    .Select(x => x.Slot).Distinct().OrderBy(x => x)
+                    .Select(s => (_viewModel.BoxIndex, Slot: s)).ToArray()
+                    ?? Enumerable.Range(0, 30).Select(s => (_viewModel.BoxIndex, Slot: s)).ToArray()
                 : null; // all boxes: the engine walks every slot itself
         var affected = slots?.Length ?? -1;
 
