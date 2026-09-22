@@ -266,7 +266,7 @@ public static class PartyView
         var pixel = _nameFontPixel ??= new SKFont(PixelFont.Face, size) { Edging = SKFontEdging.Antialias, Embolden = true };
         return text.All(c => pixel.Typeface.GetGlyph(c) != 0)
             ? pixel
-            : _nameFontFallback ??= new SKFont(SKTypeface.Default, size) { Edging = SKFontEdging.Antialias };
+            : _nameFontFallback ??= new SKFont(PixelFont.FallbackFace, size) { Edging = SKFontEdging.Antialias };
     }
     private static SKFont FontFor(string text, float size) => PixelFont.For(text, size);
 

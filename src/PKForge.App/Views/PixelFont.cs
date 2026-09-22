@@ -51,6 +51,46 @@ public static class PixelFont
         Volatile.Write(ref _face, face);
     }
 
+    /// <summary>The bundled M PLUS Rounded face: full Latin + Japanese coverage, the
+    /// UI's own rounded style. The fallback for text the pixel face cannot draw.</summary>
+    public static SKTypeface FallbackFace
+    {
+        get
+        {
+            var face = Volatile.Read(ref _fallback);
+            if (face is not null) return face;
+            _ = WarmFallbackAsync();
+            return SKTypeface.Default;
+        }
+    }
+
+    private static SKTypeface? _fallback;
+
+    private static Task WarmFallbackAsync()
+    {
+        lock (Gate)
+            return _fallbackTask ??= Task.Run(() =>
+            {
+                SKTypeface face;
+                try
+                {
+                    using var stream = FileSystem.OpenAppPackageFileAsync("Fonts/MPLUSRounded1c-Regular.ttf").GetAwaiter().GetResult();
+                    using var bytes = new MemoryStream();
+                    stream.CopyTo(bytes);
+                    var cache = System.IO.Path.Combine(FileSystem.CacheDirectory, "MPLUSRounded1c-Regular.ttf");
+                    File.WriteAllBytes(cache, bytes.ToArray());
+                    face = SKTypeface.FromFile(cache) ?? SKTypeface.Default;
+                }
+                catch
+                {
+                    face = SKTypeface.Default;
+                }
+                Volatile.Write(ref _fallback, face);
+            });
+    }
+
+    private static Task? _fallbackTask;
+
     /// <summary>The pixel face at a size, with antialiasing off-ish (it is a pixel font).</summary>
     public static SKFont At(float size) => new(Face, size) { Edging = SKFontEdging.Antialias, Embolden = true };
 

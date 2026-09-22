@@ -4707,12 +4707,6 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             _ = OfferAddPokemonAsync(slot);
             return;
         }
-        if (_viewModel.BoxIndex == -1)
-        {
-            // Same rule as the pad: a party tap opens the mon's actions, never a grab.
-            _ = ShowMonActionsAsync(slot);
-            return;
-        }
         if (wasSelected && _viewModel.BeginCarry())
             _canvas.InvalidateSurface();
     }
