@@ -32,7 +32,7 @@ so the structure never has to be rethought, only filled in. **Status current as 
 | Common fields (species, nick, level, nature, ability, item, moves, IVs/EVs, ball, OT, shiny, gender, friendship) | DONE (name-based pickers, sprites) |
 | Quick actions (Max IV / 0 EV / Lv100) | DONE |
 | **Met / Origin** (location, level, date, egg, origin game, language, fateful, TID/SID) | DONE (v0.22.0) |
-| LEGALIZE · SHOWDOWN · EXPORT .pk · QR | DONE |
+| LEGALIZE · SHOWDOWN · EXPORT .pk · QR (Showdown set, plus PKF1 binary .pk QR with scan-receive) | DONE |
 | Legality verdict + plain-language report | DONE |
 | Tera · Hyper Training · ability slot | DONE (v0.23.0, PotentialEditor) |
 | Relearn moves | DONE (MoveDetailsEditor) |

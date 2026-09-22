@@ -14,6 +14,20 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     private readonly ILegalizerService? _legalizer;
 
     private SlotSummary[] _slots = [];
+    /// <summary>One legality sweep's verdicts; reused until the save is written again.</summary>
+    private readonly LegalitySweepCache _sweep = new();
+
+    /// <summary>How many safe writes have been committed on the open save. Legality
+    /// verdicts are only valid within one generation: every write bumps this, so the
+    /// sweep cache goes stale the moment the save changes underneath it.</summary>
+    public long MutationGeneration { get; private set; } = 1;
+    /// <summary>Invalidates the legality sweep: dots and cached verdicts drop until the next scan.</summary>
+    private void BumpMutationGeneration()
+    {
+        MutationGeneration++;
+        OnPropertyChanged(nameof(LegalitySweep));
+        OnPropertyChanged(nameof(CurrentBoxLegality));
+    }
 
     public BoxBrowserViewModel(IDocumentPicker picker, ISaveSessionService sessions, ILegalityService legality, ISafeSaveWriter writer, Theme.ThemeService theme, ILegalizerService? legalizer = null)
     {
@@ -72,7 +86,11 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     /// <summary>LCD readout above the grid; the party rides before box 1.</summary>
     public string BoxLabel => Save is null ? "NO DATA" : BoxIndex == -1 ? "PARTY" : $"{BoxIndex + 1:00} / {BoxCount:00}";
 
-    partial void OnBoxIndexChanged(int value) => OnPropertyChanged(nameof(BoxLabel));
+    partial void OnBoxIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(BoxLabel));
+        OnPropertyChanged(nameof(CurrentBoxLegality));
+    }
     partial void OnSaveChanged(SaveSnapshot? value) => OnPropertyChanged(nameof(BoxLabel));
 
     [RelayCommand]
@@ -96,8 +114,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             OnPropertyChanged(nameof(BoxLabel));
             ConnectedName = document.DisplayName;
             ConnectedGeneration = Save.Generation;
-            IsConnected = true;
-            Status = "READY";
+            BumpMutationGeneration();
         }
         catch (Exception error)
         {
@@ -145,6 +162,18 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         EditOt = detail.OriginalTrainer;
         EditGender = detail.Gender.ToString();
         EditShiny = detail.IsShiny;
+
+        // A fresh sweep already holds this verdict and its full report text, so the
+        // cursor info answers instantly; otherwise analyze just this slot off-thread.
+        var documentId = _sessions.Current?.Document.DocumentId;
+        if (documentId is not null &&
+            _sweep.TryGetVerdict(documentId, MutationGeneration, BoxIndex, slot, out var cached) &&
+            cached is not null)
+        {
+            LegalityBadge = cached.Valid ? "✓" : "✗";
+            LegalityText = string.Join('\n', cached.Report);
+            return;
+        }
 
         // No transient "analyzing" flash: stay blank until the verdict is ready.
         LegalityBadge = string.Empty;
@@ -203,7 +232,10 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate,
                 $"Edit {EditorSubject(detail)} ({SlotLabel(detail.Box, detail.Slot)})");
             if (receipt.Changed)
+            {
                 _sessions.MarkWritten(session.Document.DocumentId, candidate);
+                BumpMutationGeneration();
+            }
 
             var updated = engineSession.ReadEntity(detail.Box, detail.Slot);
             var askedAbility = ParseInt(EditAbility);
@@ -245,7 +277,56 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         ConnectedName = session.Document.DisplayName;
         ConnectedGeneration = session.Snapshot.Generation;
         IsConnected = true;
+        BumpMutationGeneration();
         Status = "READY";
+    }
+
+    // ── Legality sweep: cached verdicts for the whole save ──
+
+    /// <summary>The last sweep's verdicts while they still match the save's write
+    /// generation; null once anything has been written (dots disappear until rescanned).</summary>
+    public IReadOnlyList<SlotLegality>? LegalitySweep =>
+        _sweep.IsFresh(_sessions.Current?.Document.DocumentId ?? string.Empty, MutationGeneration)
+            ? _sweep.Results
+            : null;
+
+    /// <summary>Verdicts for the visible box only (slot → legal); null when stale.</summary>
+    public IReadOnlyDictionary<int, bool>? CurrentBoxLegality
+    {
+        get
+        {
+            var sweep = LegalitySweep;
+            if (sweep is null) return null;
+            Dictionary<int, bool>? map = null;
+            foreach (var verdict in sweep)
+            {
+                if (verdict.Box != BoxIndex) continue;
+                map ??= [];
+                map[verdict.Slot] = verdict.Valid;
+            }
+            return map;
+        }
+    }
+
+    /// <summary>Verdicts for every occupied slot. A fresh cache returns immediately;
+    /// otherwise the whole save is rescanned off-thread (onRescan fires first so the
+    /// caller can show progress). The result is cached for the current write generation.</summary>
+    public async Task<IReadOnlyList<SlotLegality>> GetLegalitySweepAsync(
+        Action? onRescan = null, Action<int, int>? onProgress = null, CancellationToken cancellation = default)
+    {
+        var engineSession = _sessions.CurrentSession;
+        var documentId = _sessions.Current?.Document.DocumentId ?? string.Empty;
+        if (engineSession is null || documentId.Length == 0)
+            return [];
+        if (_sweep.IsFresh(documentId, MutationGeneration) && _sweep.Results is not null)
+            return _sweep.Results;
+
+        onRescan?.Invoke();
+        var results = await Task.Run(() => _legality.Sweep(engineSession, onProgress, cancellation), cancellation);
+        _sweep.Store(documentId, MutationGeneration, results);
+        OnPropertyChanged(nameof(LegalitySweep));
+        OnPropertyChanged(nameof(CurrentBoxLegality));
+        return results;
     }
 
     /// <summary>Runs a legalizer mutation (generate/legalize) then commits it through the safe write path.</summary>
@@ -288,7 +369,10 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate,
                 changeDescription ?? outcome.Message);
             if (receipt.Changed)
+            {
                 _sessions.MarkWritten(session.Document.DocumentId, candidate);
+                BumpMutationGeneration();
+            }
 
             if (refreshSlot)
             {
@@ -497,8 +581,10 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate,
                 $"Move {(carried is { } summary ? summary.Nickname ?? $"#{summary.Species}" : "Pokémon")}: {SlotLabel(source.Box, source.Slot)} -> {SlotLabel(target.Box, target.Slot)}");
             if (receipt.Changed)
+            {
                 _sessions.MarkWritten(session.Document.DocumentId, candidate);
-
+                BumpMutationGeneration();
+            }
             // Refresh both touched slots in the grid model.
             foreach (var (box, slot) in new[] { (source.Box, source.Slot), (target.Box, target.Slot) })
             {

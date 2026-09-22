@@ -237,6 +237,17 @@ public interface ISaveEngineSession : IDisposable
     AffixedRibbonInfo GetAffixedRibbon(int box, int slot);
     /// <summary>Selects an already-owned ribbon/mark as the Pokémon's title; use -1 to clear it.</summary>
     void SetAffixedRibbon(int box, int slot, int ribbonIndex);
+    /// <summary>Which ribbons and marks this Pokémon can legally earn, from PKHeX's
+    /// per-encounter tables: id → the maximum legal value (0 when this species/form
+    /// can never hold it). Formats without ribbon data return an empty map.</summary>
+    IReadOnlyDictionary<string, int> GetObtainableRibbonMaxima(int box, int slot);
+    /// <summary>Awards every obtainable ribbon (see <see cref="GetObtainableRibbonMaxima"/>)
+    /// in place. Returns how many ribbon values changed.</summary>
+    int AwardAllObtainableRibbons(int box, int slot);
+
+    /// <summary>Whether offline legality analysis covers this save: stock engine formats
+    /// yes; romhack sessions have no legality tables, so their surfaces skip the flows.</summary>
+    bool SupportsLegalityAnalysis { get; }
 
     // ── Pokémon Compass (S/V romhack) ──
     /// <summary>True when the open save carries Compass-only blocks (the romhack's marker).</summary>
@@ -427,7 +438,6 @@ public interface IGameDataService
     IReadOnlyList<string> AbilityNames { get; }
     IReadOnlyList<string> NatureNames { get; }
     IReadOnlyList<string> BallNames { get; }
-
     /// <summary>Form facts per species id (index 0 unused), derived from the modern form tables.</summary>
     IReadOnlyList<SpeciesFormFlags> FormFlags { get; }
 }
@@ -439,6 +449,11 @@ public sealed record SpeciesFormFlags(bool HasForms, bool Mega, bool Gigantamax,
 public interface ILegalityService
 {
     LegalityReport Analyze(ISaveEngineSession session, int box, int slot);
+
+    /// <summary>One verdict per occupied slot across the party and every box, with the
+    /// full PKHeX report retained for drill-in. CPU-heavy; callers run it off-thread.</summary>
+    IReadOnlyList<SlotLegality> Sweep(ISaveEngineSession session,
+        Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -453,6 +468,10 @@ public interface ILegalizerService
     /// table directly, without legality and without guarantees.</param>
     GenerationOutcome GenerateFromShowdown(ISaveEngineSession session, int box, int slot, string showdownText, bool allowUnsupportedSpecies = false);
     GenerationOutcome LegalizeSlot(ISaveEngineSession session, int box, int slot);
+    /// <summary>Legalizes every given slot (box -1 = the party) in one mutation: legal
+    /// and empty slots are skipped. Progress reports (done, total) as slots are examined.</summary>
+    GenerationOutcome LegalizeSlots(ISaveEngineSession session, IReadOnlyList<(int Box, int Slot)> slots,
+        Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);
 
     /// <summary>Fills the PC from box 0 slot 0 with a legal living dex (overwrites; caller confirms + backs up).</summary>
     GenerationOutcome FillLivingDex(ISaveEngineSession session, byte[] compressedBundle, Action<int, int>? onProgress = null, CancellationToken cancellationToken = default);

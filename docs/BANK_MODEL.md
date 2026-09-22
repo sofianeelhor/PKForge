@@ -98,6 +98,32 @@ A bank-to-save transfer never writes raw bytes directly:
 
 Failed conversion or legality does not mutate either bank or save. A generated destination entity is a new immutable bank record only when the user explicitly chooses “add converted copy.”
 
+## QR transfer (PKF1)
+
+Mons travel between installs as a QR code carrying the raw entity file itself
+(PKSM-style), not a text rendering of it. `QrEntityCodec` (PKForge.Domain, pure)
+defines the envelope; the QR layer lives in the app (`QrEntityService`, `QrPopup`).
+
+```text
+offset 0      4 bytes   magic "PKF1"
+offset 4      1 byte    envelope version (currently 1)
+offset 5      1 byte    entity generation (1-9)
+offset 6      2 bytes   entity length N        (little-endian)
+offset 8      N bytes   raw .pk file bytes, exactly as ExportSlot writes them
+offset 8+N    1 byte    species-name length M  (UTF-8 bytes)
+offset 9+N    M bytes   species name, UTF-8 - human confirmation before import
+```
+
+- The parser is strict: wrong magic/version, out-of-range generation, length that
+  does not consume the payload exactly, or invalid UTF-8 name is rejected. Import
+  still requires the engine to recognize the bytes (`TryDescribeEntity`).
+- QR encoding is byte mode over ISO-8859-1 (one code point per byte, the mapping
+  ZXing-based scanners reverse exactly) at error-correction level M. The largest
+  entity (Legends: Arceus, 344 bytes) plus envelope fits one code comfortably; no
+  chunked multi-QR split exists or is needed.
+- Scanning picks a screenshot/photo, decodes the QR, previews species/level/OT,
+  and only a confirmed receive reaches the bank (source kind `qr`).
+
 ## Versioning and migrations
 
 - Every persisted JSON document carries `schemaVersion`.

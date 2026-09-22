@@ -387,6 +387,51 @@ public sealed class SaveEngineSession : ISaveEngineSession
         StoreEntity(box, slot, entity);
     }
 
+    // Ribbon legality comes from PKHeX's own per-encounter tables (RibbonApplicator
+    // over a LegalityAnalysis), so the obtainable set is exactly what the pinned
+    // engine considers legal for this species/form/origin — computed offline.
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "PKHeX.Core is preserve=all in the Android linker descriptor; ribbon properties are retained.")]
+    public IReadOnlyDictionary<string, int> GetObtainableRibbonMaxima(int box, int slot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0)
+            throw new InvalidOperationException("Cannot inspect an empty slot.");
+
+        var probe = entity.Clone();
+        RibbonApplicator.SetAllValidRibbons(probe);
+        return RibbonValues(probe);
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "PKHeX.Core is preserve=all in the Android linker descriptor; ribbon properties are retained.")]
+    public int AwardAllObtainableRibbons(int box, int slot)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var entity = GetEntityCore(box, slot);
+        if (entity.Species == 0)
+            throw new InvalidOperationException("Cannot edit an empty slot.");
+
+        var before = RibbonValues(entity);
+        RibbonApplicator.SetAllValidRibbons(entity);
+        var after = RibbonValues(entity);
+        var changed = 0;
+        foreach (var (id, value) in after)
+            if (!before.TryGetValue(id, out var prior) || prior != value)
+                changed++;
+        StoreEntity(box, slot, entity);
+        return changed;
+    }
+
+    private static Dictionary<string, int> RibbonValues(PKM entity) => RibbonInfo.GetRibbonInfo(entity)
+        .ToDictionary(
+            r => r.Name,
+            r => r.Type == RibbonValueType.Boolean ? (r.HasRibbon ? 1 : 0) : r.RibbonCount);
+
     public AffixedRibbonInfo GetAffixedRibbon(int box, int slot)
     {
         ThrowIfDisposed();
@@ -659,6 +704,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     }
 
     public bool SupportsBoxTools => true;
+    public bool SupportsLegalityAnalysis => true;
 
     public int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null)
     {
@@ -2532,5 +2578,30 @@ public sealed class LegalityService : ILegalityService
         var report = analysis.Report(verbose: false);
         var lines = report.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return new LegalityReport(analysis.Valid, lines.Length == 0 ? ["No findings."] : lines);
+    }
+
+    public IReadOnlyList<SlotLegality> Sweep(ISaveEngineSession session,
+        Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (session is not SaveEngineSession engineSession)
+            throw new ArgumentException("Session was not created by this engine.", nameof(session));
+
+        // Snapshot once: it re-parses every slot, and the verdicts must describe one
+        // consistent generation of the save even if the UI mutates mid-sweep.
+        var occupied = engineSession.Snapshot.Slots.Where(s => s.Species is not null).ToList();
+        var results = new List<SlotLegality>(occupied.Count);
+        for (var i = 0; i < occupied.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var summary = occupied[i];
+            var report = Analyze(engineSession, summary.Box, summary.Slot);
+            results.Add(new SlotLegality(
+                summary.Box, summary.Slot, report.Valid,
+                report.Valid ? string.Empty : report.Lines.FirstOrDefault() ?? "Illegal.",
+                report.Lines));
+            onProgress?.Invoke(i + 1, occupied.Count);
+        }
+        return results;
     }
 }

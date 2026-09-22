@@ -75,7 +75,7 @@ adb install -r dist-diagnostic/org.pkforge.app-Signed.apk
 
 PKHeX's `PKM` has 60+ editable surfaces; PKForge exposes a growing subset. Next up:
 "How do I get this?" encounter cards (`EncounterMovesetGenerator`), batch editor
-(`EntityBatchEditor`), box ops (`BoxManipulator`), ribbons/marks album, form editor.
+(`EntityBatchEditor`), box ops (`BoxManipulator`), form editor.
 Full tier list in the git history of this file; `docs/PRODUCT_MAP.md` tracks surfaces.
 
 ## Known gotchas

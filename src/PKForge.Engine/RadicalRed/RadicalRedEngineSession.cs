@@ -1086,6 +1086,10 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
     public void SetRibbon(int box, int slot, string id, int value) { }
     public AffixedRibbonInfo GetAffixedRibbon(int box, int slot) => new(false, -1, string.Empty, []);
     public void SetAffixedRibbon(int box, int slot, int ribbonIndex) { }
+    public IReadOnlyDictionary<string, int> GetObtainableRibbonMaxima(int box, int slot) =>
+        new Dictionary<string, int>();
+    public int AwardAllObtainableRibbons(int box, int slot) => 0;
+    public bool SupportsLegalityAnalysis => false;
 
     public bool SupportsCompassSettings => false;
     public IReadOnlyList<CompassSetting> GetCompassSettings() => [];

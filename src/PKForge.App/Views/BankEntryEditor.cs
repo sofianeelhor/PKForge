@@ -265,6 +265,7 @@ public static class BankEntryEditor
                     QuickButton(classicTraining ? "0 EXP" : "0 EV", ClearEvsAsync),
                     QuickButton("LV 100", Level100Async),
                     QuickButton("MAKE MINE", MakeMineAsync),
+                    QuickButton("QR", QrAsync),
                 },
             };
 
@@ -759,6 +760,39 @@ public static class BankEntryEditor
             _bank.Replace(_entry.Id, export.Data, info);
             Close(true);
             return Task.CompletedTask;
+        }
+
+        // ── QR transfer ──────────────────────────────────────────────────────────
+
+        /// <summary>PKF1 .pk QR: show this mon as a scannable code, or receive one in its place.</summary>
+        private async Task QrAsync()
+        {
+            var choice = await EditorMenu.ShowAsync(_host, "QR TRANSFER", null,
+                new PadOption("Show as .pk QR", "qr", UiTokens.MenuBlue),
+                new PadOption("Scan a .pk QR", "scan", UiTokens.MenuBlue));
+            if (choice == "Show as .pk QR") await ShowEntityQrAsync();
+            else if (choice == "Scan a .pk QR") await ScanEntityQrAsync();
+        }
+
+        private async Task ShowEntityQrAsync()
+        {
+            var detail = _session.ReadEntity(0, 0);
+            var export = _session.ExportSlot(0, 0);
+            await QrPopup.ShowBinaryAsync(_host, $"{detail.SpeciesName.ToUpperInvariant()} · .PK QR",
+                QrEntityService.MakePayload(export.Data, _entry.Info.Generation, detail.SpeciesName));
+        }
+
+        /// <summary>
+        /// Receives a scanned mon over this entry. The scan preview is the confirmation,
+        /// so the replace is immediate - same shape as the bank's own file import.
+        /// </summary>
+        private async Task ScanEntityQrAsync()
+        {
+            var received = await QrEntityService.ScanAsync(_host, _engine,
+                "It replaces the Pokémon open in this editor.");
+            if (received is null) return;
+            _bank.Replace(_entry.Id, received.Data, received.Info);
+            Close(true);
         }
 
         // ── Row and focus chrome ─────────────────────────────────────────────────

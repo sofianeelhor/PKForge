@@ -153,6 +153,51 @@ public sealed class LegalizerService : ILegalizerService
         return new GenerationOutcome(true, "Legalized.");
     }
 
+    public GenerationOutcome LegalizeSlots(ISaveEngineSession session, IReadOnlyList<(int Box, int Slot)> slots,
+        Action<int, int>? onProgress = null, CancellationToken cancellationToken = default)
+    {
+        if (session is not SaveEngineSession engineSession)
+            return new GenerationOutcome(false, "Unsupported session type.");
+        var save = engineSession.SaveFile;
+
+        var repaired = 0;
+        var stuck = 0;
+        for (var i = 0; i < slots.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var (box, slot) = slots[i];
+            // Party (-1) and boxes have different accessors; the box path would go out
+            // of range and abort the whole batch behind the loading overlay.
+            var current = box == -1 ? save.GetPartySlotAtIndex(slot) : save.GetBoxSlotAtIndex(box, slot);
+            if (current.Species != 0 && !new LegalityAnalysis(current).Valid)
+            {
+                var candidate = save.Legalize(current);
+                if (new LegalityAnalysis(candidate).Valid)
+                {
+                    if (box == -1)
+                        save.SetPartySlotAtIndex(candidate, slot, EntityImportSettings.None);
+                    else
+                        save.SetBoxSlotAtIndex(candidate, box, slot, EntityImportSettings.None);
+                    repaired++;
+                }
+                else
+                {
+                    stuck++;
+                }
+            }
+            onProgress?.Invoke(i + 1, slots.Count);
+        }
+
+        return repaired switch
+        {
+            > 0 => new GenerationOutcome(true, $"Legalized {repaired} Pokémon." +
+                (stuck > 0 ? $" {stuck} had no legal repair and were left untouched." : string.Empty)),
+            0 when stuck > 0 => new GenerationOutcome(false,
+                $"None of the {stuck} flagged Pokémon had a legal repair; nothing was written."),
+            _ => new GenerationOutcome(false, "Nothing to legalize."),
+        };
+    }
+
     public GeneratedEntity? GenerateData(ISaveEngineSession session, GenerationRequest request) =>
         GenerateDataFromShowdown(session, BuildShowdownText(request, ((SaveEngineSession)session).SaveFile.Context),
             request.AllowUnsupportedSpecies);

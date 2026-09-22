@@ -1,19 +1,44 @@
+using System.Text;
 using PKForge.App.Theme;
 using SkiaSharp;
 using ZXing;
+using ZXing.Common;
 using ZXing.QrCode;
 
 namespace PKForge.App.Views;
 
-/// <summary>Renders text as a QR code in a themed window (Showdown sets, share codes).</summary>
+/// <summary>Renders text or binary payloads as QR codes in a themed window (Showdown sets, .pk transfers).</summary>
 public static class QrPopup
 {
     public static Task ShowAsync(Grid host, string title, string payload)
     {
+        var matrix = new QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, 512, 512);
+        return ShowAsync(host, title, matrix);
+    }
+
+    /// <summary>
+    /// Renders raw binary (a PKF1 .pk transfer envelope) as a byte-mode QR. The bytes
+    /// map one-to-one onto ISO-8859-1 code points - exactly the mapping ZXing-based
+    /// scanners reverse back into the same bytes - and level M keeps even the densest
+    /// payload (a 344-byte Legends: Arceus entity plus envelope) comfortably inside
+    /// one code.
+    /// </summary>
+    public static Task ShowBinaryAsync(Grid host, string title, byte[] payload)
+    {
+        var latin1 = Encoding.Latin1.GetString(payload);
+        var hints = new Dictionary<EncodeHintType, object>
+        {
+            [EncodeHintType.ERROR_CORRECTION] = ZXing.QrCode.Internal.ErrorCorrectionLevel.M,
+            [EncodeHintType.CHARACTER_SET] = "ISO-8859-1",
+        };
+        var matrix = new QRCodeWriter().encode(latin1, BarcodeFormat.QR_CODE, 512, 512, hints);
+        return ShowAsync(host, title, matrix);
+    }
+
+    private static Task ShowAsync(Grid host, string title, BitMatrix matrix)
+    {
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var writer = new QRCodeWriter();
-        var matrix = writer.encode(payload, BarcodeFormat.QR_CODE, 512, 512);
         var path = System.IO.Path.Combine(FileSystem.CacheDirectory, "qr-latest.png");
         using (var bitmap = new SKBitmap(matrix.Width, matrix.Height))
         {
