@@ -1,3 +1,4 @@
+using PKHeX.Core;
 using System.Reflection;
 using System.Text.Json;
 
@@ -58,6 +59,36 @@ internal static class UnboundData
         }
         return _movesByName.TryGetValue(name, out var id) ? id : 0;
     }
+
+    /// <summary>The national species id behind an Unbound ROM id, or 0 when the name
+    /// bridge misses. Every UI consumer (sprites, pickers, dex) speaks national ids,
+    /// so the session must translate before exposing a species. Form names fall back
+    /// to their base name by dropping trailing dash segments.</summary>
+    public static int NationalIdOf(int species)
+    {
+        var national = _nationalByName;
+        if (national is null)
+        {
+            var strings = GameInfo.GetStrings("en");
+            national = new Dictionary<string, int>(strings.specieslist.Length, StringComparer.OrdinalIgnoreCase);
+            for (var id = 1; id < strings.specieslist.Length; id++)
+                if (strings.specieslist[id].Length > 0 && !national.ContainsKey(strings.specieslist[id]))
+                    national[strings.specieslist[id]] = id;
+            _nationalByName = national;
+        }
+
+        var name = SpeciesName(species);
+        if (name.Length == 0) return 0;
+        if (national.TryGetValue(name, out var direct)) return direct;
+        while (name.Contains('-'))
+        {
+            name = name[..name.LastIndexOf('-')];
+            if (national.TryGetValue(name, out direct)) return direct;
+        }
+        return 0;
+    }
+
+    private static Dictionary<string, int>? _nationalByName;
     public static string ItemName(int item) => Name(ref _items, "unbound.items.txt", item);
     public static string AbilityName(int ability) => Name(ref _abilities, "unbound.abilities.txt", ability);
 

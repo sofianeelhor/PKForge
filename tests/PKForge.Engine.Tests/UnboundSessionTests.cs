@@ -266,7 +266,8 @@ public sealed class UnboundSessionTests
         var outcome = legalizer.Generate(session, 1, 0, new GenerationRequest(903, 30, false, null, null, null, null));
         Assert.True(outcome.Success, outcome.Message);
         var generated = session.ReadEntity(1, 0);
-        Assert.Equal(1256, generated.Species);
+        // Reads expose national ids (the UI speaks them); the ROM id stays internal.
+        Assert.Equal(903, generated.Species);
         Assert.Equal("Sneasler", generated.SpeciesName);
     }
 
