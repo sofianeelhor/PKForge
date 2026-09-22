@@ -171,12 +171,20 @@ internal static class RadicalRedData
     }
 
     /// <summary>The national species id behind a Radical Red species id, or 0 when the
-    /// name bridge misses (form names, egg slots, garbage).</summary>
+    /// name bridge misses. Form names ("Terapagos-Terastal") fall back to their base
+    /// name by dropping trailing dash segments until a national name matches.</summary>
     public static int NationalIdOf(int species)
     {
         LoadStrings();
         if (!IsKnownSpecies(species)) return 0;
-        return _nationalByName!.TryGetValue(SpeciesName(species), out var national) ? national : 0;
+        var name = SpeciesName(species);
+        if (_nationalByName!.TryGetValue(name, out var national)) return national;
+        while (name.Contains('-'))
+        {
+            name = name[..name.LastIndexOf('-')];
+            if (_nationalByName.TryGetValue(name, out national)) return national;
+        }
+        return 0;
     }
 
     // ── Move ids ──

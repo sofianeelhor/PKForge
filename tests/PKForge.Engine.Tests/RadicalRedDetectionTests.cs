@@ -133,6 +133,6 @@ public sealed class RadicalRedDetectionTests
 
         using var session = engine.OpenSession(bytes);
         Assert.Equal(3, session.Generation);
-        Assert.Equal(1370, session.ReadEntity(-1, 0).Species); // the trainer's Terapagos
+        Assert.Equal(1024, session.ReadEntity(-1, 0).Species); // national id of the trainer's Terapagos
     }
 }

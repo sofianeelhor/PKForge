@@ -139,7 +139,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
         var moves = mon.Moves;
         return new EntityDetail(
             box, slot, false,
-            species,
+            RadicalRedData.NationalIdOf(species),
             RadicalRedData.SpeciesName(species),
             0,
             mon.Nickname,
@@ -735,14 +735,14 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
         {
             var mon = TryMon(box, slot);
             slots.Add(mon is { LooksValid: true } valid
-                ? new SlotSummary(box, slot, valid.Species, valid.Nickname, valid.IsShiny, true)
+                ? new SlotSummary(box, slot, RadicalRedData.NationalIdOf(valid.Species), valid.Nickname, valid.IsShiny, true)
                 : new SlotSummary(box, slot, null, null, false, true));
         }
         for (var slot = 0; slot < 6; slot++)
         {
             var mon = TryMon(-1, slot);
             slots.Add(mon is { LooksValid: true } valid
-                ? new SlotSummary(-1, slot, valid.Species, valid.Nickname, valid.IsShiny, true)
+                ? new SlotSummary(-1, slot, RadicalRedData.NationalIdOf(valid.Species), valid.Nickname, valid.IsShiny, true)
                 : new SlotSummary(-1, slot, null, null, false, true));
         }
         return new SaveSnapshot("RADICALRED", 3, _originalBytes.ToArray(), slots, displayName);

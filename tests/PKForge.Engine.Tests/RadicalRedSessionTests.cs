@@ -43,7 +43,7 @@ public sealed class RadicalRedSessionTests
 
         var terapagos = session.ReadEntity(-1, 0);
         Assert.False(terapagos.IsEmpty);
-        Assert.Equal(1370, terapagos.Species);
+        Assert.Equal(1024, terapagos.Species); // national id: RR 1370 is Terapagos-Terastal, bridged by name
         Assert.Equal("Terapagos-Terastal", terapagos.SpeciesName);
         Assert.Equal("Terapagos", terapagos.Nickname);
         Assert.Equal("sri", terapagos.OriginalTrainer);
@@ -82,7 +82,7 @@ public sealed class RadicalRedSessionTests
         Assert.Equal(151, mons);
 
         var kirlia = session.ReadEntity(0, 0);
-        Assert.Equal(393, kirlia.Species); // Hoenn-internal id, not the national 280
+        Assert.Equal(281, kirlia.Species); // national id: the ROM stores Hoenn-internal 393
         Assert.Equal("Kirlia", kirlia.SpeciesName);
         Assert.Equal("Kirlia", kirlia.Nickname);
 
@@ -167,7 +167,7 @@ public sealed class RadicalRedSessionTests
         Assert.Equal(parasite, bytes.AsSpan(sections[13] + 0x450, 0xFF4 - 0x450).ToArray());
 
         using var reopened = new RadicalRedEngineSession(bytes);
-        Assert.Equal(393, reopened.ReadEntity(0, 3).Species); // the duplicated Kirlia
+        Assert.Equal(281, reopened.ReadEntity(0, 3).Species); // the duplicated Kirlia
         Assert.Equal(152, CountMons(reopened));
     }
 
@@ -188,7 +188,7 @@ public sealed class RadicalRedSessionTests
         Assert.True(moved.ReadEntity(-1, 5).IsEmpty);
         var boxed = moved.ReadEntity(1, 15);
         Assert.False(boxed.IsEmpty);
-        Assert.Equal(1370, boxed.Species);
+        Assert.Equal(1024, boxed.Species);
         Assert.Equal("Terapagos", boxed.Nickname);
         Assert.Equal(5, PartyCount(moved));
     }
@@ -220,7 +220,7 @@ public sealed class RadicalRedSessionTests
         Assert.False(session.ImportSlot(2, 29, new byte[8])); // garbage never imports
         Assert.True(session.ImportSlot(2, 29, export.Data));
         var imported = session.ReadEntity(2, 29);
-        Assert.Equal(393, imported.Species);
+        Assert.Equal(281, imported.Species);
         Assert.Equal("Kirlia", imported.Nickname);
     }
 

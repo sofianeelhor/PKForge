@@ -19,6 +19,7 @@ public sealed class PadMenu : IPadHandler
     private readonly Grid _host;
     private readonly Grid _overlay;
     private readonly GamepadRouter? _router;
+    private readonly ScrollView _scroll = null!;
     private int _index;
     private int _columns = 1;
 
@@ -68,8 +69,7 @@ public sealed class PadMenu : IPadHandler
             Grid.SetRow(button, i / _columns);
             Grid.SetColumn(button, i % _columns);
         }
-        View list = grid;
-
+        View list = _scroll = new ScrollView { Content = grid };
         var content = new VerticalStackLayout { Spacing = 10 };
         content.Children.Add(Kit.HeaderBar(title));
         if (!string.IsNullOrEmpty(message))
@@ -87,9 +87,8 @@ public sealed class PadMenu : IPadHandler
 
         // Fit-to-host: the window is capped to the Thor's actual screen (host.Height - 16),
         // never a fixed 460 that overflowed a ~360dp-tall screen. Shared scrim + pop-in.
-        var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 640);
+        var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 640, scroll: false);
         _overlay = Kit.AttachOverlay(host, window, () => Close(null));
-
         Highlight(0);
         _router?.Push(this);
     }
@@ -115,8 +114,10 @@ public sealed class PadMenu : IPadHandler
         // scaling clipped the folder against its container. The band IS the cursor.
         for (var i = 0; i < _optionViews.Count; i++)
             _optionViews[i].Selected = i == _index;
+        // Tall menus scroll; the highlight must ride along or the cursor vanishes
+        // below the fold.
+        _scroll.ScrollToAsync(_optionViews[_index], ScrollToPosition.MakeVisible, animated: false);
     }
-
     private void Close(string? result)
     {
         if (_router is not null) _router.Remove(this);
