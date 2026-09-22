@@ -10,6 +10,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 {
     private readonly SaveFile _save;
     private readonly byte[] _originalBytes;
+    private readonly string? _displayName;
     private bool _disposed;
 
     public SaveEngineSession(ReadOnlyMemory<byte> bytes, string? displayName = null)
@@ -21,8 +22,8 @@ public sealed class SaveEngineSession : ISaveEngineSession
         if (!SaveParser.TryGetSaveFile(_originalBytes.ToArray(), out var save) || save is null)
             throw new InvalidDataException("The selected bytes are not a recognized save file.");
         _save = save;
+        _displayName = displayName;
         SaveParser.ApplyVersionHint(_save, displayName);
-        Snapshot = BuildSnapshot(displayName);
     }
 
     /// <summary>
@@ -35,10 +36,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         _save = save;
         _originalBytes = [];
-        Snapshot = BuildSnapshot(displayName);
+        _displayName = displayName;
     }
 
-    public SaveSnapshot Snapshot { get; }
+    /// <summary>Built on demand: every read must reflect writes made through this
+    /// session (generate, import, move), not the state of the file at open time.</summary>
+    public SaveSnapshot Snapshot => BuildSnapshot(_displayName);
 
     internal PKM GetEntity(int box, int slot)
     {

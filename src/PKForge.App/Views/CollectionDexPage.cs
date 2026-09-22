@@ -126,31 +126,17 @@ public sealed class CollectionDexPage : IPadHandler
         Grid.SetColumnSpan(_overlay, Math.Max(1, _host.ColumnDefinitions.Count));
         Kit.AnimateIn(window);
 
-        var loader = LoadingOverlay.Show(_host, "COUNTING YOUR COLLECTION…", "Reading every bank entry and storage slot.");
-        _ = Task.Run(() =>
+        var loader = LoadingOverlay.Show(_host, "COUNTING YOUR COLLECTION…",
+            "Reading the bank and every game on your shelf.");
+        _ = Task.Run(async () =>
         {
-            var collection = new List<(int Species, bool Shiny)>();
-            var bank = IPlatformApplication.Current?.Services?.GetService<IBankService>();
-            if (bank is not null)
-                foreach (var entry in bank.GetAll())
-                    if (entry.Info.Species > 0) collection.Add((entry.Info.Species, entry.Info.Shiny));
-            var save = _session?.Snapshot.Slots;
-            if (save is not null)
-                foreach (var slot in save)
-                    if (slot.Species is > 0 && !slot.IsEgg) collection.Add((slot.Species.Value, slot.IsShiny));
+            var collection = await CollectAsync(_session);
 
             // National scope: the bank spans every generation, so the tracker always
             // counts all nine; "this game" is only a view filter (RefreshView).
-            var progress = CollectionDex.Compute(collection, CollectionDex.MaxSpecies, _data.SpeciesNames);
             MainThread.BeginInvokeOnMainThread(() =>
             {
-                _progressData = progress;
-                foreach (var (species, shiny) in collection)
-                {
-                    if (species < 1 || species >= _data.SpeciesNames.Count || _data.SpeciesNames[species].Length == 0) continue;
-                    _owned.Add(species);
-                    if (shiny) _shiny.Add(species);
-                }
+                Apply(collection);
                 _allIds.AddRange(Enumerable.Range(1, Math.Min(CollectionDex.MaxSpecies, _data.SpeciesNames.Count - 1))
                     .Where(id => _data.SpeciesNames[id].Length > 0));
                 // Loaded first: RefreshView warms the visible page and fills the cursor line.
@@ -161,6 +147,61 @@ public sealed class CollectionDexPage : IPadHandler
             });
         });
     }
+
+    /// <summary>Gathers every mon the collection actually holds: bank entries, the
+    /// open save (live, including unsaved generated/imported mons), and every other
+    /// save on the shelf. Dex flags are ignored by design — a caught-then-released
+    /// species is not something you can rebuild a living dex from.</summary>
+    private static async Task<List<(int Species, bool Shiny)>> CollectAsync(ISaveEngineSession? open)
+    {
+        var collection = new List<(int Species, bool Shiny)>();
+        var services = IPlatformApplication.Current?.Services;
+        var bank = services?.GetService<IBankService>();
+        if (bank is not null)
+            foreach (var entry in bank.GetAll())
+                if (entry.Info.Species > 0) collection.Add((entry.Info.Species, entry.Info.Shiny));
+        if (open is not null)
+            foreach (var slot in open.Snapshot.Slots)
+                if (slot.Species is > 0 && !slot.IsEgg) collection.Add((slot.Species.Value, slot.IsShiny));
+
+        // The other games on the shelf: mons still living in their cartridges count
+        // toward the national tracker even though they were never deposited.
+        var picker = services?.GetService<ViewModels.SavePickerViewModel>();
+        var access = services?.GetService<ISaveFileAccess>();
+        var engine = services?.GetService<ISaveEngine>();
+        var openId = services?.GetService<ISaveSessionService>()?.Current?.Document.DocumentId;
+        if (picker is not null && access is not null && engine is not null)
+            foreach (var save in picker.Saves)
+            {
+                if (save.DocumentId == openId) continue;
+                try
+                {
+                    var bytes = await access.ReadAsync(save.DocumentId);
+                    using var session = engine.OpenSession(bytes, save.GameLabel);
+                    foreach (var slot in session.Snapshot.Slots)
+                        if (slot.Species is > 0 && !slot.IsEgg) collection.Add((slot.Species.Value, slot.IsShiny));
+                }
+                catch (Exception)
+                {
+                    // A save that no longer parses (revoked grant, mid-write file)
+                    // must not blank the whole tracker; skip it.
+                }
+            }
+        return collection;
+    }
+
+    private void Apply(List<(int Species, bool Shiny)> collection)
+    {
+        _progressData = CollectionDex.Compute(collection, CollectionDex.MaxSpecies, _data.SpeciesNames);
+        _owned.Clear();
+        _shiny.Clear();
+        foreach (var (species, shiny) in collection)
+        {
+            if (species < 1 || species >= _data.SpeciesNames.Count || _data.SpeciesNames[species].Length == 0) continue;
+            _owned.Add(species);
+            if (shiny) _shiny.Add(species);
+        }
+     }
 
     private void RefreshChrome()
     {
@@ -464,22 +505,7 @@ public sealed class CollectionDexPage : IPadHandler
 
             // A catch may have added a species; recount before returning. National scope,
             // same as the initial count: a catch must never shrink the header to game scope.
-            var bank = IPlatformApplication.Current?.Services?.GetService<IBankService>();
-            var collection = new List<(int, bool)>();
-            if (bank is not null)
-                foreach (var entry in bank.GetAll())
-                    if (entry.Info.Species > 0) collection.Add((entry.Info.Species, entry.Info.Shiny));
-            if (_session is not null)
-                foreach (var slot in _session.Snapshot.Slots)
-                    if (slot.Species is > 0 && !slot.IsEgg) collection.Add((slot.Species.Value, slot.IsShiny));
-            _progressData = CollectionDex.Compute(collection, CollectionDex.MaxSpecies, _data.SpeciesNames);
-            _owned.Clear();
-            _shiny.Clear();
-            foreach (var (species, shiny) in collection)
-            {
-                _owned.Add(species);
-                if (shiny) _shiny.Add(species);
-            }
+            Apply(await CollectAsync(_session));
             RefreshView();
         }
     }

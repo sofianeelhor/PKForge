@@ -19,6 +19,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     private readonly byte[] _originalBytes;
     private readonly int[] _sections;
     private readonly byte[] _stream;
+    private readonly string? _displayName;
     private bool _disposed;
 
     public const int Boxes = 25; // 0-18 stream, 19-23 fragmented, 24 preset
@@ -31,10 +32,12 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
             throw new InvalidDataException("These bytes are not a Pokémon Unbound save.");
         _sections = SectionOffsets(_data);
         _stream = ReadStream(_data, _sections);
-        Snapshot = BuildSnapshot(displayName);
+        _displayName = displayName;
     }
 
-    public SaveSnapshot Snapshot { get; }
+    /// <summary>Built on demand so slot reads reflect mutations, not open-time state.</summary>
+    public SaveSnapshot Snapshot => BuildSnapshot(_displayName);
+
 
     public int Generation => 3;
     public IReadOnlyList<string> GameNames => ["Unbound"];
