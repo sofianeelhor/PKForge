@@ -199,6 +199,9 @@ public static class PartyView
         var labelFont = LabelFont(Math.Max(12f, r.Height * 0.105f));
         using (var fg = new SKPaint { Color = nameColor, IsAntialias = true })
             canvas.DrawText(detail.Nickname, tx, r.Top + r.Height * 0.3f, SKTextAlign.Left, nameFont, fg);
+        if (detail.IsShiny)
+            BoxGridRenderer.DrawSparkle(canvas, r.Right - r.Width * 0.14f, r.Top + r.Height * 0.17f,
+                Math.Min(r.Width, r.Height) * 0.075f, BoxGridRenderer.SparklePaint);
         if (detail.Gender is 0 or 1)
         {
             var nameWidth = nameFont.MeasureText(detail.Nickname);

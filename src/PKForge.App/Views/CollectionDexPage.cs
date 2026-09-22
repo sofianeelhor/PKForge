@@ -389,7 +389,8 @@ public sealed class CollectionDexPage : IPadHandler
 
             if (owned) DrawPokeBall(canvas, rect.Right - rect.Width * 0.16f, rect.Bottom - rect.Height * 0.16f, rect.Width * 0.13f);
             if (_shiny.Contains(id))
-                canvas.DrawCircle(rect.Left + rect.Width * 0.14f, rect.Bottom - rect.Height * 0.16f, rect.Width * 0.07f, gold);
+                BoxGridRenderer.DrawSparkle(canvas, rect.Left + rect.Width * 0.14f, rect.Bottom - rect.Height * 0.16f,
+                    rect.Width * 0.075f, BoxGridRenderer.SparklePaint);
 
             if (index == _cursor)
             {
