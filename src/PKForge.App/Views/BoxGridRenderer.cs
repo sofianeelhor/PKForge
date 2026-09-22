@@ -201,38 +201,21 @@ public static class BoxGridRenderer
         canvas.DrawImage(image, dest, SpriteSampling);
     }
 
-    /// <summary>The shiny star as pixel art: a 9x9 glyph of unantialiased squares, the
-    /// same shape as the bundled icon_shiny.png asset, so the box grid, the Bank grid,
-    /// the search results and the collection dex all show one identical star.</summary>
-    private static readonly string[] StarGlyph =
-    {
-        "....#....",
-        "...###...",
-        "...###...",
-        "#########",
-        ".#######.",
-        "..#####..",
-        "..#.#.#..",
-        ".##...##.",
-        ".#.....#.",
-    };
-
+    /// <summary>Four-point gold sparkle star for shinies - shared with the Bank grid.</summary>
     public static void DrawSparkle(SKCanvas canvas, float cx, float cy, float radius, SKPaint paint)
     {
-        var cells = StarGlyph.Length;
-        var cell = radius * 2f / cells;
-        var left = cx - radius;
-        var top = cy - radius;
-        var wasAntialias = paint.IsAntialias;
-        paint.IsAntialias = false;
-        for (var row = 0; row < cells; row++)
-        {
-            var line = StarGlyph[row];
-            for (var col = 0; col < line.Length; col++)
-                if (line[col] == '#')
-                    canvas.DrawRect(left + col * cell, top + row * cell, left + (col + 1) * cell, top + (row + 1) * cell, paint);
-        }
-        paint.IsAntialias = wasAntialias;
+        using var path = new SKPath();
+        var waist = radius * 0.32f;
+        path.MoveTo(cx, cy - radius);
+        path.LineTo(cx + waist, cy - waist);
+        path.LineTo(cx + radius, cy);
+        path.LineTo(cx + waist, cy + waist);
+        path.LineTo(cx, cy + radius);
+        path.LineTo(cx - waist, cy + waist);
+        path.LineTo(cx - radius, cy);
+        path.LineTo(cx - waist, cy - waist);
+        path.Close();
+        canvas.DrawPath(path, paint);
     }
 
     /// <summary>The legality sweep's verdict pip: green (legal) or red (illegal),
