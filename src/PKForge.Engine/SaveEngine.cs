@@ -49,7 +49,18 @@ public sealed class SaveEngine : ISaveEngine
 
     public bool Validate(ReadOnlyMemory<byte> bytes)
     {
-        try { return SaveParser.TryGetSaveFile(bytes.ToArray(), out _); }
+        // Route exactly like Open/OpenSession: SafeSaveWriter gates every write on this,
+        // so a candidate is valid precisely when the engine would reopen it. Stock
+        // PKHeX rejects Unbound's CFRU sector signature outright, and Radical Red only
+        // separates from vanilla FRLG structurally — both (and the RetroArch containers
+        // they ride in) must clear the romhack routes before the stock parser runs.
+        try
+        {
+            var decoded = RetroArchSaveContainer.Decode(bytes.Span);
+            if (SaveParser.IsPokemonUnbound(decoded)) return true;
+            if (SaveParser.IsPokemonRadicalRed(decoded)) return true;
+            return SaveParser.TryGetSaveFile(bytes.ToArray(), out _);
+        }
         catch (InvalidDataException) { return false; }
     }
 

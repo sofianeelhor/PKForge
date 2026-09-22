@@ -23,7 +23,7 @@ so the structure never has to be rethought, only filled in. **Status current as 
 | Empty slot menu | Generate (wizard) · Paste Showdown · Import .pk · Wonder cards | DONE |
 | L/R or ◀ ▶ | box paging | DONE |
 | TOOLS | Organizer (bulk move/export/release/→Bank) · .pk import · Showdown-team import · box export · Living Dex · Batch editor | DONE (batch editor = placeholder) |
-| SAVE DATA | Trainer card · Bag/items · Pokédex complete · Wonder cards · Restore points | DONE |
+| SAVE DATA | Trainer card · Bag/items · Pokédex complete · Wonder cards · Byte manipulation (hex editor) · Restore points | DONE |
 | Second screen | mon summary + **stat radar**, dex preview, game hero art | DONE |
 
 ### Editor panel (selected Pokémon) — in-save AND bank (BankEntryEditor)

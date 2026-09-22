@@ -1460,6 +1460,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             new PadOption("Pokédex", IconPath: "pokedex"),
             new PadOption("Fashion", IconPath: "trainer"),
             new PadOption("Trainer records", IconPath: "trainer"),
+            new PadOption("Byte manipulation", IconPath: "hex"),
             new PadOption("Wonder cards", IconPath: "events"),
             new PadOption("Export modified save", IconPath: "folder"),
             new PadOption("Restore points", IconPath: "credits"),
@@ -1478,7 +1479,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
             case "Pokédex": await ShowDexMenuAsync(); return;
             case "Fashion": await ShowFashionAsync(); return;
             case "Trainer records": await ShowTrainerRecordsAsync(); return;
-            case "Export modified save": await ExportModifiedSaveAsync(session); return;
+            case "Byte manipulation": await HexEditorPage.ShowAsync(_hostGrid, _viewModel, session); return;
             case "Wonder cards":
             {
                 var wonderChoice = await PadMenu.ShowAsync(_hostGrid, "WONDER CARDS", null,
