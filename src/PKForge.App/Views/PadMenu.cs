@@ -43,16 +43,15 @@ public sealed class PadMenu : IPadHandler
         _options = options;
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
 
-        // Menus columnize by size: 1-4 options stay a single column, 5-12 split in two,
-        // bigger menus go three-wide. Long labels force the single column so text fits.
-        var longLabels = options.Any(o => o.Label.Length > 30);
+        // Menus columnize by what the labels need: the longest label decides how many
+        // columns fit without marqueeing (~16 chars per 200dp column at 15px).
+        var longest = options.Length == 0 ? 0 : options.Max(o => o.Label.Length);
         _columns = options.Length switch
         {
             <= 4 => 1,
-            <= 12 => 2,
-            _ => 3,
+            <= 12 => longest > 24 ? 1 : 2,
+            _ => longest > 16 ? 2 : 3,
         };
-        if (longLabels) _columns = 1;
         var buttonHeight = _columns == 1 ? 58.0 : _columns == 2 ? 52.0 : 46.0;
 
         var grid = new Grid { ColumnSpacing = 8, RowSpacing = 8 };
@@ -88,7 +87,7 @@ public sealed class PadMenu : IPadHandler
 
         // Fit-to-host: the window is capped to the Thor's actual screen (host.Height - 16),
         // never a fixed 460 that overflowed a ~360dp-tall screen. Shared scrim + pop-in.
-        var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 460);
+        var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 640);
         _overlay = Kit.AttachOverlay(host, window, () => Close(null));
 
         Highlight(0);

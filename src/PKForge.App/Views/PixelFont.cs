@@ -66,7 +66,7 @@ public static class PixelFont
 
     private static SKTypeface? _fallback;
 
-    private static Task WarmFallbackAsync()
+    public static Task WarmFallbackAsync()
     {
         lock (Gate)
             return _fallbackTask ??= Task.Run(() =>
@@ -74,7 +74,8 @@ public static class PixelFont
                 SKTypeface face;
                 try
                 {
-                    using var stream = FileSystem.OpenAppPackageFileAsync("Fonts/MPLUSRounded1c-Regular.ttf").GetAwaiter().GetResult();
+                    // MauiFont resources land at the assets root, not in Fonts/.
+                    using var stream = FileSystem.OpenAppPackageFileAsync("MPLUSRounded1c-Regular.ttf").GetAwaiter().GetResult();
                     using var bytes = new MemoryStream();
                     stream.CopyTo(bytes);
                     var cache = System.IO.Path.Combine(FileSystem.CacheDirectory, "MPLUSRounded1c-Regular.ttf");

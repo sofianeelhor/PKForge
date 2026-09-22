@@ -18,7 +18,6 @@ public static class PartyView
     private const int Columns = 2;
     private const int Rows = 3;
 
-    private static SKFont? _nameFontPixel;
     private static SKFont? _nameFontFallback;
     private static SKFont? _smallFont;
     private static SKFont? _labelFont;
@@ -257,17 +256,20 @@ public static class PartyView
     }
 
 
-    /// <summary>The nickname font: the pixel face when it covers every glyph of the
-    /// text, else the system face (Japanese and accented nicknames). Cached per kind —
-    /// one static font chosen from the first nickname ever painted would pin every
-    /// later CJK nickname to a face that cannot draw it.</summary>
-    private static SKFont NameFontFor(string text, float size)
+    /// <summary>Nicknames always use the bundled M PLUS Rounded face — the UI's own
+    /// rounded style, full Latin + Japanese coverage. No per-glyph probing: the pixel
+    /// subset's cmap claims coverage it cannot draw, and probing has failed on device.</summary>
+    private static SKFont NameFontFor(string _, float size)
     {
-        var pixel = _nameFontPixel ??= new SKFont(PixelFont.Face, size) { Edging = SKFontEdging.Antialias, Embolden = true };
-        return text.All(c => pixel.Typeface.GetGlyph(c) != 0)
-            ? pixel
-            : _nameFontFallback ??= new SKFont(PixelFont.FallbackFace, size) { Edging = SKFontEdging.Antialias };
+        // Re-resolve every paint until the async face load lands: caching on the first
+        // call pins SKTypeface.Default (no kana) for the whole process — ASCII nicknames
+        // rendered fine while every non-ASCII one was tofu.
+        var face = PixelFont.FallbackFace;
+        if (_nameFontFallback is null || _nameFontFallback.Typeface != face)
+            _nameFontFallback = new SKFont(face, size) { Edging = SKFontEdging.Antialias };
+        return _nameFontFallback;
     }
+
     private static SKFont FontFor(string text, float size) => PixelFont.For(text, size);
 
     /// <summary>The gender glyphs as clean vectors: blue male arrow, pink female cross.</summary>
