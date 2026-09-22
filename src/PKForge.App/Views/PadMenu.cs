@@ -69,7 +69,7 @@ public sealed class PadMenu : IPadHandler
             Grid.SetRow(button, i / _columns);
             Grid.SetColumn(button, i % _columns);
         }
-        View list = _scroll = new ScrollView { Content = grid };
+
         var content = new VerticalStackLayout { Spacing = 10 };
         content.Children.Add(Kit.HeaderBar(title));
         if (!string.IsNullOrEmpty(message))
@@ -82,12 +82,14 @@ public sealed class PadMenu : IPadHandler
                 LineBreakMode = LineBreakMode.WordWrap,
             });
         }
-        content.Children.Add(list);
+        content.Children.Add(grid);
         content.Children.Add(Kit.HintBar(("A", "CHOOSE", null), ("B", "CANCEL", () => Close(null))));
 
+        // PadMenu owns the ScrollView (same structure as OverlayWindow's default) so
+        // Highlight can scroll the cursor into view; the window caps to the host.
+        View list = _scroll = new ScrollView { Content = content };
         // Fit-to-host: the window is capped to the Thor's actual screen (host.Height - 16),
-        // never a fixed 460 that overflowed a ~360dp-tall screen. Shared scrim + pop-in.
-        var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 640, scroll: false);
+        var window = Kit.OverlayWindow(host, list, preferredMaxWidth: 640, scroll: false);
         _overlay = Kit.AttachOverlay(host, window, () => Close(null));
         Highlight(0);
         _router?.Push(this);

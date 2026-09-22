@@ -195,8 +195,8 @@ public static class PartyView
         var nameColor = fainted ? FaintName : SKColors.White;
 
         var nameFont = NameFontFor(detail.Nickname, Math.Max(20f, r.Height * 0.175f));
-        var smallFont = _smallFont ??= FontFor("Lv.", Math.Max(15f, r.Height * 0.13f));
-        var labelFont = _labelFont ??= FontFor("HP", Math.Max(12f, r.Height * 0.105f));
+        var smallFont = SmallFont(Math.Max(15f, r.Height * 0.13f));
+        var labelFont = LabelFont(Math.Max(12f, r.Height * 0.105f));
         using (var fg = new SKPaint { Color = nameColor, IsAntialias = true })
             canvas.DrawText(detail.Nickname, tx, r.Top + r.Height * 0.3f, SKTextAlign.Left, nameFont, fg);
         if (detail.Gender is 0 or 1)
@@ -216,14 +216,20 @@ public static class PartyView
         using (var fg = new SKPaint { Color = fainted ? FaintLv : LvColor, IsAntialias = true })
             canvas.DrawText($"Lv.{detail.Level}", tx + ballSize + 8, r.Top + r.Height * 0.53f, SKTextAlign.Left, smallFont, fg);
 
-        // HP: label, thin track, threshold fill, numbers right of the bar.
+
+        // HP: label, thin track, threshold fill, numbers right of the bar. The bar
+        // sizes to the MEASURED numbers — a fixed 90px reserve let wider faces
+        // (Roboto before the pixel face loads) overlap the bar.
         var maxHp = detail.Stats is { Count: 6 } ? detail.Stats[0] : 0;
         if (maxHp > 0)
         {
             using (var fg = new SKPaint { Color = HpLabel, IsAntialias = true })
                 canvas.DrawText("HP", tx, r.Top + r.Height * 0.79f, SKTextAlign.Left, labelFont, fg);
 
-            var bar = new SKRect(tx + labelFont.MeasureText("HP") + 12, r.Top + r.Height * 0.7f, textRight - 90, r.Top + r.Height * 0.8f);
+            var numbers = $"{detail.CurrentHp}/{maxHp}";
+            var numbersWidth = smallFont.MeasureText(numbers);
+            var bar = new SKRect(tx + labelFont.MeasureText("HP") + 12, r.Top + r.Height * 0.7f,
+                textRight - numbersWidth - 10, r.Top + r.Height * 0.8f);
             using (var track = new SKPaint { Color = Track, IsAntialias = true })
                 canvas.DrawRoundRect(bar, 3, 3, track);
             var ratio = Math.Clamp(detail.CurrentHp / (float)maxHp, 0f, 1f);
@@ -235,9 +241,22 @@ public static class PartyView
             }
 
             using (var fg = new SKPaint { Color = nameColor, IsAntialias = true })
-                canvas.DrawText($"{detail.CurrentHp}/{maxHp}", textRight, r.Top + r.Height * 0.79f, SKTextAlign.Right, smallFont, fg);
+                canvas.DrawText(numbers, textRight, r.Top + r.Height * 0.79f, SKTextAlign.Right, smallFont, fg);
         }
     }
+
+    /// <summary>Constant-label fonts that re-resolve until the async pixel face
+    /// lands — a cached SKTypeface.Default pins Roboto (wider) for the process and
+    /// the HP numbers outgrow their reserve.</summary>
+    private static SKFont SmallFont(float size) =>
+        _smallFont is null || _smallFont.Typeface != PixelFont.Face
+            ? _smallFont = new SKFont(PixelFont.Face, size) { Edging = SKFontEdging.Antialias, Embolden = true }
+            : _smallFont;
+
+    private static SKFont LabelFont(float size) =>
+        _labelFont is null || _labelFont.Typeface != PixelFont.Face
+            ? _labelFont = new SKFont(PixelFont.Face, size) { Edging = SKFontEdging.Antialias, Embolden = true }
+            : _labelFont;
 
     /// <summary>Beveled angular panel path: chamfered corners, big cut top-right.</summary>
     private static SKPath BevelPath(SKRect r, float _)
