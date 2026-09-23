@@ -52,13 +52,16 @@ public static class CollectionCenter
             var dirs = nodes.Where(n => n.IsDirectory).ToList();
 
             var rows = new List<PickItem>();
-            if (files.Count > 0)
+            // Community Pokémon arriving in the Bank are fabricated as far as this save's
+            // history goes, so Hardcore mode leaves the shelf browsable but offers no deposit.
+            if (files.Count > 0 && HardcoreMode.Guard.CanCreateMon)
                 rows.Add(new PickItem(-1, $"Deposit this box in the Bank ({files.Count} Pokémon)"));
             rows.AddRange(dirs.Select((d, i) => new PickItem(i, d.Name)));
 
             if (rows.Count == 0)
             {
-                await PadMenu.ShowAsync(host, title.ToUpperInvariant(), "This folder holds nothing usable.", "OK");
+                await PadMenu.ShowAsync(host, title.ToUpperInvariant(),
+                    files.Count > 0 ? HardcoreMode.StatusFor(SaveAction.CreateMon) : "This folder holds nothing usable.", "OK");
                 trail.Pop();
                 continue;
             }
@@ -88,6 +91,11 @@ public static class CollectionCenter
     private static async Task<bool> DepositBoxAsync(Grid host, CommunityBoxService service,
         IBankService bank, ISaveEngine engine, string boxName, IReadOnlyList<CommunityNode> files)
     {
+        if (HardcoreMode.Blocks(SaveAction.CreateMon, out var hardcoreStatus))
+        {
+            await PadMenu.ShowAsync(host, "HARDCORE MODE", hardcoreStatus, "OK");
+            return false;
+        }
         var boxes = (files.Count + FileBankService.SlotsPerBox - 1) / FileBankService.SlotsPerBox;
         var confirmed = await PadMenu.ConfirmAsync(host, "DEPOSIT IN THE BANK",
             $"\"{boxName}\" holds {files.Count} Pokémon. They will arrive in {(boxes == 1 ? "a fresh Bank box" : $"{boxes} fresh Bank boxes")}.",

@@ -6,27 +6,29 @@ namespace PKForge.Engine.Tests;
 public sealed class GameIdentificationTests
 {
     [Theory]
-    [InlineData("Pokemon LeafGreen.sav", GameVersion.LG)]
-    [InlineData("Pokemon - LeafGreen Version (USA, Europe).sav", GameVersion.LG)]
-    [InlineData("Pokemon FireRed.sav", GameVersion.FR)]
-    [InlineData("Pokemon - FireRed Version (USA, Europe).sav", GameVersion.FR)]
-    public void FireRedAndLeafGreenFilenameHintsResolveTheEdition(string fileName, GameVersion expected)
+    [InlineData("Pokémon LeafGreen", GameVersion.LG)]
+    [InlineData("Pokémon FireRed", GameVersion.FR)]
+    public void TheChosenGameResolvesTheFireRedLeafGreenEdition(string chosenGame, GameVersion expected)
     {
         var save = new SAV3FRLG();
 
-        SaveParser.ApplyVersionHint(save, fileName);
+        SaveParser.ApplyVersionHint(save, chosenGame);
 
         Assert.Equal(expected, save.Version);
     }
 
-    [Fact]
-    public void AmbiguousFireRedLeafGreenSaveKeepsTheParserDefault()
+    [Theory]
+    [InlineData("Pokemon - LeafGreen Version (USA, Europe).sav")]
+    [InlineData("pokemon.gba.sav")]
+    [InlineData("Pokémon FireRed / LeafGreen")]
+    public void FileNamesAndUnchosenLabelsNeverPickTheEdition(string name)
     {
         var save = new SAV3FRLG();
+        var parserDefault = save.Version;
 
-        SaveParser.ApplyVersionHint(save, "pokemon.gba.sav");
+        SaveParser.ApplyVersionHint(save, name);
 
-        Assert.Equal(GameVersion.FR, save.Version);
+        Assert.Equal(parserDefault, save.Version);
     }
 
     [Theory]

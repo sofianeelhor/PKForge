@@ -1,9 +1,21 @@
 using PKForge.Chrome;
 using SkiaSharp;
+using ChromePreview;
 
 // Renders the Gen-5 chrome to PNG previews so the design can be iterated off-device
 // against the reference screenshots. Usage: dotnet run --project tools/ChromePreview
 var root = FindRepoRoot();
+if (args.Length > 0 && args[0] == "icons")
+{
+    // Regenerates the px_* pixel icons from PixelIcons.cs, then renders the vocabulary sheet.
+    // Usage: dotnet run --project tools/ChromePreview -- icons [sheet-output-dir]
+    IconSheet.Generate(Path.Combine(root, "src/PKForge.App/Resources/UI/pksm"));
+    var sheetDir = args.Length > 1 ? args[1] : Path.Combine(root, "tools/ChromePreview/out");
+    Directory.CreateDirectory(sheetDir);
+    IconSheet.Render(Path.Combine(root, "src/PKForge.App/Resources/UI/pksm"),
+        Path.Combine(root, "src/PKForge.App/Resources/Fonts/NDS12.ttf"), Path.Combine(sheetDir, "icon_sheet.png"));
+    return;
+}
 var art = new PksmArt();
 foreach (var f in Directory.GetFiles(Path.Combine(root, "src/PKForge.App/Resources/UI/pksm"), "*.png"))
     art.Supply(Path.GetFileName(f), File.ReadAllBytes(f));

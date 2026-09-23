@@ -177,7 +177,7 @@ public sealed class CollectionDexPage : IPadHandler
                 try
                 {
                     var bytes = await access.ReadAsync(save.DocumentId);
-                    using var session = engine.OpenSession(bytes, save.GameLabel);
+                    using var session = engine.OpenSession(bytes, save.EngineHint, save.Format);
                     foreach (var slot in session.Snapshot.Slots)
                         if (slot.Species is > 0 && !slot.IsEgg) collection.Add((slot.Species.Value, slot.IsShiny));
                 }
@@ -495,8 +495,8 @@ public sealed class CollectionDexPage : IPadHandler
         var id = IdAt(_page, _cursor);
         var name = _data.SpeciesNames[id];
         var choice = await PadMenu.ShowAsync(_host, $"#{id:000} {name.ToUpperInvariant()}", null,
-            new PadOption("How to get", IconPath: "search"),
-            new PadOption("Close", IconPath: "quit"));
+            new PadOption("How to get", IconPath: "map"),
+            new PadOption("Close", IconPath: "close"));
         if (choice == "How to get")
         {
             // Straight to the answer for THIS Pokémon: no species wizard, and it works

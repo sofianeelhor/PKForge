@@ -2,8 +2,11 @@ using PKForge.Domain;
 
 namespace PKForge.Infrastructure;
 
-/// <summary>Loads a platform document into an isolated engine snapshot.</summary>
-public sealed class SaveSessionService(ISaveFileAccess access, ISaveEngine engine) : ISaveSessionService
+/// <summary>
+/// Loads a platform document into an isolated engine snapshot. When the user told PKForge
+/// which game a save is (<see cref="ISaveIdentityStore"/>), that choice picks the engine route.
+/// </summary>
+public sealed class SaveSessionService(ISaveFileAccess access, ISaveEngine engine, ISaveIdentityStore? identities = null) : ISaveSessionService
 {
     public SaveSession? Current { get; private set; }
 
@@ -15,7 +18,8 @@ public sealed class SaveSessionService(ISaveFileAccess access, ISaveEngine engin
         ArgumentNullException.ThrowIfNull(document);
         var bytes = await access.ReadAsync(document.DocumentId, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        var engineSession = engine.OpenSession(bytes, document.DisplayName);
+        var format = SaveIdentityRules.FormatOfChoice(identities?.Get(document.DocumentId)?.GameChoiceId);
+        var engineSession = engine.OpenSession(bytes, document.DisplayName, format);
         CurrentSession?.Dispose();
         var session = new SaveSession(document, engineSession.Snapshot);
         CurrentSession = engineSession;

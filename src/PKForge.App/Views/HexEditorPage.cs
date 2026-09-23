@@ -304,8 +304,8 @@ public sealed class HexEditorPage : IPadHandler
         var undoLabel = $"Undo all changes ({_edits.Count})";
         var options = new List<PadOption> { new("Jump to offset", IconPath: "search") };
         if (_edits.Count > 0)
-            options.Add(new PadOption(undoLabel, IconPath: "hex"));
-        options.Add(new PadOption("Close"));
+            options.Add(new PadOption(undoLabel, IconPath: "restore"));
+        options.Add(new PadOption("Close", IconPath: "close"));
 
         var choice = await PadMenu.ShowAsync(_host, "BYTE EDITOR", $"{_edits.Count} byte(s) changed.", options.ToArray());
         if (choice == "Jump to offset")
@@ -416,6 +416,13 @@ public sealed class HexEditorPage : IPadHandler
     /// write), then MarkWritten + reopen so every surface re-parses the patched bytes.</summary>
     private async Task CommitAsync()
     {
+        // This commit bypasses RunMutationAsync (the diff goes straight to the writer),
+        // so it carries the Hardcore guard itself; the menu entry is hidden as well.
+        if (HardcoreMode.Blocks(SaveAction.WriteRawBytes, out var hardcoreStatus))
+        {
+            _viewModel.Status = hardcoreStatus;
+            return;
+        }
         var services = IPlatformApplication.Current?.Services;
         var sessions = services?.GetService<ISaveSessionService>();
         var writer = services?.GetService<ISafeSaveWriter>();

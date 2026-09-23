@@ -30,7 +30,26 @@ public sealed record DetectedSave(
     DateTimeOffset? LastModified,
     int Generation = 0,
     string? TrainerName = null,
-    string? PlayTime = null);
+    string? PlayTime = null,
+    SaveIdentityGuess? Guess = null,
+    string? RomFileName = null,
+    string? FolderHint = null,
+    ResolvedSaveIdentity? Identity = null,
+    string? Language = null)
+{
+    /// <summary>
+    /// The name handed to the engine: the chosen game's label, so the edition of a
+    /// shared layout (FireRed vs LeafGreen, Ruby vs Sapphire) follows the user's choice
+    /// and never the file name or a custom display name.
+    /// </summary>
+    public string EngineHint => Identity?.GameLabel ?? Guess?.Label ?? GameLabel;
+
+    /// <summary>The engine route: the user's game choice, else what the bytes call for.</summary>
+    public SaveFormat Format => Identity?.Format ?? Guess?.Format ?? SaveFormat.Auto;
+
+    /// <summary>Label used for box-art lookup (never a custom name).</summary>
+    public string? ArtLabel => Identity is { } identity ? identity.ArtLabel : Guess is { } guess ? guess.ArtLabel : GameLabel;
+}
 
 /// <summary>Selects a folder through the host platform, persisting read/write access.</summary>
 public interface IFolderPicker

@@ -49,7 +49,7 @@ public static class DaycareEditor
             {
                 var result = s.WithdrawDaycareToFirstEmptyBox(facilityIndex, slot.Index);
                 return new GenerationOutcome(true, $"{result.SpeciesName} moved to Box {result.Box + 1}, Slot {result.Slot + 1}.");
-            }, Math.Max(0, viewModel.SelectedSlot), refreshSlot: false);
+            }, Math.Max(0, viewModel.SelectedSlot), refreshSlot: false, action: SaveAction.Move);
             if (!saved) return;
         }
     }

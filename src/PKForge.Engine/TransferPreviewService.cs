@@ -11,13 +11,24 @@ public enum TransferLegality
     Unknown,
 }
 
-/// <summary>The pre-flight diff for one transfer: what the conversion changes, and whether the result is legal.</summary>
-public sealed record TransferPreview(IReadOnlyList<string> Changes, TransferLegality Legality, IReadOnlyList<string> LegalityLines)
+/// <summary>
+/// The pre-flight diff for one transfer: what the conversion changes, whether the result is
+/// legal, and the risks a backwards (downgrade) conversion takes. Warnings never block a
+/// transfer; they are the user's informed-consent text.
+/// </summary>
+public sealed record TransferPreview(
+    IReadOnlyList<string> Changes, TransferLegality Legality, IReadOnlyList<string> LegalityLines,
+    IReadOnlyList<string> Warnings, bool Backwards = false)
 {
+    public TransferPreview(IReadOnlyList<string> changes, TransferLegality legality, IReadOnlyList<string> legalityLines)
+        : this(changes, legality, legalityLines, [], false)
+    {
+    }
+
     public string Verdict => Legality switch
     {
         TransferLegality.Legal => "Legal ✓",
-        TransferLegality.Illegal => "Illegal ✗",
+        TransferLegality.Illegal => "Likely flagged as illegal ✗ (the game still loads it)",
         _ => "Legality unknown",
     };
 }
@@ -55,20 +66,24 @@ public sealed class TransferPreviewService
         var before = EntityFormat.GetFromBytes(entityBytes, context);
         if (before is null || before.Species == 0)
             return null;
-        if (!scratch.ImportSlot(box, slot, entityBytes))
-            return null;
-
         // Romhack engine sessions cannot hand back the landed entity, so the diff is
         // honestly unavailable for them; the transfer itself is unaffected.
         if (scratch is not SaveEngineSession session)
+        {
+            if (!scratch.ImportSlot(box, slot, entityBytes))
+                return null;
             return new TransferPreview(
                 ["Conversion details are not available for this game's engine; the transfer itself is unchanged."],
                 TransferLegality.Unknown,
                 ["This game has no offline legality analysis."]);
+        }
 
+        var conversion = session.ImportSlotWithReport(box, slot, entityBytes, out _);
+        if (conversion is null)
+            return null;
         var after = session.GetEntity(box, slot);
         var legality = AnalyzeLegality(session, box, slot, out var lines);
-        return new TransferPreview([.. Diff(before, after)], legality, lines);
+        return new TransferPreview([.. Diff(before, after)], legality, lines, conversion.Warnings, conversion.Backwards);
     }
 
     private TransferLegality AnalyzeLegality(SaveEngineSession session, int box, int slot, out IReadOnlyList<string> lines)

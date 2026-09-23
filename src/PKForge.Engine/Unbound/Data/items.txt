@@ -43,8 +43,8 @@
 43:White Flute
 44:Berry Juice
 45:Sacred Ash
-46:Sea Salt
-47:Sea Shell
+46:Shoal Salt
+47:Shoal Shell
 48:Red Shard
 49:Blue Shard
 50:Yellow Shard
@@ -114,7 +114,7 @@
 114:Rare Bone
 115:Prism Scale
 116:Sachet
-117:Whip Dream
+117:Whipped Dream
 118:Enigma Berry
 119:Mega Cuff
 120:Mega Tiara
@@ -171,8 +171,8 @@
 171:Petaya Berry
 172:Apicot Berry
 173:Lansat Berry
-174:Lansat Berry
-175:Starf Berry
+174:Starf Berry
+175:Enigma Berry
 176:Choice Band
 177:Choice Specs
 178:Choice Scarf
@@ -224,14 +224,14 @@
 224:Thick Club
 225:Leek
 226:Rocky Helmet
-227:Weak Policy
+227:Weakness Policy
 228:Pearl String
 229:Big Nugget
 230:Razor Claw
 231:Razor Fang
 232:Reaper Cloth
 233:Dubious Disc
-234:Electirizier
+234:Electirizer
 235:Expert Belt
 236:Power Herb
 237:Wide Lens
@@ -442,27 +442,27 @@
 442:HM06
 443:HM07
 444:HM08
-445:Necrozium Z
+445:Ultranecrozium Z
 446:Venusaurite
-447:Charizite X
-448:Charizite Y
-449:Blastoisite
+447:Charizardite X
+448:Charizardite Y
+449:Blastoisinite
 450:Beedrillite
 451:Pidgeotite
 452:Alakazite
 453:Slowbronite
 454:Gengarite
-455:Kangashite
+455:Kangaskhanite
 456:Pinsirite
 457:Gyaradosite
-458:Aerodactite
+458:Aerodactylite
 459:Mewtwonite X
 460:Mewtwonite Y
 461:Ampharosite
 462:Steelixite
 463:Scizorite
 464:Heracronite
-465:Houndoomite
+465:Houndoominite
 466:Tyranitarite
 467:Sceptilite
 468:Blazikenite
@@ -490,7 +490,7 @@
 490:Galladite
 491:Audinite
 492:Diancite
-493:Safety Googles
+493:Safety Goggles
 494:Assault Vest
 495:Eviolite
 496:Fist Plate
@@ -514,7 +514,7 @@
 514:Balm Mushroom
 515:Big Malasada
 516:Casteliacone
-517:Lumiose Gale
+517:Lumiose Galette
 518:Ragecandybar
 519:Shalour Sable
 520:Old Gateau
@@ -559,10 +559,10 @@
 559:Rowap Berry
 560:Roseli Berry
 561:Kee Berry
-562:Marang Berry
+562:Maranga Berry
 563:Absorb Bulb
 564:Air Balloon
-565:Adrenal Orb
+565:Adrenaline Orb
 566:Binding Band
 567:Cell Battery
 568:Eject Button
@@ -575,20 +575,20 @@
 575:Quick Powder
 576:Metronome
 577:Muscle Band
-578:Protect Pads
+578:Protective Pads
 579:Red Card
 580:Ring Target
 581:Shed Shell
 582:Snowball
 583:Sticky Barb
-584:Terrain Ext.
+584:Terrain Extender
 585:Wise Glasses
 586:Electric Seed
 587:Grassy Seed
 588:Misty Seed
 589:Psychic Seed
 590:Normal Gem
-591:Fightin Gem
+591:Fighting Gem
 592:Flying Gem
 593:Poison Gem
 594:Ground Gem
@@ -616,9 +616,9 @@
 616:Bottle Cap
 617:Gold Bottle Cap
 618:Red Nectar
-619:Ylw Nectar
+619:Yellow Nectar
 620:Pink Nectar
-621:Purp Nectar
+621:Purple Nectar
 622:Fast Ball
 623:Level Ball
 624:Lure Ball
@@ -635,10 +635,10 @@
 635:Douse Drive
 636:Shock Drive
 637:Chill Drive
-638:Fist Memory
-639:Sky Memory
-640:Toxic Memory
-641:Earth Memory
+638:Fighting Memory
+639:Flying Memory
+640:Poison Memory
+641:Ground Memory
 642:Rock Memory
 643:Bug Memory
 644:Ghost Memory
@@ -646,10 +646,10 @@
 646:Fire Memory
 647:Water Memory
 648:Grass Memory
-649:Zap Memory
-650:Psych Memory
+649:Electric Memory
+650:Psychic Memory
 651:Ice Memory
-652:Draco Memory
+652:Dragon Memory
 653:Dark Memory
 654:Fairy Memory
 655:Rainbow Wing
@@ -685,7 +685,7 @@
 685:Dragonium Z
 686:Darkinium Z
 687:Fairium Z
-688:Alorichium Z
+688:Aloraichium Z
 689:Decidium Z
 690:Eevium Z
 691:Incinium Z
@@ -696,7 +696,7 @@
 696:Mewnium Z
 697:Mimikium Z
 698:Pikanium Z
-699:Pikasunium Z
+699:Pikashunium Z
 700:Primarium Z
 701:Snorlium Z
 702:Solganium Z
@@ -704,8 +704,8 @@
 704:Eject Pack
 705:Room Service
 706:Blunder Policy
-707:Heavy Boots
-708:Utility Parasol
+707:Heavy Duty Boots
+708:Utility Umbrella
 709:Throat Spray
 710:Rusted Sword
 711:Rusted Shield
@@ -722,3 +722,6 @@
 722:Star Sweet
 723:Galarica Cuff
 724:Galarica Wreath
+726:Black Augurite
+727:Peat Block
+728:Hisui Rock

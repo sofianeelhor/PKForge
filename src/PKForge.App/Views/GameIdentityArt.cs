@@ -129,7 +129,9 @@ public sealed class GameHeroBackdrop : Grid
     {
         try
         {
-            var path = await GameArt.GetLogoAsync(game.GameLabel);
+            // Art follows the game (detected or chosen), never the player's custom name;
+            // an unnamed ROM hack has no logo and keeps the logo-grid scene.
+            var path = game.ArtLabel is { } art ? await GameArt.GetLogoAsync(art) : null;
             // The selection can move while the package asset is copied to cache.
             if (_title.Text != game.GameLabel.ToUpperInvariant()) return;
             _logo.Source = path;

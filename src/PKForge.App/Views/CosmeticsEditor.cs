@@ -82,8 +82,8 @@ public static class CosmeticsEditor
         {
             var c = session.GetCosmetics(box, slot);
             var options = ContestNames.Select((name, i) => new PadOption($"{name} · {c.ContestStats[i]}/255")).ToList();
-            options.Add(new PadOption("Max all"));
-            options.Add(new PadOption("Clear all"));
+            options.Add(new PadOption("Max all", IconPath: "fill"));
+            options.Add(new PadOption("Clear all", IconPath: "clear"));
             var choice = await EditorMenu.ShowAsync(host, "CONTEST STATS", null, options.ToArray());
             if (choice is null) return dirty;
 

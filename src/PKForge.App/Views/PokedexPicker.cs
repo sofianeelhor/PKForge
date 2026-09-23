@@ -688,10 +688,10 @@ public sealed class PokedexPicker : IPadHandler
     {
         var choice = await PadMenu.ShowAsync(_host, "FILTERS",
             "Categories, power, and themes combine with the type gems and generation chips.",
-            new PadOption($"Category: {_category}", IconPath: "pokedex"),
-            new PadOption($"Power: {_power}", IconPath: "dice"),
-            new PadOption($"Theme: {_theme}", IconPath: "script"),
-            new PadOption("Clear all filters", IconPath: "quit"));
+            new PadOption($"Category: {_category}", IconPath: "type"),
+            new PadOption($"Power: {_power}", IconPath: "battle"),
+            new PadOption($"Theme: {_theme}", IconPath: "filter"),
+            new PadOption("Clear all filters", IconPath: "clear"));
         switch (choice)
         {
             case "Clear all filters": ClearFilters(); return;

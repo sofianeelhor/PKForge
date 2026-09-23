@@ -18,6 +18,8 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
     private sealed class ScanState
     {
         public int FilesSeen;
+        /// <summary>Names in the folder currently being walked, for ROM-name hints.</summary>
+        public IReadOnlyList<string>? Siblings;
         public readonly List<string> Rejected = [];
         public readonly List<string> Diagnostics = [];
 
@@ -152,6 +154,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         var savesDirs = rootChildren.Where(x => x.IsDirectory && preferredFolders.Contains(x.Name, StringComparer.OrdinalIgnoreCase)).ToArray();
         if (savesDirs.Length > 0)
         {
+            state.Siblings = rootChildren.Where(x => !x.IsDirectory).Select(x => x.Name).ToArray();
             foreach (var file in rootChildren.Where(x => !x.IsDirectory))
                 OnFile(file);
             foreach (var savesDir in savesDirs)
@@ -304,18 +307,24 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
             }
             state.Trace($"PARSER ACCEPTED game={description.GameName} generation={description.Generation} trainer={description.TrainerName} playTime={description.PlayTime}");
 
+            // The label comes from the bytes alone; the save/ROM name is only a Rename prefill.
+            var romName = EmulatorSaveHeuristics.FindSiblingRom(child.Name, state.Siblings);
+            var guess = SaveIdentityRules.Guess(description.GameName, description.Generation, child.Name, romName, gameLabel);
+            state.Trace($"IDENTITY label={guess.Label} family={guess.Family} format={guess.Format} language={description.Language ?? "-"} rom={romName ?? "-"}");
             var detected = new DetectedSave(
                 documentUri.ToString()!,
                 child.Name,
-                description.GameName is { Length: > 0 } name && !name.StartsWith("Generation", StringComparison.Ordinal)
-                    ? $"Pokémon {name}"
-                    : gameLabel,
+                guess.Label,
                 kind,
                 EmulatorSaveHeuristics.RequiresExtraCare(kind),
                 child.LastModified,
                 description.Generation,
                 description.TrainerName,
-                description.PlayTime);
+                description.PlayTime,
+                guess,
+                romName,
+                EmulatorSaveHeuristics.FolderHint(child.DocId),
+                Language: description.Language);
             ScanCache.Store(cacheKey, modifiedTicks, detected);
             return detected;
         }
@@ -357,7 +366,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
     {
         // Detection support can expand between releases. Keep cached negative
         // results versioned so a newly supported save is always retried once.
-        private const string Key = "scan_cache_v2";
+        private const string Key = "scan_cache_v4"; // v4: identity comes from bytes only, plus the save language
         private const int MaxEntries = 512;
         private static Dictionary<string, CacheEntry>? _entries;
         private static readonly Lock Gate = new();
@@ -430,6 +439,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
             return;
         }
         var children = ListChildren(treeUri, parentDocId);
+        var siblings = children.Where(x => !x.IsDirectory).Select(x => x.Name).ToArray();
         if (diagnostic) state.Trace($"WALK depthRemaining={maxDepth} parent={parentDocId} children={children.Count}");
         foreach (var child in children)
         {
@@ -446,6 +456,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
             }
             else
             {
+                state.Siblings = siblings;
                 onFile(child);
             }
         }

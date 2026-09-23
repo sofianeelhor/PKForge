@@ -62,6 +62,38 @@ public static class EmulatorSaveHeuristics
         return "Switch save";
     }
 
+    private static readonly string[] RomExtensions = [".gba", ".gb", ".gbc", ".nds", ".3ds", ".cia", ".zip", ".7z"];
+
+    /// <summary>
+    /// A ROM beside the save with the same stem (Pizza Boy, Linkboy and "saves next to
+    /// content" RetroArch setups). Its name is the strongest hint of which game wrote the save.
+    /// </summary>
+    public static string? FindSiblingRom(string saveFileName, IEnumerable<string>? siblingNames)
+    {
+        if (siblingNames is null) return null;
+        var stem = Path.GetFileNameWithoutExtension(saveFileName);
+        return siblingNames.FirstOrDefault(name =>
+            !name.Equals(saveFileName, StringComparison.Ordinal) &&
+            RomExtensions.Contains(Path.GetExtension(name).ToLowerInvariant()) &&
+            Path.GetFileNameWithoutExtension(name).Equals(stem, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The folder a save sits in, from a path-like document id ("primary:RetroArch/saves/mGBA/x.srm"
+    /// → "saves/mGBA"): enough to tell two same-named saves apart without leaking the whole path.
+    /// </summary>
+    public static string? FolderHint(string documentId)
+    {
+        var path = documentId.Replace('\\', '/');
+        var colon = path.IndexOf(':');
+        var slash = path.IndexOf('/');
+        if (colon >= 0 && (slash < 0 || colon < slash)) path = path[(colon + 1)..]; // SAF volume prefix
+        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2) return null;
+        var folders = parts[..^1];
+        return string.Join('/', folders[Math.Max(0, folders.Length - 2)..]);
+    }
+
     /// <summary>NAND/SD-structured saves are the corruption-prone write path and get extra confirmation.</summary>
     public static bool RequiresExtraCare(EmulatorKind kind) =>
         kind is EmulatorKind.Azahar or EmulatorKind.Eden;

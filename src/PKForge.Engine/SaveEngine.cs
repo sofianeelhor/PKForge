@@ -4,8 +4,37 @@ using PKHeX.Core;
 namespace PKForge.Engine;
 
 /// <summary>Adapts the pinned PKHeX.Core save parser without leaking engine types.</summary>
-public sealed class SaveEngine : ISaveEngine
+public sealed class SaveEngine : IFormatAwareSaveEngine
 {
+    /// <summary>
+    /// Opens through the user's chosen route, but only when the bytes carry that layout:
+    /// the stock engine on a CFRU save (or a CFRU engine on a retail one) would corrupt
+    /// the file on the first write.
+    /// </summary>
+    public ISaveEngineSession OpenSession(ReadOnlyMemory<byte> bytes, string? displayName, SaveFormat format)
+    {
+        if (format == SaveFormat.Auto) return OpenSession(bytes, displayName);
+        var decoded = RetroArchSaveContainer.Decode(bytes.Span);
+        var unbound = SaveParser.IsPokemonUnbound(decoded);
+        var cfru = !unbound && SaveParser.IsPokemonRadicalRed(decoded);
+        return format switch
+        {
+            SaveFormat.Unbound when unbound => OpenUnbound(bytes, displayName),
+            SaveFormat.RadicalRed when cfru => OpenRadicalRed(bytes, displayName),
+            SaveFormat.Standard when !unbound && !cfru => new SaveEngineSession(bytes, displayName),
+            _ => throw new InvalidDataException(
+                $"This save was set to open as {FormatName(format)}, but its bytes carry the {(unbound ? "Unbound" : cfru ? "CFRU (Radical Red)" : "standard")} layout. " +
+                "Change the game from the save's menu on the home screen. The file was not touched."),
+        };
+    }
+
+    private static string FormatName(SaveFormat format) => format switch
+    {
+        SaveFormat.Unbound => "Unbound",
+        SaveFormat.RadicalRed => "Radical Red / CFRU",
+        _ => "a standard game",
+    };
+
     public SaveSnapshot Open(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
         if (SaveParser.IsPokemonUnbound(RetroArchSaveContainer.Decode(bytes.Span)))
@@ -63,6 +92,11 @@ public sealed class SaveEngine : ISaveEngine
         }
         catch (InvalidDataException) { return false; }
     }
+
+    public string? DescribeLayoutRisk(ReadOnlyMemory<byte> bytes) => WriteSafety.DescribeLayoutRisk(bytes);
+
+    public string? CheckWriteSafety(ReadOnlyMemory<byte> original, ReadOnlyMemory<byte> candidate, WriteScope? scope) =>
+        WriteSafety.CheckWriteSafety(original, candidate, scope);
 
     public BankEntryInfo? TryDescribeEntity(byte[] bytes, string sourceName)
     {
@@ -135,22 +169,22 @@ public sealed class SaveEngine : ISaveEngine
             return null;
 
         if (SaveParser.IsLuminescentPlatinum(raw))
-            return new SaveDescription("Luminescent Platinum", save.Generation, save.OT, save.PlayTimeString);
+            return new SaveDescription("Luminescent Platinum", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
 
         // Compass keeps the vanilla S/V format. The fork's canonical marker (the
         // TrainerSeed table, present in every Compass version) tells it apart from
         // retail Scarlet/Violet - the v2.1 settings blocks are NOT a safe marker,
         // pre-2.1 saves carry none of them.
         if (save is SAV9SV sv && CompassBlockKeys.IsCompassSave(sv))
-            return new SaveDescription("Compass", save.Generation, save.OT, save.PlayTimeString);
+            return new SaveDescription("Compass", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
 
         if (SaveParser.IsPokemonUnbound(raw))
-            return new SaveDescription("Unbound", save.Generation, save.OT, save.PlayTimeString);
+            return new SaveDescription("Unbound", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
 
         // Radical Red keeps the FireRed envelope; the CFRU window signature tells it
         // apart from every stock FRLG save (see RadicalRedFormat.IsRadicalRed).
         if (SaveParser.IsPokemonRadicalRed(raw))
-            return new SaveDescription("Radical Red", save.Generation, save.OT, save.PlayTimeString);
+            return new SaveDescription("Radical Red", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
 
         // GameCube-only versions sit outside the handheld game-name table.
         var sideGameName = save switch
@@ -161,18 +195,42 @@ public sealed class SaveEngine : ISaveEngine
             _ => null,
         };
         if (sideGameName is not null)
-            return new SaveDescription(sideGameName, save.Generation, save.OT, save.PlayTimeString);
+            return new SaveDescription(sideGameName, save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
 
-        SaveParser.ApplyVersionHint(save, displayName);
-        if (save.Version == GameVersion.RS)
-            return new SaveDescription("Ruby / Sapphire", save.Generation, save.OT, save.PlayTimeString);
+        // The bytes cannot tell these editions apart; the user picks one per save.
+        if (save is SAV3RS)
+            return new SaveDescription("Ruby / Sapphire", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
+        if (save is SAV3FRLG)
+            return new SaveDescription("FireRed / LeafGreen", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
 
         var strings = GameInfo.GetStrings("en");
         var versionIndex = (int)save.Version;
         var gameName = versionIndex > 0 && versionIndex < strings.gamelist.Length && strings.gamelist[versionIndex].Length > 0
             ? strings.gamelist[versionIndex]
             : $"Generation {save.Generation}";
-        return new SaveDescription(gameName, save.Generation, save.OT, save.PlayTimeString);
+        return new SaveDescription(gameName, save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
+    }
+
+    /// <summary>
+    /// The cartridge language the save itself records ("FR"), for telling saves of one game
+    /// apart. Gen 1-3 saves only record Japanese vs. international, so only JA is trusted there.
+    /// </summary>
+    private static string? LanguageTag(SaveFile save)
+    {
+        var tag = (LanguageID)save.Language switch
+        {
+            LanguageID.Japanese => "JA",
+            LanguageID.English => "EN",
+            LanguageID.French => "FR",
+            LanguageID.Italian => "IT",
+            LanguageID.German => "DE",
+            LanguageID.Spanish or LanguageID.SpanishL => "ES",
+            LanguageID.Korean => "KO",
+            LanguageID.ChineseS => "ZH",
+            LanguageID.ChineseT => "ZH",
+            _ => null,
+        };
+        return save.Generation <= 3 && tag != "JA" ? null : tag;
     }
 
     /// <summary>

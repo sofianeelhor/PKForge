@@ -8,8 +8,10 @@ namespace PKForge.App.Views;
 /// A DS-style choice box: scrim, device panel, flat options; d-pad up/down + A/B
 /// drive it (it takes over the gamepad router while open), touch works too.
 /// </summary>
-/// <summary>A menu entry: label plus optional colored glyph badge or image icon - never bare text.</summary>
-public sealed record PadOption(string Label, string? Glyph = null, Color? Accent = null, string? IconPath = null);
+/// <summary>A menu entry: label plus optional colored glyph badge or image icon - never bare text.
+/// <paramref name="Detail"/> is an optional quiet line under the label ("PP 35 → 56");
+/// the choice result is still the label.</summary>
+public sealed record PadOption(string Label, string? Glyph = null, Color? Accent = null, string? IconPath = null, string? Detail = null);
 
 public sealed class PadMenu : IPadHandler
 {

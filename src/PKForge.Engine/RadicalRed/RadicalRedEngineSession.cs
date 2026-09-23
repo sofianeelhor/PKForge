@@ -128,6 +128,21 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
 
     // ── Reading ──
 
+    /// <summary>Raw bytes of every slot (party first, then the PC) for the write-safety
+    /// structural diff (see <see cref="WriteSafety"/>).</summary>
+    internal IEnumerable<SlotImage> SlotImages()
+    {
+        for (var box = -1; box < Boxes; box++)
+        for (var slot = 0; slot < (box == -1 ? 6 : BoxSlotCount); slot++)
+        {
+            var mon = TryMon(box, slot);
+            yield return mon is null
+                ? new SlotImage(new SlotRef(box, slot), [], Empty: true, Valid: true)
+                : new SlotImage(new SlotRef(box, slot), mon.Buffer.AsSpan(mon.Offset, mon.Size).ToArray(),
+                    mon.IsEmpty, mon.IsEmpty || mon.LooksValid);
+        }
+    }
+
     public EntityDetail ReadEntity(int box, int slot)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -145,9 +160,11 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
             mon.Nickname,
             mon.Level,
             mon.Nature,
-            RadicalRedData.ActiveAbility(mon),
-            mon.HeldItem,
-            moves[0], moves[1], moves[2], moves[3],
+            RadicalRedData.ActiveAbility(mon), // already a PKHeX id (national personal data)
+            // The UI names items and moves through PKHeX's tables: bridge the ROM ids.
+            RadicalRedData.ItemToNational(mon.HeldItem),
+            RadicalRedData.MoveToNational(moves[0]), RadicalRedData.MoveToNational(moves[1]),
+            RadicalRedData.MoveToNational(moves[2]), RadicalRedData.MoveToNational(moves[3]),
             mon.IVs, mon.EVs,
             mon.IsShiny,
             mon.DisplayBall,
@@ -167,23 +184,47 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
     {
         var mon = TryMon(box, slot) ?? throw new InvalidOperationException("Cannot edit an empty slot.");
         var location = box == -1 ? null : ResolveSlot(box, slot);
+        var before = mon.Buffer.AsSpan(mon.Offset, mon.Size).ToArray();
 
-        if (edit.Species is { } species && species != mon.Species && RadicalRedData.IsKnownSpecies(species))
-            mon.Species = species;
+        // Edits arrive in PKHeX ids (the editor echoes every field it was shown), so a
+        // field writes only when it differs from the bridged current value, and then
+        // through the reverse bridge: writing the national id raw turned the champion's
+        // Terapagos (RR 1370, national 1024) into whatever RR stores at 1024.
+        if (edit.Species is { } species && species != RadicalRedData.NationalIdOf(mon.Species)
+            && RadicalRedData.SpeciesFromNational(species) is > 0 and var romSpecies)
+            mon.Species = romSpecies;
         if (edit.Nickname is { Length: > 0 } nickname && nickname != mon.Nickname)
             mon.Nickname = nickname;
-        if (edit.Level is { } level)
+        // Only a CHANGED level rewrites EXP: the editor always sends its level field,
+        // and snapping EXP to the level floor on a no-op save silently erased progress.
+        if (edit.Level is { } level && Math.Clamp(level, 1, 100) != mon.Level)
             SetLevel(mon, level);
         if (edit.Nature is { } nature && nature != mon.Nature)
             RerollPid(mon, nature: nature);
-        if (edit.Ability is { } ability)
+        // The echoed ability is a no-op: SetAbility would otherwise reroll the PID of a
+        // species whose two slots hold the same ability.
+        if (edit.Ability is { } ability && ability != RadicalRedData.ActiveAbility(mon))
             SetAbility(mon, ability);
-        if (edit.HeldItem is { } item && item != mon.HeldItem)
-            mon.HeldItem = item;
-        if (edit.Move1 is { } m1) mon.Moves = [m1, mon.Moves[1], mon.Moves[2], mon.Moves[3]];
-        if (edit.Move2 is { } m2) mon.Moves = [mon.Moves[0], m2, mon.Moves[2], mon.Moves[3]];
-        if (edit.Move3 is { } m3) mon.Moves = [mon.Moves[0], mon.Moves[1], m3, mon.Moves[3]];
-        if (edit.Move4 is { } m4) mon.Moves = [mon.Moves[0], mon.Moves[1], mon.Moves[2], m4];
+        if (edit.HeldItem is { } item && item != RadicalRedData.ItemToNational(mon.HeldItem))
+        {
+            var romItem = RadicalRedData.ItemFromNational(item);
+            if (item == 0 || romItem > 0)
+                mon.HeldItem = romItem;
+        }
+        int?[] wantedMoves = [edit.Move1, edit.Move2, edit.Move3, edit.Move4];
+        var storedMoves = mon.Moves;
+        var movesChanged = false;
+        for (var i = 0; i < 4; i++)
+        {
+            if (wantedMoves[i] is not { } wanted || wanted == RadicalRedData.MoveToNational(storedMoves[i]))
+                continue;
+            var romMove = RadicalRedData.MoveFromNational(wanted);
+            if (wanted != 0 && romMove == 0) continue; // not a move this table knows
+            storedMoves[i] = romMove;
+            movesChanged = true;
+        }
+        if (movesChanged)
+            mon.Moves = storedMoves;
         if (edit.IVs is { Count: 6 } ivs)
             mon.IVs = [.. ivs.Select(v => Math.Clamp(v, 0, 31))];
         if (edit.EVs is { Count: 6 } evs)
@@ -194,9 +235,13 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
             mon.Ball = cfru;
         if (edit.OriginalTrainer is { Length: > 0 } ot)
             WriteOtName(mon, ot);
-        if (edit.Gender is 0 or 1)
+        if (edit.Gender is 0 or 1 && edit.Gender != RadicalRedData.GenderOf(mon.Pid, mon.Species))
             RerollPid(mon, gender: edit.Gender);
 
+        // A no-op edit (the editor re-sends every field) must not commit: committing the
+        // party mirrors the live sector over the rotating backup copy, rewriting the file.
+        if (mon.Buffer.AsSpan(mon.Offset, mon.Size).SequenceEqual(before))
+            return;
         if (box == -1) CommitSection(PartySection);
         else CommitPc(location);
     }
@@ -647,7 +692,7 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
 
         var dropped = moveNames.Count(name => name.Length > 0 && RadicalRedData.MoveIdByName(name) == 0);
         var note = dropped > 0
-            ? $" ({dropped} move(s) skipped: beyond Radical Red's shared move-id zone)"
+            ? $" ({dropped} move(s) skipped: not in Radical Red's verified move table)"
             : string.Empty;
         return new GenerationOutcome(true,
             $"{RadicalRedData.SpeciesName(species)} generated for Radical Red from the ROM's tables (no legality data exists for this hack).{note}");
@@ -757,7 +802,8 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
 
     public IReadOnlyList<int> GetAbilityChoices(int species, int form)
     {
-        var (a1, a2, hidden) = RadicalRedData.AbilityIds(species);
+        // Species arrives as a national id (the UI's picker space).
+        var (a1, a2, hidden) = RadicalRedData.AbilityIds(RadicalRedData.SpeciesFromNational(species));
         if (a1 == 0) return [0];
         var choices = new List<int> { a1 };
         if (a2 != 0) choices.Add(a2);
@@ -1039,16 +1085,18 @@ internal sealed class RadicalRedEngineSession : ISaveEngineSession
         var pp = mon.Party ? mon.MovePp : moves.Select(_ => 0).ToArray();
         var slots = new List<MoveSlotDetail>(4);
         for (var i = 0; i < 4; i++)
-            slots.Add(new MoveSlotDetail(moves[i], pp[i], MoveMaxPp(mon, moves[i], i), 0));
+            slots.Add(new MoveSlotDetail(RadicalRedData.MoveToNational(moves[i]), pp[i], MoveMaxPp(mon, moves[i], i), 0));
         return new MoveDetails(slots, mon.Party, []);
     }
 
     /// <summary>Max PP = base PP boosted by the move's 2-bit PP-up pair. Base PP comes
-    /// from the Gen 3 table — valid because the shared zone 1..354 uses national ids.</summary>
+    /// from the Gen 3 table in the shared zone 1..354 and from the CFRU table beyond.</summary>
     private static int MoveMaxPp(RadicalRedMon mon, int move, int index)
     {
-        if (move is <= 0 or > RadicalRedData.SharedMoveLimit) return 0;
-        var basePp = MoveInfo.GetPP(EntityContext.Gen3, (ushort)move);
+        if (move is <= 0 or > RadicalRedData.CfruMoveLimit) return 0;
+        var basePp = move <= RadicalRedData.SharedMoveLimit
+            ? MoveInfo.GetPP(EntityContext.Gen3, (ushort)move)
+            : Unbound.UnboundData.MoveBasePp(move); // CFRU table, shared with Unbound
         var ups = mon.Party ? (mon.PpBonuses >> (index * 2)) & 3 : 0;
         return basePp * (5 + ups) / 5;
     }

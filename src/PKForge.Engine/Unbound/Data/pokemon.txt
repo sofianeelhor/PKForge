@@ -27,10 +27,10 @@
 26:Raichu
 27:Sandshrew
 28:Sandslash
-29:Nidoran?
+29:Nidoran♀
 30:Nidorina
 31:Nidoqueen
-32:Nidoran?
+32:Nidoran♂
 33:Nidorino
 34:Nidoking
 35:Clefairy
@@ -120,7 +120,7 @@
 119:Seaking
 120:Staryu
 121:Starmie
-122:Mr? Mime
+122:Mr. Mime
 123:Scyther
 124:Jynx
 125:Electabuzz
@@ -436,7 +436,7 @@
 435:Unown X
 436:Unown Y
 437:Unown Z
-438:Unown ?
+438:Unown !
 439:Unown ?
 440:Turtwig
 441:Grotle
@@ -490,7 +490,7 @@
 489:Bronzor
 490:Bronzong
 491:Bonsly
-492:Mime Jr?
+492:Mime Jr.
 493:Happiny
 494:Chatot
 495:Spiritomb
@@ -768,14 +768,14 @@
 767:Bunnelby
 768:Diggersby
 769:Fletchling
-770:Fletchindr
+770:Fletchinder
 771:Talonflame
 772:Scatterbug
 773:Spewpa
 774:Vivillon
 775:Litleo
 776:Pyroar
-777:Flab?b?
+777:Flabébé
 778:Floette
 779:Florges
 780:Skiddo
@@ -838,10 +838,10 @@
 837:Zygarde
 838:Zygarde
 839:Greninja
-840:Flab?b?
-841:Flab?b?
-842:Flab?b?
-843:Flab?b?
+840:Flabébé
+841:Flabébé
+842:Flabébé
+843:Flabébé
 844:Floette
 845:Floette
 846:Floette
@@ -955,7 +955,7 @@
 954:Charjabug
 955:Vikavolt
 956:Crabrawler
-957:Crabminble
+957:Crabominable
 958:Oricorio
 959:Cutiefly
 960:Ribombee
@@ -1075,7 +1075,7 @@
 1074:Poipole
 1075:Naganadel
 1076:Stakataka
-1077:Blacphalon
+1077:Blacephalon
 1078:Zeraora
 1079:Necrozma
 1080:Necrozma
@@ -1112,8 +1112,8 @@
 1111:Skwovet
 1112:Greedent
 1113:Rookidee
-1114:Corvsquire
-1115:Corvknight
+1114:Corvisquire
+1115:Corviknight
 1116:Blipbug
 1117:Dottler
 1118:Orbeetle
@@ -1137,15 +1137,15 @@
 1136:Sandaconda
 1137:Cramorant
 1138:Arrokuda
-1139:Baraskewda
+1139:Barraskewda
 1140:Toxel
 1141:Toxtricity
 1142:Sizzlipede
-1143:Centskorch
+1143:Centiskorch
 1144:Clobbopus
 1145:Grapploct
 1146:Sinistea
-1147:Poltegeist
+1147:Polteageist
 1148:Hatenna
 1149:Hattrem
 1150:Hatterene
@@ -1156,7 +1156,7 @@
 1155:Perrserker
 1156:Cursola
 1157:Sirfetch'd
-1158:Mr? Rime
+1158:Mr. Rime
 1159:Runerigus
 1160:Milcery
 1161:Alcremie
@@ -1164,7 +1164,7 @@
 1163:Pincurchin
 1164:Snom
 1165:Frosmoth
-1166:Stonjorner
+1166:Stonjourner
 1167:Eiscue
 1168:Indeedee
 1169:Morpeko
@@ -1193,7 +1193,7 @@
 1192:Cramorant
 1193:Toxtricity
 1194:Sinistea
-1195:Poltegeist
+1195:Polteageist
 1196:Alcremie
 1197:Alcremie
 1198:Alcremie
@@ -1218,7 +1218,7 @@
 1217:Farfetch'd
 1218:Koffing
 1219:Weezing
-1220:Mr? Mime
+1220:Mr. Mime
 1221:Articuno
 1222:Zapdos
 1223:Moltres
@@ -1226,7 +1226,7 @@
 1225:Corsola
 1226:Zigzagoon
 1227:Linoone
-1228:Mime Jr?
+1228:Mime Jr.
 1229:Darumaka
 1230:Darmanitan
 1231:Darmanitan
@@ -1252,8 +1252,8 @@
 1251:Wyrdeer
 1252:Kleavor
 1253:Ursaluna
-1254:Basculegon
-1255:Basculegon
+1254:Basculegion
+1255:Basculegion
 1256:Sneasler
 1257:Overqwil
 1258:Enamorus

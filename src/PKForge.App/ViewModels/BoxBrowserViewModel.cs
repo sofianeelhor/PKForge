@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using PKForge.App.Services;
 using PKForge.Domain;
 
 namespace PKForge.App.ViewModels;
@@ -194,6 +195,13 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     private async Task SaveEditAsync()
     {
         if (IsBusy) return;
+        // The editor's APPLY path writes outside RunMutationAsync (it edits the live
+        // session field by field), so it carries the same Hardcore guard itself.
+        if (HardcoreMode.Blocks(SaveAction.EditMon, out var hardcoreStatus))
+        {
+            Status = hardcoreStatus;
+            return;
+        }
         var engineSession = _sessions.CurrentSession;
         var session = _sessions.Current;
         var detail = Selected;
@@ -229,7 +237,8 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             var candidate = engineSession.Serialize();
 
             Status = "Validating, backing up, writing…";
-            var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate,
+            var receipt = await _writer.WriteScopedAsync(session.Document.DocumentId, session.Snapshot, candidate,
+                WriteScope.Only(new SlotRef(detail.Box, detail.Slot)),
                 $"Edit {EditorSubject(detail)} ({SlotLabel(detail.Box, detail.Slot)})");
             if (receipt.Changed)
             {
@@ -329,8 +338,23 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         return results;
     }
 
+    /// <summary>
+    /// True when the open save refuses ordinary writes (read-only identity, unconfirmed
+    /// layout risk); <see cref="Status"/> then carries why. A move to another game asks
+    /// this before writing the destination, so a source that cannot release the Pokémon
+    /// never ends up with a clone in both games.
+    /// </summary>
+    public bool OpenSaveRefusesWrites()
+    {
+        if (_sessions.Current is not { } session) return false;
+        if (_writer.WhyWritesAreRefused(session.Document.DocumentId, session.Snapshot) is not { } reason) return false;
+        Status = reason;
+        return true;
+    }
+
     /// <summary>Runs a legalizer mutation (generate/legalize) then commits it through the safe write path.</summary>
-    public Task<bool> RunLegalizerAsync(Func<ILegalizerService, ISaveEngineSession, GenerationOutcome> operation, int slot)
+    public Task<bool> RunLegalizerAsync(Func<ILegalizerService, ISaveEngineSession, GenerationOutcome> operation, int slot,
+        SaveAction action = SaveAction.CreateMon)
     {
         var legalizer = _legalizer;
         if (legalizer is null)
@@ -341,12 +365,22 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         var description = Selected is { IsEmpty: false } detail
             ? $"Legalize {EditorSubject(detail)} ({SlotLabel(BoxIndex, slot)})"
             : null;
-        return RunMutationAsync(session => operation(legalizer, session), slot, changeDescription: description);
+        return RunMutationAsync(session => operation(legalizer, session), slot, changeDescription: description, action: action);
     }
 
-    /// <summary>Runs any slot mutation then commits it through the safe write path (validate → backup → atomic write).</summary>
-    public async Task<bool> RunMutationAsync(Func<ISaveEngineSession, GenerationOutcome> operation, int slot, bool refreshSlot = true, string? changeDescription = null)
+    /// <summary>Runs any slot mutation then commits it through the safe write path (validate → backup → atomic write).
+    /// Hardcore mode is enforced here, at the one funnel every save write passes through:
+    /// a refused <paramref name="action"/> skips the operation entirely - so nothing is
+    /// even staged in the live session - and shows the reason instead of writing.</summary>
+    public async Task<bool> RunMutationAsync(Func<ISaveEngineSession, GenerationOutcome> operation, int slot,
+        bool refreshSlot = true, string? changeDescription = null, SaveAction action = SaveAction.EditMon)
     {
+        if (HardcoreMode.Blocks(action, out var hardcoreStatus))
+        {
+            Status = hardcoreStatus;
+            return false;
+        }
+
         var engineSession = _sessions.CurrentSession;
         var session = _sessions.Current;
         if (engineSession is null || session is null)
@@ -466,7 +500,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         var leftBehind = _marked.Count(m => m.Box != targetBox) - moved;
         return new GenerationOutcome(moved > 0,
             moved == 0 ? "No room in that box." : $"Moved {moved} Pokémon to box {targetBox + 1}." + (leftBehind > 0 ? $" {leftBehind} left (box full)." : ""));
-    }, Math.Max(0, SelectedSlot)).ContinueWith(t =>
+    }, Math.Max(0, SelectedSlot), action: SaveAction.Move).ContinueWith(t =>
     {
         RefreshAllSlots();
         ExitSelectMode();
@@ -483,7 +517,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         foreach (var (box, slot) in targets)
             session.ReleaseSlot(box, slot);
         return new GenerationOutcome(true, $"Released {targets.Count} Pokémon. Bye-bye!");
-    }, Math.Max(0, SelectedSlot)).ContinueWith(t =>
+    }, Math.Max(0, SelectedSlot), action: SaveAction.Release).ContinueWith(t =>
     {
         RefreshAllSlots();
         ExitSelectMode();
@@ -578,7 +612,8 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             IsBusy = true;
             engineSession.MoveSlot(source.Box, source.Slot, target.Box, target.Slot);
             var candidate = engineSession.Serialize();
-            var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate,
+            var receipt = await _writer.WriteScopedAsync(session.Document.DocumentId, session.Snapshot, candidate,
+                WriteScope.Only(new SlotRef(source.Box, source.Slot), new SlotRef(target.Box, target.Slot)),
                 $"Move {(carried is { } summary ? summary.Nickname ?? $"#{summary.Species}" : "Pokémon")}: {SlotLabel(source.Box, source.Slot)} -> {SlotLabel(target.Box, target.Slot)}");
             if (receipt.Changed)
             {

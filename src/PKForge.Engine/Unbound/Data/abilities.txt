@@ -71,7 +71,7 @@
 71:Arena Trap
 72:Transistor
 73:Dragon's Maw
-74:Neutralize Gas
+74:Neutralizing Gas
 75:Shell Armor
 76:Hunger Switch
 77:Unused
@@ -150,8 +150,8 @@
 150:Protean
 151:Parental Bond
 152:Mold Breaker
-153:As One
-154:As One
+153:As One (Spectrier)
+154:As One (Glastrier)
 155:Zen Mode
 156:Battle Bond
 157:Beast Boost
@@ -161,7 +161,7 @@
 161:Fluffy
 162:Steely Spirit
 163:Perish Body
-164:Wandering Soul
+164:Wandering Spirit
 165:Power Construct
 166:Prism Armor
 167:RKS System
@@ -175,7 +175,7 @@
 175:Full Metal Body
 176:Triage
 177:Water Bubble
-178:Water Compact
+178:Water Compaction
 179:Stall
 180:Multitype
 181:Electric Surge
@@ -232,11 +232,11 @@
 232:Dancer
 233:Battery
 234:Receiver
-235:Odd Medicine
+235:Curious Medicine
 236:Neuroforce
 237:Galvanize
 238:Intrepid Sword
-239:Valiant Shield
+239:Dauntless Shield
 240:Ball Fetch
 241:Cotton Down
 242:Mirror Armor

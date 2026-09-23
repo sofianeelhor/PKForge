@@ -15,6 +15,7 @@ public sealed class DsFolderButton : Grid
 {
     private readonly SKCanvasView _bg;
     private readonly Label _label;
+    private readonly Label? _detail;
     private readonly Image? _icon;
     private readonly Grid _labelViewport;
     private readonly string _iconName = "";
@@ -77,7 +78,28 @@ public sealed class DsFolderButton : Grid
             HorizontalOptions = LayoutOptions.Start,
         };
         _labelViewport = new Grid { IsClippedToBounds = true, Margin = new Thickness(0, 0, 8, 0) };
-        _labelViewport.Children.Add(_label);
+        if (string.IsNullOrEmpty(option.Detail))
+            _labelViewport.Children.Add(_label);
+        else
+        {
+            // Label over its detail line; the pair stays centred in the row.
+            _detail = new Label
+            {
+                Text = option.Detail,
+                FontSize = 11,
+                TextColor = UiTokens.InkSoft,
+                LineBreakMode = LineBreakMode.TailTruncation,
+                InputTransparent = true,
+            };
+            _label.VerticalTextAlignment = TextAlignment.End;
+            _labelViewport.Children.Add(new VerticalStackLayout
+            {
+                Spacing = 0,
+                VerticalOptions = LayoutOptions.Center,
+                Children = { _label, _detail },
+            });
+            HeightRequest = Math.Max(height, 54);
+        }
 
         Children.Add(_bg);
         Grid.SetColumnSpan(_bg, 3);
@@ -99,6 +121,7 @@ public sealed class DsFolderButton : Grid
             if (_selected == value) return;
             _selected = value;
             _label.TextColor = value ? UiTokens.SelectInk : UiTokens.Ink0;
+            if (_detail is not null) _detail.TextColor = value ? UiTokens.SelectInk : UiTokens.InkSoft;
             if (_icon is not null && !PksmIcons.IsNative(_iconName))
                 _icon.Source = PksmIcons.Source(_iconName, value ? PksmIcons.Indigo : PksmIcons.White);
             _bg.InvalidateSurface();

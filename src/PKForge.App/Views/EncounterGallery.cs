@@ -69,7 +69,7 @@ public static class EncounterGallery
                 return;
             }
             var card = listing.Cards[pick.Value];
-            await viewModel.RunMutationAsync(s => s.PlaceEncounter(species, form, pick.Value, viewModel.BoxIndex, target), target);
+            await viewModel.RunMutationAsync(s => s.PlaceEncounter(species, form, pick.Value, viewModel.BoxIndex, target), target, action: SaveAction.CreateMon);
             viewModel.Status = $"CAUGHT · {(string.IsNullOrEmpty(card.Location) ? card.Kind : card.Location)}";
             repaint();
             return;
@@ -199,7 +199,7 @@ public static class EncounterGallery
                 return;
             }
             var card = listing.Cards[pick.Value];
-            await viewModel.RunMutationAsync(s => s.PlaceEncounter(species, form, pick.Value, viewModel.BoxIndex, target), target);
+            await viewModel.RunMutationAsync(s => s.PlaceEncounter(species, form, pick.Value, viewModel.BoxIndex, target), target, action: SaveAction.CreateMon);
             viewModel.Status = $"CAUGHT · {title} · {(string.IsNullOrEmpty(card.Location) ? card.Kind : card.Location)}";
             repaint();
             return;

@@ -46,7 +46,7 @@ public static class EventGallery
                 viewModel.Status = "No empty slot in this box for the gift.";
                 return;
             }
-            var received = await viewModel.RunMutationAsync(s => service.Receive(s, gift.Id, viewModel.BoxIndex, slot), slot);
+            var received = await viewModel.RunMutationAsync(s => service.Receive(s, gift.Id, viewModel.BoxIndex, slot), slot, action: SaveAction.InjectEvent);
             if (received && profile is not null)
                 history.Record(InjectedGiftHistory.KeyFor(gift, profile));
             repaint();
@@ -360,14 +360,14 @@ public static class EventGallery
         {
             var options = new List<PadOption>();
             if (_profile is not null)
-                options.Add(new PadOption((_filter.CompatibleOnly ? "✓ " : "") + "Compatible with this save", IconPath: "heart"));
+                options.Add(new PadOption((_filter.CompatibleOnly ? "✓ " : "") + "Compatible with this save", IconPath: "game"));
             if (_gifts.Select(g => g.Generation).Distinct().Skip(1).Any())
-                options.Add(new PadOption($"Generation: {(_filter.Generation is { } gen ? $"Gen {gen}" : "Any")}", IconPath: "pokedex"));
+                options.Add(new PadOption($"Generation: {(_filter.Generation is { } gen ? $"Gen {gen}" : "Any")}", IconPath: "generation"));
             if (_gifts.Any(g => g.Year is not null))
-                options.Add(new PadOption($"Year: {_filter.Year?.ToString() ?? "Any"}", IconPath: "spark"));
+                options.Add(new PadOption($"Year: {_filter.Year?.ToString() ?? "Any"}", IconPath: "calendar"));
             if (_filter.IsActive)
-                options.Add(new PadOption("Clear all filters", IconPath: "quit"));
-            options.Add(new PadOption($"Clear injected history ({_history.Count})", IconPath: "restore"));
+                options.Add(new PadOption("Clear all filters", IconPath: "clear"));
+            options.Add(new PadOption($"Clear injected history ({_history.Count})", IconPath: "delete"));
 
             var choice = await PadMenu.ShowAsync(_host, "FILTER CARDS",
                 "Filters and markers are quality of life: every card stays receivable.", options.ToArray());

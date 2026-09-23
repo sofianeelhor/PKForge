@@ -307,7 +307,7 @@ public sealed class DexEditorPage : IPadHandler
                 foreach (var (species, state) in staged)
                     s.SetDexEntry(species, state.Seen, state.Caught);
                 return new GenerationOutcome(true, $"Dex updated for {staged.Count} species.");
-            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+            }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false, action: SaveAction.EditDex);
             if (!saved)
             {
                 // The write aborted (validation, storage, format refusal): keep the
@@ -358,9 +358,9 @@ public sealed class DexEditorPage : IPadHandler
         {
             var gapChoice = await PadMenu.ShowAsync(_host, "LIVING DEX GAPS",
                 $"{_missing.Count} species missing from storage. {_fillSelection.Count} selected.",
-                new PadOption($"Generate selected ({_fillSelection.Count})", IconPath: "pokedex"),
+                new PadOption($"Generate selected ({_fillSelection.Count})", IconPath: "create"),
                 new PadOption("Switch to dex editor", IconPath: "pokedex"),
-                new PadOption("Close"));
+                new PadOption("Close", IconPath: "close"));
             if (gapChoice == "Switch to dex editor")
             {
                 _gapsMode = false;
@@ -373,7 +373,8 @@ public sealed class DexEditorPage : IPadHandler
             try
             {
                 await _viewModel.RunMutationAsync(s => _legalizer.FillSpecies(s, species,
-                    (done, total) => overlay.Report(done, total)), Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false);
+                    (done, total) => overlay.Report(done, total)), Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false,
+                    action: SaveAction.CreateMon);
                 _viewModel.RefreshAllSlots();
                 _missing.RemoveAll(_fillSelection.Contains);
                 _fillSelection.Clear();
@@ -384,11 +385,11 @@ public sealed class DexEditorPage : IPadHandler
         }
 
         var choice = await PadMenu.ShowAsync(_host, "DEX ACTIONS", null,
-            new PadOption("How to get this one", IconPath: "search"),
-            new PadOption("Mark everything seen", IconPath: "pokedex"),
+            new PadOption("How to get this one", IconPath: "map"),
+            new PadOption("Mark everything seen", IconPath: "selectall"),
             new PadOption("Complete the Pokédex", IconPath: "pokedex"),
             new PadOption("Switch to living dex gaps", IconPath: "storage"),
-            new PadOption("Discard staged changes", IconPath: "hex"));
+            new PadOption("Discard staged changes", IconPath: "clear"));
         switch (choice)
         {
             case "How to get this one":

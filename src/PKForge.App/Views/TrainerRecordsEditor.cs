@@ -23,8 +23,8 @@ public static class TrainerRecordsEditor
         {
             var entries = info.Records.Skip(page * PageSize).Take(PageSize);
             var options = entries.Select(Format).Select(text => new PadOption(text)).ToList();
-            if (page > 0) options.Add(new PadOption("Previous page"));
-            if (page < pageCount - 1) options.Add(new PadOption("Next page"));
+            if (page > 0) options.Add(new PadOption("Previous page", IconPath: "back"));
+            if (page < pageCount - 1) options.Add(new PadOption("Next page", IconPath: "next"));
             var choice = await EditorMenu.ShowAsync(host, $"TRAINER RECORDS · {page + 1}/{pageCount}",
                 "Read-only: record meanings and safe limits differ by game.", options.ToArray());
             if (choice is null) return;

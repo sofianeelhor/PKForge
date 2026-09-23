@@ -5,19 +5,104 @@ using PKForge.Domain;
 
 namespace PKForge.App.ViewModels;
 
-/// <summary>One game on the shelf: every detected save for it (folders for multiple saves of one game).</summary>
-public sealed partial class SaveGroup(
-    string gameLabel, int generation, EmulatorKind emulator,
-    string? trainerName, string? playTime, IReadOnlyList<DetectedSave> saves) : ObservableObject
+/// <summary>
+/// One cartridge on the shelf: every save of one game identity (see <see cref="SaveShelf"/>).
+/// The same game in another language, region or emulator shares the tile; a save the
+/// player renamed, recolored or re-identified gets its own, so hacks never hide under a
+/// retail label.
+/// </summary>
+public sealed partial class SaveCard(IReadOnlyList<DetectedSave> saves) : ObservableObject
 {
-    public string GameLabel { get; } = gameLabel;
-    public int Generation { get; } = generation;
-    public EmulatorKind Emulator { get; } = emulator;
-    public string? TrainerName { get; } = trainerName;
-    public string? PlayTime { get; } = playTime;
+    public SaveCard(DetectedSave save) : this([save]) { }
+
+    /// <summary>The tile's saves, most recently played first.</summary>
     public IReadOnlyList<DetectedSave> Saves { get; } = saves;
-    public int Count => Saves.Count;
+    /// <summary>The representative save: art, color and name come from it (all saves share them).</summary>
+    public DetectedSave Save => Saves[0];
+    public int SaveCount => Saves.Count;
+    public bool HasSeveralSaves => Saves.Count > 1;
+    public string CountBadge => Saves.Count > 1 ? Saves.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
+    public string DisplayName => Save.GameLabel;
+
+    /// <summary>The shelf title: the cartridge art already says Pokémon, so a retail
+    /// label drops the prefix ("HeartGold"); a name the user typed is shown as typed.</summary>
+    public string ShelfTitle
+    {
+        get
+        {
+            // Labels arrive both precomposed and decomposed ("é" vs "e" + accent).
+            var label = DisplayName.Normalize(System.Text.NormalizationForm.FormC);
+            var typedName = Save.Identity is { } identity && identity.DisplayName != identity.GameLabel;
+            return !typedName && label.StartsWith("Pokémon ", StringComparison.Ordinal)
+                ? label["Pokémon ".Length..]
+                : label;
+        }
+    }
+    /// <summary>The game (chosen or detected), for filters and release order - never the custom name.</summary>
+    public string GameLabel => Save.Identity?.GameLabel ?? Save.GameLabel;
+    public int Generation => Save.Generation;
+    public string? TrainerName => Save.TrainerName;
+    public string? PlayTime => Save.PlayTime;
+    public string FileName => Save.FileName;
+
+    /// <summary>"Ash · 12:34", the file name when the trainer block is unreadable, or the trainers of a shared tile.</summary>
+    public string TrainerLine
+    {
+        get
+        {
+            if (Saves.Count > 1)
+            {
+                var trainers = Saves.Select(s => s.TrainerName).Where(t => !string.IsNullOrEmpty(t)).Distinct().ToArray();
+                return trainers.Length switch
+                {
+                    0 => $"{Saves.Count} saves",
+                    1 => $"{trainers[0]} · {Saves.Count} saves",
+                    2 => $"{trainers[0]}, {trainers[1]}",
+                    _ => $"{trainers[0]}, {trainers[1]} +{trainers.Length - 2}",
+                };
+            }
+            return string.IsNullOrEmpty(Save.TrainerName)
+                ? Save.FileName
+                : string.IsNullOrEmpty(Save.PlayTime) ? Save.TrainerName! : $"{Save.TrainerName} · {Save.PlayTime}";
+        }
+    }
+
+    /// <summary>The tile's last line: emulator and date only; folders live in the chooser and the save menu.</summary>
+    public string DetailLine => SaveDescriptions.GroupDetail(Saves.Count > 0 ? Saves : [Save]);
+
+    public string? ColorKey => Save.Identity?.ColorKey;
+
     [ObservableProperty] private bool _isSelected;
+}
+
+/// <summary>Shared one-line descriptions of a save for sheets and pickers.</summary>
+public static class SaveDescriptions
+{
+    public static string Detail(DetectedSave save)
+    {
+        var parts = new List<string> { EmulatorName(save.Emulator) };
+        if (!string.IsNullOrEmpty(save.FolderHint)) parts.Add(save.FolderHint!);
+        if (save.LastModified is { } modified) parts.Add(modified.ToLocalTime().ToString("MMM d, yyyy"));
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>A tile: its emulators and the latest play date ("melonDS, DraStic · Sep 3, 2026").</summary>
+    public static string GroupDetail(IReadOnlyList<DetectedSave> saves)
+    {
+        var emulators = saves.Select(s => EmulatorName(s.Emulator)).Distinct().ToArray();
+        var parts = new List<string> { emulators.Length <= 2 ? string.Join(", ", emulators) : $"{emulators.Length} emulators" };
+        if (saves.Max(s => s.LastModified) is { } latest) parts.Add(latest.ToLocalTime().ToString("MMM d, yyyy"));
+        return string.Join(" · ", parts);
+    }
+
+    public static string EmulatorName(EmulatorKind kind) => kind switch
+    {
+        EmulatorKind.MelonDS => "melonDS",
+        EmulatorKind.DraStic => "DraStic",
+        EmulatorKind.PizzaBoyGba => "Pizza Boy GBA",
+        EmulatorKind.PizzaBoyGbc => "Pizza Boy GBC",
+        _ => kind.ToString(),
+    };
 }
 
 public partial class SavePickerViewModel : ObservableObject
@@ -28,6 +113,7 @@ public partial class SavePickerViewModel : ObservableObject
     private readonly IWatchedRootStore _roots;
     private readonly ISaveSessionService _sessions;
     private readonly BoxBrowserViewModel _boxBrowser;
+    private readonly ISaveIdentityStore _identities;
 
     public SavePickerViewModel(
         IFolderPicker folderPicker,
@@ -35,8 +121,11 @@ public partial class SavePickerViewModel : ObservableObject
         IEmulatorDetectionService detection,
         IWatchedRootStore roots,
         ISaveSessionService sessions,
-        BoxBrowserViewModel boxBrowser)
+        BoxBrowserViewModel boxBrowser,
+        ISaveIdentityStore identities)
     {
+        _identities = identities;
+        _identities.Changed += OnIdentityChanged;
         _folderPicker = folderPicker;
         _filePicker = filePicker;
         _detection = detection;
@@ -47,13 +136,24 @@ public partial class SavePickerViewModel : ObservableObject
 
     private const string SetupDoneKey = "setup_complete";
 
+    /// <summary>
+    /// Every visible detected save, with the player's identity applied: <see cref="DetectedSave.GameLabel"/>
+    /// is the display name, <see cref="DetectedSave.Identity"/> carries color, game and route.
+    /// Hidden saves are left out here, so Home and every picker skip them.
+    /// </summary>
     public ObservableCollection<DetectedSave> Saves { get; } = [];
 
-    /// <summary>The shelf view: saves grouped by game. Rebuilt on every scan.</summary>
-    public ObservableCollection<SaveGroup> Groups { get; } = [];
+    /// <summary>Saves the player hid, for "Show hidden saves".</summary>
+    public IReadOnlyList<DetectedSave> HiddenSaves => [.. _detected.Select(Resolve).Where(s => s.Identity?.IsHidden == true)];
+
+    /// <summary>The shelf view: one card per game identity (see <see cref="SaveShelf"/>). Rebuilt on every scan.</summary>
+    public ObservableCollection<SaveCard> Groups { get; } = [];
+
+    public ISaveIdentityStore Identities => _identities;
 
     private readonly HashSet<string> _saveIds = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, List<DetectedSave>> _groupMembers = new(StringComparer.Ordinal);
+    /// <summary>Scanner output as detected (no identity applied), in discovery order.</summary>
+    private readonly List<DetectedSave> _detected = [];
     private readonly List<string> _rejectedCandidates = [];
     private readonly List<string> _scanDiagnostics = [];
 
@@ -121,7 +221,7 @@ public partial class SavePickerViewModel : ObservableObject
             Saves.Clear();
             Groups.Clear();
             _saveIds.Clear();
-            _groupMembers.Clear();
+            _detected.Clear();
             var filesSeen = 0;
             _rejectedCandidates.Clear();
             _scanDiagnostics.Clear();
@@ -179,7 +279,7 @@ public partial class SavePickerViewModel : ObservableObject
             RebuildGroups();
             Status = Saves.Count == 0
                 ? $"No games found. Scanned {filesSeen} file(s), {_rejectedCandidates.Count} looked like saves but did not parse."
-                : $"{Saves.Count} game(s) on the shelf. Scanned {filesSeen} file(s).";
+                : $"{Saves.Count} save(s) on the shelf. Scanned {filesSeen} file(s).";
         }
         finally
         {
@@ -192,13 +292,47 @@ public partial class SavePickerViewModel : ObservableObject
         if (!_saveIds.Add(save.DocumentId))
             return;
 
-        Saves.Add(save);
-        if (!_groupMembers.TryGetValue(save.GameLabel, out var members))
+        _detected.Add(save);
+        var resolved = Resolve(save);
+        if (resolved.Identity?.IsHidden != true) Saves.Add(resolved);
+    }
+
+    /// <summary>Saves cached by an older build carry no guess: rebuild one from the label.</summary>
+    private static SaveIdentityGuess GuessOf(DetectedSave save) => save.Guess ?? SaveIdentityRules.Guess(
+        save.GameLabel.StartsWith("Pokémon ", StringComparison.Ordinal) ? save.GameLabel["Pokémon ".Length..] : null,
+        save.Generation, save.FileName, save.RomFileName, save.GameLabel);
+
+    private DetectedSave Resolve(DetectedSave detected)
+    {
+        var guess = GuessOf(detected);
+        var identity = SaveIdentityResolver.Resolve(guess, _identities.Get(detected.DocumentId));
+        return detected with { GameLabel = identity.DisplayName, Guess = guess, Identity = identity };
+    }
+
+    /// <summary>The save as detected, before the player's identity (for the identity sheet).</summary>
+    public DetectedSave? DetectedFor(string documentId) => _detected.FirstOrDefault(s => s.DocumentId == documentId);
+
+    private void OnIdentityChanged(string documentId)
+    {
+        void Apply()
         {
-            members = [];
-            _groupMembers.Add(save.GameLabel, members);
+            var index = _detected.FindIndex(s => s.DocumentId == documentId);
+            if (index < 0) return;
+            // Rebuild the visible list in discovery order so hiding and showing keep the shelf stable.
+            var visible = _detected.Select(Resolve).Where(s => s.Identity?.IsHidden != true).ToList();
+            Saves.Clear();
+            foreach (var save in visible) Saves.Add(save);
+            OnPropertyChanged(nameof(HiddenSaves));
+            // Keep the highlight on the tile that now holds the edited save (it may have
+            // moved to its own tile after a rename), else on whatever was selected.
+            var selected = Groups.FirstOrDefault(g => g.IsSelected)?.Saves.Select(s => s.DocumentId).ToHashSet();
+            RebuildGroups();
+            var target = Groups.FirstOrDefault(g => selected?.Contains(documentId) == true && g.Saves.Any(s => s.DocumentId == documentId))
+                ?? Groups.FirstOrDefault(g => selected is not null && g.Saves.Any(s => selected.Contains(s.DocumentId)));
+            foreach (var card in Groups) card.IsSelected = ReferenceEquals(card, target);
         }
-        members.Add(save);
+        if (MainThread.IsMainThread) Apply();
+        else MainThread.BeginInvokeOnMainThread(Apply);
     }
 
     /// <summary>Caption of the active shelf filter, for the home screen chip.</summary>
@@ -213,7 +347,7 @@ public partial class SavePickerViewModel : ObservableObject
     /// <summary>
     /// Applies a shelf filter: "all", "az", "gen1".."gen9", or a console bucket
     /// ("gb", "gba", "ds", "3ds", "switch"). The unfiltered list is always kept in
-    /// _groupMembers; only the shelf view narrows.
+    /// Saves; only the shelf view narrows.
     /// </summary>
     public void ApplyFilter(string key, string caption)
     {
@@ -225,15 +359,12 @@ public partial class SavePickerViewModel : ObservableObject
     private void RebuildGroups()
     {
         Groups.Clear();
-        IEnumerable<SaveGroup> groups = _groupMembers.Values
-            .Select(m => (First: m[0], Members: m))
-            .Select(x => new SaveGroup(x.First.GameLabel, x.First.Generation, x.First.Emulator,
-                x.First.TrainerName, x.First.PlayTime, x.Members.ToArray()));
+        IEnumerable<SaveCard> groups = SaveShelf.Group(Saves).Select(saves => new SaveCard(saves));
 
         groups = _filterKey switch
         {
-            "release" => groups.OrderBy(ReleaseRank),
-            "az" => groups.OrderBy(g => g.GameLabel, StringComparer.OrdinalIgnoreCase),
+            "release" => groups.OrderBy(ReleaseRank).ThenBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase),
+            "az" => groups.OrderBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase),
             "gen1" or "gen2" or "gen3" or "gen4" or "gen5" or "gen6" or "gen7" or "gen8" or "gen9"
                 => groups.Where(g => g.Generation == int.Parse(_filterKey[3..])),
             "gb" => groups.Where(g => ConsoleOf(g) == "Game Boy"),
@@ -249,7 +380,7 @@ public partial class SavePickerViewModel : ObservableObject
 
     /// <summary>Console a game belongs to. Let's Go is a Switch game despite being
     /// generation 7 with the 3DS pair.</summary>
-    private static string ConsoleOf(SaveGroup group) => group.GameLabel.StartsWith("Pokémon Let's Go", StringComparison.Ordinal)
+    private static string ConsoleOf(SaveCard group) => group.GameLabel.StartsWith("Pokémon Let's Go", StringComparison.Ordinal)
         ? "Switch"
         : group.Generation switch
         {
@@ -265,7 +396,7 @@ public partial class SavePickerViewModel : ObservableObject
     /// GameCube side games and romhacks slotted next to the era they belong to.
     /// Unknown labels fall back to generation order.
     /// </summary>
-    private static int ReleaseRank(SaveGroup group)
+    private static int ReleaseRank(SaveCard group)
     {
         var label = group.GameLabel;
         return label switch
@@ -352,7 +483,9 @@ public partial class SavePickerViewModel : ObservableObject
         {
             IsBusy = true;
             Status = $"Connecting to {save.GameLabel}…";
-            await _sessions.OpenAsync(new PickedDocument(save.DocumentId, $"{save.GameLabel} ({save.FileName})"));
+            // EngineHint carries the chosen game (FireRed vs LeafGreen), never the custom
+            // name; the session service reads the chosen engine route from the store.
+            await _sessions.OpenAsync(new PickedDocument(save.DocumentId, save.EngineHint));
             _boxBrowser.RefreshFromCurrentSession();
             OpenedSave = true;
             Status = "Connected.";
