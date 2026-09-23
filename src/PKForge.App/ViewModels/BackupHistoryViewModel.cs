@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using PKForge.App.Services;
 using PKForge.Domain;
 
 namespace PKForge.App.ViewModels;
@@ -11,9 +12,14 @@ public partial class BackupHistoryViewModel : ObservableObject
     private readonly ISaveSessionService _sessions;
     private readonly ISafeSaveWriter _writer;
     private readonly BoxBrowserViewModel _boxBrowser;
+    private readonly ISaveEngine _engine;
+    private readonly IBankService _bank;
 
-    public BackupHistoryViewModel(IBackupService backups, ISaveSessionService sessions, ISafeSaveWriter writer, BoxBrowserViewModel boxBrowser)
+    public BackupHistoryViewModel(IBackupService backups, ISaveSessionService sessions, ISafeSaveWriter writer, BoxBrowserViewModel boxBrowser,
+        ISaveEngine engine, IBankService bank)
     {
+        _engine = engine;
+        _bank = bank;
         _backups = backups;
         _sessions = sessions;
         _writer = writer;
@@ -40,6 +46,28 @@ public partial class BackupHistoryViewModel : ObservableObject
                 : $"{Backups.Count} backup(s). Open a save to enable restore.";
     }
 
+    /// <summary>
+    /// Hardcore mode's duplication check before a restore: the Pokémon the restore point
+    /// holds that the open save no longer does (moved to the Bank, sent to another game or
+    /// released since). Null when Hardcore is off, no save is open, or the restore point
+    /// cannot be read - the caller then falls back to the generic warning.
+    /// </summary>
+    public async Task<RestoreResurrection?> CheckResurrectionAsync(BackupInfo backup)
+    {
+        if (!HardcoreMode.IsOn || _sessions.Current is not { } session) return null;
+        try
+        {
+            var bytes = await _backups.ReadAsync(backup.BackupId);
+            var then = await Task.Run(() => _engine.Open(bytes).Slots);
+            var bank = _bank.GetAll().Select(entry => entry.Info).ToList();
+            return RestoreResurrection.Detect(then, session.Snapshot.Slots, bank);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Writes the backup's bytes into the open document; the current state is itself backed up first.</summary>
     public async Task RestoreAsync(BackupInfo backup)
     {
@@ -56,7 +84,9 @@ public partial class BackupHistoryViewModel : ObservableObject
             IsBusy = true;
             Status = $"Restoring {backup.BackupId[..13]}…";
             var bytes = await _backups.ReadAsync(backup.BackupId);
-            var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, bytes,
+            // A restore is the recovery path: a deliberate whole-file write, never slot-scoped.
+            var receipt = await _writer.WriteScopedAsync(session.Document.DocumentId, session.Snapshot, bytes,
+                WriteScope.Everything,
                 "Safety copy: the state right before this restore");
             if (receipt.Changed)
                 _sessions.MarkWritten(session.Document.DocumentId, bytes);

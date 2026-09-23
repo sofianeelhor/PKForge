@@ -118,6 +118,18 @@ public sealed class SaveEngineSession : ISaveEngineSession
         return [clone.Stat_HPMax, clone.Stat_ATK, clone.Stat_DEF, clone.Stat_SPA, clone.Stat_SPD, clone.Stat_SPE];
     }
 
+    /// <summary>
+    /// What a nature edit writes on Gen 5+ formats. Gen 8+ store a separate stat nature
+    /// (mints): an unminted mon's stats follow its new nature as the games do, while a
+    /// minted mon keeps its mint. Earlier formats have one nature for both.
+    /// </summary>
+    internal static Nature NatureEditTarget(PKM entity, Nature nature, out Nature statNature)
+    {
+        var minted = entity.Format >= 8 && entity.StatAlignment != entity.Nature;
+        statNature = minted ? entity.StatAlignment : nature;
+        return nature;
+    }
+
     public void ApplyEdit(int box, int slot, EntityEdit edit)
     {
         ThrowIfDisposed();
@@ -154,7 +166,8 @@ public sealed class SaveEngineSession : ISaveEngineSession
                 changed |= TrySetPidDerived(entity, (Nature)nature, null);
             else
             {
-                entity.Nature = (Nature)nature;
+                entity.Nature = NatureEditTarget(entity, (Nature)nature, out var statNature);
+                entity.StatAlignment = statNature;
                 changed = true;
             }
         }
@@ -751,7 +764,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     }
 
     /// <summary>Parses ".Prop=Value" instructions against one entity, PKHeX batch-editor style.</summary>
-    private static bool ApplyInstructions(PKM entity, IReadOnlyList<string> instructions)
+    internal static bool ApplyInstructions(PKM entity, IReadOnlyList<string> instructions)
     {
         var changed = false;
         var rnd = Random.Shared;
@@ -1010,14 +1023,14 @@ public sealed class SaveEngineSession : ISaveEngineSession
     /// <summary>Format truth: Gen 1/2 store 4-bit DVs and 16-bit stat experience;
     /// Gen 3-5 allow 255 EVs per stat; Gen 6+ enforce 252. Writing a bigger raw
     /// value would wrap the underlying storage, so every writer clamps to these.</summary>
-    private static TrainingCaps TrainingCapsOf(PKM entity) => entity switch
+    internal static TrainingCaps TrainingCapsOf(PKM entity) => entity switch
     {
         GBPKM => new(15, 65535),
         _ when entity.Format is <= 5 => new(31, 255),
         _ => new(31, 252),
     };
 
-    private static int[] ClampAll(int[] values, int max)
+    internal static int[] ClampAll(int[] values, int max)
     {
         for (var i = 0; i < values.Length; i++)
             values[i] = Math.Clamp(values[i], 0, max);
@@ -1033,10 +1046,10 @@ public sealed class SaveEngineSession : ISaveEngineSession
     private static int[] GetEVsInAppOrder(PKM entity) =>
         [entity.EV_HP, entity.EV_ATK, entity.EV_DEF, entity.EV_SPA, entity.EV_SPD, entity.EV_SPE];
 
-    private static void SetIVsFromAppOrder(PKM entity, IReadOnlyList<int> values) =>
+    internal static void SetIVsFromAppOrder(PKM entity, IReadOnlyList<int> values) =>
         entity.SetIVs([values[0], values[1], values[2], values[5], values[3], values[4]]);
 
-    private static void SetEVsFromAppOrder(PKM entity, IReadOnlyList<int> values) =>
+    internal static void SetEVsFromAppOrder(PKM entity, IReadOnlyList<int> values) =>
         entity.SetEVs([values[0], values[1], values[2], values[5], values[3], values[4]]);
 
     public bool RerollNatureKeepShiny(int box, int slot, int nature)
@@ -1373,25 +1386,57 @@ public sealed class SaveEngineSession : ISaveEngineSession
         DeleteEntityCore(box, slot);
     }
 
-    public bool ImportSlot(int box, int slot, byte[] fileBytes)
+    /// <summary>
+    /// Imports through official routes only. A backwards (downgrade) conversion is refused
+    /// here because this path has no way to show its warnings; the transfer flows, which
+    /// preview them, go through <see cref="ImportSlotWithReport"/>.
+    /// </summary>
+    public bool ImportSlot(int box, int slot, byte[] fileBytes) =>
+        ImportCore(box, slot, fileBytes, allowBackwards: false, out _) is not null;
+
+    /// <summary>
+    /// <see cref="ImportSlot"/> with the conversion's report, downgrades included: the landed
+    /// entity, whether it went backwards, and every compromise made on the way. Null when
+    /// nothing was written; <paramref name="refusal"/> then says why in plain language when
+    /// a reason is known. Callers must show <see cref="TransferConversion.Warnings"/>.
+    /// </summary>
+    public TransferConversion? ImportSlotWithReport(int box, int slot, byte[] fileBytes, out string? refusal) =>
+        ImportCore(box, slot, fileBytes, allowBackwards: true, out refusal);
+
+    private TransferConversion? ImportCore(int box, int slot, byte[] fileBytes, bool allowBackwards, out string? refusal)
     {
         ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(fileBytes);
+        refusal = null;
         // Gen 6 stored/party bytes are ambiguous with PK7 when parsed without a
         // destination context. Prefer the target save so native PK6 and edited PK6
         // entities from the Bank remain importable into XY/ORAS.
         var imported = EntityFormat.GetFromBytes(fileBytes, _save.Context);
-        if (imported is null) return false;
-        var converted = EntityConverter.ConvertToType(imported, _save.PKMType, out _);
-        if (converted is null) return false;
+        if (imported is null || imported.Species == 0)
+        {
+            refusal = "This is not a readable Pokémon file.";
+            return null;
+        }
+        var conversion = CrossFormatConverter.Convert(imported, _save, out refusal);
+        if (conversion is null) return null;
+        if (conversion.Backwards && !allowBackwards)
+        {
+            refusal = "Only the transfer flow can take a Pokémon back to an older game, because it shows what the downgrade changes.";
+            return null;
+        }
         if (box == -1)
         {
-            if (_save.PartyCount >= 6) return false;
-            InsertParty(converted, ImportReceived);
-            return true;
+            if (_save.PartyCount >= 6)
+            {
+                refusal = "The party is full.";
+                return null;
+            }
+            InsertParty(conversion.Entity, ImportReceived);
+            return conversion;
         }
         // Received, so the save's dex registers it the way the game would.
-        _save.SetBoxSlotAtIndex(converted, box, slot, ImportReceived);
-        return true;
+        _save.SetBoxSlotAtIndex(conversion.Entity, box, slot, ImportReceived);
+        return conversion;
     }
 
     public TrainerInfo GetTrainer()

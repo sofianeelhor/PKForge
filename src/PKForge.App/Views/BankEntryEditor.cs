@@ -229,16 +229,16 @@ public static class BankEntryEditor
 
             var identity = new VerticalStackLayout { Spacing = 6 };
             identity.Add(hero);
-            AddRow(identity, "nickname", "NICKNAME", "editor", EditNicknameAsync);
-            AddRow(identity, "species", "SPECIES", "search", EditSpeciesAsync);
-            AddRow(identity, "level", "LEVEL", null, EditLevelAsync);
-            AddRow(identity, "nature", "NATURE", null, EditNatureAsync);
-            AddRow(identity, "ability", "ABILITY", null, EditAbilityAsync);
+            AddRow(identity, "nickname", "NICKNAME", "rename", EditNicknameAsync);
+            AddRow(identity, "species", "SPECIES", "pokedex", EditSpeciesAsync);
+            AddRow(identity, "level", "LEVEL", "level", EditLevelAsync);
+            AddRow(identity, "nature", "NATURE", "nature", EditNatureAsync);
+            AddRow(identity, "ability", "ABILITY", "ability", EditAbilityAsync);
             AddRow(identity, "item", "HELD ITEM", "item", EditItemAsync);
-            AddRow(identity, "ball", "BALL", null, EditBallAsync);
+            AddRow(identity, "ball", "BALL", "ball", EditBallAsync);
             AddRow(identity, "gender", "GENDER", "genderless", EditGenderAsync);
-            AddRow(identity, "friendship", "FRIENDSHIP", null, EditFriendshipAsync);
-            AddRow(identity, "ot", "TRAINER", null, EditOtAsync);
+            AddRow(identity, "friendship", "FRIENDSHIP", "heart", EditFriendshipAsync);
+            AddRow(identity, "ot", "TRAINER", "profile", EditOtAsync);
             AddRow(identity, "shiny", "SHINY", "shiny", ToggleShinyAsync);
             var identityPanel = Kit.DevicePanel(identity, padding: 10);
 
@@ -251,8 +251,8 @@ public static class BankEntryEditor
                 stats.Add(_statRows[i]);
             }
             stats.Add(new BoxView { HeightRequest = 6 });
-            AddRow(stats, "ivs", classicTraining ? "DVS" : "IVS", null, EditIvsAsync);
-            AddRow(stats, "evs", classicTraining ? "STAT EXP" : "EVS", null, EditEvsAsync);
+            AddRow(stats, "ivs", classicTraining ? "DVS" : "IVS", "stats", EditIvsAsync);
+            AddRow(stats, "evs", classicTraining ? "STAT EXP" : "EVS", "stats", EditEvsAsync);
             var statsPanel = Kit.DevicePanel(stats, padding: 10);
 
             // ── Quick actions: the little blue stack buttons on the summary surface.
@@ -394,7 +394,8 @@ public static class BankEntryEditor
             _rows["nickname"].Value = d.Nickname;
             _rows["species"].Value = _speciesLine.Text;
             _rows["level"].Value = d.Level.ToString();
-            _rows["nature"].Value = NameOf(_data.NatureNames, d.Nature);
+            _rows["nature"].Value = _session.Generation <= 2 ? "none (Gen 1/2)"
+                : $"{NameOf(_data.NatureNames, d.Nature)}  {NatureFacts.EffectLabel(d.Nature)}";
             _rows["ability"].Value = NameOf(_data.AbilityNames, d.Ability);
             _rows["item"].Value = d.HeldItem == 0 ? "none" : NameOf(_data.ItemNames, d.HeldItem);
             _rows["ball"].Value = NameOf(_data.BallNames, d.Ball);
@@ -552,7 +553,9 @@ public static class BankEntryEditor
 
         private async Task EditNatureAsync()
         {
-            var pick = await PickerMenu.ShowAsync(_host, "NATURE", NameItems(_data.NatureNames, includeZero: true), _detail.Nature);
+            if (_session.Generation <= 2) return; // Gen 1/2 have no natures
+            var preview = NaturePicker.Service?.PreviewSlot(_session, 0, 0);
+            var pick = await NaturePicker.ShowAsync(_host, _data.NatureNames, _detail.Nature, preview);
             if (pick is not null) { _session.ApplyEdit(0, 0, new EntityEdit(Nature: pick.Id)); _dirty = true; }
         }
 
@@ -590,9 +593,9 @@ public static class BankEntryEditor
         private async Task EditGenderAsync()
         {
             var g = await EditorMenu.ShowAsync(_host, "GENDER", null,
-                new PadOption("Male", Accent: UiTokens.MenuBlue),
-                new PadOption("Female", Accent: UiTokens.GiftRed),
-                new PadOption("Genderless", Accent: UiTokens.Ink1));
+                new PadOption("Male", IconPath: "male"),
+                new PadOption("Female", IconPath: "female"),
+                new PadOption("Genderless", IconPath: "genderless"));
             var gender = g switch { "Male" => 0, "Female" => 1, "Genderless" => 2, _ => (int?)null };
             if (gender is { } value) { _session.ApplyEdit(0, 0, new EntityEdit(Gender: value)); _dirty = true; }
         }
@@ -753,13 +756,18 @@ public static class BankEntryEditor
             }
         }
 
-        private Task SaveAsync()
+        private async Task SaveAsync()
         {
+            // Hardcore mode: the stored mon may be inspected here but never rewritten.
+            if (HardcoreMode.Blocks(SaveAction.EditMon, out var status))
+            {
+                await EditorMenu.ShowAsync(_host, "HARDCORE MODE", status, "OK");
+                return;
+            }
             var export = _session.ExportSlot(0, 0);
             var info = _engine.TryDescribeEntity(export.Data, _entry.Info.SourceName) ?? _entry.Info;
             _bank.Replace(_entry.Id, export.Data, info);
             Close(true);
-            return Task.CompletedTask;
         }
 
         // ── QR transfer ──────────────────────────────────────────────────────────
@@ -768,8 +776,8 @@ public static class BankEntryEditor
         private async Task QrAsync()
         {
             var choice = await EditorMenu.ShowAsync(_host, "QR TRANSFER", null,
-                new PadOption("Show as .pk QR", "qr", UiTokens.MenuBlue),
-                new PadOption("Scan a .pk QR", "scan", UiTokens.MenuBlue));
+                new PadOption("Show as .pk QR", IconPath: "qr"),
+                new PadOption("Scan a .pk QR", IconPath: "scan"));
             if (choice == "Show as .pk QR") await ShowEntityQrAsync();
             else if (choice == "Scan a .pk QR") await ScanEntityQrAsync();
         }
@@ -788,6 +796,12 @@ public static class BankEntryEditor
         /// </summary>
         private async Task ScanEntityQrAsync()
         {
+            // A scan over this entry fabricates its replacement: creation, not a move.
+            if (HardcoreMode.Blocks(SaveAction.CreateMon, out var status))
+            {
+                await EditorMenu.ShowAsync(_host, "HARDCORE MODE", status, "OK");
+                return;
+            }
             var received = await QrEntityService.ScanAsync(_host, _engine,
                 "It replaces the Pokémon open in this editor.");
             if (received is null) return;

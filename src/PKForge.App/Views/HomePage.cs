@@ -87,7 +87,7 @@ public sealed class HomePage : ContentPage, IPadHandler
 
         // The three destinations as PKSM tiles with bundled pixel icons.
         var bank = new DsCard("bank", "Bank") { Tapped = () => _ = PushAsync<BankPage>() };
-        var park = new DsCard("heart", "Poképark") { Tapped = () => _ = PushParkAsync() };
+        var park = new DsCard("park", "Poképark") { Tapped = () => _ = PushParkAsync() };
         var events = new DsCard("events", "Events") { Tapped = () => _ = ShowEventsMenuAsync() };
         var settings = new DsCard("settings", "Settings") { Tapped = () => _ = ShowSettingsAsync() };
         _cards = [bank, park, events, settings];
@@ -147,6 +147,51 @@ public sealed class HomePage : ContentPage, IPadHandler
                 platform.Focusable = false;
                 platform.FocusableInTouchMode = false;
             }
+        };
+    }
+
+    /// <summary>
+    /// Fires <paramref name="onLongPress"/> once a finger rests on <paramref name="view"/>
+    /// for the platform long-press timeout without drifting past the touch slop.
+    /// </summary>
+    private static void AttachLongPress(View view, Action onLongPress)
+    {
+        view.HandlerChanged += (_, _) =>
+        {
+            if (view.Handler?.PlatformView is not Android.Views.View platform) return;
+            var slop = Android.Views.ViewConfiguration.Get(platform.Context!)!.ScaledTouchSlop;
+            var timeout = Android.Views.ViewConfiguration.LongPressTimeout;
+            var token = 0;
+            float downX = 0, downY = 0;
+            platform.Touch += (_, e) =>
+            {
+                // Handled is left as the other subscribers set it: the tap recognizer
+                // shares this stream and must keep receiving the whole gesture.
+                var motion = e.Event!;
+                switch (motion.ActionMasked)
+                {
+                    case Android.Views.MotionEventActions.Down:
+                        var pressed = ++token;
+                        downX = motion.GetX();
+                        downY = motion.GetY();
+                        view.Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(timeout), () =>
+                        {
+                            if (pressed != token) return;
+                            token++;
+                            platform.PerformHapticFeedback(Android.Views.FeedbackConstants.LongPress);
+                            onLongPress();
+                        });
+                        break;
+                    case Android.Views.MotionEventActions.Move:
+                        if (Math.Abs(motion.GetX() - downX) > slop || Math.Abs(motion.GetY() - downY) > slop)
+                            token++;
+                        break;
+                    case Android.Views.MotionEventActions.Up:
+                    case Android.Views.MotionEventActions.Cancel:
+                        token++;
+                        break;
+                }
+            };
         };
     }
 
@@ -224,10 +269,10 @@ public sealed class HomePage : ContentPage, IPadHandler
                     "Now then... let's find your games!");
 
                 var choice = await PadMenu.ShowAsync(_hostGrid, "Get started", null,
-                    new PadOption("Link an emulator", IconPath: "folder"),
-                    new PadOption("Open a single save file", IconPath: "search"),
-                    new PadOption($"Download the sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "storage"),
-                    new PadOption("Maybe later", IconPath: "events"));
+                    new PadOption("Link an emulator", IconPath: "link"),
+                    new PadOption("Open a single save file", IconPath: "file"),
+                    new PadOption($"Download the sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "download"),
+                    new PadOption("Maybe later", IconPath: "close"));
                 switch (choice)
                 {
                     case "Link an emulator": await ShowLinkMenuAsync(); break;
@@ -282,6 +327,10 @@ public sealed class HomePage : ContentPage, IPadHandler
                 if (_zone == 1) { _cards[_cardIndex].Tapped?.Invoke(); return true; }
                 return OpenShelfSelection();
             case PadButton.L: _ = ShowFilterMenuAsync(); return true;
+            // B on a highlighted cartridge: its identity menu (rename, color, set game).
+            case PadButton.B when _zone == 0 && _shelfIndex >= 0 && _shelfIndex < _viewModel.Groups.Count:
+                _ = ShowSaveMenuAsync(_viewModel.Groups[_shelfIndex]);
+                return true;
             case PadButton.X: _ = LinkFileAsync(); return true;
             case PadButton.Y: _ = ShowLinkMenuAsync(); return true;
             case PadButton.R: _ = PushAsync<BackupHistoryPage>(); return true;
@@ -322,7 +371,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         _lastShelfMoveMs = Environment.TickCount64;
         // The lower screen previews the highlighted game's hero art.
         var state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
-        if (state is not null) state.PreviewGame = selected.Saves[0];
+        if (state is not null) state.PreviewGame = selected.Save;
         return true;
     }
 
@@ -331,7 +380,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     private bool OpenShelfSelection()
     {
         if (_shelfIndex < 0 || _shelfIndex >= _viewModel.Groups.Count) return MoveShelf(0);
-        _ = OpenGroupAsync(_viewModel.Groups[_shelfIndex]);
+        _ = OpenCardAsync(_viewModel.Groups[_shelfIndex]);
         return true;
     }
 
@@ -340,23 +389,23 @@ public sealed class HomePage : ContentPage, IPadHandler
     private async Task ShowFilterMenuAsync()
     {
         var choice = await PadMenu.ShowAsync(_hostGrid, "FILTER GAMES", null,
-            new PadOption("All games", IconPath: "hex"),
-            new PadOption("Release order", IconPath: "restore"),
-            new PadOption("Alphabetical (A-Z)", IconPath: "script"),
+            new PadOption("All games", IconPath: "all"),
+            new PadOption("Release order", IconPath: "calendar"),
+            new PadOption("Alphabetical (A-Z)", IconPath: "alpha"),
             new PadOption("Game Boy (Gen I-II)", IconPath: "platform-gb"),
             new PadOption("GBA (Gen III)", IconPath: "platform-gba"),
             new PadOption("DS (Gen IV-V)", IconPath: "platform-ds"),
-            new PadOption("3DS (Gen VI-VII)", IconPath: "hex"),
-            new PadOption("Switch (Gen VII-IX)", IconPath: "hex"),
-            new PadOption("Gen I", IconPath: "pokedex"),
-            new PadOption("Gen II", IconPath: "pokedex"),
-            new PadOption("Gen III", IconPath: "pokedex"),
-            new PadOption("Gen IV", IconPath: "pokedex"),
-            new PadOption("Gen V", IconPath: "pokedex"),
-            new PadOption("Gen VI", IconPath: "pokedex"),
-            new PadOption("Gen VII", IconPath: "pokedex"),
-            new PadOption("Gen VIII", IconPath: "pokedex"),
-            new PadOption("Gen IX", IconPath: "pokedex"));
+            new PadOption("3DS (Gen VI-VII)", IconPath: "azahar"),
+            new PadOption("Switch (Gen VII-IX)", IconPath: "eden"),
+            new PadOption("Gen I", IconPath: "generation"),
+            new PadOption("Gen II", IconPath: "generation"),
+            new PadOption("Gen III", IconPath: "generation"),
+            new PadOption("Gen IV", IconPath: "generation"),
+            new PadOption("Gen V", IconPath: "generation"),
+            new PadOption("Gen VI", IconPath: "generation"),
+            new PadOption("Gen VII", IconPath: "generation"),
+            new PadOption("Gen VIII", IconPath: "generation"),
+            new PadOption("Gen IX", IconPath: "generation"));
         var (key, caption) = choice switch
         {
             "All games" => ("all", "ALL"),
@@ -376,29 +425,25 @@ public sealed class HomePage : ContentPage, IPadHandler
         MoveShelf(_shelfIndex);
     }
 
-    /// <summary>One save opens directly; several saves of one game get a folder picker.</summary>
-    private async Task OpenGroupAsync(SaveGroup group)
+    /// <summary>A cartridge with one save opens it; a shared cartridge asks which save first.</summary>
+    private async Task OpenCardAsync(SaveCard card)
     {
-        if (group.Saves.Count == 1)
-        {
-            await OpenSaveAsync(group.Saves[0]);
-            return;
-        }
-        var options = group.Saves.Select(SaveOption).ToArray();
-        var choice = await PadMenu.ShowAsync(_hostGrid, group.GameLabel.ToUpperInvariant(),
-            $"{group.Saves.Count} saves of this game were found. Pick the one whose date changes when you save in game.", options);
-        if (choice is null) return;
-        var index = Array.FindIndex(options, o => o.Label == choice);
-        if (index >= 0) await OpenSaveAsync(group.Saves[index]);
+        var save = await ChooseSaveAsync(card, "Which save do you want to open?");
+        if (save is not null) await OpenSaveAsync(save);
     }
 
-    private static PadOption SaveOption(DetectedSave save)
+    /// <summary>Long-press / B: the save's identity menu ("Open save" first); a shared cartridge picks the save first.</summary>
+    private async Task ShowSaveMenuAsync(SaveCard card)
     {
-        var label = save.FileName;
-        if (!string.IsNullOrEmpty(save.TrainerName)) label += $" · {save.TrainerName}";
-        if (save.LastModified is { } modified) label += $" · {modified:yyyy-MM-dd}";
-        return new PadOption(label, IconPath: "storage");
+        var save = await ChooseSaveAsync(card, "Choose the save to rename, recolor or identify.");
+        if (save is null) return;
+        if (await SaveIdentitySheet.ShowAsync(_hostGrid, _viewModel, save))
+            await OpenSaveAsync(save);
     }
+
+    private Task<DetectedSave?> ChooseSaveAsync(SaveCard card, string message) =>
+        SavePickerSheet.ChooseFromTileAsync(_hostGrid, card.Saves,
+            $"{card.DisplayName.ToUpperInvariant()} · {card.SaveCount} SAVES", message);
 
     /// <summary>Platform folders keep emulator choices together for touch and controller use.</summary>
     private async Task ShowLinkMenuAsync()
@@ -412,7 +457,7 @@ public sealed class HomePage : ContentPage, IPadHandler
                 new PadOption("GameCube", IconPath: "platform-gc"),
                 new PadOption("Nintendo 3DS", IconPath: "azahar"),
                 new PadOption("Nintendo Switch", IconPath: "eden"),
-                new PadOption("Single save file", IconPath: "search"));
+                new PadOption("Single save file", IconPath: "file"));
             if (platform is null) return;
             if (platform == "Single save file") { await LinkFileAsync(); return; }
             var options = platform switch
@@ -451,7 +496,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             };
             var proceed = await PadMenu.ShowAsync(_hostGrid, $"LINK {choice.ToUpperInvariant()}",
                 guidance + " If Android does not offer access to the folder, use Single save file with an exported save.",
-                new PadOption("Choose folder", IconPath: "folder"), new PadOption("Back", IconPath: "restore"));
+                new PadOption("Choose folder", IconPath: "folder"), new PadOption("Back", IconPath: "back"));
             if (proceed != "Choose folder") continue;
             switch (choice)
             {
@@ -471,16 +516,26 @@ public sealed class HomePage : ContentPage, IPadHandler
 
     private async Task ShowSettingsAsync()
     {
-        var choice = await PadMenu.ShowAsync(_hostGrid, "SETTINGS", null,
-            new PadOption("Link an emulator", IconPath: "folder"),
-            new PadOption("Manage linked storage", IconPath: "storage"),
-            new PadOption("Open a save file", IconPath: "search"),
-            new PadOption("Restore points", IconPath: "restore"),
-            new PadOption("About PKForge", IconPath: "settings"),
-            new PadOption("Check for update", IconPath: "restore"),
+        var hiddenCount = _viewModel.HiddenSaves.Count;
+        var hiddenOption = $"Show hidden saves ({hiddenCount})";
+        var options = new List<PadOption>
+        {
+            new("Link an emulator", IconPath: "link"),
+            new("Manage linked storage", IconPath: "sdcard"),
+            new("Open a save file", IconPath: "file"),
+        };
+        if (hiddenCount > 0) options.Add(new PadOption(hiddenOption, IconPath: "show"));
+        options.AddRange(
+        [
+            new PadOption("Restore points", IconPath: "history"),
+            new PadOption("About PKForge", IconPath: "info"),
+            new PadOption("Check for update", IconPath: "update"),
             new PadOption("Music", IconPath: "music"),
-            new PadOption("Misc", IconPath: "script"),
-            new PadOption("Quit PKForge", IconPath: "quit"));
+            new PadOption("Misc", IconPath: "gears"),
+            new PadOption("Quit PKForge", IconPath: "quit"),
+        ]);
+        var choice = await PadMenu.ShowAsync(_hostGrid, "SETTINGS", null, [.. options]);
+        if (choice == hiddenOption) { await ShowHiddenSavesAsync(); return; }
         switch (choice)
         {
             case "Link an emulator": await ShowLinkMenuAsync(); break;
@@ -495,6 +550,19 @@ public sealed class HomePage : ContentPage, IPadHandler
                 if (await PadMenu.ConfirmAsync(_hostGrid, "QUIT PKFORGE?", "Unsaved edits in open menus are already backed up per write.", "Quit"))
                     Microsoft.Maui.Controls.Application.Current?.Quit();
                 break;
+        }
+    }
+
+    /// <summary>Hidden saves, one row each; picking one puts it back on the shelf.</summary>
+    private async Task ShowHiddenSavesAsync()
+    {
+        while (_viewModel.HiddenSaves is { Count: > 0 } hidden)
+        {
+            var save = await SavePickerSheet.ChooseFromTileAsync(_hostGrid, hidden, "HIDDEN SAVES",
+                "Pick a save to show it on Home and in save pickers again.", allowSingle: true);
+            if (save is null) return;
+            var current = _viewModel.Identities.Get(save.DocumentId) ?? new SaveIdentity(save.DocumentId);
+            _viewModel.Identities.Set(current with { Hidden = false });
         }
     }
 
@@ -522,8 +590,8 @@ public sealed class HomePage : ContentPage, IPadHandler
 
         var options = roots
             .Select(root => new PadOption($"Unlink {root.Kind} · {root.DisplayName}", IconPath: IconFor(root.Kind)))
-            .Append(new PadOption("Unlink all storage units", IconPath: "release"))
-            .Append(new PadOption("Cancel", IconPath: "quit"))
+            .Append(new PadOption("Unlink all storage units", IconPath: "unlink"))
+            .Append(new PadOption("Cancel", IconPath: "close"))
             .ToArray();
         var choice = await PadMenu.ShowAsync(_hostGrid, "LINKED STORAGE", "Remove a linked emulator folder without resetting the app.", options);
         if (choice is null or "Cancel") return;
@@ -674,7 +742,7 @@ public sealed class HomePage : ContentPage, IPadHandler
                 new PadOption(music.IsPlaying ? "Pause" : "Play", IconPath: music.IsPlaying ? "pause" : "play"),
                 new PadOption("Skip to next track", IconPath: "skip"),
                 new PadOption($"Add music files ({music.Library.Count})", IconPath: "folder"),
-                new PadOption(music.Library.Count > 0 ? "Clear library" : "-", IconPath: "hex"),
+                new PadOption(music.Library.Count > 0 ? "Clear library" : "-", IconPath: "delete"),
                 new PadOption($"Order: {order}", IconPath: "shuffle"),
                 new PadOption($"Autostart: {auto}", IconPath: "settings"));
             switch (choice)
@@ -716,11 +784,12 @@ public sealed class HomePage : ContentPage, IPadHandler
         var choice = await PadMenu.ShowAsync(_hostGrid, "MISC", null,
             new PadOption(trainerProfiles.UseCurrentTrainerForGeneration
                 ? "Generated Pokémon obey trainer: ON"
-                : "Generated Pokémon obey trainer: OFF", IconPath: "trainer"),
-            new PadOption($"Download full sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "storage"),
-            new PadOption("Rescan games", IconPath: "hex"),
-            new PadOption("Scan report", IconPath: "script"),
-            new PadOption(Services.HaXMode.IsOn ? "HaX mode: ON" : "HaX mode: OFF", IconPath: "editor"));
+                : "Generated Pokémon obey trainer: OFF", IconPath: "profile"),
+            new PadOption($"Download full sprite pack ({SpritePackDownloader.SizeHint})", IconPath: "download"),
+            new PadOption("Rescan games", IconPath: "refresh"),
+            new PadOption("Scan report", IconPath: "report"),
+            new PadOption(Services.HaXMode.IsOn ? "HaX mode: ON" : "HaX mode: OFF", IconPath: "hax"),
+            new PadOption(Services.HardcoreMode.IsOn ? "Hardcore mode: ON" : "Hardcore mode: OFF", IconPath: "hardcore"));
         switch (choice)
         {
             case var ownership when ownership?.StartsWith("Generated Pokémon obey trainer:", StringComparison.Ordinal) == true:
@@ -752,6 +821,17 @@ public sealed class HomePage : ContentPage, IPadHandler
             case "HaX mode: ON":
                 Services.HaXMode.Set(false);
                 _viewModel.Status = "HaX mode is OFF.";
+                break;
+            case "Hardcore mode: OFF":
+                if (await PadMenu.ConfirmAsync(_hostGrid, "TURN ON HARDCORE MODE?", Services.HardcoreMode.SettingExplanation, "Turn on"))
+                {
+                    Services.HardcoreMode.Set(true);
+                    _viewModel.Status = $"{Services.HardcoreMode.Marker}: Hardcore mode is ON - moves only, no edits or copies.";
+                }
+                break;
+            case "Hardcore mode: ON":
+                Services.HardcoreMode.Set(false);
+                _viewModel.Status = "Hardcore mode is OFF.";
                 break;
         }
     }
@@ -795,6 +875,9 @@ public sealed class HomePage : ContentPage, IPadHandler
     /// A game as an actual cartridge: fixed uniform size, dark contact strip on top,
     /// and the game art as the cart's label sticker (era-colored plastic behind it).
     /// </summary>
+    private const double TilePadding = 8;
+    private const double TileInnerWidth = 118;
+
     private View BuildCartridgeTile()
     {
         const double cartWidth = 76;
@@ -815,10 +898,11 @@ public sealed class HomePage : ContentPage, IPadHandler
         };
         gameArt.BindingContextChanged += async (_, _) =>
         {
-            if (gameArt.BindingContext is not SaveGroup group) return;
+            if (gameArt.BindingContext is not SaveCard group) return;
             gameArt.IsVisible = false;
             gameMark.IsVisible = true;
-            var path = await GameArt.GetIconAsync(group.GameLabel);
+            // Box art follows the game, never the custom name; unnamed hacks keep the mark.
+            var path = group.Save.ArtLabel is { } art ? await GameArt.GetIconAsync(art) : null;
             // A recycled template may have moved on while package I/O was in flight.
             if (!ReferenceEquals(gameArt.BindingContext, group)) return;
             gameArt.Source = path;
@@ -852,68 +936,80 @@ public sealed class HomePage : ContentPage, IPadHandler
             Padding = 0,
             Content = cartLayout,
         };
-        cartBody.SetBinding(BackgroundColorProperty, new Binding(nameof(DetectedSave.Generation), converter: GenerationColor));
-        cartBody.SetBinding(Border.StrokeProperty, new Binding(nameof(DetectedSave.Generation), converter: GenerationEdge));
+        // The plastic is the player's chosen color, else the console era's.
+        cartBody.SetBinding(BackgroundColorProperty, new Binding(".", converter: CartColor));
+        cartBody.SetBinding(Border.StrokeProperty, new Binding(".", converter: CartEdge));
 
         var iconHost = new Grid { Children = { cartBody } };
 
-        var name = new Label
+        // Every line gets the tile's full inner width so long names end in an ellipsis
+        // instead of being clipped on both sides of a centred run.
+        Label ShelfLine(double size, Color color, bool bold = false) => new()
         {
-            TextColor = UiTokens.Ink0,
-            FontSize = 13,
-            FontAttributes = FontAttributes.Bold,
+            TextColor = color,
+            FontSize = size,
+            FontAttributes = bold ? FontAttributes.Bold : FontAttributes.None,
             HorizontalTextAlignment = TextAlignment.Center,
             LineBreakMode = LineBreakMode.TailTruncation,
-            MaximumWidthRequest = 112,
+            MaxLines = 1,
+            WidthRequest = TileInnerWidth,
+            // The pixel font's first glyph overhangs its advance; keep it off the clip edge.
+            Padding = new Thickness(3, 0),
         };
-        name.SetBinding(Label.TextProperty, nameof(DetectedSave.GameLabel));
 
-        var trainer = new Label
-        {
-            TextColor = UiTokens.Ink1,
-            FontSize = 10,
-            HorizontalTextAlignment = TextAlignment.Center,
-            LineBreakMode = LineBreakMode.TailTruncation,
-        };
-        trainer.SetBinding(Label.TextProperty, new MultiBinding
-        {
-            Bindings =
-            {
-                new Binding(nameof(DetectedSave.TrainerName)),
-                new Binding(nameof(DetectedSave.PlayTime)),
-            },
-            StringFormat = "{0} · {1}",
-        });
+        var name = ShelfLine(13, UiTokens.Ink0, bold: true);
+        name.SetBinding(Label.TextProperty, nameof(SaveCard.ShelfTitle));
+
+        var trainer = ShelfLine(10, UiTokens.Ink1);
+        trainer.SetBinding(Label.TextProperty, nameof(SaveCard.TrainerLine));
+
+        // Emulator · folder · date: what tells two saves of one game apart at a glance.
+        var detail = ShelfLine(9, UiTokens.Ink1);
+        detail.SetBinding(Label.TextProperty, nameof(SaveCard.DetailLine));
 
         // Every tile is exactly the same size: the shelf must read as a row of carts.
-        var chipIcon = PksmIcons.Icon("folder", 12, PksmIcons.Dark);
-        var chipLabel = new Label { TextColor = UiTokens.OnAccent, FontSize = 9, FontAttributes = FontAttributes.Bold };
-        chipLabel.SetBinding(Label.TextProperty, new Binding(nameof(SaveGroup.Count), stringFormat: "x{0}"));
-        var countChip = new Border
+        // A shared cartridge (the same game in several files) carries its save count,
+        // tucked on the cart's lower corner like a sticker.
+        var countLabel = new Label
         {
-            BackgroundColor = UiTokens.Cyan,
-            StrokeThickness = 0,
-            StrokeShape = new RoundRectangle { CornerRadius = 4 },
-            Padding = new Thickness(6, 2),
-            HorizontalOptions = LayoutOptions.Center,
-            IsVisible = false,
-            Content = new HorizontalStackLayout { Spacing = 4, Children = { chipIcon, chipLabel } },
+            TextColor = UiTokens.Ink0,
+            FontSize = 10,
+            FontAttributes = FontAttributes.Bold,
+            HorizontalTextAlignment = TextAlignment.Center,
+            VerticalTextAlignment = TextAlignment.Center,
         };
-        countChip.SetBinding(IsVisibleProperty, new Binding(nameof(SaveGroup.Count), converter: MoreThanOne));
+        countLabel.SetBinding(Label.TextProperty, nameof(SaveCard.CountBadge));
+        var countBadge = new Border
+        {
+            BackgroundColor = UiTokens.ShellPress,
+            Stroke = UiTokens.SelectBorder,
+            StrokeThickness = 1.5,
+            StrokeShape = new RoundRectangle { CornerRadius = 10 },
+            MinimumWidthRequest = 20,
+            HeightRequest = 20,
+            Padding = new Thickness(5, 0),
+            HorizontalOptions = LayoutOptions.End,
+            VerticalOptions = LayoutOptions.End,
+            Margin = new Thickness(0, 0, -8, -4),
+            InputTransparent = true,
+            Content = countLabel,
+        };
+        countBadge.SetBinding(IsVisibleProperty, nameof(SaveCard.HasSeveralSaves));
+        iconHost.Children.Add(countBadge);
 
         var card = Kit.DevicePanel(new VerticalStackLayout
         {
             Spacing = 4,
             HorizontalOptions = LayoutOptions.Center,
             VerticalOptions = LayoutOptions.Center,
-            Children = { iconHost, name, trainer, countChip },
-        }, padding: 8);
-        card.WidthRequest = 122;
-        card.HeightRequest = 138;
+            Children = { iconHost, name, trainer, detail },
+        }, padding: TilePadding);
+        card.WidthRequest = TileInnerWidth + 2 * TilePadding;
+        card.HeightRequest = 162;
 
         card.Triggers.Add(new DataTrigger(typeof(Border))
         {
-            Binding = new Binding(nameof(SaveGroup.IsSelected)),
+            Binding = new Binding(nameof(SaveCard.IsSelected)),
             Value = true,
             Setters =
             {
@@ -921,14 +1017,33 @@ public sealed class HomePage : ContentPage, IPadHandler
                 new Setter { Property = Border.StrokeThicknessProperty, Value = 3.0 },
             },
         });
-        var tap = new TapGestureRecognizer();
-        tap.Tapped += async (_, _) =>
+        void Select(SaveCard group)
         {
-            if (card.BindingContext is not SaveGroup group) return;
             _shelfIndex = _viewModel.Groups.IndexOf(group);
             for (var i = 0; i < _viewModel.Groups.Count; i++)
                 _viewModel.Groups[i].IsSelected = i == _shelfIndex;
-            await OpenGroupAsync(group);
+        }
+
+        // Long-press (held ~0.5 s) opens the identity menu; the tap that follows the
+        // release is swallowed so the save does not also open. MAUI's pointer
+        // recognizer never sees touch once a tap recognizer owns the view on Android,
+        // so the hold is timed from the native touch stream it shares with the tap.
+        var longPressFired = false;
+        AttachLongPress(card, () =>
+        {
+            if (card.BindingContext is not SaveCard group) return;
+            longPressFired = true;
+            Select(group);
+            _ = ShowSaveMenuAsync(group);
+        });
+
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += async (_, _) =>
+        {
+            if (longPressFired) { longPressFired = false; return; }
+            if (card.BindingContext is not SaveCard group) return;
+            Select(group);
+            await OpenCardAsync(group);
         };
         card.GestureRecognizers.Add(tap);
         BlockNativeFocus(card);
@@ -939,7 +1054,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     private async Task ShowEventsMenuAsync()
     {
         var choice = await PadMenu.ShowAsync(_hostGrid, "EVENT DATABASE", null,
-            new PadOption($"Community boxes ({Services.CommunityBoxService.RepoTitle})", IconPath: "storage"),
+            new PadOption($"Community boxes ({Services.CommunityBoxService.RepoTitle})", IconPath: "community"),
             new PadOption("Wonder cards", IconPath: "events"));
         switch (choice)
         {
@@ -953,9 +1068,10 @@ public sealed class HomePage : ContentPage, IPadHandler
         }
     }
 
-    private static readonly IValueConverter GenerationColor = new FuncConverter(gen => Kit.EraColor((int)(gen ?? 0)));
-    private static readonly IValueConverter GenerationEdge = new FuncConverter(gen => Kit.EraColor((int)(gen ?? 0)).AddLuminosity(-0.15f));
-    private static readonly MoreThanOneConverter MoreThanOne = new();
+    private static readonly IValueConverter CartColor = new FuncConverter(card =>
+        card is SaveCard c ? SaveColors.For(c.ColorKey, c.Generation) : Kit.EraColor(0));
+    private static readonly IValueConverter CartEdge = new FuncConverter(card =>
+        (card is SaveCard c ? SaveColors.For(c.ColorKey, c.Generation) : Kit.EraColor(0)).AddLuminosity(-0.15f));
 
     private sealed class FuncConverter(Func<object?, Color> convert) : IValueConverter
     {
@@ -1008,16 +1124,6 @@ public sealed class HomePage : ContentPage, IPadHandler
             Volatile.Write(ref _parkNavigationPending, 0);
         }
     }
-}
-
-/// <summary>Visible when a game has more than one save (the folder chip).</summary>
-internal sealed class MoreThanOneConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
-        value is int count && count > 1;
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
-        throw new NotSupportedException();
 }
 
 internal static class ViewBuilderExtensions

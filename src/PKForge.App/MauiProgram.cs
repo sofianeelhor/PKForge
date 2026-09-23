@@ -39,10 +39,17 @@ public static class MauiProgram
             new FileBankService(Path.Combine(FileSystem.AppDataDirectory, "bank")));
         builder.Services.AddSingleton<InjectedGiftHistory>(_ =>
             new InjectedGiftHistory(Path.Combine(FileSystem.AppDataDirectory, "injected-gifts.json")));
-        builder.Services.AddSingleton<ISaveSessionService, SaveSessionService>();
+        builder.Services.AddSingleton<ISaveIdentityStore>(_ =>
+            new JsonSaveIdentityStore(Path.Combine(FileSystem.AppDataDirectory, "save-identities.json")));
+        builder.Services.AddSingleton<ISaveSessionService>(sp => new SaveSessionService(
+            sp.GetRequiredService<ISaveFileAccess>(), sp.GetRequiredService<ISaveEngine>(),
+            sp.GetRequiredService<ISaveIdentityStore>()));
         builder.Services.AddSingleton<Services.ProtectionStore>();
         builder.Services.AddSingleton<ISafeSaveWriter, SafeSaveWriter>();
         builder.Services.AddSingleton<ILegalityService, LegalityService>();
+        builder.Services.AddSingleton<IStatPreviewService, StatPreviewService>();
+        builder.Services.AddSingleton<IMonInfoService, MonInfoService>();
+        builder.Services.AddSingleton<IEvolutionService, EvolutionService>();
         builder.Services.AddSingleton<ISpriteService, SpriteService>();
         builder.Services.AddSingleton<PokeparkService>();
         builder.Services.AddSingleton<PokeparkJournalState>();

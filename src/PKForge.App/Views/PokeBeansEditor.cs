@@ -23,8 +23,8 @@ public static class PokeBeansEditor
             }
 
             var options = beans.Select(bean => new PadOption($"{bean.Name} · {bean.Count}/{bean.MaxCount}"))
-                .Append(new PadOption("Fill every Bean stack", Accent: UiTokens.Green))
-                .Append(new PadOption("Clear every Bean stack", Accent: UiTokens.GiftRed))
+                .Append(new PadOption("Fill every Bean stack", IconPath: "fill"))
+                .Append(new PadOption("Clear every Bean stack", IconPath: "clear"))
                 .ToArray();
             var choice = await EditorMenu.ShowAsync(host, "POKé BEANS", "Poké Pelago storage", options);
             if (choice is null) return;
@@ -41,7 +41,7 @@ public static class PokeBeansEditor
                 {
                     foreach (var bean in s.GetPokeBeans()) s.SetPokeBeanCount(bean.Id, filling ? bean.MaxCount : 0);
                     return new GenerationOutcome(true, filling ? "Every Poké Bean stack is full." : "Every Poké Bean stack was cleared.");
-                }, slot, refreshSlot: false);
+                }, slot, refreshSlot: false, action: SaveAction.EditInventory);
                 if (!success) return;
                 continue;
             }
@@ -55,7 +55,7 @@ public static class PokeBeansEditor
             {
                 var stored = s.SetPokeBeanCount(selected.Id, next);
                 return new GenerationOutcome(true, $"{selected.Name} ×{stored}");
-            }, slot, refreshSlot: false);
+            }, slot, refreshSlot: false, action: SaveAction.EditInventory);
             if (!saved) return;
         }
     }

@@ -24,59 +24,8 @@ public static class PksmIcons
     public const string White = "white";
     public const string Native = "native";
 
-    /// <summary>Semantic → bundled asset file.</summary>
-    public static string Asset(string name) => name switch
-    {
-        "storage" => "icon_storage.png",
-        "editor" => "icon_editor.png",
-        "events" => "icon_events.png",
-        "settings" => "icon_settings.png",
-        "bag" => "icon_bag.png",
-        "party" => "icon_party.png",
-        "shiny" => "icon_shiny.png",
-        "item" => "icon_item.png",
-        "search" => "icon_search.png",
-        "folder" => "icon_folder.png",
-        "hex" => "icon_hex.png",
-        "script" => "icon_script.png",
-        "scripts" => "icon_scripts.png",
-        "credits" => "icon_credits.png",
-        "ribbons" => "ribbon_award.png",
-        "box" => "storagemenu_icon_box.png",
-        "bank" => "pkf_bank.png",
-        "trainer" => "gi_trainer.png",
-        "male" => "gi_male.png",
-        "female" => "gi_female.png",
-        "genderless" => "gi_genderless.png",
-        "pokedex" => "gi_pokedex.png",
-        "music" => "gi_music.png",
-        "play" => "gi_play.png",
-        "pause" => "gi_pause.png",
-        "skip" => "gi_skip.png",
-        "shuffle" => "gi_shuffle.png",
-        "power" => "gi_power.png",
-        "quit" => "gi_quit.png",
-        "restore" => "gi_restore.png",
-        "release" => "gi_release.png",
-        "padlock" => "gi_padlock-white.png",
-        "dice" => "gi_dice-white.png",
-        "skull" => "gi_skull-white.png",
-        "gears" => "gi_gears-white.png",
-        "heart" => "gi_heart-white.png",
-        "retroarch" => "emu_retroarch.png",
-        "melonds" => "emu_melonds.png",
-        "azahar" => "emu_azahar.png",
-        "eden" => "emu_eden.png",
-        "linkboy" => "emu_linkboy.png",
-        "dolphin" => "gi_dolphin.png",
-        "pizzaboy" => "gi_pizza.png",
-        "drastic" => "gi_gamepad.png",
-        "platform-gb" => "emu_linkboy.png",
-        "platform-gba" => "gi_gamepad.png",
-        "platform-ds" => "emu_melonds.png",
-        "platform-gc" => "gi_cube.png",
-        _ => "icon_hex.png",
-    };
+    /// <summary>Semantic → bundled asset file (the vocabulary lives in <see cref="PksmIconCatalog"/>).</summary>
+    public static string Asset(string name) => PksmIconCatalog.Asset(name);
 
     /// <summary>Icons whose authored colors carry meaning and must never be monochrome-tinted.</summary>
     public static bool IsNative(string name) => name is

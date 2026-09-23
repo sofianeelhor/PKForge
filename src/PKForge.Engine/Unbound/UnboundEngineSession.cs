@@ -115,6 +115,21 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
             WriteChecksum(_data, copy, ChecksumLength);
     }
 
+    /// <summary>Raw bytes of every slot (party first, then the PC) for the write-safety
+    /// structural diff (see <see cref="WriteSafety"/>).</summary>
+    internal IEnumerable<SlotImage> SlotImages()
+    {
+        for (var box = -1; box < Boxes; box++)
+        for (var slot = 0; slot < (box == -1 ? 6 : BoxSlotCount); slot++)
+        {
+            var mon = TryMon(box, slot);
+            yield return mon is null
+                ? new SlotImage(new SlotRef(box, slot), [], Empty: true, Valid: true)
+                : new SlotImage(new SlotRef(box, slot), mon.Buffer.AsSpan(mon.Offset, mon.Size).ToArray(),
+                    mon.IsEmpty, mon.IsEmpty || mon.LooksValid);
+        }
+    }
+
     public EntityDetail ReadEntity(int box, int slot)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -132,9 +147,12 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
             mon.Nickname,
             mon.Level,
             mon.Nature,
-            UnboundData.ActiveAbility(mon),
-            mon.HeldItem,
-            moves[0], moves[1], moves[2], moves[3],
+            // The UI resolves ability/item/move names through PKHeX's tables, so the
+            // ROM ids are bridged here (see UnboundData's national id bridges).
+            UnboundData.AbilityToNational(UnboundData.ActiveAbility(mon)),
+            UnboundData.ItemToNational(mon.HeldItem),
+            UnboundData.MoveToNational(moves[0]), UnboundData.MoveToNational(moves[1]),
+            UnboundData.MoveToNational(moves[2]), UnboundData.MoveToNational(moves[3]),
             mon.IVs, mon.EVs,
             mon.IsShiny,
             mon.DisplayBall,
@@ -152,23 +170,46 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     {
         var mon = TryMon(box, slot) ?? throw new InvalidOperationException("Cannot edit an empty slot.");
         var location = box == -1 ? null : ResolveSlot(box, slot);
+        var before = mon.Buffer.AsSpan(mon.Offset, mon.Size).ToArray();
 
-        if (edit.Species is { } species && species != mon.Species && species <= MaxSpeciesId)
-            mon.Species = species;
+        // Edits arrive in PKHeX ids (the editor echoes every field it was shown), so a
+        // field only writes when it differs from the bridged current value, and then
+        // through the reverse bridge. Writing them raw turned Treecko (national 252)
+        // into ROM id 252 and every Gen-4+ move into an unrelated CFRU move.
+        if (edit.Species is { } species && species != UnboundData.NationalIdOf(mon.Species)
+            && UnboundData.SpeciesFromNational(species) is > 0 and var romSpecies)
+            mon.Species = romSpecies;
         if (edit.Nickname is { Length: > 0 } nickname && nickname != mon.Nickname)
             mon.Nickname = nickname;
-        if (edit.Level is { } level)
+        // Only a CHANGED level rewrites EXP: the editor always sends its level field,
+        // and snapping EXP to the level floor on a no-op save silently erased progress.
+        if (edit.Level is { } level && Math.Clamp(level, 1, 100) != mon.Level)
             SetLevel(mon, level);
         if (edit.Nature is { } nature && nature != mon.Nature)
             RerollPid(mon, nature: nature);
-        if (edit.Ability is { } ability)
-            SetAbility(mon, ability);
-        if (edit.HeldItem is { } item && item != mon.HeldItem)
-            mon.HeldItem = item;
-        if (edit.Move1 is { } m1) mon.Moves = [m1, mon.Moves[1], mon.Moves[2], mon.Moves[3]];
-        if (edit.Move2 is { } m2) mon.Moves = [mon.Moves[0], m2, mon.Moves[2], mon.Moves[3]];
-        if (edit.Move3 is { } m3) mon.Moves = [mon.Moves[0], mon.Moves[1], m3, mon.Moves[3]];
-        if (edit.Move4 is { } m4) mon.Moves = [mon.Moves[0], mon.Moves[1], mon.Moves[2], m4];
+        if (edit.Ability is { } ability && ability != UnboundData.AbilityToNational(UnboundData.ActiveAbility(mon))
+            && UnboundData.AbilityFromNational(ability) is > 0 and var romAbility)
+            SetAbility(mon, romAbility);
+        if (edit.HeldItem is { } item && item != UnboundData.ItemToNational(mon.HeldItem))
+        {
+            var romItem = item == 0 ? 0 : UnboundData.ItemFromNational(item);
+            if (item == 0 || romItem > 0)
+                mon.HeldItem = romItem;
+        }
+        int?[] wantedMoves = [edit.Move1, edit.Move2, edit.Move3, edit.Move4];
+        var storedMoves = mon.Moves;
+        var movesChanged = false;
+        for (var i = 0; i < 4; i++)
+        {
+            if (wantedMoves[i] is not { } wanted || wanted == UnboundData.MoveToNational(storedMoves[i]))
+                continue;
+            var romMove = wanted == 0 ? 0 : UnboundData.MoveFromNational(wanted);
+            if (wanted != 0 && romMove == 0) continue; // not a move this ROM knows
+            storedMoves[i] = romMove;
+            movesChanged = true;
+        }
+        if (movesChanged)
+            mon.Moves = storedMoves;
         if (edit.IVs is { Count: 6 } ivs)
             mon.IVs = [..ivs.Select(v => Math.Clamp(v, 0, 31))];
         if (edit.EVs is { Count: 6 } evs)
@@ -179,9 +220,13 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
             mon.Ball = cfru;
         if (edit.OriginalTrainer is { Length: > 0 } ot)
             WriteOtName(mon, ot);
-        if (edit.Gender is 0 or 1)
+        if (edit.Gender is 0 or 1 && edit.Gender != UnboundData.GenderOf(mon.Pid, mon.Species))
             RerollPid(mon, gender: edit.Gender);
 
+        // A no-op edit (the editor re-sends every field) must not commit: committing the
+        // party mirrors the live sector over the rotating backup copy, rewriting the file.
+        if (mon.Buffer.AsSpan(mon.Offset, mon.Size).SequenceEqual(before))
+            return;
         if (box == -1) CommitParty();
         else CommitPc(location);
     }
@@ -283,13 +328,8 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     /// </summary>
     internal GenerationOutcome GenerateInto(int box, int slot, GenerationRequest request)
     {
-        var strings = GameInfo.GetStrings("en");
-        var speciesName = request.Species > 0 && request.Species < strings.specieslist.Length
-            ? strings.specieslist[request.Species]
-            : string.Empty;
-        return Generate(box, slot, speciesName, request.Level, request.Shiny, request.Nature, request.Ball,
-            [.. (request.Moves ?? []).Select(move => move > 0 && move < strings.movelist.Length ? strings.movelist[move] : string.Empty)],
-            request.AllowUnsupportedSpecies);
+        return Generate(box, slot, request.Species, request.Level, request.Shiny, request.Nature, request.Ball,
+            [.. request.Moves ?? []], request.AllowUnsupportedSpecies);
     }
 
     internal GenerationOutcome GenerateFromShowdownText(int box, int slot, string text)
@@ -297,17 +337,18 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         var set = new ShowdownSet(text);
         if (set.Species == 0)
             return new GenerationOutcome(false, "Could not read the set (no species).");
-        var strings = GameInfo.GetStrings("en");
-        var speciesName = set.Species < strings.specieslist.Length ? strings.specieslist[set.Species] : string.Empty;
-        Span<string> moves = [.. set.Moves.Select(move => move > 0 && move < strings.movelist.Length ? strings.movelist[move] : string.Empty)];
         int? nature = set.Nature is Nature.Random ? null : (int)set.Nature;
-        return Generate(box, slot, speciesName, set.Level, set.Shiny, nature, null, moves.ToArray(), false);
+        return Generate(box, slot, set.Species, set.Level, set.Shiny, nature, null, [.. set.Moves.Select(move => (int)move)], false);
     }
 
-    private GenerationOutcome Generate(int box, int slot, string speciesName, int? level, bool shiny, int? nature, int? ball,
-        string[] moveNames, bool allowUnknownSpecies)
+    private GenerationOutcome Generate(int box, int slot, int nationalSpecies, int? level, bool shiny, int? nature, int? ball,
+        int[] nationalMoves, bool allowUnknownSpecies)
     {
-        var species = UnboundData.SpeciesIdByName(speciesName);
+        var strings = GameInfo.GetStrings("en");
+        var speciesName = nationalSpecies > 0 && nationalSpecies < strings.specieslist.Length
+            ? strings.specieslist[nationalSpecies]
+            : string.Empty;
+        var species = UnboundData.SpeciesFromNational(nationalSpecies);
         if (species <= 0)
             return new GenerationOutcome(false,
                 $"{(speciesName.Length == 0 ? "That Pokémon" : speciesName)} is not in Unbound's ROM table.");
@@ -321,7 +362,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         mon.Pid = (uint)(species * 2654435761) & 0xFFFF_FFFF; // PUSE's deterministic starter personality
         mon.Otid = (uint)((trainer.SID << 16) | (trainer.TID & 0xFFFF));
         mon.Nickname = UnboundData.SpeciesName(species);
-        mon.Moves = [.. moveNames.Select(UnboundData.MoveIdByName)];
+        mon.Moves = [.. nationalMoves.Where(move => move > 0).Select(UnboundData.MoveFromNational).Where(move => move > 0).Take(4)];
         mon.IVs = [31, 31, 31, 31, 31, 31];
         mon.Ball = ball is { } wanted && UnboundMon.TryStoreBall(wanted, out var cfru) ? cfru : 3;
         WriteOtName(mon, trainer.Name.Length > 0 ? trainer.Name : "PKForge");
@@ -541,13 +582,14 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
 
     private static void FromPk3(PK3 pk3, UnboundMon target)
     {
-        target.Species = Math.Min((int)pk3.Species, 1267);
-        target.HeldItem = pk3.HeldItem;
+        target.Species = UnboundData.SpeciesFromNational(pk3.Species);
+        target.HeldItem = UnboundData.ItemFromNational(ItemConverter.GetItemFuture3((ushort)pk3.HeldItem));
         target.Experience = Math.Max(pk3.EXP, 1u);
         target.Pid = pk3.PID;
         target.Otid = pk3.ID32;
         target.Nickname = pk3.Nickname.Length > 0 ? pk3.Nickname : UnboundData.SpeciesName(target.Species);
-        target.Moves = [pk3.Move1, pk3.Move2, pk3.Move3, pk3.Move4];
+        target.Moves = [UnboundData.MoveFromNational(pk3.Move1), UnboundData.MoveFromNational(pk3.Move2),
+            UnboundData.MoveFromNational(pk3.Move3), UnboundData.MoveFromNational(pk3.Move4)];
         Span<int> ivs = stackalloc int[6]; // PKHeX order: HP, Atk, Def, Spe, SpA, SpD
         pk3.GetIVs(ivs);
         target.IVs = [ivs[0], ivs[1], ivs[2], ivs[4], ivs[5], ivs[3]]; // -> app order HP, Atk, Def, SpA, SpD, Spe
@@ -570,17 +612,17 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
 
         var pk3 = new PK3
         {
-            Species = (ushort)Math.Min(mon.Species, 1267),
+            Species = (ushort)UnboundData.NationalIdOf(mon.Species),
             PID = mon.Pid,
             ID32 = mon.Otid,
             Nickname = mon.Nickname,
             IsNicknamed = true,
-            HeldItem = (ushort)mon.HeldItem,
+            HeldItem = ItemConverter.GetItemOld3((ushort)UnboundData.ItemToNational(mon.HeldItem)),
             EXP = mon.Experience,
-            Move1 = (ushort)mon.Moves[0],
-            Move2 = (ushort)mon.Moves[1],
-            Move3 = (ushort)mon.Moves[2],
-            Move4 = (ushort)mon.Moves[3],
+            Move1 = (ushort)UnboundData.MoveToNational(mon.Moves[0]),
+            Move2 = (ushort)UnboundData.MoveToNational(mon.Moves[1]),
+            Move3 = (ushort)UnboundData.MoveToNational(mon.Moves[2]),
+            Move4 = (ushort)UnboundData.MoveToNational(mon.Moves[3]),
             OriginalTrainerName = mon.OriginalTrainerName,
             Language = (int)LanguageID.English,
             Version = GameVersion.FR,
@@ -624,10 +666,13 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
 
     public IReadOnlyList<int> GetAbilityChoices(int species, int form)
     {
-        var (a1, a2, hidden) = UnboundData.AbilityIds(species);
-        var choices = new List<int> { a1 };
-        if (a2 != 0) choices.Add(a2);
-        choices.Add(hidden);
+        // Species arrives as a national id and the answer is read through PKHeX's
+        // ability names, so both ends bridge.
+        var (a1, a2, hidden) = UnboundData.AbilityIds(UnboundData.SpeciesFromNational(species));
+        var choices = new List<int>();
+        foreach (var ability in new[] { a1, a2, hidden })
+            if (UnboundData.AbilityToNational(ability) is > 0 and var national && !choices.Contains(national))
+                choices.Add(national);
         return choices;
     }
 
@@ -688,7 +733,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
             return new RngInfo(0, null, 0, false, false, [0, 0, 0, 0, 0, 0], 0, 2);
         return new RngInfo(
             mon.Pid, null, mon.Nature, mon.IsShiny, NatureRerollSupported: true,
-            mon.IVs, UnboundData.ActiveAbility(mon), UnboundData.GenderOf(mon.Pid, mon.Species));
+            mon.IVs, UnboundData.AbilityToNational(UnboundData.ActiveAbility(mon)), UnboundData.GenderOf(mon.Pid, mon.Species));
     }
 
     public TrainingCaps GetTrainingCaps() => new(31, 255);
@@ -969,7 +1014,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         for (var i = 0; i < 4; i++)
         {
             var max = UnboundData.MoveBasePp(moves[i]);
-            slots.Add(new MoveSlotDetail(moves[i], pp[i], max, 0));
+            slots.Add(new MoveSlotDetail(UnboundData.MoveToNational(moves[i]), pp[i], max, 0));
         }
         return new MoveDetails(slots, mon.Party, []);
     }

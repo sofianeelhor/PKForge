@@ -17,7 +17,8 @@ public sealed record TransferPreviewOutcome(
 /// <summary>
 /// Moves one Pokémon into a game save without touching the currently connected session.
 /// The target save is opened as a throwaway engine session, the entity is converted to
-/// its format by the engine (Gen 1 to Gen 9 either way), and the write goes through the
+/// its format by the engine (Gen 1 to Gen 9 either way, downgrades included with
+/// warnings), and the write goes through the
 /// same validate, backup, atomic-write pipeline as every other mutation.
 /// </summary>
 public sealed class TransferService(
@@ -44,7 +45,7 @@ public sealed class TransferService(
 
         var preview = new TransferPreviewService(legality).Preview(session, landing.Box, landing.Slot, entityBytes.ToArray());
         if (preview is null)
-            return new TransferPreviewOutcome(false, $"{nickname} cannot enter {target.GameLabel}'s format.");
+            return new TransferPreviewOutcome(false, Refusal(entityBytes, nickname, snapshot, target.GameLabel));
         return new TransferPreviewOutcome(true, $"{nickname} → {target.GameLabel} (box {landing.Box + 1}).",
             landing.Box, landing.Slot, preview);
     }
@@ -62,8 +63,10 @@ public sealed class TransferService(
         if (landing is null)
             return new TransferOutcome(false, $"{target.GameLabel} has no empty slot in any box.");
 
-        if (!session.ImportSlot(landing.Box, landing.Slot, entityBytes.ToArray()))
-            return new TransferOutcome(false, $"{nickname} cannot enter {target.GameLabel}'s format.");
+        if (!TryImport(session, landing.Box, landing.Slot, entityBytes.ToArray(), out var refusal))
+            return new TransferOutcome(false, refusal is null
+                ? Refusal(entityBytes, nickname, snapshot, target.GameLabel)
+                : $"{nickname} cannot go to {target.GameLabel}. {refusal}");
 
         var candidate = session.Serialize();
         var receipt = await writer.WriteAsync(target.DocumentId, snapshot, candidate,
@@ -73,11 +76,47 @@ public sealed class TransferService(
         return new TransferOutcome(true, $"{nickname} joined {target.GameLabel} (box {landing.Box + 1}).", landing.Box, landing.Slot, receipt.BackupId);
     }
 
+    /// <summary>
+    /// Dry-run of an import into the connected game (the live session is never touched: a
+    /// throwaway copy of its current bytes takes the import). Same diff, warnings and
+    /// verdict as <see cref="PreviewAsync"/>, for the bank's and boxes' "send to this game" paths.
+    /// </summary>
+    public TransferPreviewOutcome PreviewIntoConnected(ReadOnlyMemory<byte> entityBytes, string nickname, int box, int slot)
+    {
+        var live = sessions.CurrentSession;
+        if (live is null)
+            return new TransferPreviewOutcome(false, "No game is connected.");
+        const string label = "the connected game";
+        using var scratch = engine.OpenSession(live.Serialize().ToArray(), sessions.Current?.Document.DisplayName);
+        var preview = new TransferPreviewService(legality).Preview(scratch, box, slot, entityBytes.ToArray());
+        if (preview is null)
+            return new TransferPreviewOutcome(false, Refusal(entityBytes, nickname, scratch.Snapshot, label));
+        return new TransferPreviewOutcome(true, $"{nickname} → {label} (box {box + 1}).", box, slot, preview);
+    }
+
+    /// <summary>
+    /// Imports through the engine's reporting path when available, so a refusal says why.
+    /// Downgrades are allowed: only call this after the user confirmed the transfer preview.
+    /// </summary>
+    public static bool TryImport(ISaveEngineSession session, int box, int slot, byte[] bytes, out string? refusal)
+    {
+        refusal = null;
+        if (session is SaveEngineSession engineSession)
+            return engineSession.ImportSlotWithReport(box, slot, bytes, out refusal) is not null;
+        return session.ImportSlot(box, slot, bytes);
+    }
+
+    /// <summary>Why the entity cannot enter the target (the species or file names itself), else the generic refusal.</summary>
+    internal static string Refusal(ReadOnlyMemory<byte> entityBytes, string nickname, SaveSnapshot snapshot, string targetLabel) =>
+        TransferCompatibility.ExplainRefusal(entityBytes.ToArray(), nickname, snapshot.Format, snapshot.Generation, targetLabel)
+            ?? $"{nickname} cannot enter {targetLabel}.";
+
     /// <summary>Re-reads the target save and opens it as a throwaway session; the caller disposes it.</summary>
     private async Task<ISaveEngineSession> OpenTargetAsync(DetectedSave target, CancellationToken cancellationToken)
     {
         var bytes = await access.ReadAsync(target.DocumentId, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        return engine.OpenSession(bytes.ToArray(), target.GameLabel);
+        // The engine sees the chosen game and route, never the custom display name.
+        return engine.OpenSession(bytes.ToArray(), target.EngineHint, target.Format);
     }
 }

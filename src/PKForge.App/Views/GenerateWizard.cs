@@ -105,7 +105,8 @@ public static class GenerateWizard
         }
 
         // A chooser row: caption, current value ("auto" until picked), opens a picker.
-        (View Row, Action Refresh) Chooser(string caption, Func<List<PickItem>> items, Func<int?> get, Action<int?> set)
+        (View Row, Action Refresh) Chooser(string caption, Func<List<PickItem>> items, Func<int?> get, Action<int?> set,
+            Func<int?, Task<PickItem?>>? open = null)
         {
             var value = new Label { TextColor = UiTokens.Ink0, FontSize = 13, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center, Text = "auto" };
             void Refresh()
@@ -139,7 +140,7 @@ public static class GenerateWizard
             {
                 var choices = items();
                 if (choices.Count == 0) return;
-                var picked = await PickerMenu.ShowAsync(host, caption, choices, get());
+                var picked = open is not null ? await open(get()) : await PickerMenu.ShowAsync(host, caption, choices, get());
                 if (picked is not null) set(picked.Id);
                 Refresh();
             };
@@ -147,20 +148,24 @@ public static class GenerateWizard
             return (chip, Refresh);
         }
 
-        List<PickItem> NatureItems() =>
-            Enumerable.Range(0, data.NatureNames.Count).Where(i => data.NatureNames[i].Length > 0)
-                .Select(i => new PickItem(i, data.NatureNames[i])).ToList();
-        List<PickItem> AbilityItems() =>
-            session.GetAbilityChoices(species.Id, form)
-                .Select(id => new PickItem(id, id < data.AbilityNames.Count ? data.AbilityNames[id] : $"#{id}")).ToList();
+        List<PickItem> NatureItems() => NaturePicker.Items(data.NatureNames);
+        // The mon does not exist yet: preview a perfect-IV, untrained one at the typed
+        // level (50 while the level is still "auto").
+        Task<PickItem?> OpenNature(int? current)
+        {
+            var previewLevel = int.TryParse(level.Text?.Trim(), out var typed) ? typed : 50;
+            var preview = NaturePicker.Service?.PreviewSpecies(session, species.Id, form, previewLevel);
+            return NaturePicker.ShowAsync(host, data.NatureNames, current, preview);
+        }
+        List<PickItem> AbilityItems() => InfoPickers.AbilityItems(data, session, species.Id, form);
         List<PickItem> BallItems() =>
             Enumerable.Range(1, data.BallNames.Count - 1).Where(i => data.BallNames[i].Length > 0)
                 .Select(i => new PickItem(i, data.BallNames[i])).ToList();
-        List<PickItem> MoveItems() =>
-            Enumerable.Range(1, data.MoveNames.Count - 1).Where(i => data.MoveNames[i].Length > 0)
-                .Select(i => new PickItem(i, data.MoveNames[i])).ToList();
+        List<PickItem>? moveChoices = null;
+        List<PickItem> MoveItems() => moveChoices ??= InfoPickers.MoveRows(data, session);
 
-        var (natureRow, _) = Chooser("NATURE", NatureItems, () => nature, v => nature = v);
+        var (natureRow, _) = Chooser("NATURE", NatureItems, () => nature, v => nature = v, OpenNature);
+        natureRow.IsVisible = session.Generation >= 3; // Gen 1/2 have no natures
         var (abilityRow, _) = Chooser("ABILITY", AbilityItems, () => ability, v => ability = v);
         var (ballRow, _) = Chooser("BALL", BallItems, () => ball, v => ball = v);
         var moveRows = new View[4];
@@ -207,6 +212,10 @@ public static class GenerateWizard
                 new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { cancel, generate } },
             },
         };
+
+        // Who this is, before anything is created: typing, base stats, abilities, gender.
+        if (InfoPickers.SpeciesCard(data, session, species.Id, form, species.Name) is { } card)
+            content.Children.Insert(1, card);
 
         // Host-capped + scrolls, so the GENERATE / CANCEL buttons are never pushed off-screen.
         var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 480);

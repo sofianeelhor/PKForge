@@ -9,7 +9,8 @@ namespace PKForge.Infrastructure;
 /// </summary>
 public sealed class FileBankService : IBankService
 {
-    public const int SlotsPerBox = 30;
+    /// <summary>Alias of <see cref="IBankService.SlotsPerBox"/>; the vault shape lives in the contract.</summary>
+    public const int SlotsPerBox = IBankService.SlotsPerBox;
 
     private readonly string _root;
     private readonly Lock _gate = new();
@@ -97,6 +98,65 @@ public sealed class FileBankService : IBankService
             try { File.Delete(DataPath(id)); }
             catch { /* index is authoritative; orphan bytes are harmless */ }
             SaveIndex();
+        }
+    }
+
+    public int RemoveMany(IReadOnlyList<Guid> ids)
+    {
+        lock (_gate)
+        {
+            if (ids.Count == 0) return 0;
+            var wanted = ids.ToHashSet();
+            var released = _entries.RemoveAll(e => wanted.Contains(e.Id));
+            if (released == 0) return 0;
+            foreach (var id in wanted)
+            {
+                try { File.Delete(DataPath(id)); }
+                catch { /* index is authoritative; orphan bytes are harmless */ }
+            }
+            SaveIndex();
+            return released;
+        }
+    }
+
+    public int Place(IReadOnlyList<(Guid Id, int Box, int Slot)> placements)
+    {
+        lock (_gate)
+        {
+            if (placements.Count == 0) return 0;
+
+            // Validate the whole batch before touching anything: a rejected batch must leave
+            // the vault exactly as it was.
+            var rows = new Dictionary<Guid, int>(placements.Count);
+            var targets = new HashSet<(int Box, int Slot)>();
+            foreach (var (id, box, slot) in placements)
+            {
+                if (!rows.TryAdd(id, _entries.FindIndex(e => e.Id == id)) || rows[id] < 0)
+                    throw new InvalidOperationException("Place requires distinct, known bank entries.");
+                if (box < 0 || slot < 0 || slot >= SlotsPerBox)
+                    throw new ArgumentOutOfRangeException(nameof(placements), "Box or slot out of range.");
+                if (!targets.Add((box, slot)))
+                    throw new InvalidOperationException("Two entries would share one slot.");
+            }
+            foreach (var (_, box, slot) in placements)
+            {
+                var occupant = _entries.FirstOrDefault(e => e.Box == box && e.Slot == slot);
+                if (occupant is not null && !rows.ContainsKey(occupant.Id))
+                    throw new InvalidOperationException("Target slot is held by an entry that is not moving.");
+            }
+
+            var moved = 0;
+            foreach (var (id, box, slot) in placements)
+            {
+                var index = rows[id];
+                var entry = _entries[index];
+                if (entry.Box == box && entry.Slot == slot) continue;
+                _entries[index] = entry with { Box = box, Slot = slot };
+                moved++;
+            }
+            _boxCount = Math.Max(_boxCount, placements.Max(p => p.Box) + 1);
+            SaveIndex();
+            return moved;
         }
     }
 

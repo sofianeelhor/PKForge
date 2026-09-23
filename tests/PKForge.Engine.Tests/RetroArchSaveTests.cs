@@ -58,13 +58,13 @@ public sealed class RetroArchSaveTests
     }
 
     [Theory]
-    [InlineData("Pokemon - Ruby Version (USA, Europe) (Rev 2).srm", GameVersion.R)]
-    [InlineData("Pokemon - Sapphire Version (USA, Europe) (Rev 2) (Fix).srm", GameVersion.S)]
-    [InlineData("ruby.sav", GameVersion.R)]
-    [InlineData("RubySapphire.sav", GameVersion.RS)]
-    [InlineData("Ruby Sapphire.sav", GameVersion.RS)]
+    [InlineData("Pokémon Ruby", GameVersion.R)]
+    [InlineData("Pokémon Sapphire", GameVersion.S)]
+    [InlineData("Pokémon Ruby / Sapphire", GameVersion.RS)]
+    [InlineData("Pokemon - Ruby Version (USA, Europe) (Rev 2).srm", GameVersion.RS)]
+    [InlineData("ruby.sav", GameVersion.RS)]
     [InlineData("main", GameVersion.RS)]
-    public void OnlyUnambiguousNameResolvesRubySapphire(string name, GameVersion expected)
+    public void OnlyTheChosenGameResolvesRubySapphire(string name, GameVersion expected)
     {
         var save = new SAV3RS();
         SaveParser.ApplyVersionHint(save, name);

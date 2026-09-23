@@ -54,8 +54,11 @@ public static class PotentialEditor
                         "This Pokémon's Tera Type is fixed by its form and cannot be changed.", "OK");
                     continue;
                 }
-                var pick = await PickChoiceAsync(host, "TERA TYPE", session.GetTeraTypeChoices(), p.TeraType);
-                if (pick is { } v) { session.ApplyPotentialEdit(box, slot, new PotentialEdit(TeraType: v)); dirty = true; }
+                var mon = session.ReadEntity(box, slot);
+                var ownTypes = InfoPickers.Info?.GetSpeciesCard(session, mon.Species, mon.Form)?.Types
+                    ?? session.GetSpeciesTypes(mon.Species);
+                var pick = (await InfoPickers.ShowTeraAsync(host, session.GetTeraTypeChoices(), p.TeraType, ownTypes))?.Id;
+                if (pick is { } v && v != p.TeraType) { session.ApplyPotentialEdit(box, slot, new PotentialEdit(TeraType: v)); dirty = true; }
             }
             else if (choice.StartsWith("Hyper Training", StringComparison.Ordinal))
             {
@@ -84,8 +87,8 @@ public static class PotentialEditor
         var maximums = awakening ? Enumerable.Repeat((int)AwakeningUtil.AwakeningMax, 6).ToArray() : p.GanbaruMaximums.ToArray();
         var title = awakening ? "AWAKENING VALUES" : "GRIT EFFORT LEVELS";
         var options = StatNames.Select((name, i) => new PadOption($"{name} · {values[i]}/{maximums[i]}"))
-            .Append(new PadOption("Max all"))
-            .Append(new PadOption("Clear all"))
+            .Append(new PadOption("Max all", IconPath: "fill"))
+            .Append(new PadOption("Clear all", IconPath: "clear"))
             .ToArray();
         var choice = await EditorMenu.ShowAsync(host, title, null, options);
         if (choice is null) return false;
@@ -117,8 +120,8 @@ public static class PotentialEditor
                 var trained = p.HyperTrained[i];
                 options.Add(new PadOption($"{StatNames[i]} · {(trained ? "trained" : "-")}"));
             }
-            options.Add(new PadOption("Train all", IconPath: "editor"));
-            options.Add(new PadOption("Clear all", IconPath: "hex"));
+            options.Add(new PadOption("Train all", IconPath: "train"));
+            options.Add(new PadOption("Clear all", IconPath: "clear"));
 
             var choice = await EditorMenu.ShowAsync(host, "HYPER TRAINING", null, options.ToArray());
             if (choice is null) return dirty;

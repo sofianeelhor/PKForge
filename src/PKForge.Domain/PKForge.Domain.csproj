@@ -6,4 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Move/ability/item facts from PokeAPI (BSD-3), built by tools/DexFacts/build.py. -->
+    <EmbeddedResource Include="Resources/dexfacts.tsv.gz" LogicalName="PKForge.Domain.dexfacts.tsv.gz" />
+  </ItemGroup>
 </Project>

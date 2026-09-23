@@ -183,11 +183,65 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
             return;
         }
 
+        if (HardcoreMode.IsOn)
+        {
+            if (!await ConfirmHardcoreRestoreAsync(backup)) return;
+            await _viewModel.RestoreAsync(backup);
+            return;
+        }
+
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid,
             "Restore this point?",
             $"Write the {backup.CreatedUtc:yyyy-MM-dd HH:mm} UTC restore point into the connected save? The current state is preserved as a new restore point first.",
             "Restore");
         if (confirmed)
             await _viewModel.RestoreAsync(backup);
+    }
+
+    /// <summary>
+    /// Hardcore restores can duplicate: a Pokémon moved to the Bank or another game since the
+    /// restore point would exist again in this save. The Pokémon that would reappear are
+    /// named, and the safe choice (Cancel) is the default cursor.
+    /// </summary>
+    private async Task<bool> ConfirmHardcoreRestoreAsync(BackupInfo backup)
+    {
+        const string Cancel = "Cancel (keep current save)";
+        const string Anyway = "Restore anyway";
+        var check = await _viewModel.CheckResurrectionAsync(backup);
+        if (check is { IsSafe: true })
+            return await PadMenu.ConfirmAsync(_hostGrid, "Restore this point?",
+                $"Write the {backup.CreatedUtc:yyyy-MM-dd HH:mm} UTC restore point into the connected save? " +
+                "No Pokémon that has left this save since then would come back. The current state is preserved as a new restore point first.",
+                "Restore");
+
+        string message;
+        if (check is null)
+        {
+            message = $"{HardcoreMode.Marker}: this restore point could not be compared with the current save. " +
+                "If any Pokémon was moved to the Bank or sent to another game after it was taken, restoring brings it back here " +
+                "and it would then exist twice - a duplication Hardcore mode does not allow.";
+        }
+        else
+        {
+            var names = string.Join(", ", check.Reappearing.Take(6).Select(Describe));
+            if (check.Reappearing.Count > 6) names += $" and {check.Reappearing.Count - 6} more";
+            var where = new List<string>();
+            if (check.InBank > 0) where.Add($"{check.InBank} now in the Bank");
+            if (check.Elsewhere > 0) where.Add($"{check.Elsewhere} sent to another game or released");
+            message = $"{HardcoreMode.Marker}: restoring would bring back {check.Reappearing.Count} Pokémon that left this save " +
+                $"after this point ({string.Join(", ", where)}): {names}. " +
+                "Any that still exist in the Bank or another game would then exist twice - a duplication Hardcore mode does not allow. " +
+                "Release or withdraw those copies yourself if you restore.";
+        }
+
+        var choice = await PadMenu.ShowAsync(_hostGrid, "Duplication risk", message, Cancel, Anyway);
+        return choice == Anyway;
+    }
+
+    private static string Describe(SlotSummary slot)
+    {
+        var name = slot.Nickname ?? $"#{slot.Species:000}";
+        if (slot.IsEgg) name = $"Egg #{slot.Species:000}";
+        return slot.IsShiny ? $"{name} (shiny)" : name;
     }
 }

@@ -20,8 +20,8 @@ public static class GrandUndergroundEditor
             }
 
             var options = items.Select(item => new PadOption($"{item.Name} · {item.Count}/{item.MaxCount} · {item.Type}"))
-                .Append(new PadOption("Fill every stack", Accent: UiTokens.Green))
-                .Append(new PadOption("Clear every stack", Accent: UiTokens.GiftRed))
+                .Append(new PadOption("Fill every stack", IconPath: "fill"))
+                .Append(new PadOption("Clear every stack", IconPath: "clear"))
                 .ToArray();
             var choice = await EditorMenu.ShowAsync(host, "GRAND UNDERGROUND", "Spheres, treasures, statues, and pedestals", options);
             if (choice is null) return;
@@ -39,7 +39,7 @@ public static class GrandUndergroundEditor
                     foreach (var item in s.GetGrandUndergroundItems())
                         s.SetGrandUndergroundItemCount(item.Id, filling ? item.MaxCount : 0);
                     return new GenerationOutcome(true, filling ? "Every Grand Underground stack is full." : "Every Grand Underground stack was cleared.");
-                }, slot, refreshSlot: false);
+                }, slot, refreshSlot: false, action: SaveAction.EditInventory);
                 if (!saved) return;
                 continue;
             }
@@ -52,7 +52,7 @@ public static class GrandUndergroundEditor
             {
                 var stored = s.SetGrandUndergroundItemCount(selected.Id, count);
                 return new GenerationOutcome(true, $"{selected.Name} ×{stored}");
-            }, slot, refreshSlot: false);
+            }, slot, refreshSlot: false, action: SaveAction.EditInventory);
             if (!savedCount) return;
         }
     }

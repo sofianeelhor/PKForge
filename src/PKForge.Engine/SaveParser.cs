@@ -50,28 +50,32 @@ internal static class SaveParser
 
     // Ruby and Sapphire have identical save layouts and no reliable version flag.
     // Only resolve an ambiguous RS save, and require a standalone name token.
-    internal static void ApplyVersionHint(SaveFile save, string? displayName)
+    /// <summary>
+    /// FR/LG and R/S share indistinguishable save layouts, so the bytes never name the
+    /// edition. Only the game the user picked for this save does; file names are ignored.
+    /// </summary>
+    internal static void ApplyVersionHint(SaveFile save, string? chosenGame)
     {
-        if (displayName is null) return;
-        var tokens = System.Text.RegularExpressions.Regex.Split(displayName, @"[^\p{L}\p{N}]+");
-
-        // FR/LG share an indistinguishable save layout. PKHeX defaults to FR;
-        // preserve that default unless the filename carries an explicit edition.
-        if (save is SAV3FRLG && save.Version is GameVersion.FR or GameVersion.LG or GameVersion.FRLG)
+        var game = chosenGame?.Replace("Pokémon ", "", StringComparison.Ordinal).Trim();
+        switch (save)
         {
-            var leafGreen = tokens.Any(token => token.Equals("LeafGreen", StringComparison.OrdinalIgnoreCase) ||
-                                                token.Equals("LG", StringComparison.OrdinalIgnoreCase));
-            var fireRed = tokens.Any(token => token.Equals("FireRed", StringComparison.OrdinalIgnoreCase) ||
-                                              token.Equals("FR", StringComparison.OrdinalIgnoreCase));
-            if (leafGreen != fireRed)
-                save.Version = leafGreen ? GameVersion.LG : GameVersion.FR;
-            return;
+            case SAV3FRLG when save.Version is GameVersion.FR or GameVersion.LG or GameVersion.FRLG:
+                save.Version = game switch
+                {
+                    "FireRed" => GameVersion.FR,
+                    "LeafGreen" => GameVersion.LG,
+                    _ => save.Version,
+                };
+                break;
+            case SAV3RS when save.Version == GameVersion.RS:
+                save.Version = game switch
+                {
+                    "Ruby" => GameVersion.R,
+                    "Sapphire" => GameVersion.S,
+                    _ => save.Version,
+                };
+                break;
         }
-
-        if (save is not SAV3RS || save.Version != GameVersion.RS) return;
-        var ruby = tokens.Contains("Ruby", StringComparer.OrdinalIgnoreCase);
-        var sapphire = tokens.Contains("Sapphire", StringComparer.OrdinalIgnoreCase);
-        if (ruby != sapphire) save.Version = ruby ? GameVersion.R : GameVersion.S;
     }
 
     internal static bool IsLuminescentPlatinum(ReadOnlySpan<byte> data)

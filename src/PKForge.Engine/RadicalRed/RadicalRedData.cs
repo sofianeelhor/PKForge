@@ -1,3 +1,4 @@
+using PKForge.Engine.Unbound;
 using System.Reflection;
 using PKHeX.Core;
 
@@ -191,28 +192,71 @@ internal static class RadicalRedData
     // Radical Red's move table is the CFRU engine's, which shares ids with every Gen 3
     // game for 1..354 (the frozen pre-Gen 4 national move numbering) and diverges
     // beyond (the champion's Terapagos stores Earth Power as 372 and Flash Cannon as
-    // 449, neither of which is the national id). Only the shared zone is bridged by
-    // name; higher stored ids surface raw.
+    // 449, neither of which is the national id). Past the shared zone the ids follow
+    // CFRU's include/constants/moves.h (github.com/Skeli789/Complete-Fire-Red-Upgrade),
+    // which is id-for-id the Unbound table through 766 (Take Heart) and agrees with
+    // both champion ground-truth points, so those ids bridge through it; ids past 766
+    // are unverified for this hack and stay unnamed (and are never overwritten by an
+    // echoed edit).
     public const int SharedMoveLimit = 354;
+    public const int CfruMoveLimit = 766;
 
     public static string MoveName(int move)
     {
         LoadStrings();
-        return move is > 0 and <= SharedMoveLimit && move < _moveList.Length && _moveList[move].Length > 0
-            ? _moveList[move]
-            : $"#{move}";
+        if (move is > 0 and <= SharedMoveLimit && move < _moveList.Length && _moveList[move].Length > 0)
+            return _moveList[move];
+        return move is > SharedMoveLimit and <= CfruMoveLimit ? UnboundData.MoveName(move) : $"#{move}";
     }
 
-    /// <summary>Stores a move requested by name when it lives in the shared id zone.</summary>
+    /// <summary>The PKHeX (national) move id behind a stored move, or 0 when unknown.</summary>
+    public static int MoveToNational(int move) => move switch
+    {
+        > 0 and <= SharedMoveLimit => move,
+        > SharedMoveLimit and <= CfruMoveLimit => UnboundData.MoveToNational(move),
+        _ => 0,
+    };
+
+    /// <summary>The stored id for a PKHeX (national) move, or 0 when the table lacks it.</summary>
+    public static int MoveFromNational(int national)
+    {
+        if (national is > 0 and <= SharedMoveLimit) return national;
+        var id = UnboundData.MoveFromNational(national);
+        return id is > SharedMoveLimit and <= CfruMoveLimit ? id : 0;
+    }
+
+    /// <summary>Stores a move requested by its PKHeX name.</summary>
     public static int MoveIdByName(string name)
     {
         LoadStrings();
         if (name.Length == 0) return 0;
-        for (var id = 1; id <= SharedMoveLimit && id < _moveList.Length; id++)
+        for (var id = 1; id < _moveList.Length; id++)
             if (_moveList[id].Equals(name, StringComparison.OrdinalIgnoreCase))
-                return id;
+                return MoveFromNational(id);
         return 0;
     }
+
+    /// <summary>The Radical Red species id for a national species (lowest id of that
+    /// name), or 0 when the table lacks it.</summary>
+    public static int SpeciesFromNational(int national)
+    {
+        LoadStrings();
+        return national > 0 && national < _speciesList.Length ? SpeciesIdByName(_speciesList[national]) : 0;
+    }
+
+    // ── Held items ──
+    // Radical Red's item ids are its own table (items.txt); the UI's held-item picker
+    // speaks PKHeX's modern item ids, so held items bridge by name.
+    private static CfruIdBridge? _itemBridge;
+
+    private static CfruIdBridge ItemBridge()
+    {
+        LoadItems();
+        return _itemBridge ??= new CfruIdBridge(_items!, GameInfo.GetStrings("en").itemlist, []);
+    }
+
+    public static int ItemToNational(int item) => item == 0 ? 0 : ItemBridge().ToNational(item);
+    public static int ItemFromNational(int national) => national == 0 ? 0 : ItemBridge().FromNational(national);
 
     /// <summary>Ability ids are CFRU's modern-numbered table; the display name comes
     /// from PKHeX's national ability list.</summary>

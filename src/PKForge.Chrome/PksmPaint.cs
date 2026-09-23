@@ -252,6 +252,24 @@ public static class PksmPaint
         c.DrawRoundRect(r, 4, 4, p);
     }
 
+    /// <summary>
+    /// The organizer's mark on a slot: a cobalt disc with a cyan check, top-left. Shared by the
+    /// save-side organizer and the bank vault so a marked mon wears the same badge in both.
+    /// </summary>
+    public static void MarkBadge(SKCanvas c, SKRect r)
+    {
+        using var badge = Paint(Pksm.SelectBorder);
+        using var check = Stroke(Pksm.IndigoInk, 3);
+        check.StrokeCap = SKStrokeCap.Round;
+        var size = Math.Min(r.Width, r.Height);
+        var cx = r.Left + size * 0.15f;
+        var cy = r.Top + size * 0.15f;
+        var radius = size * 0.12f;
+        c.DrawCircle(cx, cy, radius, badge);
+        c.DrawLine(cx - radius * 0.45f, cy, cx - radius * 0.1f, cy + radius * 0.4f, check);
+        c.DrawLine(cx - radius * 0.1f, cy + radius * 0.4f, cx + radius * 0.5f, cy - radius * 0.35f, check);
+    }
+
     // ---------- Gift sparkle ----------
 
     /// <summary>White 4-point sparkle star (mystery-gift screens).</summary>
