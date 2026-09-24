@@ -106,7 +106,7 @@ games and popular romhacks:
 - **Generation VII:** Sun, Moon, Ultra Sun, Ultra Moon, Let's Go Pikachu, Let's Go Eevee
 - **Generation VIII:** Sword, Shield, Brilliant Diamond, Shining Pearl, Legends: Arceus
 - **Generation IX:** Scarlet, Violet
-- **Romhacks:** Pokémon Unbound, Luminescent Platinum, Pokémon Compass
+- **Romhacks:** Pokémon Unbound, Radical Red, GS Chronicles, Luminescent Platinum, Pokémon Compass
 
 ## Supported emulators
 
