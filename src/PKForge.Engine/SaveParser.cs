@@ -51,31 +51,63 @@ internal static class SaveParser
     // Ruby and Sapphire have identical save layouts and no reliable version flag.
     // Only resolve an ambiguous RS save, and require a standalone name token.
     /// <summary>
-    /// FR/LG and R/S share indistinguishable save layouts, so the bytes never name the
-    /// edition. Only the game the user picked for this save does; file names are ignored.
+    /// FR/LG, R/S and D/P share one save layout, so the file itself never names the edition.
+    /// The game the player picked for this save wins; without a pick, the edition the
+    /// player's own Pokémon were caught in decides (see <see cref="EditionFromOwnPokemon"/>).
+    /// File names are never read.
     /// </summary>
     internal static void ApplyVersionHint(SaveFile save, string? chosenGame)
     {
+        if (save is not (SAV3FRLG or SAV3RS)) return;
         var game = chosenGame?.Replace("Pokémon ", "", StringComparison.Ordinal).Trim();
-        switch (save)
+        GameVersion? chosen = game switch
         {
-            case SAV3FRLG when save.Version is GameVersion.FR or GameVersion.LG or GameVersion.FRLG:
-                save.Version = game switch
-                {
-                    "FireRed" => GameVersion.FR,
-                    "LeafGreen" => GameVersion.LG,
-                    _ => save.Version,
-                };
-                break;
-            case SAV3RS when save.Version == GameVersion.RS:
-                save.Version = game switch
-                {
-                    "Ruby" => GameVersion.R,
-                    "Sapphire" => GameVersion.S,
-                    _ => save.Version,
-                };
-                break;
+            "FireRed" when save is SAV3FRLG => GameVersion.FR,
+            "LeafGreen" when save is SAV3FRLG => GameVersion.LG,
+            "Ruby" when save is SAV3RS => GameVersion.R,
+            "Sapphire" when save is SAV3RS => GameVersion.S,
+            _ => null,
+        };
+        if ((chosen ?? EditionFromOwnPokemon(save)) is { } edition)
+            save.Version = edition;
+    }
+
+    /// <summary>
+    /// The edition of a shared-layout save, read from the save's own Pokémon: every mon the
+    /// player caught or hatched records the game it came from, and a mon whose trainer ID,
+    /// secret ID and OT name are the save's own was obtained in this cartridge. Null when the
+    /// save holds none of its own Pokémon, or they disagree (never guessed).
+    /// </summary>
+    internal static GameVersion? EditionFromOwnPokemon(SaveFile save)
+    {
+        GameVersion[] editions = save switch
+        {
+            SAV3FRLG => [GameVersion.FR, GameVersion.LG],
+            SAV3RS => [GameVersion.R, GameVersion.S],
+            SAV4DP => [GameVersion.D, GameVersion.P],
+            _ => [],
+        };
+        if (editions.Length == 0) return null;
+
+        var seen = new HashSet<GameVersion>();
+        foreach (var pk in OwnedEntities(save))
+        {
+            if (pk.Species == 0 || !pk.ChecksumValid || pk.ID32 != save.ID32 || pk.OriginalTrainerName != save.OT)
+                continue;
+            if (Array.IndexOf(editions, pk.Version) >= 0) seen.Add(pk.Version);
         }
+        return seen.Count == 1 ? seen.First() : null;
+    }
+
+    private static IEnumerable<PKM> OwnedEntities(SaveFile save)
+    {
+        if (save.HasParty)
+            for (var i = 0; i < save.PartyCount; i++)
+                yield return save.GetPartySlotAtIndex(i);
+        if (save.HasBox)
+            for (var box = 0; box < save.BoxCount; box++)
+            for (var slot = 0; slot < save.BoxSlotCount; slot++)
+                yield return save.GetBoxSlotAtIndex(box, slot);
     }
 
     internal static bool IsLuminescentPlatinum(ReadOnlySpan<byte> data)
@@ -118,6 +150,32 @@ internal static class SaveParser
                 stamps++;
         }
         return stamps >= 8; // a full main half stamps 14 sectors; extras never carry it
+    }
+
+    /// <summary>
+    /// GS Chronicles' CUSTOM_FILE_SIGNATURE (src/config.h of github.com/G0LD/GS-Chronicles-Engine
+    /// @7517ab2): its save.c stamps it on every section it writes (HandleWriteSector) and
+    /// accepts it or the retail 0x08012025 on load. Verified on a real GS Chronicles save:
+    /// all 28 slot sectors carry it, sectors 30/31 are raw (zeroed footers).
+    /// </summary>
+    internal const uint GsChroniclesSectorSignature = 0x6629_0096;
+
+    /// <summary>
+    /// True when the bytes are a Pokémon GS Chronicles save (a CFRU FireRed hack by Ruki
+    /// Studios). Decided by the sector signature alone, exactly like Unbound: a full slot
+    /// stamps 14 sectors, so 8 rules out a stray match while tolerating a torn backup slot.
+    /// </summary>
+    internal static bool IsPokemonGsChronicles(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 0x20_000)
+            return false;
+        var stamps = 0;
+        for (var sector = 0; sector < 32; sector++)
+        {
+            if (BinaryPrimitives.ReadUInt32LittleEndian(data[(sector * 0x1000 + 0xFF8)..]) == GsChroniclesSectorSignature)
+                stamps++;
+        }
+        return stamps >= 8;
     }
 
     /// <summary>

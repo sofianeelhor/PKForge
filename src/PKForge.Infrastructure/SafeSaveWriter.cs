@@ -15,14 +15,35 @@ public sealed class SafeSaveWriter(
 
     // The layout verdict depends only on the file's bytes, and analysing it re-parses and
     // round-trips the whole save; it is kept per document for the exact bytes it judged.
-    private readonly Dictionary<string, (byte[] Bytes, string? Risk)> _layoutVerdicts = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (byte[] Bytes, LayoutRisk? Risk)> _layoutVerdicts = new(StringComparer.Ordinal);
 
+    /// <summary>Accepts the suspected-hack risk for this session and, with an identity
+    /// store, for good. A corrupting layout is never lifted.</summary>
     public void ConfirmLayoutRisk(string documentId)
     {
         lock (_gate) _confirmedLayoutRisk.Add(documentId);
+        if (identities is not null && identities.Get(documentId) is not { AcceptedHackRisk: true })
+            identities.Set((identities.Get(documentId) ?? new SaveIdentity(documentId)) with { AcceptedHackRisk = true });
     }
 
+    public void RevokeLayoutRisk(string documentId)
+    {
+        lock (_gate) _confirmedLayoutRisk.Remove(documentId);
+        if (identities?.Get(documentId) is { AcceptedHackRisk: true } identity)
+            identities.Set(identity with { AcceptedHackRisk = false });
+    }
+
+    public LayoutRisk? LayoutRiskOf(string documentId, SaveSnapshot original) => LayoutRisk(documentId, original.OriginalBytes);
+
     public string? WhyWritesAreRefused(string documentId, SaveSnapshot original) => Refusal(documentId, original)?.Message;
+
+    // With an identity store the persisted choice is the only truth, so "Reset to detected"
+    // or a revoke on Home takes effect immediately; without one it lasts for this session.
+    private bool Accepted(string documentId)
+    {
+        if (identities is not null) return identities.Get(documentId)?.AcceptedHackRisk == true;
+        lock (_gate) return _confirmedLayoutRisk.Contains(documentId);
+    }
 
     /// <summary>The refusal every non-restore write of this document would hit before any
     /// slot is compared, or null when the save accepts writes.</summary>
@@ -37,22 +58,26 @@ public sealed class SafeSaveWriter(
                 "Write refused: this save is marked as a CFRU hack PKForge has no engine for. It can be browsed, " +
                 "but writing would use another game's Pokémon tables. The original was not touched.");
 
-        bool confirmed;
-        lock (_gate) confirmed = _confirmedLayoutRisk.Contains(documentId);
-        if (!confirmed && LayoutRisk(documentId, original.OriginalBytes) is { } risk)
-            return new UnsafeSaveWriteException(
-                $"Write refused: {risk} Confirm to write anyway; the original was not touched.", requiresConfirmation: true);
-        return null;
+        return LayoutRisk(documentId, original.OriginalBytes) switch
+        {
+            // A vanilla write provably breaks the file: no confirmation can make it safe.
+            { Kind: LayoutRiskKind.CorruptingLayout } risk => new UnsafeSaveWriteException(
+                $"Write refused: {risk.Reason} This save is read-only in PKForge; the original was not touched."),
+            { Kind: LayoutRiskKind.SuspectedHack } risk when !Accepted(documentId) => new UnsafeSaveWriteException(
+                $"Read-only: {risk.Reason} To edit anyway, long-press this save on Home and choose \"Edit at my own risk\". " +
+                "The original was not touched.", requiresConfirmation: true),
+            _ => null,
+        };
     }
 
-    private string? LayoutRisk(string documentId, ReadOnlyMemory<byte> bytes)
+    private LayoutRisk? LayoutRisk(string documentId, ReadOnlyMemory<byte> bytes)
     {
         lock (_gate)
         {
             if (_layoutVerdicts.TryGetValue(documentId, out var cached) && bytes.Span.SequenceEqual(cached.Bytes))
                 return cached.Risk;
         }
-        var risk = engine.DescribeLayoutRisk(bytes);
+        var risk = engine.AssessLayoutRisk(bytes);
         lock (_gate) _layoutVerdicts[documentId] = (bytes.ToArray(), risk);
         return risk;
     }

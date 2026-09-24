@@ -114,11 +114,11 @@ public sealed class SaveWriteSafetyTests
         Assert.True(rewritten >= 5, $"expected the vanilla write to rewrite CFRU checksums, got {rewritten}");
 
         // The guard: flagged, and the writer refuses until the user confirms.
-        Assert.NotNull(Engine.DescribeLayoutRisk(broken));
+        Assert.Equal(LayoutRiskKind.CorruptingLayout, Engine.AssessLayoutRisk(broken)?.Kind);
         var (writer, access) = Writer();
         var refusal = await Assert.ThrowsAsync<UnsafeSaveWriteException>(() =>
             writer.WriteAsync("doc", Snap(broken), written).AsTask());
-        Assert.True(refusal.RequiresConfirmation);
+        Assert.False(refusal.RequiresConfirmation); // a provably corrupting write has no own-risk bypass
         Assert.Equal(0, access.Writes);
     }
 
@@ -137,7 +137,7 @@ public sealed class SaveWriteSafetyTests
         for (var i = 0; i < 0xFF0; i += 4) sum += BinaryPrimitives.ReadUInt32LittleEndian(hack.AsSpan(pcSector + i));
         BinaryPrimitives.WriteUInt16LittleEndian(hack.AsSpan(pcSector + 0xFF6), (ushort)(sum + (sum >> 16)));
 
-        Assert.NotNull(Engine.DescribeLayoutRisk(hack));
+        Assert.Equal(LayoutRiskKind.CorruptingLayout, Engine.AssessLayoutRisk(hack)?.Kind);
         using var session = Engine.OpenSession(hack);
         session.ApplyEdit(0, 0, new EntityEdit(Nickname: "EDITED"));
         var candidate = session.Serialize();
@@ -145,14 +145,14 @@ public sealed class SaveWriteSafetyTests
         var (writer, access) = Writer();
         var refusal = await Assert.ThrowsAsync<UnsafeSaveWriteException>(() =>
             writer.WriteScopedAsync("doc", Snap(hack), candidate, WriteScope.Only(new SlotRef(0, 0))).AsTask());
-        Assert.True(refusal.RequiresConfirmation);
+        Assert.False(refusal.RequiresConfirmation);
         Assert.Equal(0, access.Writes);
 
-        // Explicit user confirmation lifts exactly that refusal.
+        // Not even an explicit "at my own risk" lifts it: the vanilla write would break the file.
         writer.ConfirmLayoutRisk("doc");
-        var receipt = await writer.WriteScopedAsync("doc", Snap(hack), candidate, WriteScope.Only(new SlotRef(0, 0)));
-        Assert.True(receipt.Changed);
-        Assert.Equal(1, access.Writes);
+        await Assert.ThrowsAsync<UnsafeSaveWriteException>(() =>
+            writer.WriteScopedAsync("doc", Snap(hack), candidate, WriteScope.Only(new SlotRef(0, 0))).AsTask());
+        Assert.Equal(0, access.Writes);
     }
 
     [Fact]
@@ -206,6 +206,135 @@ public sealed class SaveWriteSafetyTests
         await writer.WriteScopedAsync("doc", Snap(first), second, scope);
         Assert.Equal(2, access.Writes);
         Assert.Null(writer.WhyWritesAreRefused("doc", Snap(second.ToArray())));
+    }
+
+    // ── Suspected ROM hacks: vanilla layout, foreign species ids ──
+
+    /// <summary>A vanilla Emerald save (PKHeX-finalized) with one PC mon whose RAW species
+    /// id is out of the Gen 3 range but whose checksum is valid: the pokeemerald-expansion
+    /// shape (Emerald Enhanced stores 875 for an Alolan Vulpix).</summary>
+    private static byte[] SyntheticEmerald(ushort? rawSpecies)
+    {
+        // The portable Gen 3 image with Emerald's security key at section 0 +0xAC...
+        var data = new byte[0x20000];
+        for (var sector = 0; sector < 14; sector++)
+        {
+            var off = sector * 0x1000;
+            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(off + 0xFF4), (ushort)sector);
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(off + 0xFF8), 0x08012025);
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(off + 0xFFC), 1);
+        }
+        // ...plus SaveBlock2 data past RS's 0x890 bytes, which is how PKHeX tells it from RS.
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(0xAC), 0x0FCA0FCC);
+        data[0x900] = 1;
+        uint sum = 0;
+        for (var i = 0; i < 0xF80; i += 4) sum += BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(i));
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0xFF6), (ushort)(sum + (sum >> 16)));
+        data.AsSpan(0xE000).Fill(0xFF);
+        Assert.True(SaveUtil.TryGetSaveFile(data, out var parsed) && parsed is SAV3E, "synthetic Emerald save did not parse");
+        var save = (SAV3E)parsed!;
+
+        // Slot 0 carries the species under test, slot 1 an ordinary (editable) Pikachu.
+        foreach (var (slot, raw) in new[] { (0, rawSpecies), (1, null) })
+        {
+            var pk = new PK3 { Species = 25, PID = 0x1234_5678u + (uint)slot, TID16 = 1, EXP = 1000, Language = 2 };
+            pk.OriginalTrainerName = "PKF";
+            pk.Nickname = "MON";
+            if (raw is { } id) pk.SpeciesInternal = id;
+            pk.RefreshChecksum();
+            Assert.True(pk.ChecksumValid);
+            save.SetBoxSlotAtIndex(pk, 0, slot, EntityImportSettings.None);
+        }
+        return save.Write().ToArray();
+    }
+
+    [Fact]
+    public void VanillaEmeraldIsNotFlagged()
+    {
+        var bytes = SyntheticEmerald(rawSpecies: null);
+        Assert.True(SaveUtil.TryGetSaveFile(bytes.ToArray(), out var save) && save is SAV3E);
+        Assert.Null(Engine.AssessLayoutRisk(bytes));
+    }
+
+    [Theory]
+    [InlineData((ushort)875)]     // Emerald Enhanced: plain expansion id
+    [InlineData((ushort)26878)]   // Emerald Ex: 0x7FF-masked Sceptile with high bits set
+    [InlineData((ushort)260)]     // retail filler id 252-276
+    public void ValidMonWithAForeignSpeciesIdIsASuspectedHack(ushort raw)
+    {
+        var bytes = SyntheticEmerald(raw);
+        var risk = Engine.AssessLayoutRisk(bytes);
+        Assert.Equal(LayoutRiskKind.SuspectedHack, risk?.Kind);
+        Assert.True(risk!.UserMayProceed);
+    }
+
+    [Fact]
+    public void VanillaFireRedSampleIsNotFlagged()
+    {
+        if (Local("firered-vanilla.sav") is not { } bytes) return;
+        Assert.Null(Engine.AssessLayoutRisk(bytes));
+    }
+
+    [Theory]
+    [InlineData("Pokemon - Black Pearl Emerald.sav")]
+    [InlineData("Pokemon - Emerald Enhanced.sav")]
+    [InlineData("Pokemon - Emerald Ex.sav")]
+    public void ExpansionHacksOnTheEmeraldLayoutAreSuspectedHacks(string file)
+    {
+        if (Local(Path.Combine("romhacks", file)) is not { } bytes) return;
+        Assert.Equal(LayoutRiskKind.SuspectedHack, Engine.AssessLayoutRisk(bytes)?.Kind);
+    }
+
+    [Fact]
+    public async Task SuspectedHackIsReadOnlyUntilAcceptedAndTheAcceptancePersists()
+    {
+        var bytes = SyntheticEmerald(875);
+        using var session = Engine.OpenSession(bytes);
+        session.ApplyEdit(0, 1, new EntityEdit(Nickname: "EDITED"));
+        var candidate = session.Serialize();
+        var path = Path.Combine(Path.GetTempPath(), "pkforge-hackrisk-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var identities = new JsonSaveIdentityStore(path);
+            var access = new MemoryAccess();
+            var writer = new SafeSaveWriter(Engine, new NullBackups(), access, identities);
+
+            var refusal = await Assert.ThrowsAsync<UnsafeSaveWriteException>(() => writer.WriteAsync("doc", Snap(bytes), candidate).AsTask());
+            Assert.True(refusal.RequiresConfirmation);
+            Assert.Contains("Edit at my own risk", refusal.Message); // the refusal says how to lift it
+            Assert.Equal(0, access.Writes);
+
+            writer.ConfirmLayoutRisk("doc");
+            Assert.True(identities.Get("doc")?.AcceptedHackRisk);
+
+            // A fresh writer over the reloaded store (an app restart) honours the choice.
+            var restarted = new SafeSaveWriter(Engine, new NullBackups(), access, new JsonSaveIdentityStore(path));
+            Assert.Null(restarted.WhyWritesAreRefused("doc", Snap(bytes)));
+            await restarted.WriteAsync("doc", Snap(bytes), candidate);
+            Assert.Equal(1, access.Writes);
+
+            // Revoking makes it read-only again, for good.
+            restarted.RevokeLayoutRisk("doc");
+            Assert.NotNull(new SafeSaveWriter(Engine, new NullBackups(), access, new JsonSaveIdentityStore(path))
+                .WhyWritesAreRefused("doc", Snap(bytes)));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ExpansionMonsAreNotMistakenForEmptySlots()
+    {
+        // PKHeX maps the foreign id to species 0; the diff must still see a Pokémon there,
+        // or a write that overwrites it would pass as touching an "empty" slot.
+        var bytes = SyntheticEmerald(875);
+        Assert.True(SaveUtil.TryGetSaveFile(bytes.ToArray(), out var save));
+        save!.SetBoxSlotAtIndex(new PK3(), 0, 0, EntityImportSettings.None);
+        var cleared = save.Write().ToArray();
+        Assert.NotNull(Engine.CheckWriteSafety(bytes, cleared, WriteScope.Only(new SlotRef(0, 1))));
+        Assert.Null(Engine.CheckWriteSafety(bytes, cleared, WriteScope.Only(new SlotRef(0, 0))));
     }
 
     // ── Structural diff ──

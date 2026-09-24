@@ -34,10 +34,11 @@ public sealed record KeyItemEventStatus(
     bool Used,
     bool Completed,
     KeyItemEventState State,
-    string? Prerequisite);
+    string? Prerequisite,
+    bool NeedsItem = true);
 
 /// <summary>
-/// Key-item Mystery Gift events for the retail Gen 3/4 games: the ticket/flute/card plus the
+/// Key-item Mystery Gift events for the retail Gen 2-6 games: the ticket/flute/card plus the
 /// exact flags and vars the official distribution writes. Putting the item in the bag alone
 /// does not open the event: every harbor/sailor script checks an enable flag (Gen 3) or a
 /// magic-number var (Gen 4) that only the distribution sets.
@@ -50,6 +51,9 @@ public sealed record KeyItemEventStatus(
 ///    data/maps/LilycoveCity_Harbor/scripts.inc, src/record_mixing.c; pokefirered
 ///    include/constants/flags.h + data/maps/VermilionCity/scripts.inc; pokeruby flags.h +
 ///    LilycoveCity_Harbor scripts; pokeplatinum src/scrcmd_mystery_gift.c + src/system_vars.c.
+///  - Gen 2/4/5/6: PKHeX gen4/const_hgss_en.txt + flags_hgss_en.txt, gen5/const_bw_en.txt,
+///    gen6/flags_oras_en.txt, PKHeX.Core Misc5BW (Liberty Pass state) and SAV2.EnableGSBallMobileEvent
+///    (the PKHeX.WinForms SAV_Misc2 "Enable GS Ball Event (Virtual Console)" button).
 ///
 /// Gen 3 note: the real Wonder Card delivers a RAM script that the Pokémon Center 2F deliveryman
 /// runs (giveitem + setflag). We write the state that script leaves behind rather than a RAM
@@ -67,12 +71,17 @@ public static class KeyItemEventService
         string Id,
         string Title,
         string Destination,
-        ushort Item,
+        ushort? Item,
         int[] EnableFlags,
         WorkValue[] EnableWork,
         int? UsedFlag,
         int[] CompletionFlags,
-        Func<SaveFile, string?>? Prerequisite = null);
+        Func<SaveFile, string?>? Prerequisite = null,
+        SaveState? Extra = null,
+        Func<SaveFile, bool>? CompletedWhen = null);
+
+    /// <summary>Distribution state that is not a plain flag/var (a checked magic value, a raw SRAM byte).</summary>
+    private sealed record SaveState(Func<SaveFile, bool> Get, Action<SaveFile, bool> Set);
 
     // ── Gen 3 ──
 
@@ -137,6 +146,69 @@ public static class KeyItemEventService
         new("dp-azure", "Azure Flute", "Hall of Origin (Arceus)", 455, [], [new(69, 0x1123)], null, [286]),
     ];
 
+    // HGSS: PKHeX const_hgss "0067 Enigma Stone 0:Not Activated,1778:Activated" - the same magic-var
+    // scheme as DP/Pt work 67-70. Completion: flags_hgss 0781 "Lati@s (Pewter City) Disappeared".
+    private static readonly Definition[] HeartGoldSoulSilver =
+    [
+        new("hgss-enigma", "Enigma Stone", "Pewter City (Latias/Latios)", 536, [], [new(67, 1778)], null, [781]),
+    ];
+
+    // BW: PKHeX Misc5BW.LibertyTicketState (Misc block +0xBC) must equal LibertyTicketMagic
+    // (2010_04_06) XOR the trainer's ID32 - the distribution's anti-copy check, set by
+    // IsLibertyTicketActivated. Completion: PKHeX const_bw work 145 "Victini" 3:Defeated,
+    // 4:Captured, 5:Event Completed, 6:Disappeared.
+    private static readonly Definition[] BlackWhite =
+    [
+        new("bw-liberty", "Liberty Pass", "Liberty Garden (Victini)", 574, [], [], null, [],
+            Extra: new(save => ((SAV5BW)save).Misc.IsLibertyTicketActivated,
+                (save, on) => ((SAV5BW)save).Misc.IsLibertyTicketActivated = on),
+            CompletedWhen: save => Work(save)!.GetWork(145) >= 3),
+    ];
+
+    // ORAS: PKHeX flags_oras 3010 "Received Eon Ticket", 3011 "Eon Ticket Event Completed";
+    // 2930/2931 Latias/Latios captured are the story catches and are not tied to the ticket.
+    private static readonly Definition[] OmegaRubyAlphaSapphire =
+    [
+        new("oras-eon", "Eon Ticket", "Southern Island", 726, [3010], [], null, [3011]),
+    ];
+
+    // Crystal: PKHeX SAV2.EnableGSBallMobileEvent writes GS_BALL_AVAILABLE (0x0B) to the Mobile
+    // event byte (0x3E3C + backup 0x3E44 international, 0xA000 + 0xA083 Japanese) - what the
+    // Virtual Console patch writes on a Hall of Fame entry. The cartridge scripts read the same
+    // byte on every Crystal release, so it also opens the event on international GB saves (PKHeX
+    // SAV_Misc2 enables it without checking VC vs GB for this reason). No item is written: the
+    // Goldenrod Pokémon Center hands the GS Ball over in game, which sets flags_c 0832
+    // "Received GS Ball" (reported as "shown").
+    private static readonly Definition[] Crystal =
+    [
+        new("c-gsball", "GS Ball", "Ilex Forest shrine (Celebi)", null, [], [], 832, [],
+            Extra: new(save => ((SAV2)save).IsEnabledGSBallMobileEvent, SetGsBall)),
+    ];
+
+    private static void SetGsBall(SaveFile save, bool on)
+    {
+        var sav2 = (SAV2)save;
+        if (on)
+        {
+            sav2.EnableGSBallMobileEvent();
+            return;
+        }
+        // Reverse of EnableGSBallMobileEvent, only while the bytes still hold what it wrote:
+        // once the game has moved the event past GS_BALL_AVAILABLE they are its progress.
+        const byte gsBallAvailable = 0x0B;
+        foreach (var offset in sav2.Japanese ? [0xA000, 0xA083] : new[] { 0x3E3C, 0x3E44 })
+            if (sav2.Data[offset] == gsBallAvailable)
+                sav2.Data[offset] = 0;
+    }
+
+    /// <summary>Gen 5/6 keep flags/vars in an EventWork block; Gen 2-4 saves implement them directly.</summary>
+    private static IEventFlagArray Flags(SaveFile save) =>
+        save is IEventFlagProvider37 provider ? provider.EventWork : (IEventFlagArray)save;
+
+    /// <summary>Null for Gen 2, whose vars are bytes (no Gen 2 event here uses one).</summary>
+    private static IEventWorkArray<ushort>? Work(SaveFile save) =>
+        save is IEventFlagProvider37 provider ? provider.EventWork : save as IEventWorkArray<ushort>;
+
     private static Func<SaveFile, string?> GameClear(int flag) => save =>
         ((IEventFlagArray)save).GetEventFlag(flag) ? null : "Needs the Hall of Fame cleared before the ferry sails.";
 
@@ -162,18 +234,19 @@ public static class KeyItemEventService
         if (!TryFind(session, id, out var save, out var definition))
             return new GenerationOutcome(false, "That event is not available for this game.");
 
-        if (!HasItem(session, definition.Item) && session.SetItemCount(KeyPouch, definition.Item, 1) < 1)
+        if (definition.Item is { } item && !HasItem(session, item) && session.SetItemCount(KeyPouch, item, 1) < 1)
             return new GenerationOutcome(false, $"This save's Key Items pouch cannot hold the {definition.Title}.");
 
-        var flags = (IEventFlagArray)save;
+        var flags = Flags(save);
         foreach (var flag in definition.EnableFlags)
             flags.SetEventFlag(flag, true);
-        var work = (IEventWorkArray<ushort>)save;
+        var work = Work(save);
         foreach (var value in definition.EnableWork)
         {
-            if (!value.OnlyIfZero || work.GetWork(value.Index) == 0)
-                work.SetWork(value.Index, value.Value);
+            if (!value.OnlyIfZero || work!.GetWork(value.Index) == 0)
+                work!.SetWork(value.Index, value.Value);
         }
+        definition.Extra?.Set(save, true);
         return new GenerationOutcome(true, $"{definition.Title} event enabled: {definition.Destination}.");
     }
 
@@ -184,38 +257,43 @@ public static class KeyItemEventService
         if (!TryFind(session, id, out var save, out var definition))
             return new GenerationOutcome(false, "That event is not available for this game.");
 
-        if (HasItem(session, definition.Item))
-            session.SetItemCount(KeyPouch, definition.Item, 0);
-        var flags = (IEventFlagArray)save;
+        if (definition.Item is { } item && HasItem(session, item))
+            session.SetItemCount(KeyPouch, item, 0);
+        var flags = Flags(save);
         foreach (var flag in definition.EnableFlags)
             flags.SetEventFlag(flag, false);
-        var work = (IEventWorkArray<ushort>)save;
+        var work = Work(save);
         foreach (var value in definition.EnableWork.Where(value => !value.OnlyIfZero))
-            work.SetWork(value.Index, 0);
+            work!.SetWork(value.Index, 0);
+        definition.Extra?.Set(save, false);
         return new GenerationOutcome(true, $"{definition.Title} event disabled.");
     }
 
     private static KeyItemEventStatus Read(ISaveEngineSession session, SaveFile save, IReadOnlyList<string> names, Definition definition)
     {
-        var flags = (IEventFlagArray)save;
-        var work = (IEventWorkArray<ushort>)save;
-        var hasItem = HasItem(session, definition.Item);
+        var flags = Flags(save);
+        var work = Work(save);
+        var hasItem = definition.Item is { } item && HasItem(session, item);
+        var extra = definition.Extra?.Get(save);
         // "OnlyIfZero" state vars advance with the story, so they are not part of the armed check.
         var armed = definition.EnableFlags.All(flags.GetEventFlag)
-            && definition.EnableWork.Where(value => !value.OnlyIfZero).All(value => work.GetWork(value.Index) == value.Value);
+            && definition.EnableWork.Where(value => !value.OnlyIfZero).All(value => work!.GetWork(value.Index) == value.Value)
+            && extra is not false;
         var anyArmed = definition.EnableFlags.Any(flags.GetEventFlag)
-            || definition.EnableWork.Any(value => !value.OnlyIfZero && work.GetWork(value.Index) == value.Value);
+            || definition.EnableWork.Any(value => !value.OnlyIfZero && work!.GetWork(value.Index) == value.Value)
+            || extra is true;
         var used = definition.UsedFlag is { } usedFlag && flags.GetEventFlag(usedFlag);
-        var completed = definition.CompletionFlags.Any(flags.GetEventFlag);
+        var completed = definition.CompletionFlags.Any(flags.GetEventFlag) || definition.CompletedWhen?.Invoke(save) == true;
+        var needsItem = definition.Item is not null;
 
         var state = completed ? KeyItemEventState.Completed
             : used ? KeyItemEventState.Used
-            : hasItem && armed ? KeyItemEventState.Enabled
+            : (hasItem || !needsItem) && armed ? KeyItemEventState.Enabled
             : hasItem || anyArmed ? KeyItemEventState.Partial
             : KeyItemEventState.NotEnabled;
-        var itemName = definition.Item < names.Count && names[definition.Item].Length != 0 ? names[definition.Item] : definition.Title;
+        var itemName = definition.Item is { } id && id < names.Count && names[id].Length != 0 ? names[id] : definition.Title;
         return new KeyItemEventStatus(definition.Id, definition.Title, definition.Destination, itemName,
-            hasItem, armed, used, completed, state, definition.Prerequisite?.Invoke(save));
+            hasItem, armed, used, completed, state, definition.Prerequisite?.Invoke(save), needsItem);
     }
 
     private static bool HasItem(ISaveEngineSession session, ushort item) => session.GetBag()
@@ -240,6 +318,10 @@ public static class KeyItemEventService
             SAV3FRLG => FireRedLeafGreen,
             SAV4Pt => Platinum,
             SAV4DP => DiamondPearl,
+            SAV4HGSS => HeartGoldSoulSilver,
+            SAV5BW => BlackWhite,
+            SAV6AO => OmegaRubyAlphaSapphire,
+            SAV2 { Version: GameVersion.C } => Crystal,
             _ => [],
         };
     }

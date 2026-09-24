@@ -404,7 +404,8 @@ public partial class SavePickerViewModel : ObservableObject
             // Substring traps first: FireRed contains "Red", HeartGold contains "Gold",
             // Omega Ruby contains "Ruby", Brilliant Diamond contains "Diamond"...
             _ when label.Contains("FireRed", StringComparison.Ordinal) || label.Contains("LeafGreen", StringComparison.Ordinal) ||
-                    label.Contains("Unbound", StringComparison.Ordinal) || label.Contains("Radical Red", StringComparison.Ordinal) => 2004,
+                    label.Contains("Unbound", StringComparison.Ordinal) || label.Contains("Radical Red", StringComparison.Ordinal) ||
+                    label.Contains("GS Chronicles", StringComparison.Ordinal) => 2004,
             _ when label.Contains("HeartGold", StringComparison.Ordinal) || label.Contains("SoulSilver", StringComparison.Ordinal) => 2009,
             _ when label.Contains("Black 2", StringComparison.Ordinal) || label.Contains("White 2", StringComparison.Ordinal) => 2012,
             _ when label.Contains("Omega", StringComparison.Ordinal) || label.Contains("Alpha", StringComparison.Ordinal) => 2014,

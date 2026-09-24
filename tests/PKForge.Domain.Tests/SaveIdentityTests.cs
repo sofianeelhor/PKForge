@@ -208,6 +208,18 @@ public sealed class JsonSaveIdentityStoreTests : IDisposable
     }
 
     [Fact]
+    public void RomHackRiskAcceptanceSurvivesARestartAndCanBeRevoked()
+    {
+        var store = new JsonSaveIdentityStore(PathName);
+        store.Set(new SaveIdentity("content://hack", AcceptedHackRisk: true));
+        Assert.True(new JsonSaveIdentityStore(PathName).Get("content://hack")?.AcceptedHackRisk);
+
+        // Acceptance alone is a customisation; withdrawing it leaves nothing behind.
+        store.Set(store.Get("content://hack")! with { AcceptedHackRisk = false });
+        Assert.Null(new JsonSaveIdentityStore(PathName).Get("content://hack"));
+    }
+
+    [Fact]
     public void ResetForgetsEverythingAndNotifies()
     {
         var store = new JsonSaveIdentityStore(PathName);
@@ -264,5 +276,30 @@ public sealed class EmulatorSaveHintTests
     public void FolderHintIsTheLastTwoFolders(string documentId, string? expected)
     {
         Assert.Equal(expected, EmulatorSaveHeuristics.FolderHint(documentId));
+    }
+
+    [Theory]
+    [InlineData("FireRed / LeafGreen", SaveLayoutFamily.FireRedLeafGreen)]
+    [InlineData("Ruby / Sapphire", SaveLayoutFamily.RubySapphire)]
+    [InlineData("Diamond / Pearl", SaveLayoutFamily.DiamondPearl)]
+    public void AnUnplacedPairAsksOnceUntilChosen(string engineGame, SaveLayoutFamily family)
+    {
+        var guess = SaveIdentityRules.Guess(engineGame, 3, "main.sav", null, "main.sav");
+        Assert.Equal(family, guess.Family);
+        Assert.True(SaveIdentityRules.NeedsEditionChoice(guess, null));
+        var edition = SaveIdentityRules.ChoicesFor(family, guess.Label).First(c => !c.IsHack);
+        Assert.False(SaveIdentityRules.NeedsEditionChoice(guess, edition.Id));
+        Assert.Equal(SaveFormat.Standard, SaveIdentityRules.FormatOfChoice(edition.Id));
+    }
+
+    [Theory]
+    [InlineData("LeafGreen")]
+    [InlineData("Sapphire")]
+    [InlineData("Pearl")]
+    [InlineData("Emerald")]
+    public void AnIdentifiedEditionNeverAsks(string engineGame)
+    {
+        var guess = SaveIdentityRules.Guess(engineGame, 3, "main.sav", null, "main.sav");
+        Assert.False(SaveIdentityRules.NeedsEditionChoice(guess, null));
     }
 }

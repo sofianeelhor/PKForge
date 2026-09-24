@@ -287,118 +287,31 @@ internal static class RadicalRedData
     }
 
     // ── National-table derived data (base stats, growth, gender, abilities) ──
-
-    private static PersonalInfo? PersonalOf(int species)
-    {
-        var national = NationalIdOf(species);
-        return national > 0 ? PersonalTable.SV.GetFormEntry((ushort)national, 0) : null;
-    }
+    // Shared with every CFRU hack: see CfruNationalTraits.
 
     /// <summary>Base stats in app order: HP, Atk, Def, SpA, SpD, Spe.</summary>
-    public static int[] BaseStats(int species)
-    {
-        var info = PersonalOf(species);
-        return info is null ? [50, 50, 50, 50, 50, 50] : [info.HP, info.ATK, info.DEF, info.SPA, info.SPD, info.SPE];
-    }
+    public static int[] BaseStats(int species) => CfruNationalTraits.BaseStats(NationalIdOf(species));
 
     /// <summary>Primary + secondary type ids (modern national numbering).</summary>
-    public static int[] TypesOf(int species)
-    {
-        var info = PersonalOf(species);
-        return info is null ? [0] : [info.Type1, info.Type2];
-    }
+    public static int[] TypesOf(int species) => CfruNationalTraits.TypesOf(NationalIdOf(species));
 
-    /// <summary>Gender from the PID low byte and the national gender ratio:
-    /// 0 male, 1 female, 2 genderless.</summary>
-    public static int GenderOf(uint pid, int species)
-    {
-        var info = PersonalOf(species);
-        if (info is null) return 2;
-        return info.Gender switch
-        {
-            255 => 2,
-            254 => 1,
-            0 => 0,
-            var threshold => (pid & 0xFF) < (uint)threshold ? 1 : 0,
-        };
-    }
+    /// <summary>0 male, 1 female, 2 genderless.</summary>
+    public static int GenderOf(uint pid, int species) => CfruNationalTraits.GenderOf(pid, NationalIdOf(species));
 
-    /// <summary>The gender threshold for the PID solver (0 male-only, 254/255 special).</summary>
-    public static int GenderThreshold(int species)
-    {
-        var info = PersonalOf(species);
-        return info?.Gender ?? 255;
-    }
+    public static int GenderThreshold(int species) => CfruNationalTraits.GenderThreshold(NationalIdOf(species));
 
-    /// <summary>Ability ids (modern numbering): slot 1, slot 2 (0 when the species has
-    /// one ability), hidden. Slot selection in the save is the PID's low bit plus the
-    /// hidden-ability flag in the IV word.</summary>
-    public static (int A1, int A2, int Hidden) AbilityIds(int species)
-    {
-        var info = PersonalOf(species);
-        if (info is null) return (0, 0, 0);
-        var a1 = info.GetAbilityAtIndex(0);
-        var a2 = info.AbilityCount > 1 ? info.GetAbilityAtIndex(1) : 0;
-        var hidden = info.AbilityCount > 2 ? info.GetAbilityAtIndex(2) : a1;
-        return (a1, a2, hidden);
-    }
+    public static (int A1, int A2, int Hidden) AbilityIds(int species) => CfruNationalTraits.AbilityIds(NationalIdOf(species));
 
-    /// <summary>The ability actually active on a mon, honoring the hidden-ability flag.</summary>
-    public static int ActiveAbility(RadicalRedMon mon)
-    {
-        var (a1, a2, hidden) = AbilityIds(mon.Species);
-        if (mon.HiddenAbility) return hidden;
-        var slot = mon.Pid & 1;
-        return slot == 1 && a2 != 0 ? a2 : a1;
-    }
+    public static int ActiveAbility(RadicalRedMon mon) => CfruNationalTraits.ActiveAbility(mon, NationalIdOf(mon.Species));
 
-    public static uint ExperienceAtLevel(int species, int level)
-    {
-        var info = PersonalOf(species);
-        var growth = info?.EXPGrowth ?? 0;
-        return Experience.GetEXP((byte)Math.Clamp(level, 1, 100), growth);
-    }
+    public static uint ExperienceAtLevel(int species, int level) =>
+        CfruNationalTraits.ExperienceAtLevel(NationalIdOf(species), level);
 
-    public static int LevelForExperience(int species, uint experience)
-    {
-        var info = PersonalOf(species);
-        if (info is null)
-            return experience >= 1_000_000 ? 100 : 50; // unknown growth: rough cubic estimate
-        return Experience.GetLevel(experience, info.EXPGrowth);
-    }
+    public static int LevelForExperience(int species, uint experience) =>
+        CfruNationalTraits.LevelForExperience(NationalIdOf(species), experience);
 
     /// <summary>Battle stats for a PC mon (party mons carry theirs in the save tail).</summary>
-    public static int[] ComputeStats(RadicalRedMon mon)
-    {
-        var baseStats = BaseStats(mon.Species);
-        var ivs = mon.IVs;
-        var evs = mon.EVs;
-        var level = mon.Level;
-
-        int NatureBoost(int nature, int storageIndex)
-        {
-            // G3 nature table over the non-HP storage stats (Atk=1, Def=2, Spe=3,
-            // SpA=4, SpD=5): nature/5 is the boosted row, nature%5 the dropped
-            // column; equal indices are the five neutral natures.
-            var up = nature / 5 + 1;
-            var down = nature % 5 + 1;
-            if (up == down) return 100;
-            if (storageIndex == up) return 110;
-            if (storageIndex == down) return 90;
-            return 100;
-        }
-
-        var result = new int[6];
-        result[0] = (2 * baseStats[0] + ivs[0] + evs[0] / 4) * level / 100 + level + 10;
-        for (var i = 1; i < 6; i++)
-        {
-            // App order (HP, Atk, Def, SpA, SpD, Spe) -> storage order (Spe=3, SpA=4, SpD=5).
-            var storageIndex = i is 3 ? 4 : i is 5 ? 3 : i;
-            var raw = (2 * baseStats[i] + ivs[i] + evs[i] / 4) * level / 100 + 5;
-            result[i] = raw * NatureBoost(mon.Nature, storageIndex) / 100;
-        }
-        return result;
-    }
+    public static int[] ComputeStats(RadicalRedMon mon) => CfruNationalTraits.ComputeStats(mon, NationalIdOf(mon.Species));
 
     private static void LoadSpecies()
     {

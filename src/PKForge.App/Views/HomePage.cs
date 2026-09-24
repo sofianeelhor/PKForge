@@ -445,6 +445,39 @@ public sealed class HomePage : ContentPage, IPadHandler
         SavePickerSheet.ChooseFromTileAsync(_hostGrid, card.Saves,
             $"{card.DisplayName.ToUpperInvariant()} · {card.SaveCount} SAVES", message);
 
+    /// <summary>
+    /// First open of a save whose editions share one format (FireRed/LeafGreen, Ruby/Sapphire,
+    /// Diamond/Pearl): the bytes cannot say which cartridge it is, so the player picks once and
+    /// the choice sticks (it stays editable from the save's menu). False when they backed out.
+    /// </summary>
+    private async Task<bool> ChooseEditionOnceAsync(DetectedSave save)
+    {
+        var store = _viewModel.Identities;
+        var current = store.Get(save.DocumentId) ?? new SaveIdentity(save.DocumentId);
+        if (_editionDeferred.Contains(save.DocumentId) || save.Guess is not { } guess
+            || !SaveIdentityRules.NeedsEditionChoice(guess, current.GameChoiceId))
+            return true;
+
+        const string later = "Decide later";
+        var editions = SaveIdentityRules.ChoicesFor(guess.Family, guess.Label).Where(c => !c.IsHack).ToArray();
+        var options = editions.Select(c => new PadOption(c.Label, IconPath: "game"))
+            .Append(new PadOption(later, IconPath: "close")).ToArray();
+        var choice = await PadMenu.ShowAsync(_hostGrid, "WHICH VERSION IS THIS?",
+            "Both versions write the same save file, so PKForge cannot tell them apart. " +
+            "Pick yours once; you can change it later from the save's menu (long-press).", options);
+        if (choice is null) return false;
+        if (choice == later)
+        {
+            _editionDeferred.Add(save.DocumentId);
+            return true;
+        }
+        store.Set(current with { GameChoiceId = editions.First(c => c.Label == choice).Id });
+        return true;
+    }
+
+    /// <summary>Saves whose edition the player chose to decide later: not asked again this session.</summary>
+    private readonly HashSet<string> _editionDeferred = new(StringComparer.Ordinal);
+
     /// <summary>Platform folders keep emulator choices together for touch and controller use.</summary>
     private async Task ShowLinkMenuAsync()
     {
@@ -1081,6 +1114,9 @@ public sealed class HomePage : ContentPage, IPadHandler
 
     private async Task OpenSaveAsync(DetectedSave save)
     {
+        if (!await ChooseEditionOnceAsync(save)) return;
+        // The pick re-resolves the save: open the version that carries the chosen edition.
+        save = _viewModel.Saves.FirstOrDefault(s => s.DocumentId == save.DocumentId) ?? save;
         if (save.RequiresExtraCare)
         {
             var confirmed = await PadMenu.ConfirmAsync(_hostGrid,

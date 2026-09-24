@@ -28,6 +28,12 @@ public sealed class KeyItemEventTests
     [InlineData(GameVersion.Pt, "pt-secret", "Secret Key (Pt)")]
     [InlineData(GameVersion.D, "dp-member", "Member Card")]
     [InlineData(GameVersion.P, "dp-azure", "Azure Flute")]
+    [InlineData(GameVersion.HG, "hgss-enigma", "Enigma Stone")]
+    [InlineData(GameVersion.SS, "hgss-enigma", "Enigma Stone")]
+    [InlineData(GameVersion.B, "bw-liberty", "Liberty Pass")]
+    [InlineData(GameVersion.W, "bw-liberty", "Liberty Pass")]
+    [InlineData(GameVersion.OR, "oras-eon", "Eon Ticket")]
+    [InlineData(GameVersion.AS, "oras-eon", "Eon Ticket")]
     public void EnableThenDisableRoundTrips(GameVersion version, string id, string itemName)
     {
         using var session = Blank(version);
@@ -136,8 +142,9 @@ public sealed class KeyItemEventTests
     }
 
     [Theory]
-    [InlineData(GameVersion.HG)]
-    [InlineData(GameVersion.B)]
+    [InlineData(GameVersion.GD)]
+    [InlineData(GameVersion.B2)]
+    [InlineData(GameVersion.X)]
     [InlineData(GameVersion.SL)]
     public void GamesWithoutVerifiedDataListNothing(GameVersion version)
     {
@@ -153,6 +160,93 @@ public sealed class KeyItemEventTests
         using var session = Blank(GameVersion.FR);
         Assert.False(KeyItemEventService.Enable(session, "e-aurora").Success);
         Assert.Equal(2, KeyItemEventService.GetEvents(session).Count);
+    }
+
+    [Fact]
+    public void HeartGoldEnigmaStoneSetsTheMagicVar()
+    {
+        using var session = Blank(GameVersion.HG);
+        var save = (SAV4)session.SaveFile;
+        KeyItemEventService.Enable(session, "hgss-enigma");
+        Assert.Equal(1778, save.GetWork(67)); // PKHeX const_hgss 0067 "Enigma Stone" 1778:Activated
+        Assert.Contains(session.GetBag().SelectMany(p => p.Items), item => item.Id == 536 && item.Count == 1);
+
+        save.SetEventFlag(781, true); // flags_hgss "Lati@s (Pewter City) Disappeared"
+        Assert.Equal(KeyItemEventState.Completed, Status(session, "hgss-enigma").State);
+        KeyItemEventService.Disable(session, "hgss-enigma");
+        Assert.Equal(0, save.GetWork(67));
+        Assert.True(save.GetEventFlag(781));
+    }
+
+    [Fact]
+    public void LibertyPassStateIsKeyedToTheTrainerIdAndSurvivesSaving()
+    {
+        using var session = Blank(GameVersion.W);
+        var save = (SAV5BW)session.SaveFile;
+        KeyItemEventService.Enable(session, "bw-liberty");
+        Assert.Equal(Misc5BW.LibertyTicketMagic ^ save.ID32, save.Misc.LibertyTicketState);
+
+        var reloaded = (SAV5BW)SaveUtil.GetSaveFile(save.Write().ToArray())!;
+        Assert.True(reloaded.Misc.IsLibertyTicketActivated);
+        Assert.Contains(reloaded.Inventory.Pouches.SelectMany(p => p.Items), item => item.Index == 574 && item.Count == 1);
+
+        save.EventWork.SetWork(145, 4); // const_bw "Victini" 4:Captured
+        Assert.Equal(KeyItemEventState.Completed, Status(session, "bw-liberty").State);
+        KeyItemEventService.Disable(session, "bw-liberty");
+        Assert.Equal(0u, save.Misc.LibertyTicketState);
+    }
+
+    [Fact]
+    public void LibertyPassItemAloneIsPartial()
+    {
+        using var session = Blank(GameVersion.B);
+        session.SetItemCount(nameof(InventoryType.KeyItems), 574, 1);
+        Assert.Equal(KeyItemEventState.Partial, Status(session, "bw-liberty").State);
+    }
+
+    [Fact]
+    public void OrasEonTicketWritesTheReceivedFlagAndSurvivesSaving()
+    {
+        using var session = Blank(GameVersion.AS);
+        var save = (SAV6AO)session.SaveFile;
+        KeyItemEventService.Enable(session, "oras-eon");
+        Assert.True(save.EventWork.GetEventFlag(3010)); // flags_oras "Received Eon Ticket"
+        Assert.False(save.EventWork.GetEventFlag(3011));
+
+        var reloaded = new SAV6AO(save.Write().ToArray()); // blank ORAS saves are not auto-detected, so reopen by type
+        Assert.True(reloaded.EventWork.GetEventFlag(3010));
+        Assert.Contains(reloaded.Inventory.Pouches.SelectMany(p => p.Items), item => item.Index == 726 && item.Count == 1);
+
+        save.EventWork.SetEventFlag(3011, true); // "Eon Ticket Event Completed"
+        Assert.Equal(KeyItemEventState.Completed, Status(session, "oras-eon").State);
+    }
+
+    [Theory]
+    [InlineData(LanguageID.English, 0x3E3C, 0x3E44)]
+    [InlineData(LanguageID.Japanese, 0xA000, 0xA083)]
+    public void CrystalGsBallMirrorsPkhexVirtualConsoleButton(LanguageID language, int primary, int backup)
+    {
+        using var session = new SaveEngineSession(BlankSaveFile.Get(GameVersion.C, "PKForge", language), null);
+        var save = (SAV2)session.SaveFile;
+        Assert.Equal(KeyItemEventState.NotEnabled, Status(session, "c-gsball").State);
+
+        Assert.True(KeyItemEventService.Enable(session, "c-gsball").Success);
+        Assert.Equal(0x0B, save.Data[primary]); // SAV2 GS_BALL_AVAILABLE
+        Assert.Equal(0x0B, save.Data[backup]);
+        var status = Status(session, "c-gsball");
+        Assert.Equal(KeyItemEventState.Enabled, status.State);
+        Assert.False(status.NeedsItem);
+        Assert.DoesNotContain(session.GetBag().SelectMany(p => p.Items), item => item.Count > 0);
+
+        var reloaded = new SAV2(save.Write().ToArray(), language, GameVersion.C);
+        Assert.True(reloaded.IsEnabledGSBallMobileEvent);
+
+        save.SetEventFlag(832, true); // flags_c "Received GS Ball"
+        Assert.Equal(KeyItemEventState.Used, Status(session, "c-gsball").State);
+        KeyItemEventService.Disable(session, "c-gsball");
+        Assert.False(save.IsEnabledGSBallMobileEvent);
+        Assert.Equal(0, save.Data[backup]);
+        Assert.True(save.GetEventFlag(832));
     }
 
     private static KeyItemEventStatus Status(SaveEngineSession session, string id) =>

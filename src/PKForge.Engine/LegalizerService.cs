@@ -30,7 +30,7 @@ public sealed class LegalizerService : ILegalizerService
     {
         if (session is Unbound.UnboundEngineSession unbound)
             return unbound.GenerateInto(box, slot, request);
-        if (session is RadicalRed.RadicalRedEngineSession radicalRed)
+        if (session is RadicalRed.CfruEngineSession radicalRed)
             return radicalRed.GenerateInto(box, slot, request);
         var text = BuildShowdownText(request, ((SaveEngineSession)session).SaveFile.Context);
         return GenerateFromShowdown(session, box, slot, text, request.AllowUnsupportedSpecies);
@@ -41,7 +41,7 @@ public sealed class LegalizerService : ILegalizerService
     {
         if (session is Unbound.UnboundEngineSession unbound)
             return unbound.GenerateFromShowdownText(box, slot, showdownText);
-        if (session is RadicalRed.RadicalRedEngineSession radicalRed)
+        if (session is RadicalRed.CfruEngineSession radicalRed)
             return radicalRed.GenerateFromShowdownText(box, slot, showdownText);
         if (session is not SaveEngineSession engineSession)
             return new GenerationOutcome(false, "Unsupported session type.");
