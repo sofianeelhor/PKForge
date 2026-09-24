@@ -57,7 +57,9 @@ internal static class RadicalRedFormat
     };
 
     /// <summary>Live (highest save index) physical offset of every section id, -1 when
-    /// absent. Only sectors with a retail 0x080120xx footer signature participate: the
+    /// absent. Only sectors with a CFRU save signature participate (the retail
+    /// 0x080120xx family, or a hack's own CUSTOM_FILE_SIGNATURE such as GS Chronicles'
+    /// 0x66290096, which its engine writes on every section instead): the
     /// Hall of Fame sector carries its checksum in the id slot, and CFRU zeroes the
     /// footers of the raw sectors 30/31 — either would alias a real section id.</summary>
     public static int[] SectionOffsets(ReadOnlySpan<byte> data)
@@ -68,7 +70,7 @@ internal static class RadicalRedFormat
         for (var sector = 0; sector < SectorCount; sector++)
         {
             var off = sector * SectorSize;
-            if (!IsRetailFooter(data, off))
+            if (!IsSaveFooter(data, off))
                 continue;
             var id = BinaryPrimitives.ReadUInt16LittleEndian(data[(off + 0xFF4)..]);
             if (id >= SectionCount)
@@ -90,14 +92,17 @@ internal static class RadicalRedFormat
         for (var sector = 0; sector < SectorCount; sector++)
         {
             var off = sector * SectorSize;
-            if (IsRetailFooter(data, off) && BinaryPrimitives.ReadUInt16LittleEndian(data[(off + 0xFF4)..]) == sectionId)
+            if (IsSaveFooter(data, off) && BinaryPrimitives.ReadUInt16LittleEndian(data[(off + 0xFF4)..]) == sectionId)
                 result.Add(off);
         }
         return result;
     }
 
-    private static bool IsRetailFooter(ReadOnlySpan<byte> data, int off) =>
-        (BinaryPrimitives.ReadUInt32LittleEndian(data[(off + 0xFF8)..]) & 0xFFFF_FF00u) == 0x0801_2000u;
+    private static bool IsSaveFooter(ReadOnlySpan<byte> data, int off)
+    {
+        var signature = BinaryPrimitives.ReadUInt32LittleEndian(data[(off + 0xFF8)..]);
+        return (signature & 0xFFFF_FF00u) == 0x0801_2000u || signature == SaveParser.GsChroniclesSectorSignature;
+    }
 
     /// <summary>The PokemonStorage stream: the data prefix of sections 5..13, each as
     /// long as its CFRU window, concatenated. Mons straddle sector boundaries, so the
@@ -185,8 +190,8 @@ internal static class RadicalRedFormat
     {
         if (data.Length < FileSize)
             return false;
-        if (SaveParser.IsPokemonUnbound(data))
-            return false;
+        if (SaveParser.IsPokemonUnbound(data) || SaveParser.IsPokemonGsChronicles(data))
+            return false; // CFRU hacks with their own signature have their own sessions
 
         var sections = SectionOffsets(data);
         for (var id = 0; id < SectionCount; id++)

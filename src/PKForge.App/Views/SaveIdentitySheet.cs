@@ -1,3 +1,4 @@
+using PKForge.App.Services;
 using PKForge.App.Theme;
 using PKForge.App.ViewModels;
 using PKForge.Domain;
@@ -17,6 +18,7 @@ public static class SaveIdentitySheet
     private const string GameOption = "Set game…";
     private const string HideOption = "Hide save";
     private const string ResetOption = "Reset to detected";
+    private const string ReadOnlyOption = "Make read-only";
 
     /// <summary>
     /// Shows the save menu. Returns true when the player picked "Open save" (the caller
@@ -33,6 +35,13 @@ public static class SaveIdentitySheet
         options.Add(new PadOption(RenameOption, IconPath: "rename"));
         options.Add(new PadOption(ColorOption, Glyph: "●", Accent: SaveColors.For(resolved?.ColorKey, save.Generation)));
         if (guess is not null) options.Add(new PadOption(GameOption, IconPath: "game"));
+        // Only saves the box already warned about as a suspected ROM hack carry the choice.
+        var flaggedHack = RomHackNotice.IsFlagged(save.DocumentId);
+        var acceptedHack = store.Get(save.DocumentId)?.AcceptedHackRisk == true;
+        if (flaggedHack && acceptedHack)
+            options.Add(new PadOption(ReadOnlyOption, IconPath: "box", Detail: $"{RomHackNotice.Marker} · editing allowed at your own risk"));
+        else if (flaggedHack)
+            options.Add(new PadOption(RomHackNotice.EditOption, Glyph: "!", Accent: UiTokens.Bad, Detail: $"{RomHackNotice.Marker} · read-only now"));
         options.Add(new PadOption(HideOption, IconPath: "hide", Detail: "Remove from Home and pickers. Settings can show it again."));
         if (resolved is { IsCustomized: true }) options.Add(new PadOption(ResetOption, IconPath: "restore"));
 
@@ -51,18 +60,27 @@ public static class SaveIdentitySheet
             case GameOption when guess is not null:
                 await PickGameAsync(host, store, current, guess);
                 return false;
+            case RomHackNotice.EditOption when flaggedHack:
+                if (await PadMenu.ConfirmAsync(host, RomHackNotice.Title, RomHackNotice.Warning, RomHackNotice.EditOption))
+                    Writer?.ConfirmLayoutRisk(save.DocumentId);
+                return false;
+            case ReadOnlyOption:
+                Writer?.RevokeLayoutRisk(save.DocumentId);
+                return false;
             case HideOption:
                 store.Set(current with { Hidden = true });
                 return false;
             case ResetOption:
                 if (await PadMenu.ConfirmAsync(host, "RESET TO DETECTED",
-                        "Forget this save's name, color and game choice, and show it again if hidden? The save file itself is not touched.", "Reset"))
+                        "Forget this save's name, color, game choice and ROM-hack editing choice, and show it again if hidden? The save file itself is not touched.", "Reset"))
                     store.Reset(save.DocumentId);
                 return false;
             default:
                 return false;
         }
     }
+
+    private static ISafeSaveWriter? Writer => IPlatformApplication.Current?.Services.GetService<ISafeSaveWriter>();
 
     private static string Describe(DetectedSave save)
     {
@@ -102,7 +120,7 @@ public static class SaveIdentitySheet
             IconPath: c.IsHack ? "patch" : "game")).ToArray();
         var message = guess.Family switch
         {
-            SaveLayoutFamily.Cfru or SaveLayoutFamily.UnboundCfru =>
+            SaveLayoutFamily.Cfru or SaveLayoutFamily.UnboundCfru or SaveLayoutFamily.GsChroniclesCfru =>
                 "This save uses a CFRU layout. Only games that write it are listed, so PKForge never opens it with the wrong engine.",
             SaveLayoutFamily.Other => "Pick the retail game, or mark it as a ROM hack built on it.",
             _ => "Only games that share this save's layout are listed. A ROM hack built on it keeps the retail engine.",

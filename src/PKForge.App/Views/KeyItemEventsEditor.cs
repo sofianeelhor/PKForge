@@ -8,7 +8,7 @@ namespace PKForge.App.Views;
 
 /// <summary>
 /// Key-item Mystery Gift events (Eon/Aurora/Mystic Ticket, Old Sea Map, Member Card, Oak's
-/// Letter, Azure Flute, Secret Key): shows whether each is armed and writes the item plus the
+/// Letter, Azure Flute, Secret Key, Enigma Stone, Liberty Pass, Crystal's GS Ball): shows whether each is armed and writes the item plus the
 /// exact flags/vars the distribution sets, through the one safe write path.
 /// </summary>
 public static class KeyItemEventsEditor
@@ -20,7 +20,7 @@ public static class KeyItemEventsEditor
         if (!KeyItemEventService.IsSupported(session))
         {
             await EditorMenu.ShowAsync(host, Title,
-                "Key-item events are mapped for Ruby/Sapphire, Emerald, FireRed/LeafGreen, Diamond/Pearl and Platinum.", "OK");
+                "Key-item events are mapped for Crystal, Ruby/Sapphire, Emerald, FireRed/LeafGreen, Diamond/Pearl, Platinum, HeartGold/SoulSilver, Black/White and Omega Ruby/Alpha Sapphire.", "OK");
             return;
         }
 
@@ -50,7 +50,9 @@ public static class KeyItemEventsEditor
         var lines = new List<string>
         {
             $"{status.ItemName} → {status.Destination}",
-            $"Item in bag: {YesNo(status.HasItem)} · Event flags: {YesNo(status.EventArmed)}",
+            status.NeedsItem
+                ? $"Item in bag: {YesNo(status.HasItem)} · Event flags: {YesNo(status.EventArmed)}"
+                : $"Event flags: {YesNo(status.EventArmed)} · the {status.ItemName} is handed over in game",
             StateDetail(status.State),
         };
         if (status.Prerequisite is { } prerequisite)
@@ -76,9 +78,13 @@ public static class KeyItemEventsEditor
 
         var enabling = choice == "Enable event";
         var confirmed = await PadMenu.ConfirmAsync(host, enabling ? "ENABLE EVENT?" : "DISABLE EVENT?",
-            enabling
-                ? $"Adds the {status.ItemName} and sets the event flags. A restore point is created first."
-                : $"Removes the {status.ItemName} and clears the event flags. Shown/caught history is kept. A restore point is created first.",
+            (enabling, status.NeedsItem) switch
+            {
+                (true, true) => $"Adds the {status.ItemName} and sets the event flags. A restore point is created first.",
+                (true, false) => "Sets the event flags. A restore point is created first.",
+                (false, true) => $"Removes the {status.ItemName} and clears the event flags. Shown/caught history is kept. A restore point is created first.",
+                (false, false) => "Clears the event flags. Received/caught history is kept. A restore point is created first.",
+            },
             enabling ? "Enable" : "Disable");
         if (!confirmed) return true;
 
@@ -94,7 +100,7 @@ public static class KeyItemEventsEditor
     {
         KeyItemEventState.Enabled => "Ready",
         KeyItemEventState.Partial => "Incomplete",
-        KeyItemEventState.Used => "Ticket shown",
+        KeyItemEventState.Used => "Used",
         KeyItemEventState.Completed => "Completed",
         _ => "Off",
     };
@@ -103,7 +109,7 @@ public static class KeyItemEventsEditor
     {
         KeyItemEventState.Enabled => "Ready: the event will trigger in game.",
         KeyItemEventState.Partial => "Incomplete: item and flags disagree, so the game ignores it. Enable to fix.",
-        KeyItemEventState.Used => "The ticket was already shown to the sailor.",
+        KeyItemEventState.Used => "Already used in game: the ticket was shown to the sailor, or the GS Ball was received.",
         KeyItemEventState.Completed => "The event Pokémon was already caught or defeated.",
         _ => "Not enabled.",
     };

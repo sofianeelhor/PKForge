@@ -352,6 +352,27 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         return true;
     }
 
+    /// <summary>
+    /// The open save's layout verdict (<see cref="LayoutRiskKind"/>), analysed off-thread: the
+    /// first call re-parses and round-trips the whole file, later calls and every write hit
+    /// the writer's per-document cache. Null when no save is open or the engine is confident.
+    /// </summary>
+    public async Task<LayoutRisk?> AssessOpenSaveLayoutAsync()
+    {
+        if (_sessions.Current is not { } session) return null;
+        return await Task.Run(() => _writer.LayoutRiskOf(session.Document.DocumentId, session.Snapshot));
+    }
+
+    /// <summary>"Edit at my own risk" for a suspected ROM hack: persisted per document by the writer.</summary>
+    public void AcceptHackRisk()
+    {
+        if (_sessions.Current is { } session) _writer.ConfirmLayoutRisk(session.Document.DocumentId);
+    }
+
+    /// <summary>True when ordinary writes of the open save are refused, without touching <see cref="Status"/>.</summary>
+    public bool OpenSaveIsReadOnly =>
+        _sessions.Current is { } session && _writer.WhyWritesAreRefused(session.Document.DocumentId, session.Snapshot) is not null;
+
     /// <summary>Runs a legalizer mutation (generate/legalize) then commits it through the safe write path.</summary>
     public Task<bool> RunLegalizerAsync(Func<ILegalizerService, ISaveEngineSession, GenerationOutcome> operation, int slot,
         SaveAction action = SaveAction.CreateMon)

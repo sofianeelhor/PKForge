@@ -8,7 +8,7 @@ internal readonly record struct SlotImage(SlotRef Slot, byte[] Bytes, bool Empty
 
 /// <summary>
 /// The structural safety net behind <see cref="ISaveEngine.CheckWriteSafety"/> and
-/// <see cref="ISaveEngine.DescribeLayoutRisk"/>.
+/// <see cref="ISaveEngine.AssessLayoutRisk"/>.
 ///
 /// Incident it exists for (user report: "raised one of my Pokémon to level 100, made all
 /// my party Pokémon appear to come from eggs, and lost one of my Pokémon boxes"): a CFRU
@@ -33,6 +33,11 @@ internal static class WriteSafety
         {
             var session = new Unbound.UnboundEngineSession(bytes);
             return new Parsed("Unbound", () => session.SlotImages().ToList(), null);
+        }
+        if (SaveParser.IsPokemonGsChronicles(decoded))
+        {
+            var session = new GsChronicles.GsChroniclesEngineSession(bytes);
+            return new Parsed("GS Chronicles", () => session.SlotImages().ToList(), null);
         }
         if (SaveParser.IsPokemonRadicalRed(decoded))
         {
@@ -68,18 +73,72 @@ internal static class WriteSafety
 
         static SlotImage Image(SlotRef where, PKM pk, byte[] data)
         {
-            var empty = data.All(b => b == 0) || pk.Species == 0 && pk.ChecksumValid;
+            // Gen 3 judges emptiness on the RAW species: an expansion species id maps to
+            // national 0, and treating that real Pokémon as an empty slot would let the
+            // structural diff wave through an overwrite of it.
+            var species = pk is G3PKM g3 ? g3.SpeciesInternal : pk.Species;
+            var empty = data.All(b => b == 0) || species == 0 && pk.ChecksumValid;
             return new SlotImage(where, data, empty, empty || pk.ChecksumValid);
         }
     }
 
-    public static string? DescribeLayoutRisk(ReadOnlyMemory<byte> bytes)
+    /// <summary>Raw Gen 3 internal species ids the retail games define: 1-251, 277-411, and
+    /// 412 (the egg placeholder). 252-276 are unused filler; anything above 412, or with the
+    /// high bits pokeemerald-expansion packs into the field, comes from another species table.</summary>
+    internal static bool IsVanillaGen3Species(ushort raw) => raw is >= 1 and <= 251 or >= 277 and <= 412;
+
+    public static string? DescribeLayoutRisk(ReadOnlyMemory<byte> bytes) => AssessLayoutRisk(bytes)?.Reason;
+
+    public static LayoutRisk? AssessLayoutRisk(ReadOnlyMemory<byte> bytes)
     {
         Parsed? parsed;
         try { parsed = Parse(bytes); }
         catch (InvalidDataException) { return null; }
         if (parsed?.Stock is not SAV3 save)
             return null; // recognized hack sessions and non-Gen-3 formats are layout-certain
+        if (CorruptingLayout(bytes, save) is { } corrupting)
+            return new LayoutRisk(LayoutRiskKind.CorruptingLayout, corrupting);
+        if (ForeignSpecies(save) is { } hack)
+            return new LayoutRisk(LayoutRiskKind.SuspectedHack, hack);
+        return null;
+    }
+
+    /// <summary>
+    /// (3) pokeemerald-expansion hacks (Black Pearl Emerald, Emerald Enhanced, Emerald Ex)
+    /// keep the vanilla sector layout and PK3 crypto, so they round-trip and every checksum
+    /// holds; only the species ids betray them (Emerald Ex: 26878 &amp; 0x7FF = Sceptile,
+    /// Emerald Enhanced: 875 for an Alolan Vulpix). PKHeX shows those as species 0, and any
+    /// edit re-derives stats from the wrong tables, so the user must knowingly accept it.
+    /// </summary>
+    private static string? ForeignSpecies(SAV3 save)
+    {
+        var foreign = 0;
+        var readable = 0;
+        foreach (var pk in Mons(save))
+        {
+            if (!pk.ChecksumValid || pk.SpeciesInternal == 0)
+                continue;
+            readable++;
+            if (!IsVanillaGen3Species(pk.SpeciesInternal))
+                foreign++;
+        }
+        return foreign == 0
+            ? null
+            : $"{foreign} of {readable} Pokémon carry species ids that do not exist in vanilla {save.Version}, " +
+              "so this is most likely a ROM hack built on its layout.";
+    }
+
+    private static IEnumerable<G3PKM> Mons(SAV3 save)
+    {
+        for (var slot = 0; slot < save.PartyCount; slot++)
+            if (save.GetPartySlotAtIndex(slot) is G3PKM pk) yield return pk;
+        for (var box = 0; box < save.BoxCount; box++)
+        for (var slot = 0; slot < save.BoxSlotCount; slot++)
+            if (save.GetBoxSlotAtIndex(box, slot) is G3PKM pk) yield return pk;
+    }
+
+    private static string? CorruptingLayout(ReadOnlyMemory<byte> bytes, SAV3 save)
+    {
 
         // (1) Vanilla PKHeX must reproduce the file exactly. A save whose sector checksums
         // only hold under another layout (CFRU windows, expansion save blocks) is rewritten

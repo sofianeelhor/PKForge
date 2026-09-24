@@ -35,11 +35,38 @@ public interface ISaveEngine
     string? DescribeLayoutRisk(ReadOnlyMemory<byte> bytes) => null;
 
     /// <summary>
+    /// The typed verdict behind <see cref="DescribeLayoutRisk"/>: null when the engine is
+    /// confident, otherwise whether the user may knowingly proceed (a suspected ROM hack on
+    /// a vanilla layout) or a vanilla write provably corrupts the file.
+    /// </summary>
+    LayoutRisk? AssessLayoutRisk(ReadOnlyMemory<byte> bytes) =>
+        DescribeLayoutRisk(bytes) is { } reason ? new LayoutRisk(LayoutRiskKind.CorruptingLayout, reason) : null;
+
+    /// <summary>
     /// Structural diff sanity check of a candidate against the bytes it was derived from:
     /// same format route, no readable Pokémon turned unreadable, and (when a scope is
     /// given) no slot outside the scope changed. Null when safe, otherwise the reason.
     /// </summary>
     string? CheckWriteSafety(ReadOnlyMemory<byte> original, ReadOnlyMemory<byte> candidate, WriteScope? scope) => null;
+}
+
+/// <summary>How far the engine trusts a save's layout; see <see cref="ISaveEngine.AssessLayoutRisk"/>.</summary>
+public enum LayoutRiskKind
+{
+    None = 0,
+    /// <summary>The layout round-trips as vanilla and every Pokémon decodes, but species ids
+    /// fall outside the game's range: a ROM hack on the vanilla layout. Writes are refused
+    /// until the user accepts the risk.</summary>
+    SuspectedHack = 1,
+    /// <summary>A vanilla write provably corrupts the file (checksums follow another layout,
+    /// or the Pokémon are in a foreign format). Always refused; no confirmation lifts it.</summary>
+    CorruptingLayout = 2,
+}
+
+/// <summary>One layout verdict and its human-readable reason.</summary>
+public sealed record LayoutRisk(LayoutRiskKind Kind, string Reason)
+{
+    public bool UserMayProceed => Kind == LayoutRiskKind.SuspectedHack;
 }
 
 /// <param name="Language">The cartridge language the save records ("FR"), when it records one reliably.</param>
@@ -98,9 +125,17 @@ public interface ISafeSaveWriter
     ValueTask<SaveWriteReceipt> WriteScopedAsync(string documentId, SaveSnapshot original, ReadOnlyMemory<byte> candidate, WriteScope scope, string? changeDescription = null, CancellationToken cancellationToken = default)
         => WriteAsync(documentId, original, candidate, changeDescription, cancellationToken);
 
-    /// <summary>Records that the user explicitly confirmed writing a save whose layout the
-    /// engine flagged as ambiguous (<see cref="ISaveEngine.DescribeLayoutRisk"/>).</summary>
+    /// <summary>Records that the user explicitly accepted writing a save the engine flagged as
+    /// a suspected ROM hack (<see cref="LayoutRiskKind.SuspectedHack"/>). A corrupting layout
+    /// stays refused regardless.</summary>
     void ConfirmLayoutRisk(string documentId) { }
+
+    /// <summary>Withdraws <see cref="ConfirmLayoutRisk"/>: the save becomes read-only again.</summary>
+    void RevokeLayoutRisk(string documentId) { }
+
+    /// <summary>The layout verdict for this document's bytes (cached per document), or null
+    /// when the engine is confident.</summary>
+    LayoutRisk? LayoutRiskOf(string documentId, SaveSnapshot original) => null;
 
     /// <summary>
     /// Why every ordinary write of this save would be refused before any slot is compared

@@ -42,12 +42,9 @@ public sealed class EncounterLookupTests
     {
         var lookup = new EncounterLookupService();
         var first = lookup.Describe(25, 0);
-        var clock = Stopwatch.StartNew();
         var second = lookup.Describe(25, 0);
-        clock.Stop();
-        _output.WriteLine($"cached describe: {clock.ElapsedMilliseconds}ms");
-        Assert.Equal(first.Count, second.Count);
-        Assert.True(clock.ElapsedMilliseconds < 50, $"cached describe took {clock.ElapsedMilliseconds}ms");
+        // The cache hands back the very listing it built; a wall-clock bound flaked under load.
+        Assert.Same(first, second);
     }
 
     [Fact]

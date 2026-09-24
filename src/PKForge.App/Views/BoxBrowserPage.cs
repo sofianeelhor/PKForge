@@ -298,7 +298,66 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
     /// <summary>The idle status line, carrying the marker so the mode is visible on the screen it gates.</summary>
     private void ShowReady() => _viewModel.Status = HardcoreMode.IsOn
         ? $"READY · {HardcoreMode.StatusLine}"
-        : "READY";
+        : LayoutMarker ?? "READY";
+
+    // ── Layout risk (ROM hacks on a retail layout) ────────────────────────────
+    // A suspected hack warns once per save and stays read-only unless the player picks
+    // "Edit at my own risk"; a corrupting layout is always read-only. Either way the strip
+    // carries a marker for as long as the save is open.
+
+    private string? _layoutCheckedFor;
+    private LayoutRiskKind _layoutRisk;
+    private static readonly HashSet<string> CorruptingExplained = new(StringComparer.Ordinal);
+
+    /// <summary>The strip marker for the open save's layout verdict; re-read on every use so
+    /// a choice made on Home shows the moment the box comes back.</summary>
+    private string? LayoutMarker => _layoutRisk switch
+    {
+        LayoutRiskKind.SuspectedHack => _viewModel.OpenSaveIsReadOnly ? RomHackNotice.ReadOnlyStatus : RomHackNotice.Marker,
+        LayoutRiskKind.CorruptingLayout => "READ-ONLY · this save's layout is not supported",
+        _ => null,
+    };
+
+    private async Task CheckLayoutRiskAsync()
+    {
+        var documentId = DocumentId;
+        if (documentId is null) { _layoutRisk = LayoutRiskKind.None; return; }
+        if (documentId != _layoutCheckedFor)
+        {
+            _layoutCheckedFor = documentId;
+            _layoutRisk = LayoutRiskKind.None;
+            LayoutRisk? risk;
+            try { risk = await _viewModel.AssessOpenSaveLayoutAsync(); }
+            catch (Exception) { return; } // the writer re-judges on every write; the notice is advisory
+            if (DocumentId != documentId) return;
+            _layoutRisk = risk?.Kind ?? LayoutRiskKind.None;
+            await ExplainLayoutRiskAsync(documentId, risk);
+            if (DocumentId != documentId) return;
+        }
+        if (LayoutMarker is { } marker && !HardcoreMode.IsOn) _viewModel.Status = marker;
+    }
+
+    private async Task ExplainLayoutRiskAsync(string documentId, LayoutRisk? risk)
+    {
+        switch (risk?.Kind)
+        {
+            case LayoutRiskKind.SuspectedHack when !RomHackNotice.IsFlagged(documentId):
+                RomHackNotice.MarkFlagged(documentId);
+                if (!_viewModel.OpenSaveIsReadOnly) return; // already accepted (e.g. on Home)
+                var choice = await PadMenu.ShowAsync(_hostGrid, RomHackNotice.Title, RomHackNotice.Warning,
+                    new PadOption(RomHackNotice.ReadOnlyOption, IconPath: "box",
+                        Detail: "Look at boxes and party. Nothing is ever written."),
+                    new PadOption(RomHackNotice.EditOption, Glyph: "!", Accent: UiTokens.Bad,
+                        Detail: "Restore points are still made. Change this later from Home."));
+                if (choice == RomHackNotice.EditOption) _viewModel.AcceptHackRisk();
+                break;
+            case LayoutRiskKind.CorruptingLayout when CorruptingExplained.Add(documentId):
+                await PadMenu.ShowAsync(_hostGrid, RomHackNotice.CorruptingTitle,
+                    $"PKForge can show this save but will not write it: {risk.Reason}\n" +
+                    "Writing it with the retail layout would break the file, so there is no way to edit it at your own risk.", "OK");
+                break;
+        }
+    }
 
     /// <summary>The NDS12 face (the chrome's PixelUI voice), cached once for Skia text.</summary>
     private static SKTypeface _pixelTypeface = null!;
@@ -3872,6 +3931,7 @@ public sealed class BoxBrowserPage : ContentPage, IPadHandler
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Push(this);
         // The mode gates this whole screen, so the strip says so the moment it opens.
         if (HardcoreMode.IsOn) _viewModel.Status = HardcoreMode.StatusLine;
+        _ = CheckLayoutRiskAsync();
         var host = IPlatformApplication.Current?.Services.GetService<ISecondaryDisplayHost>();
         if (host?.IsAvailable != true) return;
         try { _ = host.ShowAsync(); }

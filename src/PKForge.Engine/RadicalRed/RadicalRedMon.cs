@@ -22,11 +22,15 @@ internal sealed class RadicalRedMon
     public readonly int Offset;
     public readonly bool Party;
 
-    public RadicalRedMon(byte[] buffer, int offset, bool party)
+    /// <summary>The hack's tables: a PC mon stores no level, only EXP on its species' curve.</summary>
+    public readonly ICfruGameData Data;
+
+    public RadicalRedMon(byte[] buffer, int offset, bool party, ICfruGameData? data = null)
     {
         Buffer = buffer;
         Offset = offset;
         Party = party;
+        Data = data ?? RadicalRedGameData.Instance;
     }
 
     public int Size => Party ? RadicalRedFormat.PartyMonSize : RadicalRedFormat.PcMonSize;
@@ -247,7 +251,7 @@ internal sealed class RadicalRedMon
     public bool LooksValid => Species is > 0 and <= 2500 && Experience is > 0 and <= 2_000_000;
 
     /// <summary>Visual level: stored in the party tail; derived from exp + growth for PC mons.</summary>
-    public int Level => Party ? Raw[0x54] : RadicalRedData.LevelForExperience(Species, Experience);
+    public int Level => Party ? Raw[0x54] : Data.LevelForExperience(Species, Experience);
 
     public int CurrentHp => Party ? BinaryPrimitives.ReadUInt16LittleEndian(Raw[0x56..]) : 0;
 

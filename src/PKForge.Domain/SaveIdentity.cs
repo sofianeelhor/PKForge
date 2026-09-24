@@ -18,6 +18,8 @@ public enum SaveFormat
     Unbound = 2,
     /// <summary>The Radical Red CFRU layout (FireRed envelope, CFRU checksum windows).</summary>
     RadicalRed = 3,
+    /// <summary>The GS Chronicles CFRU layout (sector footers stamped 0x66290096, 25 boxes).</summary>
+    GsChronicles = 4,
 }
 
 /// <summary>
@@ -35,6 +37,10 @@ public enum SaveLayoutFamily
     UnboundCfru = 4,
     /// <summary>CFRU checksum windows without Unbound's stamp (Radical Red and its cousins).</summary>
     Cfru = 5,
+    /// <summary>CFRU with GS Chronicles' sector stamp.</summary>
+    GsChroniclesCfru = 6,
+    /// <summary>Diamond and Pearl: one save format, the edition is not in the bytes.</summary>
+    DiamondPearl = 7,
 }
 
 /// <summary>
@@ -66,15 +72,18 @@ public sealed record SaveGameChoice(string Id, string Label, SaveFormat Format, 
 /// <param name="ColorKey">A <see cref="SaveIdentityPalette"/> key; null uses the console era color.</param>
 /// <param name="GameChoiceId">A <see cref="SaveGameChoice.Id"/>; null keeps the detected game.</param>
 /// <param name="Hidden">Kept off Home and every save picker until the player shows it again.</param>
+/// <param name="AcceptedHackRisk">The player chose "Edit at my own risk" for a save the engine
+/// flagged as a suspected ROM hack (<see cref="LayoutRiskKind.SuspectedHack"/>).</param>
 public sealed record SaveIdentity(
     string DocumentId,
     string? DisplayName = null,
     string? ColorKey = null,
     string? GameChoiceId = null,
-    bool Hidden = false)
+    bool Hidden = false,
+    bool AcceptedHackRisk = false)
 {
     /// <summary>True when the user has customised nothing.</summary>
-    public bool IsEmpty => DisplayName is null && ColorKey is null && GameChoiceId is null && !Hidden;
+    public bool IsEmpty => DisplayName is null && ColorKey is null && GameChoiceId is null && !Hidden && !AcceptedHackRisk;
 }
 
 /// <summary>Persists <see cref="SaveIdentity"/> per document.</summary>
@@ -85,7 +94,7 @@ public interface ISaveIdentityStore
     /// <summary>Replaces the stored identity (an empty identity removes the entry).</summary>
     void Set(SaveIdentity identity);
 
-    /// <summary>Forgets the user's name, color, game choice and hidden flag ("reset to detected").</summary>
+    /// <summary>Forgets the user's name, color, game choice, hidden flag and ROM-hack risk acceptance ("reset to detected").</summary>
     void Reset(string documentId);
 
     /// <summary>Raised with the document id after any change.</summary>
@@ -144,6 +153,7 @@ public static class SaveIdentityRules
         {
             "Unbound" => SaveFormat.Unbound,
             "Radical Red" => SaveFormat.RadicalRed,
+            "GS Chronicles" => SaveFormat.GsChronicles,
             _ => SaveFormat.Standard,
         };
         return new SaveIdentityGuess(label, FamilyOf(engineGame), format, suggested, label);
@@ -154,8 +164,10 @@ public static class SaveIdentityRules
         "Emerald" => SaveLayoutFamily.Emerald,
         "Ruby" or "Sapphire" or "Ruby / Sapphire" => SaveLayoutFamily.RubySapphire,
         "FireRed" or "LeafGreen" or "FireRed / LeafGreen" => SaveLayoutFamily.FireRedLeafGreen,
+        "Diamond" or "Pearl" or "Diamond / Pearl" => SaveLayoutFamily.DiamondPearl,
         "Unbound" => SaveLayoutFamily.UnboundCfru,
         "Radical Red" => SaveLayoutFamily.Cfru,
+        "GS Chronicles" => SaveLayoutFamily.GsChroniclesCfru,
         _ => SaveLayoutFamily.Other,
     };
 
@@ -182,6 +194,12 @@ public static class SaveIdentityRules
             new("leafgreen", "Pokémon LeafGreen", SaveFormat.Standard, "Pokémon LeafGreen", false),
             new("hack-frlg", "FireRed-based ROM hack", SaveFormat.Standard, null, true),
         ],
+        SaveLayoutFamily.DiamondPearl =>
+        [
+            new("diamond", "Pokémon Diamond", SaveFormat.Standard, "Pokémon Diamond", false),
+            new("pearl", "Pokémon Pearl", SaveFormat.Standard, "Pokémon Pearl", false),
+            new("hack-dp", "Diamond/Pearl-based ROM hack", SaveFormat.Standard, null, true),
+        ],
         SaveLayoutFamily.UnboundCfru =>
         [
             new("unbound", "Pokémon Unbound", SaveFormat.Unbound, "Pokémon Unbound", true),
@@ -192,12 +210,27 @@ public static class SaveIdentityRules
             new("radicalred", "Pokémon Radical Red", SaveFormat.RadicalRed, "Pokémon Radical Red", true),
             new("hack-cfru", "Other CFRU hack (Radical Red layout)", SaveFormat.RadicalRed, null, true),
         ],
+        // The 0x66290096 stamp is GS Chronicles' own build signature: no other game
+        // writes it, so there is no "other hack" alternative to offer.
+        SaveLayoutFamily.GsChroniclesCfru =>
+        [
+            new("gschronicles", "Pokémon GS Chronicles", SaveFormat.GsChronicles, "Pokémon GS Chronicles", true),
+        ],
         _ =>
         [
             new("retail", detectedLabel, SaveFormat.Auto, detectedLabel, false),
             new("hack-generic", $"ROM hack ({detectedLabel.Replace("Pokémon ", "", StringComparison.Ordinal)} layout)", SaveFormat.Auto, null, true),
         ],
     };
+
+    /// <summary>
+    /// True for a save of a shared-format pair (Ruby/Sapphire, FireRed/LeafGreen, Diamond/Pearl)
+    /// that its own Pokémon could not place (the guess is still the pair) and the player has
+    /// not said which edition it is yet.
+    /// </summary>
+    public static bool NeedsEditionChoice(SaveIdentityGuess guess, string? gameChoiceId) =>
+        gameChoiceId is null && guess.Label.Contains(" / ", StringComparison.Ordinal)
+        && guess.Family is SaveLayoutFamily.RubySapphire or SaveLayoutFamily.FireRedLeafGreen or SaveLayoutFamily.DiamondPearl;
 
     /// <summary>Every choice across families, for resolving a persisted id.</summary>
     public static SaveGameChoice? FindChoice(string? id, SaveLayoutFamily family, string detectedLabel) =>
@@ -208,7 +241,9 @@ public static class SaveIdentityRules
     {
         "unbound" or "hack-cfru-unbound" => SaveFormat.Unbound,
         "radicalred" or "hack-cfru" => SaveFormat.RadicalRed,
-        "emerald" or "hack-emerald" or "ruby" or "sapphire" or "hack-rs" or "firered" or "leafgreen" or "hack-frlg" => SaveFormat.Standard,
+        "gschronicles" => SaveFormat.GsChronicles,
+        "emerald" or "hack-emerald" or "ruby" or "sapphire" or "hack-rs" or "firered" or "leafgreen" or "hack-frlg"
+            or "diamond" or "pearl" or "hack-dp" => SaveFormat.Standard,
         _ => SaveFormat.Auto,
     };
 

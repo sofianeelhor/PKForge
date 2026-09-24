@@ -16,14 +16,16 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
         if (format == SaveFormat.Auto) return OpenSession(bytes, displayName);
         var decoded = RetroArchSaveContainer.Decode(bytes.Span);
         var unbound = SaveParser.IsPokemonUnbound(decoded);
-        var cfru = !unbound && SaveParser.IsPokemonRadicalRed(decoded);
+        var gsc = !unbound && SaveParser.IsPokemonGsChronicles(decoded);
+        var cfru = !unbound && !gsc && SaveParser.IsPokemonRadicalRed(decoded);
         return format switch
         {
             SaveFormat.Unbound when unbound => OpenUnbound(bytes, displayName),
             SaveFormat.RadicalRed when cfru => OpenRadicalRed(bytes, displayName),
-            SaveFormat.Standard when !unbound && !cfru => new SaveEngineSession(bytes, displayName),
+            SaveFormat.GsChronicles when gsc => OpenGsChronicles(bytes, displayName),
+            SaveFormat.Standard when !unbound && !gsc && !cfru => new SaveEngineSession(bytes, displayName),
             _ => throw new InvalidDataException(
-                $"This save was set to open as {FormatName(format)}, but its bytes carry the {(unbound ? "Unbound" : cfru ? "CFRU (Radical Red)" : "standard")} layout. " +
+                $"This save was set to open as {FormatName(format)}, but its bytes carry the {(unbound ? "Unbound" : gsc ? "GS Chronicles" : cfru ? "CFRU (Radical Red)" : "standard")} layout. " +
                 "Change the game from the save's menu on the home screen. The file was not touched."),
         };
     }
@@ -32,6 +34,7 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
     {
         SaveFormat.Unbound => "Unbound",
         SaveFormat.RadicalRed => "Radical Red / CFRU",
+        SaveFormat.GsChronicles => "GS Chronicles",
         _ => "a standard game",
     };
 
@@ -39,6 +42,8 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
     {
         if (SaveParser.IsPokemonUnbound(RetroArchSaveContainer.Decode(bytes.Span)))
             return OpenUnbound(bytes, displayName).Snapshot;
+        if (SaveParser.IsPokemonGsChronicles(RetroArchSaveContainer.Decode(bytes.Span)))
+            return OpenGsChronicles(bytes, displayName).Snapshot;
         if (SaveParser.IsPokemonRadicalRed(RetroArchSaveContainer.Decode(bytes.Span)))
             return OpenRadicalRed(bytes, displayName).Snapshot;
         if (!SaveParser.TryGetSaveFile(bytes.ToArray(), out var save) || save is null)
@@ -63,12 +68,17 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
     {
         if (SaveParser.IsPokemonUnbound(RetroArchSaveContainer.Decode(bytes.Span)))
             return OpenUnbound(bytes, displayName);
+        if (SaveParser.IsPokemonGsChronicles(RetroArchSaveContainer.Decode(bytes.Span)))
+            return OpenGsChronicles(bytes, displayName);
         if (SaveParser.IsPokemonRadicalRed(RetroArchSaveContainer.Decode(bytes.Span)))
             return OpenRadicalRed(bytes, displayName);
         return new SaveEngineSession(bytes, displayName);
     }
 
     private static Unbound.UnboundEngineSession OpenUnbound(ReadOnlyMemory<byte> bytes, string? displayName) =>
+        new(bytes, displayName);
+
+    private static GsChronicles.GsChroniclesEngineSession OpenGsChronicles(ReadOnlyMemory<byte> bytes, string? displayName) =>
         new(bytes, displayName);
 
     private static RadicalRed.RadicalRedEngineSession OpenRadicalRed(ReadOnlyMemory<byte> bytes, string? displayName) =>
@@ -87,6 +97,7 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
         {
             var decoded = RetroArchSaveContainer.Decode(bytes.Span);
             if (SaveParser.IsPokemonUnbound(decoded)) return true;
+            if (SaveParser.IsPokemonGsChronicles(decoded)) return true;
             if (SaveParser.IsPokemonRadicalRed(decoded)) return true;
             return SaveParser.TryGetSaveFile(bytes.ToArray(), out _);
         }
@@ -94,6 +105,8 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
     }
 
     public string? DescribeLayoutRisk(ReadOnlyMemory<byte> bytes) => WriteSafety.DescribeLayoutRisk(bytes);
+
+    public LayoutRisk? AssessLayoutRisk(ReadOnlyMemory<byte> bytes) => WriteSafety.AssessLayoutRisk(bytes);
 
     public string? CheckWriteSafety(ReadOnlyMemory<byte> original, ReadOnlyMemory<byte> candidate, WriteScope? scope) =>
         WriteSafety.CheckWriteSafety(original, candidate, scope);
@@ -181,6 +194,9 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
         if (SaveParser.IsPokemonUnbound(raw))
             return new SaveDescription("Unbound", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
 
+        if (SaveParser.IsPokemonGsChronicles(raw))
+            return new SaveDescription("GS Chronicles", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
+
         // Radical Red keeps the FireRed envelope; the CFRU window signature tells it
         // apart from every stock FRLG save (see RadicalRedFormat.IsRadicalRed).
         if (SaveParser.IsPokemonRadicalRed(raw))
@@ -197,18 +213,40 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
         if (sideGameName is not null)
             return new SaveDescription(sideGameName, save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
 
-        // The bytes cannot tell these editions apart; the user picks one per save.
-        if (save is SAV3RS)
-            return new SaveDescription("Ruby / Sapphire", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
-        if (save is SAV3FRLG)
-            return new SaveDescription("FireRed / LeafGreen", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
+        // These editions share one layout: the player's own Pokémon name the cartridge when
+        // they agree, otherwise the pair is shown and the player picks once.
+        if (save is SAV3RS or SAV3FRLG or SAV4DP)
+        {
+            var edition = SaveParser.EditionFromOwnPokemon(save);
+            var editionName = edition is { } v ? GameInfo.GetStrings("en").gamelist[(int)v] : null;
+            var pair = save switch { SAV3RS => "Ruby / Sapphire", SAV3FRLG => "FireRed / LeafGreen", _ => "Diamond / Pearl" };
+            return new SaveDescription(editionName ?? pair, save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
+        }
 
         var strings = GameInfo.GetStrings("en");
         var versionIndex = (int)save.Version;
         var gameName = versionIndex > 0 && versionIndex < strings.gamelist.Length && strings.gamelist[versionIndex].Length > 0
             ? strings.gamelist[versionIndex]
-            : $"Generation {save.Generation}";
+            : EditionPair(save.Version, strings) ?? $"Generation {save.Generation}";
         return new SaveDescription(gameName, save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
+    }
+
+    /// <summary>
+    /// The editions a combined version stands for ("Diamond / Pearl"), for saves whose bytes
+    /// cannot tell the two apart (PKHeX reports Diamond and Pearl saves as DP), or null.
+    /// </summary>
+    internal static string? EditionPair(GameVersion version, GameStrings strings)
+    {
+        var editions = Enum.GetValues<GameVersion>()
+            .Where(single => single != version && single.IsValidSavedVersion() && version.Contains(single))
+            .Select(single => (int)single < strings.gamelist.Length ? strings.gamelist[(int)single] : "")
+            .Where(name => name.Length > 0)
+            .Distinct()
+            // PKHeX's enum order is not the box order (White precedes Black); every pair a
+            // save can actually report (Diamond/Pearl, Gold/Silver, Black/White) reads alphabetically.
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        return editions.Length >= 2 ? string.Join(" / ", editions) : null;
     }
 
     /// <summary>

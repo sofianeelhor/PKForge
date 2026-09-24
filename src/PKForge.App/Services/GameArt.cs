@@ -7,7 +7,7 @@ namespace PKForge.App.Services;
 public static class GameArt
 {
     // Bumped whenever bundled art changes so on-device caches never serve stale images.
-    private const string AssetVersion = "v8";
+    private const string AssetVersion = "v10";
     public static Task<string?> GetIconAsync(string gameLabel) => GetAsync("gameart", gameLabel);
     public static Task<string?> GetHeroAsync(string gameLabel) => GetAsync("gamehero", gameLabel);
     public static Task<string?> GetLogoAsync(string gameLabel) => GetAsync("gamelogo", gameLabel);
@@ -16,7 +16,14 @@ public static class GameArt
     {
         const string prefix = "Pokémon ";
         var name = gameLabel.StartsWith(prefix, StringComparison.Ordinal) ? gameLabel[prefix.Length..] : gameLabel;
-        var slug = GetAssetSlug(name);
+        // A pair the save cannot split ("FireRed / LeafGreen") uses its own art when bundled,
+        // else the first game's, so an unchosen edition never loses its cartridge.
+        return await GetBySlugAsync(folder, GetAssetSlug(name))
+            ?? (name.Split(" / ") is [var first, _] ? await GetBySlugAsync(folder, GetAssetSlug(first)) : null);
+    }
+
+    private static async Task<string?> GetBySlugAsync(string folder, string slug)
+    {
         var cache = Path.Combine(FileSystem.CacheDirectory, $"{folder}-{AssetVersion}-{slug}.png");
         if (File.Exists(cache)) return cache;
         try
