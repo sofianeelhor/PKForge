@@ -57,7 +57,7 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
                 var entity = save.GetBoxSlotAtIndex(box, slot);
                 slots.Add(new SlotSummary(box, slot, entity.Species == 0 ? null : entity.Species,
                     entity.IsNicknamed ? entity.Nickname : null, entity.IsShiny,
-                    entity.Species == 0 || entity.Valid, entity.Form, entity.IsEgg));
+                    entity.Species == 0 || entity.Valid, entity.Form, entity.IsEgg, entity.HeldItem, EntitySprite.Traits(entity)));
             }
         }
 
@@ -111,18 +111,18 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
     public string? CheckWriteSafety(ReadOnlyMemory<byte> original, ReadOnlyMemory<byte> candidate, WriteScope? scope) =>
         WriteSafety.CheckWriteSafety(original, candidate, scope);
 
-    public BankEntryInfo? TryDescribeEntity(byte[] bytes, string sourceName)
+    public BankEntryInfo? TryDescribeEntity(byte[] bytes, string sourceName, string? format = null)
     {
-        var entity = EntityFormat.GetFromBytes(bytes);
+        var entity = EntityBytes.Parse(bytes, format);
         if (entity is null || entity.Species == 0) return null;
         return new BankEntryInfo(entity.Species, entity.Form, entity.IsShiny,
             entity.IsNicknamed ? entity.Nickname : GameInfo.GetStrings("en").specieslist[entity.Species],
-            entity.CurrentLevel, entity.Format, sourceName);
+            entity.CurrentLevel, entity.Format, sourceName, EntityBytes.FormatOf(entity), entity.HeldItem, EntitySprite.Traits(entity));
     }
 
-    public ISaveEngineSession? OpenEntitySession(byte[] entityBytes, string? displayName = null)
+    public ISaveEngineSession? OpenEntitySession(byte[] entityBytes, string? displayName = null, string? format = null)
     {
-        var entity = EntityFormat.GetFromBytes(entityBytes);
+        var entity = EntityBytes.Parse(entityBytes, format);
         if (entity is null || entity.Species == 0)
             return null; // genuinely not an editable Pokémon
 

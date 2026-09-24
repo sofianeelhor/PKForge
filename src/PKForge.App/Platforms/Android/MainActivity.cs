@@ -102,8 +102,11 @@ public sealed class MainActivity : MauiAppCompatActivity
             if (IsDirectional(button))
                 return true;
         }
-        if (e?.Action == KeyEventActions.Up && ResolveButton(e.KeyCode) == _keyRepeatButton)
-            StopKeyRepeat();
+        if (e?.Action == KeyEventActions.Up && ResolveButton(e.KeyCode) is { } released)
+        {
+            if (released == _keyRepeatButton) StopKeyRepeat();
+            IPlatformApplication.Current?.Services.GetService<Services.GamepadRouter>()?.DispatchRelease(released);
+        }
         return base.DispatchKeyEvent(e);
     }
 
@@ -210,6 +213,7 @@ public sealed class MainActivity : MauiAppCompatActivity
         Keycode.ButtonX => Services.PadButton.X,
         Keycode.ButtonY => Services.PadButton.Y,
         Keycode.ButtonStart or Keycode.Menu => Services.PadButton.Start,
+        Keycode.ButtonSelect => Services.PadButton.Select,
         Keycode.ButtonL1 or Keycode.Button5 => Services.PadButton.L,
         Keycode.ButtonR1 or Keycode.Button6 => Services.PadButton.R,
         Keycode.DpadUp => Services.PadButton.Up,
@@ -372,11 +376,18 @@ public sealed class AndroidSecondaryDisplayHost(IServiceProvider services) : ISe
             base.OnCreate(savedInstanceState);
             Window?.AddFlags(WindowManagerFlags.Fullscreen);
             Window?.AddFlags(WindowManagerFlags.KeepScreenOn);
+            // Touch on the lower screen must not steal key focus from the main window: a focused
+            // Presentation took the pad's B/back itself and dismissed as a dialog, leaving the
+            // launcher on the lower screen. It still receives touch while unfocusable.
+            Window?.AddFlags(WindowManagerFlags.NotFocusable);
 
             // Inflate with the Activity as context (not the Presentation's dialog context)
             // so MAUI handlers resolve fonts/drawables registered against the Activity.
             var mauiContext = new Microsoft.Maui.MauiContext(services, activity);
             SetContentView(Microsoft.Maui.Platform.ElementExtensions.ToPlatform(page, mauiContext));
         }
+
+        // Belt and braces for keys that still land here: they belong to the main activity.
+        public override bool DispatchKeyEvent(KeyEvent e) => activity.DispatchKeyEvent(e);
     }
 }

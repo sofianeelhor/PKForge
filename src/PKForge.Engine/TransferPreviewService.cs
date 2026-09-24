@@ -57,20 +57,22 @@ public sealed class TransferPreviewService
     /// the entity cannot enter the scratch save's format at all — the same refusal
     /// <see cref="ISaveEngineSession.ImportSlot"/> reports to a real transfer.
     /// </summary>
-    public TransferPreview? Preview(ISaveEngineSession scratch, int box, int slot, byte[] entityBytes)
+    /// <remarks><paramref name="format"/>: the bytes' recorded entity format (bank entries,
+    /// exports); null reads them by heuristics with the scratch save's context preferred.</remarks>
+    public TransferPreview? Preview(ISaveEngineSession scratch, int box, int slot, byte[] entityBytes, string? format = null)
     {
         ArgumentNullException.ThrowIfNull(scratch);
         ArgumentNullException.ThrowIfNull(entityBytes);
 
         var context = scratch is SaveEngineSession engine ? engine.GetEntity(box, slot).Context : EntityContext.None;
-        var before = EntityFormat.GetFromBytes(entityBytes, context);
+        var before = EntityBytes.Parse(entityBytes, format, context);
         if (before is null || before.Species == 0)
             return null;
         // Romhack engine sessions cannot hand back the landed entity, so the diff is
         // honestly unavailable for them; the transfer itself is unaffected.
         if (scratch is not SaveEngineSession session)
         {
-            if (!scratch.ImportSlot(box, slot, entityBytes))
+            if (!scratch.ImportSlot(box, slot, entityBytes, format))
                 return null;
             return new TransferPreview(
                 ["Conversion details are not available for this game's engine; the transfer itself is unchanged."],
@@ -78,7 +80,7 @@ public sealed class TransferPreviewService
                 ["This game has no offline legality analysis."]);
         }
 
-        var conversion = session.ImportSlotWithReport(box, slot, entityBytes, out _);
+        var conversion = session.ImportSlotWithReport(box, slot, entityBytes, out _, format);
         if (conversion is null)
             return null;
         var after = session.GetEntity(box, slot);

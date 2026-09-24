@@ -12,7 +12,7 @@ namespace PKForge.App.Views;
 /// </summary>
 public static class SaveBlockEditor
 {
-    private const string Title = "SAVE BLOCKS";
+    private const string Title = "Save blocks";
 
     public static async Task ShowAsync(Grid host, ISaveEngineSession session, BoxBrowserViewModel viewModel)
     {
@@ -35,14 +35,14 @@ public static class SaveBlockEditor
 
             if (!block.Editable)
             {
-                await EditorMenu.ShowAsync(host, $"BLOCK {block.Key:X8}",
+                await EditorMenu.ShowAsync(host, $"Block {block.Key:X8}",
                     $"{block.Name ?? "Unnamed block"}\n{block.Type} · {block.Size} bytes\n\nRead-only here: only bool and single-number blocks can be edited.", "Back");
                 continue;
             }
 
             if (HardcoreMode.Blocks(SaveAction.WriteRawBytes, out var blocked))
             {
-                await EditorMenu.ShowAsync(host, "HARDCORE MODE", blocked, "OK");
+                await EditorMenu.ShowAsync(host, "Hardcore mode", blocked, "OK");
                 continue;
             }
 
@@ -50,7 +50,7 @@ public static class SaveBlockEditor
             if (block.Type == "Bool")
             {
                 var next = block.Value != "true";
-                var confirmed = await PadMenu.ConfirmAsync(host, $"BLOCK {block.Key:X8}",
+                var confirmed = await PadMenu.ConfirmAsync(host, $"Block {block.Key:X8}",
                     $"{block.Name ?? "Unnamed block"}\nSet {block.Value} → {(next ? "true" : "false")}? A restore point is created first.",
                     next ? "Set true" : "Set false");
                 if (!confirmed) continue;
@@ -58,7 +58,7 @@ public static class SaveBlockEditor
             }
             else
             {
-                var text = await TextPopup.ShowLineAsync(host, $"BLOCK {block.Key:X8}",
+                var text = await TextPopup.ShowLineAsync(host, $"Block {block.Key:X8}",
                     $"{block.Type} value (e.g. 12 or 1.5)", block.Value ?? "");
                 if (string.IsNullOrWhiteSpace(text) || text.Trim() == block.Value) continue;
                 write = s => SaveBlockEditorService.SetNumber(s, block.Key, text);

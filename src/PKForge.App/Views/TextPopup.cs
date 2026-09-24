@@ -33,9 +33,9 @@ public static class TextPopup
         }
         void Save() => Close(entry.Text?.Trim());
 
-        var save = Kit.Capsule("SAVE", UiTokens.Green);
+        var save = Kit.Capsule("Save", UiTokens.Green);
         save.Clicked += (_, _) => Save();
-        var cancel = Kit.Capsule("CANCEL", UiTokens.Ink1);
+        var cancel = Kit.Capsule("Cancel", UiTokens.Ink1);
         cancel.Clicked += (_, _) => Close(null);
         var content = new VerticalStackLayout
         {
@@ -76,9 +76,9 @@ public static class TextPopup
             result.TrySetResult(text);
         }
 
-        var ok = Kit.Capsule("USE THIS SET", UiTokens.Green);
+        var ok = Kit.Capsule("Use this set", UiTokens.Green);
         ok.Clicked += (_, _) => Close(editor.Text);
-        var cancel = Kit.Capsule("CANCEL", UiTokens.Ink1);
+        var cancel = Kit.Capsule("Cancel", UiTokens.Ink1);
         cancel.Clicked += (_, _) => Close(null);
 
         var content = new VerticalStackLayout
@@ -87,7 +87,7 @@ public static class TextPopup
             Children =
             {
                 Kit.HeaderBar(title),
-                new Label { Text = hint, TextColor = UiTokens.InkSoft, FontFamily = DsChrome.PixelFont, FontSize = 12, LineBreakMode = LineBreakMode.WordWrap },
+                new Label { Text = hint, TextColor = UiTokens.InkSoft, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall, LineBreakMode = LineBreakMode.WordWrap },
                 editor,
                 new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { cancel, ok } },
             },

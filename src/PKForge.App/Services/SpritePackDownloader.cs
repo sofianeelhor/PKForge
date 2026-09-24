@@ -9,26 +9,22 @@ namespace PKForge.App.Services;
 /// </summary>
 public sealed class SpritePackDownloader(ISpriteService sprites, IGameDataService data)
 {
-    /// <summary>Roughly 150 MB for the full pack; shown to the user before starting.</summary>
-    public const string SizeHint = "~150 MB";
+    /// <summary>Rough size of the full pack (every form, shiny and female variant); shown before starting.</summary>
+    public const string SizeHint = "~250 MB";
 
     public async Task RunAsync(Action<int, int> onProgress, CancellationToken cancellationToken)
     {
-        var speciesIds = Enumerable.Range(1, data.SpeciesNames.Count - 1)
-            .Where(id => data.SpeciesNames[id].Length > 0)
-            .ToList();
-
-        // 4 units per species (showdown/home × normal/shiny) + one per item icon.
-        var units = new List<Func<Task>>(speciesIds.Count * 4 + data.ItemNames.Count);
-        foreach (var id in speciesIds)
+        // Every form, shiny and female variant the PokeAPI tree really has (SpriteCatalog's
+        // generated table), deduplicated by file: forms sharing art download once.
+        var looks = SpriteCatalog.AllRemoteLooks().ToList();
+        var units = new List<Func<Task>>(looks.Count * 2 + data.ItemNames.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var look in looks)
         {
-            foreach (var shiny in new[] { false, true })
-            {
-                var species = id;
-                var isShiny = shiny;
-                units.Add(() => WarmAsync(done => sprites.WarmShowdown(species, isShiny, done)));
-                units.Add(() => WarmAsync(done => sprites.WarmHome(species, isShiny, done)));
-            }
+            if (SpriteCatalog.Showdown(look) is { } sd && seen.Add("sd/" + sd.CacheName))
+                units.Add(() => WarmAsync(done => sprites.WarmShowdown(look, done)));
+            if (SpriteCatalog.Home(look) is { } home && seen.Add("home/" + home.CacheName))
+                units.Add(() => WarmAsync(done => sprites.WarmHome(look, done)));
         }
         foreach (var itemName in data.ItemNames.Where(n => n.Length > 0))
         {

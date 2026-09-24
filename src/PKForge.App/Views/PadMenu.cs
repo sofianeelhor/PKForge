@@ -21,7 +21,7 @@ public sealed class PadMenu : IPadHandler
     private readonly Grid _host;
     private readonly Grid _overlay;
     private readonly GamepadRouter? _router;
-    private readonly ScrollView _scroll = null!;
+    private readonly ScrollView? _scroll;
     private int _index;
     private int _columns = 1;
 
@@ -42,6 +42,7 @@ public sealed class PadMenu : IPadHandler
 
     private PadMenu(Grid host, string title, string? message, PadOption[] options)
     {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         _host = host;
         _options = options;
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
@@ -80,21 +81,27 @@ public sealed class PadMenu : IPadHandler
             {
                 Text = message,
                 TextColor = UiTokens.Ink1,
-                FontSize = 12,
+                FontSize = UiTokens.TextSmall,
                 LineBreakMode = LineBreakMode.WordWrap,
             });
         }
         content.Children.Add(grid);
-        content.Children.Add(Kit.HintBar(("A", "CHOOSE", null), ("B", "CANCEL", () => Close(null))));
+        content.Children.Add(Kit.WindowHints(("A", "Choose", null), ("B", "Cancel", () => Close(null))));
 
         // PadMenu owns the ScrollView (same structure as OverlayWindow's default) so
         // Highlight can scroll the cursor into view; the window caps to the host.
-        View list = _scroll = new ScrollView { Content = content };
+        // A short menu sizes to its options; only a tall one scrolls (a ScrollView always
+        // claimed the full host height and left a tall empty panel under two choices).
+        var estimate = 60 + rowCount * (buttonHeight + 8) + 60 + (string.IsNullOrEmpty(message) ? 0 : 20 + message.Length / 60 * 18);
+        var hostHeight = host.Height > 0 ? host.Height - 16 : 344;
+        View list = estimate < hostHeight - 24 ? content : _scroll = new ScrollView { Content = content };
         // Fit-to-host: the window is capped to the Thor's actual screen (host.Height - 16),
         var window = Kit.OverlayWindow(host, list, preferredMaxWidth: 640, scroll: false);
         _overlay = Kit.AttachOverlay(host, window, () => Close(null));
         Highlight(0);
         _router?.Push(this);
+        PerfTrace.Log($"menu.open[{options.Length}]", watch);
+        PerfTrace.UntilIdle($"menu.open[{options.Length}]", host.Dispatcher);
     }
 
     public bool OnPadButton(PadButton button)
@@ -120,7 +127,7 @@ public sealed class PadMenu : IPadHandler
             _optionViews[i].Selected = i == _index;
         // Tall menus scroll; the highlight must ride along or the cursor vanishes
         // below the fold.
-        _scroll.ScrollToAsync(_optionViews[_index], ScrollToPosition.MakeVisible, animated: false);
+        _scroll?.ScrollToAsync(_optionViews[_index], ScrollToPosition.MakeVisible, animated: false);
     }
     private void Close(string? result)
     {

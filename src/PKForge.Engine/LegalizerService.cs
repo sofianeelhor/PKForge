@@ -229,7 +229,7 @@ public sealed class LegalizerService : ILegalizerService
         var info = new BankEntryInfo(
             created.Species, created.Form, created.IsShiny,
             created.IsNicknamed ? created.Nickname : _strings.specieslist[created.Species],
-            created.CurrentLevel, created.Format, "Generated");
+            created.CurrentLevel, created.Format, "Generated", EntityBytes.FormatOf(created), created.HeldItem, EntitySprite.Traits(created));
         return new GeneratedEntity(data, info);
     }
 

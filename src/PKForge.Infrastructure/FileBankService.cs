@@ -16,12 +16,16 @@ public sealed class FileBankService : IBankService
     private readonly Lock _gate = new();
     private List<BankEntry> _entries;
     private int _boxCount;
+    private int _migrationVersion;
+    // Set when an index exists on disk but neither it nor its backup could be read: the bank
+    // then stays read-only rather than overwrite the real index with an empty fallback.
+    private readonly bool _indexUnreadable;
 
     public FileBankService(string rootDirectory)
     {
         _root = rootDirectory;
         Directory.CreateDirectory(_root);
-        (_entries, _boxCount) = LoadIndex();
+        (_entries, _boxCount, _migrationVersion, _indexUnreadable) = LoadIndex();
     }
 
     public IReadOnlyList<BankEntry> GetAll()
@@ -38,12 +42,22 @@ public sealed class FileBankService : IBankService
     {
         lock (_gate)
         {
-            var (box, slot) = FirstEmpty();
-            var entry = new BankEntry(Guid.NewGuid(), box, slot, info, DateTimeOffset.UtcNow);
-            File.WriteAllBytes(DataPath(entry.Id), data);
-            _entries.Add(entry);
-            SaveIndex();
-            return entry;
+            EnsureWritable();
+            return Commit(() =>
+            {
+                var (box, slot) = FirstEmpty();
+                var entry = new BankEntry(Guid.NewGuid(), box, slot, info, DateTimeOffset.UtcNow);
+                File.WriteAllBytes(DataPath(entry.Id), data);
+                _entries.Add(entry);
+                try { SaveIndex(); }
+                catch
+                {
+                    try { File.Delete(DataPath(entry.Id)); }
+                    catch { /* an orphan .bin is harmless: the index never lists it */ }
+                    throw;
+                }
+                return entry;
+            });
         }
     }
 
@@ -63,16 +77,21 @@ public sealed class FileBankService : IBankService
         {
             var index = _entries.FindIndex(e => e.Id == id);
             if (index < 0) throw new InvalidOperationException("Unknown bank entry.");
+            EnsureWritable();
             var occupant = _entries.FindIndex(e => e.Box == box && e.Slot == slot);
             var moving = _entries[index];
-            if (occupant >= 0 && occupant != index)
+            Commit(() =>
             {
-                // Swap: the occupant takes the mover's old place.
-                _entries[occupant] = _entries[occupant] with { Box = moving.Box, Slot = moving.Slot };
-            }
-            _entries[index] = moving with { Box = box, Slot = slot };
-            _boxCount = Math.Max(_boxCount, box + 1);
-            SaveIndex();
+                if (occupant >= 0 && occupant != index)
+                {
+                    // Swap: the occupant takes the mover's old place.
+                    _entries[occupant] = _entries[occupant] with { Box = moving.Box, Slot = moving.Slot };
+                }
+                _entries[index] = moving with { Box = box, Slot = slot };
+                _boxCount = Math.Max(_boxCount, box + 1);
+                SaveIndex();
+                return 0;
+            });
         }
     }
 
@@ -82,9 +101,14 @@ public sealed class FileBankService : IBankService
         {
             var index = _entries.FindIndex(e => e.Id == id);
             if (index < 0) throw new InvalidOperationException("Unknown bank entry.");
+            EnsureWritable();
             File.WriteAllBytes(DataPath(id), data);
-            _entries[index] = _entries[index] with { Info = info };
-            SaveIndex();
+            Commit(() =>
+            {
+                _entries[index] = _entries[index] with { Info = info };
+                SaveIndex();
+                return 0;
+            });
         }
     }
 
@@ -94,10 +118,16 @@ public sealed class FileBankService : IBankService
         {
             var index = _entries.FindIndex(e => e.Id == id);
             if (index < 0) return;
-            _entries.RemoveAt(index);
+            EnsureWritable();
+            Commit(() =>
+            {
+                _entries.RemoveAt(index);
+                SaveIndex();
+                return 0;
+            });
+            // Bytes go only once the index no longer lists them.
             try { File.Delete(DataPath(id)); }
             catch { /* index is authoritative; orphan bytes are harmless */ }
-            SaveIndex();
         }
     }
 
@@ -107,15 +137,22 @@ public sealed class FileBankService : IBankService
         {
             if (ids.Count == 0) return 0;
             var wanted = ids.ToHashSet();
-            var released = _entries.RemoveAll(e => wanted.Contains(e.Id));
-            if (released == 0) return 0;
-            foreach (var id in wanted)
+            var releasing = _entries.Where(e => wanted.Contains(e.Id)).Select(e => e.Id).ToList();
+            if (releasing.Count == 0) return 0;
+            EnsureWritable();
+            // All or nothing: a failed index write leaves every entry (and its bytes) in place.
+            Commit(() =>
+            {
+                _entries.RemoveAll(e => wanted.Contains(e.Id));
+                SaveIndex();
+                return 0;
+            });
+            foreach (var id in releasing)
             {
                 try { File.Delete(DataPath(id)); }
                 catch { /* index is authoritative; orphan bytes are harmless */ }
             }
-            SaveIndex();
-            return released;
+            return releasing.Count;
         }
     }
 
@@ -145,18 +182,82 @@ public sealed class FileBankService : IBankService
                     throw new InvalidOperationException("Target slot is held by an entry that is not moving.");
             }
 
-            var moved = 0;
-            foreach (var (id, box, slot) in placements)
+            EnsureWritable();
+            return Commit(() =>
             {
-                var index = rows[id];
-                var entry = _entries[index];
-                if (entry.Box == box && entry.Slot == slot) continue;
-                _entries[index] = entry with { Box = box, Slot = slot };
-                moved++;
+                var moved = 0;
+                foreach (var (id, box, slot) in placements)
+                {
+                    var index = rows[id];
+                    var entry = _entries[index];
+                    if (entry.Box == box && entry.Slot == slot) continue;
+                    _entries[index] = entry with { Box = box, Slot = slot };
+                    moved++;
+                }
+                _boxCount = Math.Max(_boxCount, placements.Max(p => p.Box) + 1);
+                SaveIndex();
+                return moved;
+            });
+        }
+    }
+
+    public int UpdateInfo(IReadOnlyList<(Guid Id, BankEntryInfo Info)> updates)
+    {
+        lock (_gate)
+        {
+            if (!updates.Any(u => _entries.FindIndex(e => e.Id == u.Id) is var i && i >= 0 && _entries[i].Info != u.Info))
+                return 0;
+            EnsureWritable();
+            return Commit(() =>
+            {
+                var changed = 0;
+                foreach (var (id, info) in updates)
+                {
+                    var index = _entries.FindIndex(e => e.Id == id);
+                    if (index < 0 || _entries[index].Info == info) continue;
+                    _entries[index] = _entries[index] with { Info = info };
+                    changed++;
+                }
+                SaveIndex();
+                return changed;
+            });
+        }
+    }
+
+    public int MigrationVersion
+    {
+        get { lock (_gate) return _migrationVersion; }
+    }
+
+    public int CompleteMigration(int version, IReadOnlyList<(Guid Id, BankEntryInfo Expected, BankEntryInfo Info)> updates)
+    {
+        lock (_gate)
+        {
+            if (version <= _migrationVersion) return 0;
+            EnsureWritable();
+            var previous = _migrationVersion;
+            try
+            {
+                return Commit(() =>
+                {
+                    var changed = 0;
+                    foreach (var (id, expected, info) in updates)
+                    {
+                        var index = _entries.FindIndex(e => e.Id == id);
+                        if (index < 0 || _entries[index].Info != expected || expected == info) continue;
+                        _entries[index] = _entries[index] with { Info = info };
+                        changed++;
+                    }
+                    _migrationVersion = version;
+                    SaveIndex();
+                    return changed;
+                });
             }
-            _boxCount = Math.Max(_boxCount, placements.Max(p => p.Box) + 1);
-            SaveIndex();
-            return moved;
+            catch
+            {
+                _migrationVersion = previous;
+                throw;
+            }
         }
     }
 
@@ -164,8 +265,13 @@ public sealed class FileBankService : IBankService
     {
         lock (_gate)
         {
-            _boxCount++;
-            SaveIndex();
+            EnsureWritable();
+            Commit(() =>
+            {
+                _boxCount++;
+                SaveIndex();
+                return 0;
+            });
         }
     }
 
@@ -187,11 +293,34 @@ public sealed class FileBankService : IBankService
     private string DataPath(Guid id) => Path.Combine(_root, id.ToString("N") + ".bin");
     private string IndexPath => Path.Combine(_root, "index.json");
 
-    private sealed record IndexFile(int BoxCount, List<BankEntry> Entries);
+    // MigrationVersion is absent from older indexes and reads as 0; older app versions ignore it.
+    private sealed record IndexFile(int BoxCount, List<BankEntry> Entries, int MigrationVersion = 0);
+
+    /// <summary>Runs one mutation of the in-memory index (the caller holds the gate); if it throws,
+    /// typically because the index write failed, memory is put back to match the disk.</summary>
+    private T Commit<T>(Func<T> mutate)
+    {
+        var entries = _entries.ToList();
+        var boxCount = _boxCount;
+        try { return mutate(); }
+        catch
+        {
+            _entries = entries;
+            _boxCount = boxCount;
+            throw;
+        }
+    }
+
+    private void EnsureWritable()
+    {
+        if (_indexUnreadable)
+            throw new InvalidOperationException("The bank index could not be read, so the bank is read-only to protect it. Check the bank folder's index.json.");
+    }
 
     private void SaveIndex()
     {
-        var json = JsonSerializer.Serialize(new IndexFile(_boxCount, _entries));
+        EnsureWritable();
+        var json = JsonSerializer.Serialize(new IndexFile(_boxCount, _entries, _migrationVersion));
         var tmp = IndexPath + ".tmp";
         File.WriteAllText(tmp, json);
         if (File.Exists(IndexPath))
@@ -199,22 +328,26 @@ public sealed class FileBankService : IBankService
         File.Move(tmp, IndexPath, overwrite: true);
     }
 
-    private (List<BankEntry>, int) LoadIndex()
+    private (List<BankEntry>, int, int, bool Unreadable) LoadIndex()
     {
+        var anyIndex = false;
         foreach (var candidate in new[] { IndexPath, IndexPath + ".bak" })
         {
             try
             {
                 if (!File.Exists(candidate)) continue;
+                anyIndex = true;
                 var loaded = JsonSerializer.Deserialize<IndexFile>(File.ReadAllText(candidate));
                 if (loaded is not null)
-                    return (loaded.Entries, Math.Max(1, loaded.BoxCount));
+                    return (loaded.Entries ?? [], Math.Max(1, loaded.BoxCount), loaded.MigrationVersion, false);
             }
             catch
             {
                 // Try the backup index next.
             }
         }
-        return ([], 3); // a fresh bank opens with three inviting boxes
+        // A fresh bank opens with three inviting boxes; an index that exists but cannot be
+        // read is never replaced by that empty fallback.
+        return ([], 3, 0, anyIndex);
     }
 }

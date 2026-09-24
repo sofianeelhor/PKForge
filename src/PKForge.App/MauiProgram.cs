@@ -16,6 +16,9 @@ public static class MauiProgram
     {
         var builder = MauiApp.CreateBuilder();
         App.Trace("CreateMauiApp enter");
+#if ANDROID
+        Views.CapsuleSkin.Register();
+#endif
         builder.UseMauiApp<App>().UseSkiaSharp()
             .ConfigureFonts(fonts =>
             {
@@ -35,8 +38,19 @@ public static class MauiProgram
         builder.Services.AddSingleton<IEncounterLookup, EncounterLookupService>();
         builder.Services.AddSingleton<IBackupService>(_ =>
             new FileBackupService(Path.Combine(FileSystem.AppDataDirectory, "backups")));
-        builder.Services.AddSingleton<IBankService>(_ =>
-            new FileBankService(Path.Combine(FileSystem.AppDataDirectory, "bank")));
+        builder.Services.AddSingleton<IBankService>(sp =>
+        {
+            var bank = new FileBankService(Path.Combine(FileSystem.AppDataDirectory, "bank"));
+            // One-time index migration, off the UI thread: legacy entries get their exact format
+            // (only when provable) and sprite traits recorded, then the index is marked so no
+            // entry is read again on later launches. Concurrent bank edits are never undone.
+            _ = Task.Run(() =>
+            {
+                try { PKForge.Engine.EntityBytes.MigrateBank(bank); }
+                catch (Exception) { /* a failed migration leaves the index as it was; retried next launch */ }
+            });
+            return bank;
+        });
         builder.Services.AddSingleton<InjectedGiftHistory>(_ =>
             new InjectedGiftHistory(Path.Combine(FileSystem.AppDataDirectory, "injected-gifts.json")));
         builder.Services.AddSingleton<ISaveIdentityStore>(_ =>
@@ -47,8 +61,10 @@ public static class MauiProgram
         builder.Services.AddSingleton<Services.ProtectionStore>();
         builder.Services.AddSingleton<ISafeSaveWriter, SafeSaveWriter>();
         builder.Services.AddSingleton<ILegalityService, LegalityService>();
+        builder.Services.AddSingleton<ILegalityAssistService>(LegalityAssistService.Shared);
         builder.Services.AddSingleton<IStatPreviewService, StatPreviewService>();
         builder.Services.AddSingleton<IMonInfoService, MonInfoService>();
+        builder.Services.AddSingleton<IMonSummaryService, MonSummaryService>();
         builder.Services.AddSingleton<IEvolutionService, EvolutionService>();
         builder.Services.AddSingleton<ISpriteService, SpriteService>();
         builder.Services.AddSingleton<PokeparkService>();

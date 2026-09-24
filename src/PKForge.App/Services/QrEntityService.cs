@@ -67,7 +67,10 @@ public static class QrEntityService
             return null;
         }
 
-        var info = engine.TryDescribeEntity(parsed.EntityBytes, "QR transfer");
+        // The PKF1 envelope carries the generation, not the format: it settles PK6 vs PK7
+        // (same size), while Gen 8/9 siblings still fall back to PKHeX's heuristics.
+        var format = parsed.Generation == 6 ? "PK6" : null;
+        var info = engine.TryDescribeEntity(parsed.EntityBytes, "QR transfer", format);
         if (info is null)
         {
             await PadMenu.ShowAsync(host, "QR", "The QR code's Pokémon data could not be read.", "OK");
@@ -76,16 +79,16 @@ public static class QrEntityService
 
         var name = info.Nickname.Length > 0 ? info.Nickname : parsed.SpeciesName;
         var message =
-            $"{name} · {parsed.SpeciesName}\nLv. {info.Level} · OT {OriginalTrainerOf(engine, parsed.EntityBytes)} · Gen {parsed.Generation}";
+            $"{name} · {parsed.SpeciesName}\nLv. {info.Level} · OT {OriginalTrainerOf(engine, parsed.EntityBytes, info.Format)} · Gen {parsed.Generation}";
         if (contextNote is not null) message += $"\n\n{contextNote}";
         var confirmed = await PadMenu.ConfirmAsync(host, "POKéMON FOUND", message, "Receive");
         return confirmed ? new QrReceivedEntity(parsed.EntityBytes, info) : null;
     }
 
     /// <summary>The OT for the preview line; a throwaway entity session is the engine's own display truth.</summary>
-    private static string OriginalTrainerOf(ISaveEngine engine, byte[] entityBytes)
+    private static string OriginalTrainerOf(ISaveEngine engine, byte[] entityBytes, string? format)
     {
-        var session = engine.OpenEntitySession(entityBytes);
+        var session = engine.OpenEntitySession(entityBytes, format: format);
         if (session is null) return "—";
         using (session)
         {

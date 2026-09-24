@@ -52,20 +52,25 @@ public static class InfoPickers
             items.Add(MoveRow(move, NameOf(data.MoveNames, move.Id), hasLearnData));
 
         var filter = hasLearnData
-            ? new PickerFilter("LEGAL", "SHOW ALL", item => item.Id == 0 || !item.Muted, StartOn: !Services.HaXMode.IsOn)
+            ? new PickerFilter("Legal", "Show all", item => item.Id == 0 || !item.Muted, StartOn: !Services.HaXMode.IsOn)
             : null;
         return await PickerMenu.ShowAsync(host, title, items, current, MovePreview(byId, hasLearnData), filter);
     }
 
+    /// <summary>
+    /// One move row. With learn data every row carries its legality mark: legal moves are
+    /// tagged "✓ Lv 32 / TM / Egg…" in the learn colour, the rest "Not legal" in red and
+    /// muted, so the unfiltered list (Y, or HaX mode) still says which picks are legal.
+    /// </summary>
     private static PickItem MoveRow(MoveChoice move, string name, bool hasLearnData) =>
         new(move.Id, name, Detail: InfoKit.MoveNumbers(move))
         {
             TypeId = move.Type,
             Category = move.Category,
-            Tag = move.Learn.IsLegal ? move.Learn.Label : null,
-            TagColor = InfoKit.LearnColor(move.Learn.Kind),
+            Tag = move.Learn.IsLegal ? $"✓ {move.Learn.Label}" : hasLearnData ? "Not legal" : null,
+            TagColor = move.Learn.IsLegal ? InfoKit.LearnColor(move.Learn.Kind) : UiTokens.Bad,
             Muted = hasLearnData && !move.Learn.IsLegal,
-            Keywords = $"{TypeFacts.Name(move.Type)} {TypeFacts.CategoryName(move.Category)} {move.Learn.Label}",
+            Keywords = $"{TypeFacts.Name(move.Type)} {TypeFacts.CategoryName(move.Category)} {move.Learn.Label}" + (move.Learn.IsLegal ? " legal" : ""),
         };
 
     /// <summary>The card under the move list: name, type + category, numbers, effect, how it is learned.</summary>
@@ -87,13 +92,13 @@ public static class InfoPickers
         {
             if (item is null || !moves.TryGetValue(item.Id, out var move))
             {
-                heading.Text = item?.Name.ToUpperInvariant() ?? "";
+                heading.Text = item?.Name ?? "";
                 badges.IsVisible = numbers.IsVisible = learn.IsVisible = false;
                 effect.Text = item?.Id == 0 ? "Leaves the move slot empty." : "";
                 return;
             }
             badges.IsVisible = true;
-            heading.Text = item.Name.ToUpperInvariant();
+            heading.Text = item.Name;
             InfoKit.SetType(badge, move.Type);
             category.Category = move.Category;
             numbers.Text = $"{TypeFacts.CategoryName(move.Category)} · Power {InfoKit.Power(move.Power)} · Accuracy {InfoKit.Accuracy(move.Accuracy)} · PP {move.PP}";
@@ -132,22 +137,22 @@ public static class InfoPickers
         if (Info?.GetSpeciesCard(session, species, form) is not { } card) return null;
         var children = new List<View>
         {
-            InfoKit.HeaderRow(InfoKit.Heading($"#{species:000} {name.ToUpperInvariant()}"), InfoKit.TypeRow(card.Types)),
+            InfoKit.HeaderRow(InfoKit.Heading($"#{species:000} {name}"), InfoKit.TypeRow(card.Types)),
             InfoKit.BaseStatBars(card.BaseStats, card.Total),
         };
         foreach (var ability in card.Abilities)
         {
             var row = InfoKit.HeaderRow(
-                new Label { Text = NameOf(data.AbilityNames, ability.Id), FontSize = 12, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0 },
-                InfoKit.Tag(ability.Slot == "Hidden" ? "HIDDEN" : $"SLOT {ability.Slot}",
+                new Label { Text = NameOf(data.AbilityNames, ability.Id), FontSize = UiTokens.TextSmall, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0 },
+                InfoKit.Tag(ability.Slot == "Hidden" ? "Hidden" : $"Slot {ability.Slot}",
                     ability.Slot == "Hidden" ? Color.FromArgb("#B8860B") : UiTokens.Blueprint));
             children.Add(row);
             if (ability.Effect.Length > 0) children.Add(InfoKit.DetailLine(ability.Effect, maxLines: 2));
         }
         if (card.Gender is { } gender)
             children.Add(InfoKit.HeaderRow(
-                new Label { Text = "GENDER", FontFamily = DsChrome.PixelFont, FontSize = 10, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
-                new Label { Text = gender.Label, FontSize = 11, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0 }));
+                new Label { Text = "Gender", FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
+                new Label { Text = gender.Label, FontSize = UiTokens.TextSmall, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0 }));
         return InfoKit.Card([.. children]);
     }
 
@@ -165,7 +170,7 @@ public static class InfoPickers
             : [];
         var items = own.Select(a => new PickItem(a.Id, NameOf(data.AbilityNames, a.Id), Detail: Blank(a.Effect))
         {
-            Tag = a.Slot == "Hidden" ? "HIDDEN" : $"SLOT {a.Slot}",
+            Tag = a.Slot == "Hidden" ? "Hidden" : $"Slot {a.Slot}",
             TagColor = a.Slot == "Hidden" ? Color.FromArgb("#B8860B") : UiTokens.Blueprint,
             Keywords = a.Slot,
         }).ToList();
@@ -208,7 +213,7 @@ public static class InfoPickers
         // Holdable first, in the game's id order (it groups balls, berries, plates…).
         items.AddRange(rows.OrderBy(r => r.Muted ? 1 : 0));
         var filter = legal.Count > 0
-            ? new PickerFilter("HOLDABLE", "SHOW ALL", item => item.Id == 0 || !item.Muted, StartOn: !Services.HaXMode.IsOn)
+            ? new PickerFilter("Holdable", "Show all", item => item.Id == 0 || !item.Muted, StartOn: !Services.HaXMode.IsOn)
             : null;
         return PickerMenu.ShowAsync(host, title, items, current, filter: filter);
     }
@@ -227,11 +232,11 @@ public static class InfoPickers
             return new PickItem(c.Id, c.Name, Detail: TeraDetail(c.Id, own))
             {
                 TypeId = c.Id,
-                Tag = own ? "OWN TYPE" : c.Id == current ? "NOW" : null,
+                Tag = own ? "Own type" : c.Id == current ? "Now" : null,
                 TagColor = own ? UiTokens.Green : UiTokens.Blueprint,
             };
         }).ToList();
-        return PickerMenu.ShowAsync(host, "TERA TYPE", items, current);
+        return PickerMenu.ShowAsync(host, "Tera type", items, current);
     }
 
     /// <summary>What the Tera type does for this Pokémon, in one line.</summary>
@@ -257,7 +262,7 @@ public static class InfoPickers
                 Muted = ivs is null,
             };
         }).ToList();
-        return PickerMenu.ShowAsync(host, "HIDDEN POWER", items, current);
+        return PickerMenu.ShowAsync(host, "Hidden power", items, current);
     }
 
     private static string? Blank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text;

@@ -1,3 +1,4 @@
+using PKForge.Domain;
 using SkiaSharp;
 
 namespace PKForge.App.Services;
@@ -5,11 +6,20 @@ namespace PKForge.App.Services;
 /// <summary>Loads and caches bundled PKHeX sprite assets as Skia bitmaps. Fully offline; no CDN dependency.</summary>
 public interface ISpriteService
 {
-    /// <summary>Returns a cached bitmap, or null while a background load is pending / no asset exists.</summary>
-    SKBitmap? GetSprite(int species, int form, bool shiny);
+    /// <summary>
+    /// Bundled pixel sprite (PKHeX art) for the exact look, resolved by
+    /// <see cref="SpriteCatalog.BundledCandidates"/>; null while a background load is pending.
+    /// </summary>
+    SKBitmap? GetSprite(SpriteLook look);
 
-    /// <summary>Warms the cache for a sprite key and invokes <paramref name="onLoaded"/> when ready.</summary>
-    void Warm(int species, int form, bool shiny, Action onLoaded);
+    /// <summary>Warms the cache for a look and invokes <paramref name="onLoaded"/> when ready.</summary>
+    void Warm(SpriteLook look, Action onLoaded);
+
+    /// <summary>Plain species / form / shiny look - for surfaces that genuinely know no more (dex grids).</summary>
+    SKBitmap? GetSprite(int species, int form, bool shiny) => GetSprite(new SpriteLook(species, form, shiny));
+
+    /// <inheritdoc cref="Warm(SpriteLook, Action)"/>
+    void Warm(int species, int form, bool shiny, Action onLoaded) => Warm(new SpriteLook(species, form, shiny), onLoaded);
 
     /// <summary>Ball icon by PKHeX ball id; null while loading / unknown ball.</summary>
     SKBitmap? GetBall(int ball);
@@ -21,20 +31,21 @@ public interface ISpriteService
     /// Modern HOME-style render (512px, downloaded once and cached forever);
     /// null while loading / offline with no cache - callers fall back to the pixel sprite.
     /// </summary>
-    SKBitmap? GetHome(int species, bool shiny);
+    /// Null too when HOME has no art for this exact form (see <see cref="SpriteCatalog.Home"/>).
+    SKBitmap? GetHome(SpriteLook look);
 
     /// <summary>Warms the HOME render cache and invokes <paramref name="onLoaded"/> when ready.</summary>
-    void WarmHome(int species, bool shiny, Action onLoaded);
+    void WarmHome(SpriteLook look, Action onLoaded);
 
     /// <summary>
     /// Animated Showdown sprite lookup with three-state semantics: returns false while the
     /// answer is unknown (still loading - draw NOTHING, no fallback flash); true with a sprite
-    /// when available; true with null when this species has no animation (fall back now).
+    /// when available; true with null when this exact form has no animation (fall back now).
     /// </summary>
-    bool TryGetShowdown(int species, bool shiny, out AnimatedSprite? sprite);
+    bool TryGetShowdown(SpriteLook look, out AnimatedSprite? sprite);
 
     /// <summary>Warms the animated-sprite cache and invokes <paramref name="onLoaded"/> when ready.</summary>
-    void WarmShowdown(int species, bool shiny, Action onLoaded);
+    void WarmShowdown(SpriteLook look, Action onLoaded);
 }
 
 /// <summary>Decoded animation: frames plus per-frame durations in milliseconds.</summary>
@@ -69,10 +80,10 @@ public sealed class SpriteService : ISpriteService
     private static readonly SemaphoreSlim DecodeGate = new(Math.Max(2, Environment.ProcessorCount - 1));
     private static readonly SemaphoreSlim NetworkGate = new(4);
 
-    public SKBitmap? GetSprite(int species, int form, bool shiny)
+    public SKBitmap? GetSprite(SpriteLook look)
     {
         lock (_gate)
-            return _cache.GetValueOrDefault(Key(species, form, shiny));
+            return _cache.GetValueOrDefault(look.CacheKey);
     }
 
     public SKBitmap? GetBall(int ball)
@@ -114,35 +125,41 @@ public sealed class SpriteService : ISpriteService
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
 
-    public SKBitmap? GetHome(int species, bool shiny)
+    private readonly Dictionary<string, DateTime> _homeRetryAfter = new(StringComparer.Ordinal);
+
+    public SKBitmap? GetHome(SpriteLook look)
     {
+        var remote = SpriteCatalog.Home(look);
+        if (remote is null) return null;
         lock (_gate)
-            return _cache.GetValueOrDefault($"home-{species}-{(shiny ? 1 : 0)}");
+            return _cache.GetValueOrDefault("home-" + remote.CacheName);
     }
 
-    public void WarmHome(int species, bool shiny, Action onLoaded)
+    public void WarmHome(SpriteLook look, Action onLoaded)
     {
-        var key = $"home-{species}-{(shiny ? 1 : 0)}";
+        // No HOME art for this exact form: nothing will ever load, and calling back would
+        // only make the caller repaint and ask again. It keeps drawing the pixel chain.
+        if (SpriteCatalog.Home(look) is not { } remote) return;
+        var key = "home-" + remote.CacheName;
         lock (_gate)
         {
             if (_cache.ContainsKey(key)) { onLoaded(); return; }
+            // A recent failure (offline) is not retried on every repaint.
+            if (_homeRetryAfter.TryGetValue(key, out var after) && DateTime.UtcNow < after) return;
             if (!_loading.Add(key)) return;
         }
 
         Task.Run(async () =>
         {
             SKBitmap? bitmap = null;
-            var diskPath = Path.Combine(FileSystem.AppDataDirectory, "home", $"{species}{(shiny ? "-s" : "")}.png");
+            var diskPath = Path.Combine(FileSystem.AppDataDirectory, "home", remote.CacheName);
             await NetworkGate.WaitAsync().ConfigureAwait(false);
             try
             {
                 if (!File.Exists(diskPath))
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(diskPath)!);
-                    var url = shiny
-                        ? $"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/home/shiny/{species}.png"
-                        : $"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/home/{species}.png";
-                    var bytes = await Http.GetByteArrayAsync(url).ConfigureAwait(false);
+                    var bytes = await Http.GetByteArrayAsync(RemoteBase + "home/" + remote.Path).ConfigureAwait(false);
                     await File.WriteAllBytesAsync(diskPath, bytes).ConfigureAwait(false);
                 }
                 bitmap = SKBitmap.Decode(diskPath);
@@ -151,7 +168,11 @@ public sealed class SpriteService : ISpriteService
             {
                 // Offline or missing render: leave the loading flag clear so a later
                 // attempt can retry; callers keep using the pixel sprite meanwhile.
-                lock (_gate) _loading.Remove(key);
+                lock (_gate)
+                {
+                    _loading.Remove(key);
+                    _homeRetryAfter[key] = DateTime.UtcNow.AddMinutes(1);
+                }
                 onLoaded();
                 return;
             }
@@ -166,17 +187,25 @@ public sealed class SpriteService : ISpriteService
         });
     }
 
+    private const string RemoteBase = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/";
+
     private readonly Dictionary<string, AnimatedSprite?> _animatedCache = new(StringComparer.Ordinal);
 
-    public bool TryGetShowdown(int species, bool shiny, out AnimatedSprite? sprite)
+    public bool TryGetShowdown(SpriteLook look, out AnimatedSprite? sprite)
     {
+        if (SpriteCatalog.Showdown(look) is not { } remote)
+        {
+            sprite = null;
+            return true; // known: this exact form has no animation
+        }
         lock (_gate)
-            return _animatedCache.TryGetValue($"sd-{species}-{(shiny ? 1 : 0)}", out sprite);
+            return _animatedCache.TryGetValue("sd-" + remote.CacheName, out sprite);
     }
 
-    public void WarmShowdown(int species, bool shiny, Action onLoaded)
+    public void WarmShowdown(SpriteLook look, Action onLoaded)
     {
-        var key = $"sd-{species}-{(shiny ? 1 : 0)}";
+        if (SpriteCatalog.Showdown(look) is not { } remote) return; // TryGetShowdown already says "none"
+        var key = "sd-" + remote.CacheName;
         lock (_gate)
         {
             if (_animatedCache.ContainsKey(key)) { onLoaded(); return; }
@@ -186,17 +215,14 @@ public sealed class SpriteService : ISpriteService
         Task.Run(async () =>
         {
             AnimatedSprite? sprite = null;
-            var diskPath = Path.Combine(FileSystem.AppDataDirectory, "showdown", $"{species}{(shiny ? "-s" : "")}.gif");
+            var diskPath = Path.Combine(FileSystem.AppDataDirectory, "showdown", remote.CacheName);
             await NetworkGate.WaitAsync().ConfigureAwait(false);
             try
             {
                 if (!File.Exists(diskPath))
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(diskPath)!);
-                    var url = shiny
-                        ? $"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/shiny/{species}.gif"
-                        : $"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/{species}.gif";
-                    var bytes = await Http.GetByteArrayAsync(url).ConfigureAwait(false);
+                    var bytes = await Http.GetByteArrayAsync(RemoteBase + "showdown/" + remote.Path).ConfigureAwait(false);
                     await File.WriteAllBytesAsync(diskPath, bytes).ConfigureAwait(false);
                 }
                 sprite = DecodeGif(diskPath);
@@ -250,9 +276,9 @@ public sealed class SpriteService : ISpriteService
         return frames.Count == 0 ? null : new AnimatedSprite(frames, durations);
     }
 
-    public void Warm(int species, int form, bool shiny, Action onLoaded)
+    public void Warm(SpriteLook look, Action onLoaded)
     {
-        var key = Key(species, form, shiny);
+        var key = look.CacheKey;
         lock (_gate)
         {
             if (_cache.ContainsKey(key)) { onLoaded(); return; }
@@ -265,7 +291,7 @@ public sealed class SpriteService : ISpriteService
             await DecodeGate.WaitAsync().ConfigureAwait(false);
             try
             {
-                bitmap = await LoadWithFallbackAsync(species, form, shiny).ConfigureAwait(false);
+                bitmap = await LoadWithFallbackAsync(look).ConfigureAwait(false);
             }
             finally { DecodeGate.Release(); }
             lock (_gate)
@@ -283,26 +309,15 @@ public sealed class SpriteService : ISpriteService
         });
     }
 
-    private static string Key(int species, int form, bool shiny) => $"{species}-{form}-{(shiny ? 1 : 0)}";
-
-    private static async Task<SKBitmap?> LoadWithFallbackAsync(int species, int form, bool shiny)
+    private static async Task<SKBitmap?> LoadWithFallbackAsync(SpriteLook look)
     {
-        // Naming from the pinned PKHeX resource tree: b_<species>[-form][s].png;
-        // shiny variants live under the same logical folder with an 's' suffix.
-        // Past species 905 PKHeX ships no pixel sprites; it shows official artwork
-        // (a_<species>[-form].png) instead, with no shiny variants for Gen 9, so
-        // shiny requests fall through to the regular artwork like PKHeX does.
-        string[] candidates = shiny
-            ? [$"sprites/b_{species}-{form}s.png", $"sprites/b_{species}s.png", $"sprites/b_{species}-{form}.png", $"sprites/b_{species}.png",
-               $"artwork/a_{species}-{form}.png", $"artwork/a_{species}.png"]
-            : [$"sprites/b_{species}-{form}.png", $"sprites/b_{species}.png",
-               $"artwork/a_{species}-{form}.png", $"artwork/a_{species}.png"];
-
-        foreach (var candidate in candidates)
+        // SpriteCatalog owns the naming and the fidelity order (exact form shiny → exact
+        // form → PKHeX artwork → base form → "?"); the first bundled asset that exists wins.
+        foreach (var candidate in SpriteCatalog.BundledCandidates(look))
         {
             try
             {
-                await using var stream = await FileSystem.OpenAppPackageFileAsync(candidate).ConfigureAwait(false);
+                await using var stream = await FileSystem.OpenAppPackageFileAsync(candidate.Path).ConfigureAwait(false);
                 return TrimTransparentMargins(SKBitmap.Decode(stream));
             }
             catch (FileNotFoundException)
@@ -314,17 +329,7 @@ public sealed class SpriteService : ISpriteService
                 return null; // Decode failure - don't retry other candidates.
             }
         }
-
-        // Final fallback: bundled "unknown" placeholder.
-        try
-        {
-            await using var stream = await FileSystem.OpenAppPackageFileAsync("sprites/b_0.png").ConfigureAwait(false);
-            return TrimTransparentMargins(SKBitmap.Decode(stream));
-        }
-        catch
-        {
-            return null;
-        }
+        return null;
     }
 
     /// <summary>

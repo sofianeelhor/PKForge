@@ -46,7 +46,8 @@ internal class CfruEngineSession : ISaveEngineSession
     {
         _profile = profile;
         _originalBytes = bytes.ToArray();
-        _data = RetroArchSaveContainer.Decode(bytes.Span);
+        // Emulator padding and mGBA's RTC footer sit past the flash chip; Serialize re-appends them.
+        _data = SramPadding.Trim(RetroArchSaveContainer.Decode(bytes.Span));
         if (_data.Length != FileSize || !profile.Detect(_data))
             throw new InvalidDataException($"These bytes are not a Pokémon {profile.GameName} save.");
         _sections = SectionOffsets(_data);
@@ -215,11 +216,12 @@ internal class CfruEngineSession : ISaveEngineSession
 
         var species = mon.Species;
         var moves = mon.Moves;
+        var look = LookOf(mon);
         return new EntityDetail(
             box, slot, false,
-            Game.NationalIdOf(species),
+            look.National,
             Game.SpeciesName(species),
-            0,
+            look.Form,
             mon.Nickname,
             mon.Level,
             mon.Nature,
@@ -236,7 +238,8 @@ internal class CfruEngineSession : ISaveEngineSession
             Game.GenderOf(mon.Pid, species),
             mon.Friendship,
             mon.PartyStats ?? Game.ComputeStats(mon),
-            mon.CurrentHp);
+            mon.CurrentHp,
+            Traits: look.Traits);
 
         static EntityDetail Empty(int box, int slot) => new(box, slot, true, 0, string.Empty, 0, string.Empty, 0, 0, 0, 0, 0, 0, 0, 0, [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], false, 0, string.Empty);
     }
@@ -562,7 +565,7 @@ internal class CfruEngineSession : ISaveEngineSession
 
     // ── Import / export ──
 
-    public bool ImportSlot(int box, int slot, byte[] fileBytes)
+    public bool ImportSlot(int box, int slot, byte[] fileBytes, string? format = null)
     {
         var entity = EntityFormat.GetFromBytes(fileBytes);
         if (entity is null || entity.Species == 0) return false;
@@ -828,6 +831,25 @@ internal class CfruEngineSession : ISaveEngineSession
 
     // ── Metadata surfaces ──
 
+    /// <summary>The grid's held-item flag: the bridged national id, or -1 when the ROM item has
+    /// no national twin (it still "holds something").</summary>
+    private int HeldItemId(RadicalRedMon mon) =>
+        mon.HeldItem == 0 ? 0 : Game.ItemToNational(mon.HeldItem) is > 0 and var national ? national : -1;
+
+    /// <summary>Species, form and sprite traits of a mon, the form recovered from the hack's species name.</summary>
+    private (int National, int Form, SpriteTraits Traits) LookOf(RadicalRedMon mon)
+    {
+        var national = Game.NationalIdOf(mon.Species);
+        var (form, traits) = RomhackForms.Resolve(national, Game.SpeciesName(mon.Species));
+        return (national, form, traits with { Female = Game.GenderOf(mon.Pid, mon.Species) == 1 });
+    }
+
+    private SlotSummary SlotOf(int box, int slot, RadicalRedMon mon)
+    {
+        var (national, form, traits) = LookOf(mon);
+        return new SlotSummary(box, slot, national, mon.Nickname, mon.IsShiny, true, form, HeldItem: HeldItemId(mon), Traits: traits);
+    }
+
     private SaveSnapshot BuildSnapshot(string? displayName)
     {
         var slots = new List<SlotSummary>(Boxes * BoxSlotCount + 6);
@@ -836,14 +858,14 @@ internal class CfruEngineSession : ISaveEngineSession
         {
             var mon = TryMon(box, slot);
             slots.Add(mon is { LooksValid: true } valid
-                ? new SlotSummary(box, slot, Game.NationalIdOf(valid.Species), valid.Nickname, valid.IsShiny, true)
+                ? SlotOf(box, slot, valid)
                 : new SlotSummary(box, slot, null, null, false, true));
         }
         for (var slot = 0; slot < 6; slot++)
         {
             var mon = TryMon(-1, slot);
             slots.Add(mon is { LooksValid: true } valid
-                ? new SlotSummary(-1, slot, Game.NationalIdOf(valid.Species), valid.Nickname, valid.IsShiny, true)
+                ? SlotOf(-1, slot, valid)
                 : new SlotSummary(-1, slot, null, null, false, true));
         }
         return new SaveSnapshot(_profile.SnapshotTag, 3, _originalBytes.ToArray(), slots, displayName);
@@ -853,7 +875,7 @@ internal class CfruEngineSession : ISaveEngineSession
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         // Every mutation commits to _data immediately; serialization is a plain copy.
-        return SramPadding.Pad(RetroArchSaveContainer.Repack(_data, _originalBytes), _originalBytes);
+        return SramPadding.Restore(_data, _originalBytes);
     }
 
     public IReadOnlyList<int> GetAbilityChoices(int species, int form)

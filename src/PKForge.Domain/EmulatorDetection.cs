@@ -12,6 +12,8 @@ public enum EmulatorKind
     DraStic = 6,
     PizzaBoyGba = 7,
     PizzaBoyGbc = 8,
+    /// <summary>Citra MMJ (weihuoya fork, org.citra.emu): same SDMC layout as Azahar, rooted at citra-emu/.</summary>
+    CitraMmj = 9,
 }
 
 /// <summary>A persistable SAF folder grant, opaque to the domain layer.</summary>
@@ -19,7 +21,7 @@ public sealed record PickedFolder(string TreeId, string DisplayName);
 
 /// <summary>
 /// A save file discovered inside a granted emulator folder. <see cref="RequiresExtraCare"/>
-/// flags NAND/SD-structured saves (Azahar/Eden) whose in-place writes are the delicate path.
+/// flags NAND/SD-structured saves (Azahar/Citra MMJ/Eden) whose in-place writes are the delicate path.
 /// </summary>
 public sealed record DetectedSave(
     string DocumentId,

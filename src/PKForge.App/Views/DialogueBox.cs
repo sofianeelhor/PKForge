@@ -48,10 +48,10 @@ public sealed class DialogueBox : IPadHandler
         var window = new Border
         {
             BackgroundColor = UiTokens.Maroon,
-            Stroke = UiTokens.MaroonDeep,
-            StrokeThickness = 3,
-            StrokeShape = new RoundRectangle { CornerRadius = 10 },
-            Shadow = new Shadow { Brush = Brush.Black, Opacity = 0.28f, Radius = 10, Offset = new Point(0, 4) },
+            Stroke = UiTokens.Outline,
+            StrokeThickness = UiTokens.PanelEdge,
+            StrokeShape = new RoundRectangle { CornerRadius = UiTokens.PanelRadius },
+            Shadow = Kit.HardShadow(),
             Padding = new Thickness(16, 13),
             Margin = new Thickness(18, 0, 18, 16),
             MinimumHeightRequest = 96,

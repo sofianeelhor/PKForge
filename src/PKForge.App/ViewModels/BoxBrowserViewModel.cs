@@ -252,7 +252,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
                 Status = $"Ability did not stick: asked for {wanted}, the mon holds {updated.Ability}. This is the diagnostic the developer needs.";
             var index = Array.FindIndex(_slots, x => x.Box == detail.Box && x.Slot == detail.Slot);
             if (index >= 0)
-                _slots[index] = _slots[index] with { Species = updated.Species, Nickname = updated.Nickname, IsShiny = updated.IsShiny, Form = updated.Form };
+                _slots[index] = _slots[index] with { Species = updated.Species, Nickname = updated.Nickname, IsShiny = updated.IsShiny, Form = updated.Form, HeldItem = updated.HeldItem };
             OnPropertyChanged(nameof(VisibleSlots));
             SelectSlot(detail.Slot);
 
@@ -262,12 +262,29 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         }
         catch (Exception error)
         {
+            DiscardPartialEdits();
             Status = $"Write aborted: {error.Message}";
         }
         finally
         {
             IsBusy = false;
         }
+    }
+
+    /// <summary>The save was closed underneath the browser (it changed on disk and could not be
+    /// reopened): the grid empties and every write path sees "No save connected".</summary>
+    public void Disconnect()
+    {
+        _slots = [];
+        Save = null;
+        SelectedSlot = -1;
+        Selected = null;
+        IsConnected = false;
+        ConnectedName = "";
+        OnPropertyChanged(nameof(VisibleSlots));
+        OnPropertyChanged(nameof(BoxCount));
+        OnPropertyChanged(nameof(BoxLabel));
+        BumpMutationGeneration();
     }
 
     /// <summary>Re-reads the grid from the session service's current save (after a restore or detected-save open).</summary>
@@ -416,6 +433,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             var outcome = await Task.Run(() => operation(engineSession));
             if (!outcome.Success)
             {
+                DiscardPartialEdits();
                 Status = outcome.Message;
                 return false;
             }
@@ -440,6 +458,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
                         Nickname = updated.IsEmpty ? null : updated.Nickname,
                         IsShiny = updated.IsShiny,
                         Form = updated.Form,
+                        HeldItem = updated.IsEmpty ? 0 : updated.HeldItem,
                     };
                 OnPropertyChanged(nameof(VisibleSlots));
                 SelectSlot(slot);
@@ -451,6 +470,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         }
         catch (Exception error)
         {
+            DiscardPartialEdits();
             Status = $"Aborted: {error.Message}";
             return false;
         }
@@ -460,47 +480,175 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         }
     }
 
+    /// <summary>A failed mutation may have half-applied its edits to the live session; they are
+    /// dropped by reopening from the last written bytes, so the next write cannot carry them.</summary>
+    private void DiscardPartialEdits()
+    {
+        try
+        {
+            _sessions.RevertToBaseline();
+            RefreshFromCurrentSession();
+        }
+        catch (Exception)
+        {
+            // The baseline would not reopen: the session was closed rather than kept stale.
+        }
+        if (_sessions.Current is null) Disconnect();
+    }
+
     public void PreviousBox() => ChangeBox(-1);
     public void NextBox() => ChangeBox(1);
 
     private const int GridColumns = 6;
     private const int GridRows = 5;
 
-    // ── Organizer: multi-select for bulk operations ──
+    // ── Organizer: the PC's multi-select cursor ──
+    // Marks live in StorageMarks (pure, unit-tested) and survive L/R box changes; the
+    // grid reads IsMarked/PendingRectangle, the page drives the gestures.
 
     [ObservableProperty] private bool _selectMode;
-    private readonly HashSet<(int Box, int Slot)> _marked = [];
+    private readonly StorageMarks _marks = new();
 
-    public int MarkedCount => _marked.Count;
-    public IReadOnlyList<(int Box, int Slot)> MarkedSlots => _marked.OrderBy(m => m.Box).ThenBy(m => m.Slot).ToList();
-    public bool IsMarked(int box, int slot) => _marked.Contains((box, slot));
+    public int MarkedCount => _marks.Count;
+    public IReadOnlyList<(int Box, int Slot)> MarkedSlots => _marks.Ordered;
+    public bool IsMarked(int box, int slot) => _marks.Contains(box, slot);
+    public int MarkedInCurrentBox => _marks.CountIn(BoxIndex);
+    public bool CurrentBoxFullyMarked => _marks.IsPageFullyMarked(_slots, BoxIndex);
+    private int PageColumns => BoxIndex == -1 ? 2 : GridColumns;
+
+    /// <summary>The rectangle a hold-A / drag gesture is spanning on the open page, and
+    /// whether releasing it marks or unmarks; null while no gesture is in flight.</summary>
+    public (int From, int To, bool Mark)? PendingRectangle { get; private set; }
+
+    public bool InPendingRectangle(int slot) =>
+        PendingRectangle is { } r && StorageRectangle.Contains(r.From, r.To, slot, PageColumns);
 
     public void EnterSelectMode()
     {
+        CancelCarry();
         SelectMode = true;
-        _marked.Clear();
-        Status = "ORGANIZER - mark Pokémon with A, then open the menu";
+        Status = "MULTI-SELECT - A MARKS · Y WHOLE BOX · X ACTIONS";
         OnPropertyChanged(nameof(MarkedCount));
     }
 
     public void ExitSelectMode()
     {
         SelectMode = false;
-        _marked.Clear();
+        PendingRectangle = null;
+        _marks.Clear();
         Status = "READY";
+        OnPropertyChanged(nameof(MarkedCount));
+    }
+
+    /// <summary>"Select all in this box" on one button: marks the page, or clears it when
+    /// every Pokémon on it is already marked. Works on the party page too.</summary>
+    public bool ToggleBoxMarks()
+    {
+        var marked = _marks.TogglePage(_slots, BoxIndex);
+        AnnounceMarks(marked ? $"{PageName} MARKED" : $"{PageName} CLEARED");
+        return marked;
+    }
+
+    /// <summary>Marks every Pokémon in the open box (or the party); returns how many are marked now.</summary>
+    public int MarkBox()
+    {
+        _marks.MarkPage(_slots, BoxIndex);
+        AnnounceMarks($"{PageName} MARKED");
+        return _marks.Count;
+    }
+
+    /// <summary>Marks every Pokémon stored in the boxes (the party stays out: it cannot be emptied).</summary>
+    public int MarkAllBoxes()
+    {
+        _marks.MarkAllBoxes(_slots);
+        AnnounceMarks("ALL BOXES MARKED");
+        return _marks.Count;
+    }
+
+    /// <summary>Marks every Pokémon in the given boxes (hand-off from the box manager).</summary>
+    public int MarkBoxes(IReadOnlyCollection<int> boxes)
+    {
+        _marks.MarkBoxes(_slots, boxes);
+        AnnounceMarks($"{boxes.Count} BOX(ES) MARKED");
+        return _marks.Count;
+    }
+
+    /// <summary>Every slot of the open save (boxes, then the party when the save has one).</summary>
+    public IReadOnlyList<SlotSummary> AllSlots => _slots;
+
+    /// <summary>Marks the given slots (the held-item finder's hand-off); returns the mark count.</summary>
+    public int MarkSlots(IReadOnlyCollection<(int Box, int Slot)> targets)
+    {
+        _marks.MarkSlots(_slots, targets);
+        AnnounceMarks($"{targets.Count} MARKED");
+        return _marks.Count;
+    }
+
+    /// <summary>Flips the marks of the open box: marked become unmarked and the rest marked.</summary>
+    public void InvertBoxMarks()
+    {
+        _marks.InvertPage(_slots, BoxIndex);
+        AnnounceMarks($"{PageName} INVERTED");
+    }
+
+    public void ClearMarks()
+    {
+        _marks.Clear();
+        AnnounceMarks("MARKS CLEARED");
+    }
+
+    /// <summary>Clears the marks after a write without overwriting the write's own status line.</summary>
+    public void ClearMarksQuietly()
+    {
+        _marks.Clear();
+        PendingRectangle = null;
         OnPropertyChanged(nameof(MarkedCount));
     }
 
     /// <summary>Marks/unmarks an occupied slot; false when the slot is empty.</summary>
     public bool ToggleMark(int slot)
     {
-        var slots = VisibleSlots;
-        if (slot < 0 || slot >= slots.Count || slots[slot].Species is null) return false;
-        var key = (BoxIndex, slot);
-        if (!_marked.Remove(key)) _marked.Add(key);
-        Status = $"ORGANIZER - {_marked.Count} marked";
-        OnPropertyChanged(nameof(MarkedCount));
+        if (!_marks.Toggle(_slots, BoxIndex, slot)) return false;
+        AnnounceMarks(null);
         return true;
+    }
+
+    /// <summary>Starts a rectangle gesture on a slot: the anchor flips like a tap, and the
+    /// rectangle then paints the anchor's new state (mark, or erase when it was unmarked).</summary>
+    public void BeginRectangle(int slot)
+    {
+        var toggled = _marks.Toggle(_slots, BoxIndex, slot);
+        PendingRectangle = (slot, slot, !toggled || _marks.Contains(BoxIndex, slot));
+        AnnounceMarks(null);
+    }
+
+    public void ExtendRectangle(int slot)
+    {
+        if (PendingRectangle is not { } r || slot < 0) return;
+        PendingRectangle = r with { To = slot };
+        var span = VisibleSlots.Count(s => s.Species is not null && InPendingRectangle(s.Slot));
+        Status = $"MULTI-SELECT - {(r.Mark ? "MARKING" : "UNMARKING")} {span} · RELEASE TO APPLY";
+    }
+
+    /// <summary>Applies the rectangle; false when it never grew past its anchor (a plain tap).</summary>
+    public bool CommitRectangle()
+    {
+        if (PendingRectangle is not { } r) return false;
+        PendingRectangle = null;
+        if (r.From == r.To) { AnnounceMarks(null); return false; }
+        _marks.SetRectangle(_slots, BoxIndex, r.From, r.To, PageColumns, r.Mark);
+        AnnounceMarks(null);
+        return true;
+    }
+
+    private string PageName => BoxIndex == -1 ? "PARTY" : $"BOX {BoxIndex + 1:00}";
+
+    private void AnnounceMarks(string? what)
+    {
+        Status = what is null
+            ? $"MULTI-SELECT - {_marks.Count} MARKED"
+            : $"MULTI-SELECT - {what} · {_marks.Count} MARKED";
+        OnPropertyChanged(nameof(MarkedCount));
     }
 
     /// <summary>Moves every marked mon into the target box's empty slots. One backup, one write.</summary>
@@ -510,21 +658,22 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         foreach (var summary in _slots.Where(x => x.Box == targetBox && x.Species is null).OrderBy(x => x.Slot))
             targets.Enqueue(summary.Slot);
 
+        var marked = _marks.Ordered;
         var moved = 0;
-        foreach (var (box, slot) in _marked.OrderBy(m => m.Box).ThenBy(m => m.Slot))
+        foreach (var (box, slot) in marked)
         {
             if (box == targetBox) continue; // already home
             if (targets.Count == 0) break;
             session.MoveSlot(box, slot, targetBox, targets.Dequeue());
             moved++;
         }
-        var leftBehind = _marked.Count(m => m.Box != targetBox) - moved;
+        var leftBehind = marked.Count(m => m.Box != targetBox) - moved;
         return new GenerationOutcome(moved > 0,
             moved == 0 ? "No room in that box." : $"Moved {moved} Pokémon to box {targetBox + 1}." + (leftBehind > 0 ? $" {leftBehind} left (box full)." : ""));
     }, Math.Max(0, SelectedSlot), action: SaveAction.Move).ContinueWith(t =>
     {
         RefreshAllSlots();
-        ExitSelectMode();
+        if (t.Result) ClearMarksQuietly();
         return t.Result;
     }, TaskScheduler.FromCurrentSynchronizationContext());
 
@@ -534,16 +683,26 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     /// <summary>Releases only the given slots (or every marked mon when null). One backup, one write.</summary>
     public Task<bool> BulkReleaseAsync(IReadOnlyList<(int Box, int Slot)>? only) => RunMutationAsync(session =>
     {
-        var targets = only ?? _marked.Select(m => (m.Box, m.Slot)).ToList();
+        var targets = only ?? _marks.Ordered;
         foreach (var (box, slot) in targets)
             session.ReleaseSlot(box, slot);
         return new GenerationOutcome(true, $"Released {targets.Count} Pokémon. Bye-bye!");
     }, Math.Max(0, SelectedSlot), action: SaveAction.Release).ContinueWith(t =>
     {
         RefreshAllSlots();
-        ExitSelectMode();
+        // Marks that no longer point at a Pokémon go; the ones that stayed (a partial
+        // transfer) stay marked so the player can see what did not make it.
+        _marks.Prune(_slots);
+        OnPropertyChanged(nameof(MarkedCount));
         return t.Result;
     }, TaskScheduler.FromCurrentSynchronizationContext());
+
+    /// <summary>True when the marks would take every Pokémon out of the party.</summary>
+    public bool MarksEmptyTheParty()
+    {
+        var party = _slots.Where(s => s.Box == -1 && s.Species is not null).ToList();
+        return party.Count > 0 && party.All(s => _marks.Contains(-1, s.Slot));
+    }
 
     /// <summary>Exports every marked mon; returns the written file paths for sharing.</summary>
     public IReadOnlyList<string> BulkExport(string directory)
@@ -551,7 +710,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         var session = _sessions.CurrentSession;
         if (session is null) return [];
         var paths = new List<string>();
-        foreach (var (box, slot) in _marked.OrderBy(m => m.Box).ThenBy(m => m.Slot))
+        foreach (var (box, slot) in _marks.Ordered)
         {
             var export = session.ExportSlot(box, slot);
             var path = System.IO.Path.Combine(directory, export.FileName);
@@ -581,6 +740,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
                     Nickname = updated.IsEmpty ? null : updated.Nickname,
                     IsShiny = updated.IsShiny,
                     Form = updated.Form,
+                    HeldItem = updated.IsEmpty ? 0 : updated.HeldItem,
                 };
             })
             .ToArray();
@@ -653,6 +813,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
                         Nickname = updated.IsEmpty ? null : updated.Nickname,
                         IsShiny = updated.IsShiny,
                         Form = updated.Form,
+                        HeldItem = updated.IsEmpty ? 0 : updated.HeldItem,
                     };
             }
             OnPropertyChanged(nameof(VisibleSlots));
@@ -694,6 +855,19 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         return true;
     }
 
+    /// <summary>Opens a box (or the party, -1) with the cursor on one slot: the finder's jump.</summary>
+    public void JumpTo(int box, int slot)
+    {
+        if (Save is null || box < -1 || box >= BoxCount) return;
+        PendingRectangle = null;
+        BoxIndex = box;
+        SelectedSlot = -1;
+        Selected = null;
+        OnPropertyChanged(nameof(VisibleSlots));
+        SelectSlot(slot);
+        if (SelectMode) AnnounceMarks(null);
+    }
+
     public void ChangeBox(int delta)
     {
         if (Save is null || BoxCount == 0) return;
@@ -701,10 +875,12 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         var next = BoxIndex + delta;
         if (next > BoxCount - 1) next = -1;
         else if (next < -1) next = BoxCount - 1;
+        PendingRectangle = null; // a rectangle belongs to one page
         BoxIndex = next;
         SelectedSlot = -1;
         Selected = null;
         OnPropertyChanged(nameof(VisibleSlots));
+        if (SelectMode) AnnounceMarks(null);
     }
 
     private static int? ParseInt(string text) =>

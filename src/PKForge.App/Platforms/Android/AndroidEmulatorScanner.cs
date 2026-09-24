@@ -88,7 +88,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
                 EmulatorKind.DraStic or EmulatorKind.PizzaBoyGba or EmulatorKind.PizzaBoyGbc or EmulatorKind.Dolphin =>
                     ScanFlatFolder(treeUri, rootDocId, kind, cancellationToken, state, onSave),
                 EmulatorKind.Eden => ScanEden(treeUri, rootDocId, cancellationToken, state, onSave),
-                EmulatorKind.Azahar => ScanAzahar(treeUri, rootDocId, cancellationToken, state, onSave),
+                EmulatorKind.Azahar or EmulatorKind.CitraMmj => ScanThreeDs(treeUri, rootDocId, kind, cancellationToken, state, onSave),
                 _ => [],
             };
         }
@@ -212,32 +212,27 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         return results;
     }
 
-    /// <summary>Azahar (3DS): root/sdmc/Nintendo 3DS/&lt;ID0&gt;/&lt;ID1&gt;/title/00040000/&lt;game&gt;/data/00000001/main.</summary>
-    private List<DetectedSave> ScanAzahar(AndroidUri treeUri, string rootDocId, CancellationToken cancellationToken,
-        ScanState state, Action<DetectedSave>? onSave)
+    /// <summary>
+    /// Citra-family 3DS (Azahar, Lime3DS, Citra MMJ): sdmc/Nintendo 3DS/&lt;ID0&gt;/&lt;ID1&gt;/title/00040000/&lt;game&gt;/data/00000001/main,
+    /// with the root resolved from whichever level the user granted (see <see cref="ThreeDsSaveLayout"/>).
+    /// </summary>
+    private List<DetectedSave> ScanThreeDs(AndroidUri treeUri, string rootDocId, EmulatorKind kind,
+        CancellationToken cancellationToken, ScanState state, Action<DetectedSave>? onSave)
     {
         var results = new List<DetectedSave>();
-        var n3ds = NavigatePath(treeUri, rootDocId, ["sdmc", "Nintendo 3DS"]);
+        IEnumerable<TreeEntry<ChildDocument>> List(ChildDocument doc) =>
+            ListChildren(treeUri, doc.DocId).Select(x => new TreeEntry<ChildDocument>(x.Name, x.IsDirectory, x));
+        var rootName = ThreeDsSaveLayout.LastSegment(rootDocId);
+        var n3ds = ThreeDsSaveLayout.FindNintendoThreeDs(new ChildDocument(rootDocId, rootName, true, null), rootName, List, state.Trace);
         if (n3ds is null) return results;
 
-        foreach (var id0 in ListChildren(treeUri, n3ds).Where(x => x.IsDirectory))
-        foreach (var id1 in ListChildren(treeUri, id0.DocId).Where(x => x.IsDirectory))
+        foreach (var hit in ThreeDsSaveLayout.EnumerateMainSaves(n3ds, List, cancellationToken))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var retail = NavigatePath(treeUri, id1.DocId, ["title", "00040000"]);
-            if (retail is null) continue;
-
-            foreach (var game in ListChildren(treeUri, retail).Where(x => x.IsDirectory))
+            var main = hit.File;
+            if (TryDetect(treeUri, main, kind, gameLabel: $"3DS save ({hit.TitleId})", state: state) is { } save)
             {
-                var data = NavigatePath(treeUri, game.DocId, ["data", "00000001"]);
-                if (data is null) continue;
-                var main = ListChildren(treeUri, data).FirstOrDefault(x => !x.IsDirectory && x.Name == "main");
-                if (main is null) continue;
-                if (TryDetect(treeUri, main, EmulatorKind.Azahar, gameLabel: $"3DS save ({game.Name})", state: state) is { } save)
-                {
-                    results.Add(save);
-                    onSave?.Invoke(save);
-                }
+                results.Add(save);
+                onSave?.Invoke(save);
             }
         }
         return results;

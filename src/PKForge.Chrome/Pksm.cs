@@ -59,6 +59,14 @@ public static class Pksm
     public static readonly SKColor SummaryBg = new(0x17, 0x1B, 0x32);
     public static readonly SKColor SummaryPanel = new(0x1B, 0x24, 0x47);
     public static readonly SKColor SummaryStripe = new(0x2B, 0x4E, 0x95);
+
+    // ---- Summary page accents (XY/ORAS summary colours, toned into the logo palette) ----
+    public static readonly SKColor BandInfo = new(0xB0, 0x4E, 0x5C);      // Info rose
+    public static readonly SKColor BandStats = new(0x2E, 0x72, 0xC2);     // Stats blue (kin to LogoBlue)
+    public static readonly SKColor BandMoves = new(0xB8, 0x74, 0x34);     // Moves amber
+    public static readonly SKColor BandOrigin = new(0x26, 0x86, 0x88);    // Origin teal
+    public static readonly SKColor BandLegal = new(0x38, 0x8A, 0x58);     // Legality green
+    public static readonly SKColor RibbonGold = new(0xE2, 0xB6, 0x4A);
     public static readonly SKColor DexCyan = new(0x27, 0x89, 0xCD);
     public static readonly SKColor DexGrid = new(0x42, 0xBF, 0xE8);
     public static readonly SKColor StorageGreen = new(0x1B, 0x31, 0x46);
@@ -84,6 +92,7 @@ public static class Pksm
     public static readonly SKColor Illegal = new(0xF0, 0x68, 0x68);
     public static readonly SKColor ShinyGold = new(0xF2, 0xC1, 0x4E);     // ONLY the shiny mark
     public static readonly SKColor CursorRed = new(0xF0, 0x68, 0x68);     // pointer + destructive
+    public static readonly SKColor CursorGreen = new(0x54, 0xD6, 0x8A);   // multi-select pointer (the games' green hand)
     public static readonly SKColor FocusBlue = SelectBorder;
 
     /// <summary>Per-box wallpapers in the storage world: dark tinted worlds, cycling.</summary>

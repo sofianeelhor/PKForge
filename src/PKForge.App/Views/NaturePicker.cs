@@ -27,7 +27,7 @@ public static class NaturePicker
 
     /// <param name="preview">Stats for every nature; null shows the labels only.</param>
     public static Task<PickItem?> ShowAsync(Grid host, IReadOnlyList<string> names, int? current, NatureStatPreview? preview,
-        string title = "NATURE")
+        string title = "Nature")
     {
         var items = Items(names);
         return PickerMenu.ShowAsync(host, title, items, current, preview is null ? null : BuildPanel(names, preview));
@@ -37,7 +37,7 @@ public static class NaturePicker
     {
         var heading = InfoKit.Heading();
         var basis = InfoKit.DetailLine(preview.Basis);
-        basis.FontSize = 10;
+        basis.FontSize = UiTokens.TextSmall;
         var note = InfoKit.Note();
         var grid = new InfoKit.StatDeltaGrid();
 
@@ -46,8 +46,8 @@ public static class NaturePicker
             if (item is null) return;
             var nature = item.Id;
             heading.Text = nature == preview.CurrentNature
-                ? $"{item.Name.ToUpperInvariant()} (CURRENT)  {NatureFacts.EffectLabel(nature)}"
-                : $"IF {item.Name.ToUpperInvariant()}  {NatureFacts.EffectLabel(nature)}";
+                ? $"{item.Name} (current)  {NatureFacts.EffectLabel(nature)}"
+                : $"If {item.Name}  {NatureFacts.EffectLabel(nature)}";
             if (preview.StatNatureLock is { } locked && locked < names.Count)
             {
                 note.Text = $"Minted: stats follow {names[locked]} ({NatureFacts.EffectLabel(locked)}); changing the nature keeps them.";

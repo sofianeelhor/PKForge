@@ -124,19 +124,21 @@ public static class BankArchive
     {
         var id = entry.Id.ToString("N")[..8];
         var nickname = SanitizeFileName(entry.Info.Nickname);
-        var extension = $".pk{entry.Info.Generation}";
+        var extension = BankEntryFiles.ExtensionFor(entry.Info);
         return nickname.Length == 0
             ? $"{entry.Info.Species:000} {id}{extension}"
             : $"{entry.Info.Species:000} - {nickname} {id}{extension}";
     }
 
-    /// <summary>True for .pk plus .pk1 through .pk9 (case-insensitive) — the cheap prefilter
-    /// that keeps an import scan from parsing a folder of arbitrary files.</summary>
+    /// <summary>True for .pk, .pk1 through .pk9 and the PKHeX side formats the bank records
+    /// (.pb7, .pb8, .pa8, .pa9, .sk2, .ck3, .xk3, .bk4, .rk4), case-insensitive — the cheap
+    /// prefilter that keeps an import scan from parsing a folder of arbitrary files.</summary>
     public static bool IsPkFileName(string fileName)
     {
         var extension = Path.GetExtension(fileName).ToLowerInvariant();
         return extension is ".pk" or ".pk1" or ".pk2" or ".pk3" or ".pk4"
-            or ".pk5" or ".pk6" or ".pk7" or ".pk8" or ".pk9";
+            or ".pk5" or ".pk6" or ".pk7" or ".pk8" or ".pk9"
+            or ".pb7" or ".pb8" or ".pa8" or ".pa9" or ".sk2" or ".ck3" or ".xk3" or ".bk4" or ".rk4";
     }
 
     /// <summary>Strips filesystem-hostile characters (SAF display names reject them too) and caps length.</summary>

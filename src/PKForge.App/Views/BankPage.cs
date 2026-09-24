@@ -27,7 +27,7 @@ public sealed class BankPage : ContentPage, IPadHandler
     private readonly IBankService _bank;
     private readonly ISpriteService _sprites;
     private readonly BoxBrowserViewModel _boxViewModel; // for send-to-game and shared status
-    private readonly IBankFacts _facts;
+    private readonly BankFacts _facts;
     private readonly SKCanvasView _canvas;
     private readonly FrameInvalidator _frame;
     private readonly Grid _hostGrid;
@@ -72,16 +72,16 @@ public sealed class BankPage : ContentPage, IPadHandler
         var addBox = Kit.Capsule("+ Box", UiTokens.Green);
         addBox.Clicked += (_, _) => { _bank.AddBox(); UpdatePageLabel(); _canvas.InvalidateSurface(); };
 
-        var exportArchive = Kit.Capsule("EXPORT", UiTokens.Green);
+        var exportArchive = Kit.Capsule("Export", UiTokens.Green);
         exportArchive.Clicked += (_, _) => _ = ExportArchiveAsync();
 
-        var importArchive = Kit.Capsule("IMPORT", UiTokens.Indigo);
+        var importArchive = Kit.Capsule("Import", UiTokens.Indigo);
         importArchive.Clicked += (_, _) => _ = ImportArchiveAsync();
 
-        var search = Kit.Capsule("SEARCH", UiTokens.MenuBlue);
+        var search = Kit.Capsule("Search", UiTokens.MenuBlue);
         search.Clicked += (_, _) => _ = OpenSearchAsync();
 
-        var livingDex = Kit.Capsule("LIVING DEX", UiTokens.MenuBlue);
+        var livingDex = Kit.Capsule("Living dex", UiTokens.MenuBlue);
         livingDex.Clicked += (_, _) => _ = OpenLivingDexAsync();
 
         var strip = new Grid
@@ -109,11 +109,11 @@ public sealed class BankPage : ContentPage, IPadHandler
 
         // The bank's own readout: the organizer's mark count and every action's report.
         // It mirrors the shared view-model status, so the vault and the boxes agree.
-        _statusLine = Kit.LcdLabel(12);
+        _statusLine = Kit.LcdLabel(UiTokens.TextBody);
         _statusLine.FontFamily = DsChrome.PixelFont;
-        _statusLine.SetBinding(Label.TextProperty, nameof(BoxBrowserViewModel.Status));
+        _statusLine.SetBinding(Label.TextProperty, new Binding(nameof(BoxBrowserViewModel.Status), converter: Kit.TidyText));
         _statusLine.BindingContext = _boxViewModel;
-        var statusHost = Kit.LcdPanel(_statusLine, padding: 4);
+        var statusHost = Kit.LcdPanel(_statusLine, padding: 6);
         statusHost.Margin = new Thickness(12, 0, 12, 6);
 
         var footer = DsChrome.Footer(
@@ -122,6 +122,9 @@ public sealed class BankPage : ContentPage, IPadHandler
             ("X", "Actions", () => _ = ShowBankActionsAsync()),
             ("B", "Back", null),
             ("LR", "Box", null),
+            // SELECT (-): a dual-screen device turns the inspector's page below; a single
+            // screen opens the full-screen summary instead.
+            ("-", HasSecondScreen ? "Page" : "Summary", () => OnPadButton(PadButton.Select)),
             ("+", "Menu", () => _ = OpenCursorMenuAsync()));
 
         var root = new Grid
@@ -149,6 +152,9 @@ public sealed class BankPage : ContentPage, IPadHandler
     {
         base.OnAppearing();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Push(this);
+        // The lower screen belongs to the Bank's inspector while this page is in front.
+        _secondClaim ??= IPlatformApplication.Current?.Services.GetService<SecondScreenState>()?.Routes.CreateClaim(SecondScreenOwner.Bank);
+        _secondClaim?.Activate();
         var host = IPlatformApplication.Current?.Services.GetService<ISecondaryDisplayHost>();
         if (host?.IsAvailable == true) { try { _ = host.ShowAsync(); } catch { } }
         RefreshBoxEntries();
@@ -160,9 +166,17 @@ public sealed class BankPage : ContentPage, IPadHandler
     {
         base.OnDisappearing();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
+        _inspectCancel?.Cancel();
+        // Releasing the claim hands the lower screen back (and drops any overlay opened on it).
+        _secondClaim?.Release();
         var state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
-        if (state is not null) state.PreviewSpecies = null;
+        if (state is not null) state.Inspected = null;
+        // Lazy held-item migration: persist what this visit probed from old entries' bytes.
+        var facts = _facts;
+        _ = Task.Run(facts.FlushHeldItemBackfill);
     }
+
+    private SecondScreenClaim? _secondClaim;
 
     private async Task OpenLivingDexAsync()
     {
@@ -215,7 +229,7 @@ public sealed class BankPage : ContentPage, IPadHandler
     {
         if (!HardcoreMode.Blocks(action, out var status)) return false;
         _boxViewModel.Status = status;
-        await PadMenu.ShowAsync(_hostGrid, "HARDCORE MODE", status, "OK");
+        await PadMenu.ShowAsync(_hostGrid, "Hardcore mode", status, "OK");
         return true;
     }
 
@@ -229,7 +243,7 @@ public sealed class BankPage : ContentPage, IPadHandler
 
     private async Task ExportArchiveAsync()
     {
-        var format = await PadMenu.ShowAsync(_hostGrid, "EXPORT",
+        var format = await PadMenu.ShowAsync(_hostGrid, "Export",
             "A .pk folder is read by PKHeX and PKForge; a PKSM bank goes back to your 3DS.",
             new PadOption("Folder of .pk files", IconPath: "folder"),
             new PadOption("PKSM bank for the 3DS (.bnk)", IconPath: "bank"));
@@ -239,7 +253,7 @@ public sealed class BankPage : ContentPage, IPadHandler
             await ExportPksmAsync(null);
             return;
         }
-        var choice = await PadMenu.ShowAsync(_hostGrid, "EXPORT ARCHIVE",
+        var choice = await PadMenu.ShowAsync(_hostGrid, "Export archive",
             "A folder of .pk files plus a manifest — readable by PKHeX and PKForge alike.",
             new PadOption("Whole bank", IconPath: "bank"),
             new PadOption("This box only", IconPath: "box"));
@@ -267,7 +281,7 @@ public sealed class BankPage : ContentPage, IPadHandler
 
         var folder = await picker.PickFolderAsync();
         if (folder is null) return;
-        var overlay = LoadingOverlay.Show(_hostGrid, "PACKING THE ARCHIVE…", $"Writing .pk files to {folder.DisplayName}.");
+        var overlay = LoadingOverlay.Show(_hostGrid, "Packing the archive…", $"Writing .pk files to {folder.DisplayName}.");
         try
         {
             var exported = await Task.Run(() => BankArchive.ExportAsync(_bank, files, folder.TreeId, candidates));
@@ -297,7 +311,7 @@ public sealed class BankPage : ContentPage, IPadHandler
         }
         else
         {
-            var scope = await PadMenu.ShowAsync(_hostGrid, "EXPORT PKSM BANK",
+            var scope = await PadMenu.ShowAsync(_hostGrid, "Export PKSM bank",
                 "Box layout and box names are kept. Gen 9, BDSP and Legends mons have no PKSM slot and are left out.",
                 new PadOption("Whole bank", IconPath: "bank"),
                 new PadOption("This box only", IconPath: "box"));
@@ -323,7 +337,7 @@ public sealed class BankPage : ContentPage, IPadHandler
 
     private async Task ImportArchiveAsync()
     {
-        var format = await PadMenu.ShowAsync(_hostGrid, "IMPORT",
+        var format = await PadMenu.ShowAsync(_hostGrid, "Import",
             "From a 3DS: copy /3ds/PKSM/banks/ (or /3ds/PKSM/dumps/) off the SD card to this device, then pick the files.",
             new PadOption("PKSM bank, dumps zip or .pk files", IconPath: "bank"),
             new PadOption("Folder of .pk files", IconPath: "folder"));
@@ -343,16 +357,16 @@ public sealed class BankPage : ContentPage, IPadHandler
         if (await DeniedAsync(SaveAction.CreateMon)) return;
         var folder = await picker.PickFolderAsync();
         if (folder is null) return;
-        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "IMPORT FROM FOLDER?",
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Import from folder?",
             $"Every recognized .pk file in {folder.DisplayName} joins the bank. Exact copies of mons already stored are skipped.",
             "Import");
         if (!confirmed) return;
 
-        var overlay = LoadingOverlay.Show(_hostGrid, "READING THE ARCHIVE…", $"Scanning {folder.DisplayName}.");
+        var overlay = LoadingOverlay.Show(_hostGrid, "Reading the archive…", $"Scanning {folder.DisplayName}.");
         try
         {
             var summary = await Task.Run(() => BankArchive.ImportAsync(_bank,
-                (bytes, name) => engine.TryDescribeEntity(bytes, name),
+                (bytes, name) => engine.TryDescribeEntity(bytes, name, name), // the extension names the format
                 files, folder.TreeId, (done, total) => overlay.Report(done, total), overlay.Cancellation.Token));
             _boxViewModel.Status = summary.Imported == 0 && summary.SkippedDuplicates == 0
                 ? "No recognizable Pokémon in that folder."
@@ -408,11 +422,109 @@ public sealed class BankPage : ContentPage, IPadHandler
 
     private BankEntry? EntryAt(int slot) => _boxEntries.GetValueOrDefault(slot);
 
+    private CancellationTokenSource? _inspectCancel;
+
+    /// <summary>
+    /// Feeds the second-screen inspector with the mon under the cursor: the summary first,
+    /// the legality verdict second (it is the slow half). A short settle delay keeps a fast
+    /// cursor sweep from decoding every slot it passes. Single-screen devices skip the work.
+    /// </summary>
     private void UpdatePreview()
     {
-        var state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
+        var services = IPlatformApplication.Current?.Services;
+        var state = services?.GetService<SecondScreenState>();
         if (state is null) return;
-        state.PreviewSpecies = EntryAt(_selectedSlot)?.Info.Species;
+        _inspectCancel?.Cancel();
+        var caption = $"Bank · Box {_boxIndex + 1:00} · slot {_selectedSlot + 1:00}";
+        var entry = EntryAt(_selectedSlot);
+        if (entry is null)
+        {
+            state.Inspected = new InspectorContent(null, false, caption);
+            return;
+        }
+        if (services?.GetService<ISecondaryDisplayHost>()?.IsAvailable != true) return;
+        var engine = services.GetService<ISaveEngine>();
+        var summaries = services.GetService<IMonSummaryService>();
+        if (engine is null || summaries is null) return;
+        var cancel = _inspectCancel = new CancellationTokenSource();
+        _ = InspectAsync(state, engine, summaries, entry, caption, cancel.Token);
+    }
+
+    private async Task InspectAsync(SecondScreenState state, ISaveEngine engine, IMonSummaryService summaries,
+        BankEntry entry, string caption, CancellationToken cancel)
+    {
+        try
+        {
+            await Task.Delay(60, cancel);
+            var loadWatch = System.Diagnostics.Stopwatch.StartNew();
+            var quick = await SummaryLoaders.FromBank(_bank, engine, summaries, entry, analyzeLegality: false);
+            PerfTrace.Log("bank.inspect.quick", loadWatch);
+            if (cancel.IsCancellationRequested) return;
+            // A revisited entry comes back from the summary cache with its verdict already in.
+            var settled = quick?.Legal is not null;
+            state.Inspected = new InspectorContent(quick, quick is not null && !settled, caption);
+            if (quick is null || settled) return;
+            loadWatch.Restart();
+            var full = await SummaryLoaders.FromBank(_bank, engine, summaries, entry, analyzeLegality: true);
+            PerfTrace.Log("bank.inspect.full", loadWatch);
+            if (cancel.IsCancellationRequested) return;
+            state.Inspected = new InspectorContent(full ?? quick, false, caption);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception)
+        {
+            if (!cancel.IsCancellationRequested) state.Inspected = new InspectorContent(null, false, caption);
+        }
+    }
+
+    /// <summary>SELECT on a dual-screen device: turn the inspector's page.</summary>
+    private void TurnInspectorPage()
+    {
+        var state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
+        if (state is not null) state.InspectorPage = SummaryNavigation.Turn(state.InspectorPage, 1);
+    }
+
+    private static bool HasSecondScreen =>
+        IPlatformApplication.Current?.Services.GetService<ISecondaryDisplayHost>()?.IsAvailable == true;
+
+    /// <summary>
+    /// The full-screen summary of the cursor's mon. L/R inside it walk this bank box's
+    /// occupied slots and carry the cursor along; X hands over to the bank editor when
+    /// editing is allowed (Hardcore keeps the summary, drops the shortcut).
+    /// </summary>
+    private async Task OpenSummaryAsync()
+    {
+        RefreshBoxEntries();
+        if (EntryAt(_selectedSlot) is null) { _boxViewModel.Status = "Nothing to summarize in an empty slot."; return; }
+        var services = IPlatformApplication.Current!.Services;
+        var engine = services.GetRequiredService<ISaveEngine>();
+        var summaries = services.GetRequiredService<IMonSummaryService>();
+        var entries = _boxEntries;
+        var box = _boxIndex;
+        var deck = new SummaryDeck(
+            Columns * Rows,
+            slot => entries.ContainsKey(slot),
+            _selectedSlot,
+            (slot, legality) => entries.TryGetValue(slot, out var e)
+                ? SummaryLoaders.FromBank(_bank, engine, summaries, e, legality)
+                : Task.FromResult<MonSummary?>(null),
+            $"Bank · Box {box + 1:00}",
+            CanEdit: Allowed(SaveAction.EditMon),
+            Icon: slot => entries.TryGetValue(slot, out var e) ? new SlotIcon(e.Info.Species, e.Info.Form, e.Info.Shiny, _facts.HeldItem(e) != 0, e.Info.Traits ?? default) : null,
+            Moved: slot =>
+            {
+                if (_boxIndex != box) return;
+                _selectedSlot = slot;
+                UpdatePreview();
+                UpdateStatus();
+                _canvas.InvalidateSurface();
+            });
+        var page = services.GetService<SecondScreenState>()?.InspectorPage ?? SummaryPage.Info;
+        var result = await MonSummaryScreen.ShowAsync(_hostGrid, _sprites, deck, page);
+        if (result.EditRequested && entries.TryGetValue(result.Slot, out var chosen))
+            await EditEntryAsync(chosen);
     }
 
     // ── The organizer: marks, count, status ──────────────────────────────────
@@ -423,20 +535,20 @@ public sealed class BankPage : ContentPage, IPadHandler
     {
         if (_marked.Count > 0)
         {
-            _boxViewModel.Status = $"{_marked.Count} MARKED · X ACTIONS · B CLEARS";
+            _boxViewModel.Status = $"{_marked.Count} marked · X actions · B clears";
             return;
         }
         var entry = EntryAt(_selectedSlot);
         _boxViewModel.Status = entry is null
-            ? $"BOX {_boxIndex + 1:00} SLOT {_selectedSlot + 1:00} EMPTY" + (HardcoreMode.IsOn ? $" · {HardcoreMode.Marker}" : " · A ADDS")
-            : $"{Describe(entry)} · Y MARK · X ACTIONS";
+            ? $"Box {_boxIndex + 1:00} slot {_selectedSlot + 1:00} empty" + (HardcoreMode.IsOn ? $" · {HardcoreMode.Marker}" : " · A adds")
+            : $"{Describe(entry)} · Y mark · X actions";
     }
 
     private string Describe(BankEntry entry)
     {
         var species = _facts.SpeciesName(entry.Info.Species);
         var nickname = BankFilter.IsDefaultNamed(entry.Info.Nickname, species) ? "" : $" “{entry.Info.Nickname}”";
-        return $"#{entry.Info.Species:000} {species.ToUpperInvariant()}{nickname} Lv.{entry.Info.Level} · GEN {entry.Info.Generation} · {entry.Info.SourceName.ToUpperInvariant()}";
+        return $"#{entry.Info.Species:000} {species}{nickname} Lv.{entry.Info.Level} · Gen {entry.Info.Generation} · {entry.Info.SourceName}";
     }
 
     /// <summary>The cursor slot's mark, as the Y button and the footer chip both do it.</summary>
@@ -526,6 +638,9 @@ public sealed class BankPage : ContentPage, IPadHandler
                 _ = Navigation.PopAsync();
                 return true;
             case PadButton.Start: _ = OpenCursorMenuAsync(); return true;
+            case PadButton.Select:
+                if (HasSecondScreen) TurnInspectorPage(); else _ = OpenSummaryAsync();
+                return true;
             default: return false;
         }
     }
@@ -572,10 +687,14 @@ public sealed class BankPage : ContentPage, IPadHandler
             return;
         }
 
-        // Hardcore mode keeps every move and drops every copy: the editor stays reachable for
-        // viewing (its save is refused), Duplicate and Copy to game are not offered at all.
-        var options = new List<PadOption> { new(Allowed(SaveAction.EditMon) ? "Edit" : "View summary", IconPath: "editor") };
-        if (Allowed(SaveAction.EditMon)) options.Add(new PadOption("Evolve…", IconPath: "evolve"));
+        // Hardcore mode keeps every move and drops every copy: the read-only Summary is always
+        // offered, the editor only when editing is allowed; Duplicate and Copy to game are not offered at all.
+        var options = new List<PadOption> { new("Summary", IconPath: "info") };
+        if (Allowed(SaveAction.EditMon))
+        {
+            options.Add(new PadOption("Edit", IconPath: "editor"));
+            options.Add(new PadOption("Evolve…", IconPath: "evolve"));
+        }
         options.Add(new PadOption("Send to Poképark", IconPath: "park"));
         if (Allowed(SaveAction.Duplicate)) options.Add(new PadOption("Duplicate", IconPath: "copy"));
         options.Add(new PadOption("Send to game…", IconPath: "send"));
@@ -583,16 +702,19 @@ public sealed class BankPage : ContentPage, IPadHandler
         options.Add(new PadOption("Move (carry)", IconPath: "move"));
         options.Add(new PadOption("Export .pk file", IconPath: "export"));
         options.Add(new PadOption("Release from bank", IconPath: "release"));
-        var choice = await PadMenu.ShowAsync(_hostGrid, entry.Info.Nickname.ToUpperInvariant(),
+        var choice = await PadMenu.ShowAsync(_hostGrid, entry.Info.Nickname,
             Note($"From {entry.Info.SourceName} · Gen {entry.Info.Generation} · deposited {entry.AddedUtc:yyyy-MM-dd}"),
             options.ToArray());
         switch (choice)
         {
             case "Send to Poképark":
                 _boxViewModel.Status = IPlatformApplication.Current!.Services.GetRequiredService<PokeparkService>().AddBankVisitor(entry.Id);
-                await PadMenu.ShowAsync(_hostGrid, "POKÉPARK", _boxViewModel.Status, new PadOption("OK"));
+                await PadMenu.ShowAsync(_hostGrid, "Poképark", _boxViewModel.Status, new PadOption("OK"));
                 return;
-            case "Edit" or "View summary":
+            case "Summary":
+                await OpenSummaryAsync();
+                return;
+            case "Edit":
                 await EditEntryAsync(entry);
                 return;
             case "Evolve…":
@@ -624,7 +746,7 @@ public sealed class BankPage : ContentPage, IPadHandler
                 await ExportAsync(entry);
                 return;
             case "Release from bank":
-                var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "RELEASE FROM BANK?",
+                var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Release from bank?",
                     $"Release {entry.Info.Nickname}? Bank releases are permanent (the bank has no restore points yet).",
                     "Release");
                 if (!confirmed) return;
@@ -646,9 +768,9 @@ public sealed class BankPage : ContentPage, IPadHandler
     {
         RefreshBoxEntries(); // never decide the menu from a stale slot map
         var selection = Selection();
-        var noun = _marked.Count > 0 ? $"{_marked.Count} MARKED"
-            : selection.Count > 0 ? $"SLOT {_selectedSlot + 1:00}"
-            : "NOTHING SELECTED";
+        var noun = _marked.Count > 0 ? $"{_marked.Count} marked"
+            : selection.Count > 0 ? $"slot {_selectedSlot + 1:00}"
+            : "Nothing selected";
         var targets = TransferTargets();
 
         var options = new List<PadOption>();
@@ -676,7 +798,7 @@ public sealed class BankPage : ContentPage, IPadHandler
         if (_marked.Count > 1) options.Add(new PadOption("Sort the marked into boxes…", IconPath: "sort"));
         options.Add(new PadOption("Compact the bank (close gaps)", IconPath: "compact"));
 
-        var choice = await PadMenu.ShowAsync(_hostGrid, $"BANK ACTIONS · {noun}",
+        var choice = await PadMenu.ShowAsync(_hostGrid, $"Bank actions · {noun}",
             Note(_marked.Count > 0
                 ? "Marks keep across box pages. Sorting rewrites the bank's own index."
                 : "Y marks slots; with nothing marked X acts on the cursor slot."),
@@ -744,7 +866,7 @@ public sealed class BankPage : ContentPage, IPadHandler
     private async Task MoveSelectionToBoxAsync(List<BankEntry> selection)
     {
         var boxes = Enumerable.Range(1, _bank.BoxCount).Select(n => $"Box {n:00}").ToArray();
-        var target = await PadMenu.ShowAsync(_hostGrid, "MOVE TO WHICH BOX?",
+        var target = await PadMenu.ShowAsync(_hostGrid, "Move to which box?",
             $"{selection.Count} selected · the box's empty slots take them in order.", boxes);
         if (target is null) return;
         var box = Array.IndexOf(boxes, target);
@@ -767,11 +889,11 @@ public sealed class BankPage : ContentPage, IPadHandler
     private async Task MoveSelectionToPositionAsync(List<BankEntry> selection)
     {
         var boxes = Enumerable.Range(1, _bank.BoxCount).Select(n => $"Box {n:00}").ToArray();
-        var target = await PadMenu.ShowAsync(_hostGrid, "MOVE TO WHICH BOX?", $"{selection.Count} selected.", boxes);
+        var target = await PadMenu.ShowAsync(_hostGrid, "Move to which box?", $"{selection.Count} selected.", boxes);
         if (target is null) return;
         var box = Array.IndexOf(boxes, target);
         var slots = Enumerable.Range(1, IBankService.SlotsPerBox).Select(n => $"Slot {n:00}").ToArray();
-        var startChoice = await PadMenu.ShowAsync(_hostGrid, $"FILL FORWARD FROM SLOT? (BOX {box + 1:00})",
+        var startChoice = await PadMenu.ShowAsync(_hostGrid, $"Fill forward from slot? (box {box + 1:00})",
             "The selection lands here in order; whatever is already there slides back.", slots);
         if (startChoice is null) return;
         var start = Array.IndexOf(slots, startChoice);
@@ -807,7 +929,7 @@ public sealed class BankPage : ContentPage, IPadHandler
 
     private async Task ReleaseSelectionAsync(List<BankEntry> selection)
     {
-        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "RELEASE FROM THE BANK?",
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Release from the bank?",
             selection.Count == 1
                 ? $"Release {selection[0].Info.Nickname}? Bank releases are permanent (the bank has no restore points yet)."
                 : $"Release all {selection.Count} selected Pokémon? Bank releases are permanent (the bank has no restore points yet).",
@@ -847,7 +969,7 @@ public sealed class BankPage : ContentPage, IPadHandler
             // Same trust step as a game-to-game send: the first mon's diff and warnings
             // (a backwards conversion lists its compromises) stand for the batch.
             var firstPick = selection[0];
-            var connectedPreview = transfer.PreviewIntoConnected(_bank.GetData(firstPick.Id), firstPick.Info.Nickname, open[0].Box, open[0].Slot);
+            var connectedPreview = transfer.PreviewIntoConnected(_bank.GetData(firstPick.Id), firstPick.Info.Nickname, open[0].Box, open[0].Slot, firstPick.Info.Format);
             if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, connectedPreview,
                     selection.Count == 1 ? firstPick.Info.Nickname : $"{selection.Count} Pokémon", "the connected game"))
                 return;
@@ -858,7 +980,7 @@ public sealed class BankPage : ContentPage, IPadHandler
                 {
                     if (placed >= open.Length) break;
                     var room = open[placed];
-                    if (!Services.TransferService.TryImport(session, room.Box, room.Slot, _bank.GetData(entry.Id), out _)) continue;
+                    if (!Services.TransferService.TryImport(session, room.Box, room.Slot, _bank.GetData(entry.Id), out _, entry.Info.Format)) continue;
                     sent.Add(entry.Id);
                     placed++;
                 }
@@ -873,18 +995,36 @@ public sealed class BankPage : ContentPage, IPadHandler
         {
             var target = destinationPick.Other;
             var first = selection[0];
-            var preview = await transfer.PreviewAsync(_bank.GetData(first.Id), first.Info.Nickname, target);
+            var preview = await transfer.PreviewAsync(_bank.GetData(first.Id), first.Info.Nickname, target, format: first.Info.Format);
             if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, preview,
                     selection.Count == 1 ? first.Info.Nickname : $"{selection.Count} Pokémon", target.GameLabel))
                 return;
+            string? stopped = null;
             foreach (var entry in selection)
             {
-                var outcome = await transfer.SendToGameAsync(_bank.GetData(entry.Id), entry.Info.Nickname, target);
-                if (outcome.Success) sent.Add(entry.Id);
+                try
+                {
+                    var outcome = await transfer.SendToGameAsync(_bank.GetData(entry.Id), entry.Info.Nickname, target, format: entry.Info.Format);
+                    if (outcome.Success) sent.Add(entry.Id);
+                }
+                catch (Exception error)
+                {
+                    // Every mon already written to the game still leaves the bank below: no duplicates.
+                    stopped = error.Message;
+                    break;
+                }
             }
             if (sent.Count == 0)
             {
-                _boxViewModel.Status = $"None of the selection could enter {target.GameLabel}'s format.";
+                _boxViewModel.Status = stopped is null
+                    ? $"None of the selection could enter {target.GameLabel}'s format."
+                    : $"Aborted: {stopped}";
+                return;
+            }
+            if (stopped is not null)
+            {
+                _bank.RemoveMany(sent);
+                FinishOrganizer($"{sent.Count} of {selection.Count} Pokémon left the bank for {destination}, then it stopped: {stopped}");
                 return;
             }
         }
@@ -901,7 +1041,7 @@ public sealed class BankPage : ContentPage, IPadHandler
     private async Task SortAsync(int? box)
     {
         var picked = await BankSearchPage.PickSortAsync(_hostGrid,
-            box is null ? "SORT THE WHOLE BANK" : $"SORT BOX {box.Value + 1:00}",
+            box is null ? "Sort the whole bank" : $"Sort box {box.Value + 1:00}",
             "A real reorder of the bank's slots - stored bytes never move.");
         if (picked is null) return;
         var (order, reverse, label) = picked.Value;
@@ -925,7 +1065,7 @@ public sealed class BankPage : ContentPage, IPadHandler
     /// </summary>
     private async Task SortSelectionAsync(List<BankEntry> selection)
     {
-        var picked = await BankSearchPage.PickSortAsync(_hostGrid, $"SORT {selection.Count} MARKED",
+        var picked = await BankSearchPage.PickSortAsync(_hostGrid, $"Sort {selection.Count} marked",
             "They move, in order, into new boxes after the last one in use.");
         if (picked is null) return;
         var (order, reverse, label) = picked.Value;
@@ -961,7 +1101,7 @@ public sealed class BankPage : ContentPage, IPadHandler
             _boxViewModel.Status = $"Nothing to do: {where} is already in that order.";
             return;
         }
-        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "REARRANGE NOW?",
+        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Rearrange now?",
             $"{label} across {where}: {moving} of {scopeCount} Pokémon change slot. "
             + "The bank's index is rewritten in one go and the marks follow their Pokémon.",
             "Sort");
@@ -1005,7 +1145,7 @@ public sealed class BankPage : ContentPage, IPadHandler
         RefreshBoxEntries();
         UpdatePageLabel();
         UpdatePreview();
-        _boxViewModel.Status = _marked.Count > 0 ? $"{status} · {_marked.Count} STILL MARKED" : status;
+        _boxViewModel.Status = _marked.Count > 0 ? $"{status} · {_marked.Count} still marked" : status;
         _canvas.InvalidateSurface();
     }
 
@@ -1061,7 +1201,7 @@ public sealed class BankPage : ContentPage, IPadHandler
         if (connectedLabel is not null) options.Add(new PadOption(connectedLabel, IconPath: "game"));
         options.AddRange(labels.Select((label, i) => new PadOption(label, Glyph: "●",
             Accent: SaveColors.For(detected[i].Identity?.ColorKey, detected[i].Generation))));
-        var choice = await PadMenu.ShowAsync(_hostGrid, "SEND TO GAME", subtitle, options.ToArray());
+        var choice = await PadMenu.ShowAsync(_hostGrid, "Send to game", subtitle, options.ToArray());
         if (choice is null) return null;
         var index = options.FindIndex(o => o.Label == choice);
         if (connectedLabel is not null)
@@ -1082,10 +1222,10 @@ public sealed class BankPage : ContentPage, IPadHandler
         var services = IPlatformApplication.Current!.Services;
         var engine = services.GetRequiredService<ISaveEngine>();
         var service = services.GetRequiredService<IEvolutionService>();
-        using var session = engine.OpenEntitySession(_bank.GetData(entry.Id), entry.Info.Nickname);
+        using var session = engine.OpenEntitySession(_bank.GetData(entry.Id), entry.Info.Nickname, entry.Info.Format);
         if (session is null)
         {
-            await PadMenu.ShowAsync(_hostGrid, "EVOLUTION", "This Pokémon's data could not be read.", "OK");
+            await PadMenu.ShowAsync(_hostGrid, "Evolution", "This Pokémon's data could not be read.", "OK");
             return;
         }
         var request = await EvolutionCard.RunAsync(_hostGrid, session, 0, 0);
@@ -1094,14 +1234,14 @@ public sealed class BankPage : ContentPage, IPadHandler
         if (outcome.Success)
         {
             var export = session.ExportSlot(0, 0);
-            var info = engine.TryDescribeEntity(export.Data, entry.Info.SourceName) ?? entry.Info;
+            var info = engine.TryDescribeEntity(export.Data, entry.Info.SourceName, export.Format) ?? entry.Info;
             _bank.Replace(entry.Id, export.Data, info);
             RefreshBoxEntries();
             UpdatePreview();
             _canvas.InvalidateSurface();
         }
         _boxViewModel.Status = outcome.Message;
-        await PadMenu.ShowAsync(_hostGrid, outcome.Success ? "CONGRATULATIONS!" : "EVOLUTION FAILED", outcome.Message, "OK");
+        await PadMenu.ShowAsync(_hostGrid, outcome.Success ? "Congratulations!" : "Evolution failed", outcome.Message, "OK");
     }
 
     private async Task EditEntryAsync(BankEntry entry)
@@ -1123,7 +1263,7 @@ public sealed class BankPage : ContentPage, IPadHandler
         // Every way into an empty bank slot fabricates a mon from outside the games; Hardcore
         // mode fills the vault only by moving mons in from a save.
         if (await DeniedAsync(SaveAction.CreateMon)) return;
-        var choice = await PadMenu.ShowAsync(_hostGrid, "ADD TO BANK", null,
+        var choice = await PadMenu.ShowAsync(_hostGrid, "Add to bank", null,
             new PadOption("Create a Pokémon", IconPath: "create"),
             new PadOption("Paste a Showdown set", IconPath: "script"),
             new PadOption("Import .pk file", IconPath: "import"),
@@ -1136,7 +1276,7 @@ public sealed class BankPage : ContentPage, IPadHandler
                 // a placeholder identity (OT "PKForge", editable afterwards in the editor).
                 var eras = new[] { "Generation I", "Generation II", "Generation III", "Generation IV", "Generation V",
                     "Generation VI", "Generation VII", "Generation VIII", "Generation IX" };
-                var era = await PadMenu.ShowAsync(_hostGrid, "CREATE FOR WHICH GAME ERA?",
+                var era = await PadMenu.ShowAsync(_hostGrid, "Create for which game era?",
                     "No save connected. The mon gets a placeholder identity in the format you pick; edit it after.",
                     eras);
                 if (era is null) return;
@@ -1153,7 +1293,7 @@ public sealed class BankPage : ContentPage, IPadHandler
                 var request = await GenerateWizard.RunAsync(_hostGrid, data, session!);
                 if (request is null) return;
                 var legalizer = services.GetRequiredService<ILegalizerService>();
-                var overlay = LoadingOverlay.Show(_hostGrid, "CREATING FOR THE BANK…", "The offline legalizer is at work.");
+                var overlay = LoadingOverlay.Show(_hostGrid, "Creating for the bank…", "The offline legalizer is at work.");
                 try
                 {
                     var generated = await Task.Run(() => legalizer.GenerateData(session!, request));
@@ -1165,10 +1305,10 @@ public sealed class BankPage : ContentPage, IPadHandler
             }
             case "Paste a Showdown set":
             {
-                var text = await TextPopup.ShowAsync(_hostGrid, "PASTE A SHOWDOWN SET", "The set becomes a legal mon stored in the bank.");
+                var text = await TextPopup.ShowAsync(_hostGrid, "Paste a Showdown set", "The set becomes a legal mon stored in the bank.");
                 if (string.IsNullOrWhiteSpace(text)) return;
                 var legalizer = IPlatformApplication.Current!.Services.GetRequiredService<ILegalizerService>();
-                var overlay = LoadingOverlay.Show(_hostGrid, "READING THE SET…", "The offline legalizer is at work.");
+                var overlay = LoadingOverlay.Show(_hostGrid, "Reading the set…", "The offline legalizer is at work.");
                 try
                 {
                     var generated = await Task.Run(() => legalizer.GenerateDataFromShowdown(session!, text, Services.HaXMode.IsOn));
@@ -1198,7 +1338,7 @@ public sealed class BankPage : ContentPage, IPadHandler
                 foreach (var document in documents)
                 {
                     var bytes = (await access.ReadAsync(document.DocumentId)).ToArray();
-                    var parsed = engine.TryDescribeEntity(bytes, document.DisplayName);
+                    var parsed = engine.TryDescribeEntity(bytes, document.DisplayName, document.DisplayName); // the extension names the format
                     if (parsed is null) continue;
                     _bank.Add(bytes, parsed);
                     count++;
@@ -1239,6 +1379,7 @@ public sealed class BankPage : ContentPage, IPadHandler
 
         var bytes = _bank.GetData(entry.Id);
         var nickname = entry.Info.Nickname;
+        var format = entry.Info.Format;
 
         if (destination.Other is null)
         {
@@ -1249,21 +1390,21 @@ public sealed class BankPage : ContentPage, IPadHandler
                 _boxViewModel.Status = "No empty slot in the connected game.";
                 return;
             }
-            var connectedPreview = transfer.PreviewIntoConnected(bytes, nickname, landing.Box, landing.Slot);
+            var connectedPreview = transfer.PreviewIntoConnected(bytes, nickname, landing.Box, landing.Slot, format);
             if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, connectedPreview, nickname, "the connected game")) return;
             var ok = await _boxViewModel.RunMutationAsync(session =>
-                Services.TransferService.TryImport(session, landing.Box, landing.Slot, bytes, out var refusal)
+                Services.TransferService.TryImport(session, landing.Box, landing.Slot, bytes, out var refusal, format)
                     ? new GenerationOutcome(true, $"{nickname} joined the game (box {landing.Box + 1}).")
-                    : new GenerationOutcome(false, refusal ?? Services.TransferService.Refusal(bytes, nickname, session.Snapshot, "this game")), landing.Slot,
+                    : new GenerationOutcome(false, refusal ?? Services.TransferService.Refusal(bytes, nickname, session.Snapshot, "this game", format)), landing.Slot,
                 action: keepOriginal ? SaveAction.Duplicate : SaveAction.Move);
             if (!ok) return;
         }
         else
         {
             var target = destination.Other;
-            var preview = await transfer.PreviewAsync(bytes, nickname, target);
+            var preview = await transfer.PreviewAsync(bytes, nickname, target, format: format);
             if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, preview, nickname, target.GameLabel)) return;
-            var outcome = await transfer.SendToGameAsync(bytes, nickname, target);
+            var outcome = await transfer.SendToGameAsync(bytes, nickname, target, format: format);
             _boxViewModel.Status = outcome.Message;
             if (!outcome.Success) return;
         }
@@ -1282,7 +1423,7 @@ public sealed class BankPage : ContentPage, IPadHandler
         try
         {
             var bytes = _bank.GetData(entry.Id);
-            var name = $"{entry.Info.Species:000} - {entry.Info.Nickname}.pk{entry.Info.Generation}";
+            var name = $"{entry.Info.Species:000} - {entry.Info.Nickname}{BankEntryFiles.ExtensionFor(entry.Info)}";
             var path = System.IO.Path.Combine(FileSystem.CacheDirectory, name);
             await File.WriteAllBytesAsync(path, bytes);
             await Share.Default.RequestAsync(new ShareFileRequest { Title = name, File = new ShareFile(path) });
@@ -1322,7 +1463,7 @@ public sealed class BankPage : ContentPage, IPadHandler
             var drawRect = isCarried && index == _selectedSlot
                 ? new SKRect(rect.Left, rect.Top - cell * 0.18f, rect.Right, rect.Bottom - cell * 0.18f)
                 : rect;
-            var bitmap = _sprites.GetSprite(entry.Info.Species, entry.Info.Form, entry.Info.Shiny);
+            var bitmap = _sprites.GetSprite(entry.Info.Look);
             if (bitmap is not null)
             {
                 if (isCarried && index != _selectedSlot)
@@ -1340,13 +1481,15 @@ public sealed class BankPage : ContentPage, IPadHandler
             }
             else
             {
-                _sprites.Warm(entry.Info.Species, entry.Info.Form, entry.Info.Shiny, _frame.Request);
+                _sprites.Warm(entry.Info.Look, _frame.Request);
             }
             if (isCarried && index != _selectedSlot)
                 PksmPaint.CarryGhost(canvas, rect);
             if (entry.Info.Shiny)
                 BoxGridRenderer.DrawSparkle(canvas, rect.Right - rect.Width * 0.14f, rect.Top + rect.Height * 0.16f,
                     Math.Min(rect.Width, rect.Height) * 0.09f, BoxGridRenderer.SparklePaint);
+            if (!(isCarried && index != _selectedSlot) && _facts.HeldItem(entry) != 0)
+                BoxGridRenderer.DrawHeldItemBadge(canvas, rect);
             if (_marked.Contains((_boxIndex, index)))
                 PksmPaint.MarkBadge(canvas, rect);
             if (index == _selectedSlot)

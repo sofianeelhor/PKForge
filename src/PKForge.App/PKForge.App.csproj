@@ -43,7 +43,7 @@
     <!-- Bundled fallback sprites from pristine PKHeX submodule (always offline-available). -->
     <MauiAsset Include="Resources/UI/dex/*.bin.gz" LogicalName="dex/%(Filename)%(Extension)" />
     <MauiAsset Include="Resources/AppIcon/pkforge.png" LogicalName="ui/logo.png" />
-    <MauiAsset Include="Resources/Events/*.tar.gz" LogicalName="events/%(Filename)%(Extension)" />
+    <MauiAsset Include="Resources/Events/*.bin.gz" LogicalName="events/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Big Pokemon Sprites/*.png" LogicalName="sprites/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Big Shiny Sprites/*.png" LogicalName="sprites/%(Filename)%(Extension)" />
     <!-- PKHeX ships no pixel sprites past species 905 (Legends: Arceus); for Gen 9 it
@@ -51,9 +51,18 @@
          the offline Gen 9 fallback, exactly what PKHeX itself shows. -->
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Artwork Pokemon Sprites/a_9*.png" LogicalName="artwork/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Artwork Pokemon Sprites/a_10*.png" LogicalName="artwork/%(Filename)%(Extension)" />
+    <!-- Form artwork for every generation (~2MB): PKHeX has no pixel sprite for Paldean
+         Tauros, the Legends: Z-A megas, Urshifu Rapid Strike, ... and the sprite resolver
+         (SpriteCatalog) shows the exact form's artwork before ever falling back to the
+         base form. Overlaps with a_9*/a_10* are the same files under the same name. -->
+    <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Artwork Pokemon Sprites/a_*-*.png"
+               Exclude="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Artwork Pokemon Sprites/a_9*.png;../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/Artwork Pokemon Sprites/a_10*.png"
+               LogicalName="artwork/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.PokeSprite/Resources/img/ball/*.png" LogicalName="balls/%(Filename)%(Extension)" />
     <!-- PKHeX's complete, format-accurate ribbon/mark artwork (GPL-3). -->
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.Misc/Resources/img/ribbons/*.png" LogicalName="ribbons/%(Filename)%(Extension)" />
+    <!-- In-game box wallpapers (PKHeX WallpaperUtil resource names) for the box manager's wallpaper picker. -->
+    <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.Misc/Resources/img/box/**/*.png" LogicalName="wallpapers/%(Filename)%(Extension)" />
     <MauiAsset Include="../../external/PKHeX/PKHeX.Drawing.Misc/Resources/img/ribbons/ribbonchampionkalos.png" LogicalName="ui/pksm/ribbon_award.png" />
     <!-- Game icons + hero art fetched once at build time from SteamGridDB (no key ships in the app). -->
     <MauiAsset Include="Resources/GameArt/*.png" LogicalName="gameart/%(Filename)%(Extension)" />

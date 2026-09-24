@@ -43,7 +43,7 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
         Title = "Poképark";
         NavigationPage.SetHasNavigationBar(this, false);
         BackgroundColor = UiTokens.Housing;
-        _status = new Label { TextColor = UiTokens.Ink1, FontSize = 13, Margin = new Thickness(14, 4) };
+        _status = new Label { TextColor = UiTokens.Ink1, FontSize = UiTokens.TextBody, Margin = new Thickness(14, 4) };
         _canvas.EnableTouchEvents = true;
         _canvas.HorizontalOptions = LayoutOptions.Fill;
         _canvas.VerticalOptions = LayoutOptions.Start;
@@ -92,9 +92,13 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
         };
     }
 
+    private SecondScreenClaim? _secondClaim;
+
     protected override void OnAppearing()
     {
         base.OnAppearing(); _active = true;
+        _secondClaim ??= IPlatformApplication.Current?.Services.GetService<SecondScreenState>()?.Routes.CreateClaim(SecondScreenOwner.Pokepark);
+        _secondClaim?.Activate();
         IPlatformApplication.Current?.Services.GetService<PokeparkJournalState>()?.Open();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Push(this);
         App.Resumed += Resume; App.Suspended += Suspend;
@@ -132,6 +136,7 @@ public sealed class PokeparkPage : ContentPage, IPadHandler
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
         if (WidgetDirty) _ = PublishWidgetAsync();
         IPlatformApplication.Current?.Services.GetService<PokeparkJournalState>()?.Clear();
+        _secondClaim?.Release();
         base.OnDisappearing();
     }
     private void Resume() { if (_active) { _clock.Start(); _timer.Start(); } }

@@ -21,7 +21,9 @@ public sealed partial class SaveCard(IReadOnlyList<DetectedSave> saves) : Observ
     public DetectedSave Save => Saves[0];
     public int SaveCount => Saves.Count;
     public bool HasSeveralSaves => Saves.Count > 1;
-    public string CountBadge => Saves.Count > 1 ? Saves.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
+    /// <summary>Three or more saves: the shelf draws a second cart behind the first.</summary>
+    public bool HasManySaves => Saves.Count > 2;
+    public string CountBadge => Saves.Count > 1 ? "×" + Saves.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
     public string DisplayName => Save.GameLabel;
 
     /// <summary>The shelf title: the cartridge art already says Pokémon, so a retail
@@ -101,6 +103,7 @@ public static class SaveDescriptions
         EmulatorKind.DraStic => "DraStic",
         EmulatorKind.PizzaBoyGba => "Pizza Boy GBA",
         EmulatorKind.PizzaBoyGbc => "Pizza Boy GBC",
+        EmulatorKind.CitraMmj => "Citra MMJ",
         _ => kind.ToString(),
     };
 }
@@ -187,6 +190,9 @@ public partial class SavePickerViewModel : ObservableObject
     private Task AddAzaharAsync() => AddRootAndScanAsync(EmulatorKind.Azahar);
 
     [RelayCommand]
+    private Task AddCitraMmjAsync() => AddRootAndScanAsync(EmulatorKind.CitraMmj);
+
+    [RelayCommand]
     private Task AddEdenAsync() => AddRootAndScanAsync(EmulatorKind.Eden);
 
     [RelayCommand]
@@ -232,7 +238,7 @@ public partial class SavePickerViewModel : ObservableObject
                 _scanDiagnostics.Add(string.Empty);
                 _scanDiagnostics.Add($"ROOT kind={root.Kind} name={root.DisplayName}");
                 _scanDiagnostics.Add($"TREE URI {root.TreeId}");
-                Status = $"Scanning {root.Kind} unit · {root.DisplayName}…";
+                Status = $"Scanning {SaveDescriptions.EmulatorName(root.Kind)} unit · {root.DisplayName}…";
                 try
                 {
                     if (_detection is IIncrementalEmulatorDetectionService incremental)
@@ -273,7 +279,7 @@ public partial class SavePickerViewModel : ObservableObject
                 catch (Exception error)
                 {
                     _scanDiagnostics.Add($"ROOT FAILED {error}");
-                    Status = $"Scan of {root.Kind} failed: {error.Message}";
+                    Status = $"Scan of {SaveDescriptions.EmulatorName(root.Kind)} failed: {error.Message}";
                 }
             }
             RebuildGroups();
@@ -338,7 +344,7 @@ public partial class SavePickerViewModel : ObservableObject
     /// <summary>Caption of the active shelf filter, for the home screen chip.</summary>
     public partial class FilterState : ObservableObject
     {
-        [ObservableProperty] private string _caption = "ALL";
+        [ObservableProperty] private string _caption = "All";
     }
 
     public FilterState Filter { get; } = new();

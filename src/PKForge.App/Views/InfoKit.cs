@@ -27,11 +27,11 @@ public static class InfoKit
     /// <summary>A fixed-width type pill ("FIRE") so badge columns line up down a list.</summary>
     public static Border TypeBadge(int? type = null, double width = 60)
     {
+        // The games' rectangular type plate: solid fill, square corners, pixel caps, no outline.
         var label = new Label
         {
-            FontSize = 9,
-            FontAttributes = FontAttributes.Bold,
-            CharacterSpacing = 0.5,
+            FontFamily = DsChrome.PixelFont,
+            FontSize = UiTokens.TextSmall,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center,
             LineBreakMode = LineBreakMode.NoWrap,
@@ -39,9 +39,9 @@ public static class InfoKit
         var badge = new Border
         {
             WidthRequest = width,
-            HeightRequest = 18,
+            HeightRequest = 20,
             StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 4 },
+            StrokeShape = new RoundRectangle { CornerRadius = 3 },
             Padding = new Thickness(2, 0),
             VerticalOptions = LayoutOptions.Center,
             Content = label,
@@ -56,9 +56,12 @@ public static class InfoKit
     {
         badge.IsVisible = type is { } t && TypeFacts.IsValid(t);
         if (type is not { } value || !badge.IsVisible) return;
+        // The summary's type plate: the type colour with a gentle top light and a darker 1 dp edge.
         var fill = TypeColor(value);
-        badge.BackgroundColor = fill;
-        badge.Stroke = fill.WithLuminosity(Math.Max(0, fill.GetLuminosity() - 0.18f));
+        badge.Background = new LinearGradientBrush(
+            [new GradientStop(fill.WithLuminosity(Math.Min(1, fill.GetLuminosity() + 0.06f)), 0f), new GradientStop(fill.WithLuminosity(Math.Max(0, fill.GetLuminosity() - 0.04f)), 1f)],
+            new Point(0, 0), new Point(0, 1));
+        badge.Stroke = fill.WithLuminosity(Math.Max(0, fill.GetLuminosity() - 0.2f));
         if (badge.Content is Label label)
         {
             label.Text = TypeFacts.Name(value).ToUpperInvariant();
@@ -108,16 +111,21 @@ public static class InfoKit
         {
             c.Clear(SKColors.Transparent);
             if (_category is not { } category) return;
+            DrawCategory(c, new SKRect(1, 1, info.Width - 1, info.Height - 1), category);
+        }
+
+        /// <summary>Paints the damage-class icon into <paramref name="r"/> (Skia-drawn surfaces share it).</summary>
+        public static void DrawCategory(SKCanvas c, SKRect r, MoveCategory category)
+        {
             var (body, edge, glyph) = category switch
             {
                 MoveCategory.Physical => (new SKColor(0xC9, 0x2A, 0x19), new SKColor(0x7E, 0x16, 0x0B), new SKColor(0xFF, 0xC4, 0x3A)),
                 MoveCategory.Special => (new SKColor(0x3B, 0x58, 0xA8), new SKColor(0x1F, 0x2F, 0x66), new SKColor(0x9C, 0xD4, 0xFF)),
                 _ => (new SKColor(0x8C, 0x88, 0x8C), new SKColor(0x55, 0x52, 0x55), new SKColor(0xF4, 0xF4, 0xF4)),
             };
-            var r = new SKRect(1, 1, info.Width - 1, info.Height - 1);
             var radius = r.Height * 0.3f;
             using var fill = new SKPaint { Color = body, IsAntialias = true };
-            using var rim = new SKPaint { Color = edge, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = Math.Max(1, info.Height / 16f) };
+            using var rim = new SKPaint { Color = edge, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = Math.Max(1, r.Height / 16f) };
             using var ink = new SKPaint { Color = glyph, IsAntialias = true };
             c.DrawRoundRect(r, radius, radius, fill);
             c.DrawRoundRect(r, radius, radius, rim);
@@ -163,13 +171,12 @@ public static class InfoKit
 
     // ---------- Text ----------
 
-    /// <summary>Card heading: pixel voice, bold, one line.</summary>
+    /// <summary>Card heading: pixel voice, 14 dp, one line.</summary>
     public static Label Heading(string? text = null) => new()
     {
         Text = text,
         FontFamily = DsChrome.PixelFont,
-        FontSize = 12,
-        FontAttributes = FontAttributes.Bold,
+        FontSize = UiTokens.TextLabel,
         TextColor = UiTokens.Ink0,
         LineBreakMode = LineBreakMode.TailTruncation,
     };
@@ -178,7 +185,7 @@ public static class InfoKit
     public static Label DetailLine(string? text = null, int maxLines = 1) => new()
     {
         Text = text,
-        FontSize = 11,
+        FontSize = UiTokens.TextSmall,
         TextColor = UiTokens.InkSoft,
         MaxLines = maxLines,
         LineBreakMode = maxLines == 1 ? LineBreakMode.TailTruncation : LineBreakMode.WordWrap,
@@ -189,7 +196,7 @@ public static class InfoKit
     public static Label Body(string? text = null) => new()
     {
         Text = text,
-        FontSize = 11,
+        FontSize = UiTokens.TextSmall,
         TextColor = UiTokens.Ink0,
         LineBreakMode = LineBreakMode.WordWrap,
     };
@@ -198,7 +205,7 @@ public static class InfoKit
     public static Label Note(string? text = null, NoteTone tone = NoteTone.Info) => new()
     {
         Text = text,
-        FontSize = 10,
+        FontSize = UiTokens.TextSmall,
         TextColor = ToneColor(tone),
         LineBreakMode = LineBreakMode.WordWrap,
         IsVisible = !string.IsNullOrEmpty(text),
@@ -213,25 +220,23 @@ public static class InfoKit
         _ => UiTokens.Blueprint,
     };
 
-    /// <summary>Right-aligned chip for a row's source or slot ("Lv 32", "TM", "HIDDEN").</summary>
+    /// <summary>
+    /// A row's source or slot ("Lv 32", "TM", "Hidden"): plain coloured pixel text on the
+    /// right - no outline pill, no tinted box. The colour carries the meaning.
+    /// </summary>
     public static Border Tag(string? text = null, Color? accent = null)
     {
-        var color = accent ?? UiTokens.Blueprint;
         var tag = new Border
         {
-            BackgroundColor = color.WithAlpha(0.14f),
-            Stroke = color,
-            StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 4 },
-            Padding = new Thickness(6, 1),
+            BackgroundColor = Colors.Transparent,
+            StrokeThickness = 0,
+            Padding = new Thickness(2, 0),
             VerticalOptions = LayoutOptions.Center,
             InputTransparent = true,
             Content = new Label
             {
                 FontFamily = DsChrome.PixelFont,
-                FontSize = 10,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = color.WithLuminosity(Math.Min(color.GetLuminosity(), 0.32f)),
+                FontSize = UiTokens.TextSmall + 0.5,
                 LineBreakMode = LineBreakMode.NoWrap,
                 VerticalTextAlignment = TextAlignment.Center,
             },
@@ -243,13 +248,10 @@ public static class InfoKit
     public static void SetTag(Border tag, string? text, Color? accent = null)
     {
         tag.IsVisible = !string.IsNullOrEmpty(text);
-        var color = accent ?? UiTokens.Blueprint;
-        tag.Stroke = color;
-        tag.BackgroundColor = color.WithAlpha(0.14f);
         if (tag.Content is Label label)
         {
-            label.Text = text;
-            label.TextColor = color.WithLuminosity(Math.Min(color.GetLuminosity(), 0.32f));
+            label.Text = Kit.Tidy(text);
+            label.TextColor = UiTokens.TextTone(accent ?? UiTokens.Blueprint);
         }
     }
 
@@ -257,8 +259,8 @@ public static class InfoKit
     public static Color LearnColor(LearnKind kind) => kind switch
     {
         LearnKind.LevelUp or LearnKind.Evolution => UiTokens.Blueprint,
-        LearnKind.Machine => Color.FromArgb("#B8860B"),
-        LearnKind.Tutor => Color.FromArgb("#7B5BB5"),
+        LearnKind.Machine => Color.FromArgb("#E2B64A"),
+        LearnKind.Tutor => Color.FromArgb("#B294E8"),
         LearnKind.Egg => UiTokens.Green,
         _ => UiTokens.InkSoft,
     };
@@ -277,20 +279,17 @@ public static class InfoKit
 
     // ---------- Card ----------
 
-    /// <summary>The info card: the same pressed-paper panel the nature preview introduced.</summary>
+    /// <summary>
+    /// The info block inside a panel: a flat recessed well (darker navy, no border) - never
+    /// a card inside a card.
+    /// </summary>
     public static Border Card(params View[] children)
     {
-        var stack = new VerticalStackLayout { Spacing = 3 };
+        var stack = new VerticalStackLayout { Spacing = UiTokens.Space1 };
         foreach (var child in children) stack.Children.Add(child);
-        return new Border
-        {
-            BackgroundColor = UiTokens.ShellPress,
-            Stroke = UiTokens.ShellEdge,
-            StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 5 },
-            Padding = new Thickness(8, 5),
-            Content = stack,
-        };
+        var well = Kit.Well(stack);
+        well.Padding = new Thickness(10, 8);
+        return well;
     }
 
     /// <summary>A heading on the left with a trailing view (badges) on the right.</summary>
@@ -326,19 +325,12 @@ public static class InfoKit
             {
                 var caption = new Label
                 {
-                    FontFamily = DsChrome.PixelFont, FontSize = 10, TextColor = UiTokens.InkSoft,
-                    Text = NatureFacts.StatNames[i].ToUpperInvariant(),
+                    FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall, TextColor = UiTokens.InkSoft,
+                    Text = NatureFacts.StatNames[i],
                 };
-                _cells[i] = new Label { FontSize = 12, LineBreakMode = LineBreakMode.NoWrap };
-                var cell = new Border
-                {
-                    BackgroundColor = UiTokens.Paper,
-                    Stroke = UiTokens.ShellEdge,
-                    StrokeThickness = 1,
-                    StrokeShape = new RoundRectangle { CornerRadius = 5 },
-                    Padding = new Thickness(6, 2),
-                    Content = new VerticalStackLayout { Spacing = 0, Children = { caption, _cells[i] } },
-                };
+                _cells[i] = new Label { FontSize = UiTokens.TextBody, LineBreakMode = LineBreakMode.NoWrap };
+                // Plain cells: caption over value, no per-cell box (no cards in cards).
+                var cell = new VerticalStackLayout { Spacing = 0, Padding = new Thickness(2, 1), Children = { caption, _cells[i] } };
                 this.Add(cell, i % 3, i / 3);
             }
         }
@@ -359,7 +351,7 @@ public static class InfoKit
                 {
                     text.Spans.Add(new Span { Text = $"{old}→", TextColor = UiTokens.InkSoft });
                     text.Spans.Add(new Span { Text = $"{next}", TextColor = tone, FontAttributes = FontAttributes.Bold });
-                    text.Spans.Add(new Span { Text = d > 0 ? $" ▲{d}" : $" ▼{-d}", TextColor = tone, FontSize = 10 });
+                    text.Spans.Add(new Span { Text = d > 0 ? $" ▲{d}" : $" ▼{-d}", TextColor = tone, FontSize = UiTokens.TextSmall });
                 }
                 if (d == 0 && marker?.Invoke(i) is { } mark)
                     text.Spans.Add(new Span { Text = mark.Text, TextColor = mark.Color });
@@ -378,14 +370,14 @@ public static class InfoKit
         {
             ColumnSpacing = 6,
             RowSpacing = 2,
-            ColumnDefinitions = [new(new GridLength(30)), new(new GridLength(28)), new(GridLength.Star)],
+            ColumnDefinitions = [new(new GridLength(34)), new(new GridLength(30)), new(GridLength.Star)],
         };
         for (var i = 0; i < 7; i++) grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
         for (var i = 0; i < 6; i++)
         {
             var value = values[i];
-            grid.Add(new Label { Text = NatureFacts.StatNames[i].ToUpperInvariant(), FontFamily = DsChrome.PixelFont, FontSize = 10, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center }, 0, i);
-            grid.Add(new Label { Text = value.ToString(), FontSize = 11, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0, HorizontalTextAlignment = TextAlignment.End, VerticalTextAlignment = TextAlignment.Center }, 1, i);
+            grid.Add(new Label { Text = NatureFacts.StatNames[i], FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center }, 0, i);
+            grid.Add(new Label { Text = value.ToString(), FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall, TextColor = UiTokens.Ink0, HorizontalTextAlignment = TextAlignment.End, VerticalTextAlignment = TextAlignment.Center }, 1, i);
             var track = new Grid { HeightRequest = 7, VerticalOptions = LayoutOptions.Center };
             track.Add(new BoxView { Color = UiTokens.PaperShade, CornerRadius = 3 });
             // Bars scale to 180 (the practical ceiling; Blissey's 255 HP just fills it).
@@ -394,8 +386,8 @@ public static class InfoKit
             track.Add(bar);
             grid.Add(track, 2, i);
         }
-        grid.Add(new Label { Text = "BST", FontFamily = DsChrome.PixelFont, FontSize = 10, TextColor = UiTokens.InkSoft }, 0, 6);
-        grid.Add(new Label { Text = total.ToString(), FontSize = 11, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0, HorizontalTextAlignment = TextAlignment.End }, 1, 6);
+        grid.Add(new Label { Text = "BST", FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall, TextColor = UiTokens.InkSoft }, 0, 6);
+        grid.Add(new Label { Text = total.ToString(), FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall, TextColor = UiTokens.Ink0, HorizontalTextAlignment = TextAlignment.End }, 1, 6);
         return grid;
     }
 

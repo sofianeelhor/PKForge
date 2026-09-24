@@ -69,15 +69,15 @@ public sealed class DexEditorPage : IPadHandler
         _sprites = sprites;
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
 
-        _title = new Label { Text = "POKéDEX", TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 15 };
-        _progress = new Label { TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = 13, HorizontalTextAlignment = TextAlignment.End, HorizontalOptions = LayoutOptions.End };
-        _cursorInfo = new Label { TextColor = UiTokens.Maroon, FontFamily = DsChrome.PixelFont, FontSize = 13 };
+        _title = new Label { Text = "Pokédex", TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 15 };
+        _progress = new Label { TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextBody, HorizontalTextAlignment = TextAlignment.End, HorizontalOptions = LayoutOptions.End };
+        _cursorInfo = new Label { TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextBody };
 
         _canvas = new SKCanvasView { EnableTouchEvents = true, VerticalOptions = LayoutOptions.Fill };
         _canvas.PaintSurface += Paint;
         _canvas.Touch += Touch;
 
-        View hints = Kit.HintBar(
+        View hints = Kit.WindowHints(
             ("A", "Cycle", null),
             ("B", "Done", () => _ = CloseAsync()),
             ("LR", "Page", null),
@@ -237,10 +237,9 @@ public sealed class DexEditorPage : IPadHandler
 
             if (index == _cursor)
             {
-                using var gold = new SKPaint { Color = UiTokens.SkShinyGold, Style = SKPaintStyle.Stroke, StrokeWidth = 3.5f, IsAntialias = true };
-                canvas.DrawRoundRect(SKRect.Inflate(rect, 1.5f, 1.5f), 5, 5, gold);
-                PksmPaint.CenterText(canvas, $"#{id:000} {_data.SpeciesNames[id]}", rect.MidX, rect.Bottom - 8, font,
-                    SKColors.White, shadow, SKTextAlign.Center);
+                // The app's one grid selection (red corner brackets); the name lives in the
+                // info line below, not squeezed into the cell.
+                PksmPaint.Selection(canvas, rect);
             }
         }
     }
@@ -288,7 +287,7 @@ public sealed class DexEditorPage : IPadHandler
     {
         if (_staged.Count > 0)
         {
-            var choice = await PadMenu.ShowAsync(_host, "SAVE DEX CHANGES?",
+            var choice = await PadMenu.ShowAsync(_host, "Save dex changes?",
                 $"{_staged.Count} species changed.", "Save changes", "Discard changes", "Keep editing");
             if (choice == "Save changes") { await ApplyAndCloseAsync(); return; }
             if (choice == "Keep editing" || choice is null) return;
@@ -312,7 +311,7 @@ public sealed class DexEditorPage : IPadHandler
             {
                 // The write aborted (validation, storage, format refusal): keep the
                 // editor open with the staged changes instead of closing as if it worked.
-                _viewModel.Status = "DEX WRITE FAILED - CHANGES KEPT, CHECK STATUS";
+                _viewModel.Status = "Dex write failed - changes kept, check status";
                 return;
             }
         }
@@ -356,7 +355,7 @@ public sealed class DexEditorPage : IPadHandler
     {
         if (_gapsMode)
         {
-            var gapChoice = await PadMenu.ShowAsync(_host, "LIVING DEX GAPS",
+            var gapChoice = await PadMenu.ShowAsync(_host, "Living dex gaps",
                 $"{_missing.Count} species missing from storage. {_fillSelection.Count} selected.",
                 new PadOption($"Generate selected ({_fillSelection.Count})", IconPath: "create"),
                 new PadOption("Switch to dex editor", IconPath: "pokedex"),
@@ -369,7 +368,7 @@ public sealed class DexEditorPage : IPadHandler
             }
             if (gapChoice != $"Generate selected ({_fillSelection.Count})" || _fillSelection.Count == 0) return;
             var species = _fillSelection.OrderBy(x => x).ToList();
-            var overlay = LoadingOverlay.Show(_host, "GENERATING…", "The legalizer is building each mon offline.");
+            var overlay = LoadingOverlay.Show(_host, "Generating…", "The legalizer is building each mon offline.");
             try
             {
                 await _viewModel.RunMutationAsync(s => _legalizer.FillSpecies(s, species,
@@ -384,7 +383,7 @@ public sealed class DexEditorPage : IPadHandler
             return;
         }
 
-        var choice = await PadMenu.ShowAsync(_host, "DEX ACTIONS", null,
+        var choice = await PadMenu.ShowAsync(_host, "Dex actions", null,
             new PadOption("How to get this one", IconPath: "map"),
             new PadOption("Mark everything seen", IconPath: "selectall"),
             new PadOption("Complete the Pokédex", IconPath: "pokedex"),
@@ -442,7 +441,7 @@ public sealed class DexEditorPage : IPadHandler
 
     private void RefreshChrome()
     {
-        _title.Text = _gapsMode ? $"LIVING DEX GAPS · {_missing.Count} MISSING" : "POKéDEX";
+        _title.Text = _gapsMode ? $"Living dex gaps · {_missing.Count} missing" : "Pokédex";
         var seen = 0;
         var caught = 0;
         foreach (var id in _orderedIds)
@@ -452,8 +451,8 @@ public sealed class DexEditorPage : IPadHandler
             if (state.Caught) caught++;
         }
         _progress.Text = _gapsMode
-            ? $"{_fillSelection.Count} SELECTED · PAGE {_page + 1}/{PageCount}"
-            : $"SEEN {seen}/{_states.Count} · CAUGHT {caught}/{_states.Count} · {_staged.Count} STAGED · PAGE {_page + 1}/{PageCount}";
+            ? $"{_fillSelection.Count} selected · page {_page + 1}/{PageCount}"
+            : $"Seen {seen}/{_states.Count} · caught {caught}/{_states.Count} · {_staged.Count} staged · page {_page + 1}/{PageCount}";
 
         var absolute = _page * PageSize + _cursor;
         if (absolute < Count)
@@ -461,8 +460,8 @@ public sealed class DexEditorPage : IPadHandler
             var id = IdAt(_page, _cursor);
             var state = StateOf(id);
             _cursorInfo.Text = _gapsMode
-                ? $"#{id:000} {_data.SpeciesNames[id]} — {(_fillSelection.Contains(id) ? "SELECTED FOR GENERATION" : "NOT SELECTED")}"
-                : $"#{id:000} {_data.SpeciesNames[id]} — {(state.Caught ? "CAUGHT" : state.Seen ? "SEEN" : "UNSEEN")}";
+                ? $"#{id:000} {_data.SpeciesNames[id]} — {(_fillSelection.Contains(id) ? "selected for generation" : "not selected")}"
+                : $"#{id:000} {_data.SpeciesNames[id]} — {(state.Caught ? "caught" : state.Seen ? "seen" : "unseen")}";
         }
         else
         {

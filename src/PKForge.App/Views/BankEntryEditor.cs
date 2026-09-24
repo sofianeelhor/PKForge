@@ -31,16 +31,16 @@ public static class BankEntryEditor
         try
         {
             var bytes = bank.GetData(entry.Id);
-            session = engine.OpenEntitySession(bytes, entry.Info.Nickname);
+            session = engine.OpenEntitySession(bytes, entry.Info.Nickname, entry.Info.Format);
         }
         catch (Exception error)
         {
-            await EditorMenu.ShowAsync(host, "CAN'T EDIT", error.Message, "OK");
+            await EditorMenu.ShowAsync(host, "Can't edit", error.Message, "OK");
             return false;
         }
         if (session is null)
         {
-            await EditorMenu.ShowAsync(host, "CAN'T EDIT",
+            await EditorMenu.ShowAsync(host, "Can't edit",
                 "The stored bytes aren't a Pokémon PKForge can edit.", "OK");
             return false;
         }
@@ -54,14 +54,14 @@ public static class BankEntryEditor
             }
             catch (Exception error)
             {
-                await EditorMenu.ShowAsync(host, "EDIT ERROR", error.Message, "OK");
+                await EditorMenu.ShowAsync(host, "Edit error", error.Message, "OK");
                 return false;
             }
 
             var saved = await window.Completion;
             if (window.Failure is { } failure)
             {
-                await EditorMenu.ShowAsync(host, "EDIT ERROR", failure.Message, "OK");
+                await EditorMenu.ShowAsync(host, "Edit error", failure.Message, "OK");
                 return false;
             }
             return saved;
@@ -227,7 +227,7 @@ public static class BankEntryEditor
             };
             hero.SetColumn((View)hero.Children[1], 1);
 
-            var identity = new VerticalStackLayout { Spacing = 6 };
+            var identity = new VerticalStackLayout { Spacing = 3 };
             identity.Add(hero);
             AddRow(identity, "nickname", "NICKNAME", "rename", EditNicknameAsync);
             AddRow(identity, "species", "SPECIES", "pokedex", EditSpeciesAsync);
@@ -240,7 +240,7 @@ public static class BankEntryEditor
             AddRow(identity, "friendship", "FRIENDSHIP", "heart", EditFriendshipAsync);
             AddRow(identity, "ot", "TRAINER", "profile", EditOtAsync);
             AddRow(identity, "shiny", "SHINY", "shiny", ToggleShinyAsync);
-            var identityPanel = Kit.DevicePanel(identity, padding: 10);
+            View identityPanel = identity;
 
             // ── Stats panel: the IV · EV · value table plus the spread editors.
             var stats = new VerticalStackLayout { Spacing = 4 };
@@ -253,7 +253,7 @@ public static class BankEntryEditor
             stats.Add(new BoxView { HeightRequest = 6 });
             AddRow(stats, "ivs", classicTraining ? "DVS" : "IVS", "stats", EditIvsAsync);
             AddRow(stats, "evs", classicTraining ? "STAT EXP" : "EVS", "stats", EditEvsAsync);
-            var statsPanel = Kit.DevicePanel(stats, padding: 10);
+            View statsPanel = stats;
 
             // ── Quick actions: the little blue stack buttons on the summary surface.
             var quick = new HorizontalStackLayout
@@ -261,21 +261,21 @@ public static class BankEntryEditor
                 Spacing = 8,
                 Children =
                 {
-                    QuickButton(classicTraining ? "MAX DV" : "MAX IV", MaxIvsAsync),
-                    QuickButton(classicTraining ? "0 EXP" : "0 EV", ClearEvsAsync),
-                    QuickButton("LV 100", Level100Async),
-                    QuickButton("MAKE MINE", MakeMineAsync),
+                    QuickButton(classicTraining ? "Max DV" : "Max IV", MaxIvsAsync),
+                    QuickButton(classicTraining ? "0 Exp" : "0 EV", ClearEvsAsync),
+                    QuickButton("Lv 100", Level100Async),
+                    QuickButton("Make mine", MakeMineAsync),
                     QuickButton("QR", QrAsync),
                 },
             };
 
-            var surface = new Border
+            // The window is the panel: its sections are titled groups split by a hairline,
+            // not panels nested inside a panel inside the window.
+            var surface = new VerticalStackLayout
             {
-                BackgroundColor = UiTokens.SummaryBg,
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                Padding = new Thickness(10),
-                Content = new VerticalStackLayout { Spacing = 10, Children = { identityPanel, statsPanel, quick } },
+                Spacing = UiTokens.Space2,
+                Padding = new Thickness(0, 0, 4, 0),
+                Children = { identityPanel, Kit.Divider(2), Kit.SectionTitle("Stats"), statsPanel, quick },
             };
             _scroll.Content = surface;
 
@@ -285,28 +285,42 @@ public static class BankEntryEditor
                 HorizontalOptions = LayoutOptions.Center,
                 Children =
                 {
-                    ActionButton("MOVES", EditMovesAsync),
-                    ActionButton("MET / ORIGIN", EditMetAsync),
-                    ActionButton("POTENTIAL", EditPotentialAsync),
-                    ActionButton("AWARDS", EditAwardsAsync),
-                    ActionButton("LEGALIZE", LegalizeAsync),
-                    ActionButton("SAVE", SaveAsync, UiTokens.Green),
+                    ActionButton("Moves", EditMovesAsync, icon: "moves"),
+                    ActionButton("Met / origin", EditMetAsync, icon: "map"),
+                    ActionButton("Potential", EditPotentialAsync, icon: "stats"),
+                    ActionButton("Awards", EditAwardsAsync, icon: "ribbons"),
+                    ActionButton("Legalize", LegalizeAsync, icon: "fix"),
+                    ActionButton("Save", SaveAsync, UiTokens.Green, "confirm"),
+                },
+            };
+            // Per-format fields ride a second row so the window keeps its width on phones.
+            var fieldActions = new HorizontalStackLayout
+            {
+                Spacing = 8,
+                HorizontalOptions = LayoutOptions.Center,
+                Children =
+                {
+                    ActionButton("Form & shiny", () => SubEditorAsync(MonFieldsEditor.FormAndShinyAsync), icon: "shiny"),
+                    ActionButton("Trainers", () => SubEditorAsync(MonFieldsEditor.TrainersAsync), icon: "trainer"),
+                    ActionButton("Tech records", () => SubEditorAsync(MonFieldsEditor.TechRecordsAsync), icon: "moves"),
                 },
             };
 
             var content = new Grid
             {
                 RowSpacing = 8,
-                RowDefinitions = [new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto)],
+                RowDefinitions = [new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto)],
             };
-            content.Add(Kit.HeaderBar("POKéMON INFORMATION"));
+            content.Add(Kit.HeaderBar("Pokémon information"));
             content.Add(_scroll);
             Grid.SetRow(_scroll, 1);
             content.Add(actions);
             Grid.SetRow(actions, 2);
-            var hints = Kit.HintBar(("A", "OPEN", null), ("B", "CLOSE", RequestClose));
+            content.Add(fieldActions);
+            Grid.SetRow(fieldActions, 3);
+            var hints = Kit.WindowHints(("A", "OPEN", null), ("B", "Close", RequestClose));
             content.Add(hints);
-            Grid.SetRow(hints, 3);
+            Grid.SetRow(hints, 4);
 
             var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 620, scroll: false);
             _overlay = Kit.AttachOverlay(host, window, RequestClose);
@@ -319,7 +333,7 @@ public static class BankEntryEditor
         private static Label PixelLine() => new()
         {
             FontFamily = Font,
-            FontSize = 13,
+            FontSize = UiTokens.TextBody,
             TextColor = UiTokens.Ink1,
             VerticalTextAlignment = TextAlignment.Center,
         };
@@ -335,18 +349,17 @@ public static class BankEntryEditor
                 {
                     Text = text,
                     FontFamily = Font,
-                    FontSize = 11,
-                    FontAttributes = FontAttributes.Bold,
-                    TextColor = UiTokens.Indigo,
+                    FontSize = UiTokens.TextSmall,
+                    TextColor = UiTokens.InkSoft,
                     VerticalTextAlignment = TextAlignment.Center,
                 };
                 grid.Add(label);
                 Grid.SetColumn(label, column);
             }
-            Cap("STAT", 0);
+            Cap("Stat", 0);
             Cap(classicTraining ? "DV" : "IV", 1);
-            Cap(classicTraining ? "EXP" : "EV", 2);
-            Cap("VALUE", 3);
+            Cap(classicTraining ? "Exp" : "EV", 2);
+            Cap("Value", 3);
             return grid;
         }
 
@@ -363,7 +376,7 @@ public static class BankEntryEditor
         {
             var button = Kit.MiniCapsule(label, UiTokens.MenuBlue);
             button.FontFamily = Font;
-            button.FontSize = 12;
+            button.FontSize = UiTokens.TextSmall;
             button.WidthRequest = 86;
             var frame = new FocusFrame(button);
             button.Clicked += (_, _) => RunFrom(frame, activate);
@@ -371,9 +384,9 @@ public static class BankEntryEditor
             return frame;
         }
 
-        private View ActionButton(string label, Func<Task> activate, Color? accent = null)
+        private View ActionButton(string label, Func<Task> activate, Color? accent = null, string? icon = null)
         {
-            var button = Kit.Capsule(label, accent ?? UiTokens.Cyan, primary: accent is not null);
+            var button = Kit.Capsule(label, accent ?? UiTokens.Cyan, primary: accent is not null, icon: icon);
             var frame = new FocusFrame(button);
             button.Clicked += (_, _) => RunFrom(frame, activate);
             _slots.Add((frame, frame, false, activate));
@@ -387,7 +400,7 @@ public static class BankEntryEditor
             var d = _detail;
             _nickname.Text = d.Nickname;
             _speciesLine.Text = NameOf(_data.SpeciesNames, d.Species);
-            _levelLine.Text = $"LV. {d.Level}";
+            _levelLine.Text = $"Lv. {d.Level}";
             _genderIcon.Source = PksmIcons.Source(d.Gender switch { 0 => "male", 1 => "female", _ => "genderless" });
             _shinyIcon.IsVisible = d.IsShiny;
 
@@ -407,10 +420,10 @@ public static class BankEntryEditor
             for (var i = 0; i < _statRows.Length; i++)
                 _statRows[i].Set(d.IVs[i], d.EVs[i], d.Stats is { } values && i < values.Count ? values[i] : null);
             var caps = _session.GetTrainingCaps();
-            _rows["ivs"].Value = $"TOTAL {d.IVs.Sum()}";
+            _rows["ivs"].Value = $"Total {d.IVs.Sum()}";
             _rows["evs"].Value = caps.EvMax == 65535
-                ? "MAX 65535 PER STAT"
-                : $"TOTAL {d.EVs.Sum()}/510";
+                ? "Max 65535 per stat"
+                : $"Total {d.EVs.Sum()}/510";
             _spriteView.InvalidateSurface();
         }
 
@@ -423,11 +436,11 @@ public static class BankEntryEditor
         {
             var canvas = args.Surface.Canvas;
             canvas.Clear(SKColors.Transparent);
-            var bitmap = _sprites.GetSprite(_detail.Species, 0, false);
+            var bitmap = _sprites.GetSprite(_detail.Look);
             if (bitmap is null)
             {
                 // Not decoded yet: show the resting-ball mark and warm the cache.
-                _sprites.Warm(_detail.Species, 0, false,
+                _sprites.Warm(_detail.Look,
                     () => MainThread.BeginInvokeOnMainThread(_spriteView.InvalidateSurface));
                 using var ball = new SKPaint { Color = UiTokens.SkEmptyMark, Style = SKPaintStyle.Stroke, StrokeWidth = 2f, IsAntialias = true };
                 var cx = args.Info.Width / 2f;
@@ -484,7 +497,7 @@ public static class BankEntryEditor
                 Close(false);
                 return;
             }
-            var discard = await EditorMenu.ConfirmAsync(_host, "DISCARD CHANGES?",
+            var discard = await EditorMenu.ConfirmAsync(_host, "Discard changes?",
                 "Leave without saving your edits back to the bank?", "Discard");
             if (discard) Close(false);
         }
@@ -535,7 +548,7 @@ public static class BankEntryEditor
 
         private async Task EditNicknameAsync()
         {
-            var text = await TextPopup.ShowAsync(_host, "NICKNAME", "Rename this Pokémon.");
+            var text = await TextPopup.ShowAsync(_host, "Nickname", "Rename this Pokémon.");
             if (!string.IsNullOrWhiteSpace(text)) { _session.ApplyEdit(0, 0, new EntityEdit(Nickname: text.Trim())); _dirty = true; }
         }
 
@@ -547,7 +560,7 @@ public static class BankEntryEditor
 
         private async Task EditLevelAsync()
         {
-            var lv = await StatsPopup.ShowSingleAsync(_host, "LEVEL", _detail.Level, 100);
+            var lv = await StatsPopup.ShowSingleAsync(_host, "Level", _detail.Level, 100);
             if (lv is { } v) { _session.ApplyEdit(0, 0, new EntityEdit(Level: Math.Max(1, v))); _dirty = true; }
         }
 
@@ -565,14 +578,14 @@ public static class BankEntryEditor
                     ? Enumerable.Range(0, _data.AbilityNames.Count).ToList()
                     : _session.GetAbilityChoices(_detail.Species, _detail.Form))
                 .Select(id => new PickItem(id, NameOf(_data.AbilityNames, id))).ToList();
-            var pick = await PickerMenu.ShowAsync(_host, "ABILITY", choices, _detail.Ability);
+            var pick = await PickerMenu.ShowAsync(_host, "Ability", choices, _detail.Ability);
             if (pick is not null)
             {
                 _session.ApplyEdit(0, 0, new EntityEdit(Ability: pick.Id));
                 var applied = _session.ReadEntity(0, 0).Ability;
                 _dirty = true;
                 if (applied != pick.Id)
-                    await EditorMenu.ShowAsync(_host, "ABILITY DID NOT STICK",
+                    await EditorMenu.ShowAsync(_host, "Ability did not stick",
                         $"Asked for {NameOf(_data.AbilityNames, pick.Id)}, the mon holds {NameOf(_data.AbilityNames, applied)}. " +
                         "Tell the developer: this is the diagnostic he asked for.", "OK");
             }
@@ -580,19 +593,19 @@ public static class BankEntryEditor
 
         private async Task EditItemAsync()
         {
-            var pick = await PickerMenu.ShowAsync(_host, "HELD ITEM", ItemIcons(_data.ItemNames), _detail.HeldItem);
+            var pick = await PickerMenu.ShowAsync(_host, "Held item", ItemIcons(_data.ItemNames), _detail.HeldItem);
             if (pick is not null) { _session.ApplyEdit(0, 0, new EntityEdit(HeldItem: pick.Id)); _dirty = true; }
         }
 
         private async Task EditBallAsync()
         {
-            var pick = await PickerMenu.ShowAsync(_host, "BALL", BallIcons(_data.BallNames), _detail.Ball);
+            var pick = await PickerMenu.ShowAsync(_host, "Ball", BallIcons(_data.BallNames), _detail.Ball);
             if (pick is not null) { _session.ApplyEdit(0, 0, new EntityEdit(Ball: pick.Id)); _dirty = true; }
         }
 
         private async Task EditGenderAsync()
         {
-            var g = await EditorMenu.ShowAsync(_host, "GENDER", null,
+            var g = await EditorMenu.ShowAsync(_host, "Gender", null,
                 new PadOption("Male", IconPath: "male"),
                 new PadOption("Female", IconPath: "female"),
                 new PadOption("Genderless", IconPath: "genderless"));
@@ -602,13 +615,13 @@ public static class BankEntryEditor
 
         private async Task EditFriendshipAsync()
         {
-            var f = await StatsPopup.ShowSingleAsync(_host, "FRIENDSHIP", _detail.Friendship, 255);
+            var f = await StatsPopup.ShowSingleAsync(_host, "Friendship", _detail.Friendship, 255);
             if (f is { } v) { _session.ApplyEdit(0, 0, new EntityEdit(Friendship: v)); _dirty = true; }
         }
 
         private async Task EditOtAsync()
         {
-            var text = await TextPopup.ShowAsync(_host, "ORIGINAL TRAINER", "The OT name shown on this Pokémon.");
+            var text = await TextPopup.ShowAsync(_host, "Original trainer", "The OT name shown on this Pokémon.");
             if (!string.IsNullOrWhiteSpace(text)) { _session.ApplyEdit(0, 0, new EntityEdit(OriginalTrainer: text.Trim())); _dirty = true; }
         }
 
@@ -657,12 +670,12 @@ public static class BankEntryEditor
             labels.AddRange(profiles.Select(p => $"{p.DisplayName} · {p.OriginalTrainer} · {p.TID}/{p.SID}"));
             if (labels.Count == 0)
             {
-                await EditorMenu.ShowAsync(_host, "MAKE MINE",
+                await EditorMenu.ShowAsync(_host, "Make mine",
                     "Open a game and save its trainer as a profile first.", "OK");
                 return;
             }
 
-            var choice = await PadMenu.ShowAsync(_host, "MAKE MINE", null, labels.ToArray());
+            var choice = await PadMenu.ShowAsync(_host, "Make mine", null, labels.ToArray());
             if (choice is null) return;
             var index = labels.IndexOf(choice);
             var profile = index == 0 && current is not null
@@ -671,7 +684,7 @@ public static class BankEntryEditor
             var outcome = _session.MakeMine(0, 0, profile);
             if (!outcome.Success)
             {
-                await EditorMenu.ShowAsync(_host, "MAKE MINE", outcome.Message, "OK");
+                await EditorMenu.ShowAsync(_host, "Make mine", outcome.Message, "OK");
                 return;
             }
 
@@ -699,7 +712,7 @@ public static class BankEntryEditor
         {
             string MoveName(int id) => id == 0 ? "(none)" : (uint)id < (uint)_data.MoveNames.Count ? _data.MoveNames[id] : $"#{id}";
             var current = new[] { _detail.Move1, _detail.Move2, _detail.Move3, _detail.Move4 };
-            var slot = await EditorMenu.ShowAsync(_host, "WHICH MOVE?", null,
+            var slot = await EditorMenu.ShowAsync(_host, "Which move?", null,
                 new PadOption($"Move 1 · {MoveName(current[0])}", "1", UiTokens.MenuBlue),
                 new PadOption($"Move 2 · {MoveName(current[1])}", "2", UiTokens.MenuBlue),
                 new PadOption($"Move 3 · {MoveName(current[2])}", "3", UiTokens.MenuBlue),
@@ -708,7 +721,7 @@ public static class BankEntryEditor
             var which = slot[5] - '1';
             if ((uint)which >= 4) return;
 
-            var pick = await PickerMenu.ShowAsync(_host, $"MOVE {which + 1}",
+            var pick = await PickerMenu.ShowAsync(_host, $"Move {which + 1}",
                 NameItems(_data.MoveNames, includeZero: true, zeroLabel: "(none)"), current[which]);
             if (pick is null) return;
             _session.ApplyEdit(0, 0, which switch
@@ -736,23 +749,28 @@ public static class BankEntryEditor
             if (await AwardsEditor.ShowAsync(_host, _session, 0, 0)) _dirty = true;
         }
 
+        private async Task SubEditorAsync(Func<Grid, ISaveEngineSession, int, int, Task<bool>> editor)
+        {
+            if (await editor(_host, _session, 0, 0)) _dirty = true;
+        }
+
         private async Task LegalizeAsync()
         {
             var legalizer = _legalizer;
             if (legalizer is null) return;
-            var overlay = LoadingOverlay.Show(_host, "LEGALIZING…", "Finding the closest real, legal version.");
+            var overlay = LoadingOverlay.Show(_host, "Legalizing…", "Finding the closest real, legal version.");
             try
             {
                 var outcome = await Task.Run(() => legalizer.LegalizeSlot(_session, 0, 0));
                 _dirty = true;
                 overlay.Close();
                 if (!outcome.Success)
-                    await EditorMenu.ShowAsync(_host, "LEGALIZE", outcome.Message, "OK");
+                    await EditorMenu.ShowAsync(_host, "Legalize", outcome.Message, "OK");
             }
             catch (Exception error)
             {
                 overlay.Close();
-                await EditorMenu.ShowAsync(_host, "LEGALIZE", error.Message, "OK");
+                await EditorMenu.ShowAsync(_host, "Legalize", error.Message, "OK");
             }
         }
 
@@ -761,11 +779,11 @@ public static class BankEntryEditor
             // Hardcore mode: the stored mon may be inspected here but never rewritten.
             if (HardcoreMode.Blocks(SaveAction.EditMon, out var status))
             {
-                await EditorMenu.ShowAsync(_host, "HARDCORE MODE", status, "OK");
+                await EditorMenu.ShowAsync(_host, "Hardcore mode", status, "OK");
                 return;
             }
             var export = _session.ExportSlot(0, 0);
-            var info = _engine.TryDescribeEntity(export.Data, _entry.Info.SourceName) ?? _entry.Info;
+            var info = _engine.TryDescribeEntity(export.Data, _entry.Info.SourceName, export.Format) ?? _entry.Info;
             _bank.Replace(_entry.Id, export.Data, info);
             Close(true);
         }
@@ -775,7 +793,7 @@ public static class BankEntryEditor
         /// <summary>PKF1 .pk QR: show this mon as a scannable code, or receive one in its place.</summary>
         private async Task QrAsync()
         {
-            var choice = await EditorMenu.ShowAsync(_host, "QR TRANSFER", null,
+            var choice = await EditorMenu.ShowAsync(_host, "QR transfer", null,
                 new PadOption("Show as .pk QR", IconPath: "qr"),
                 new PadOption("Scan a .pk QR", IconPath: "scan"));
             if (choice == "Show as .pk QR") await ShowEntityQrAsync();
@@ -786,7 +804,7 @@ public static class BankEntryEditor
         {
             var detail = _session.ReadEntity(0, 0);
             var export = _session.ExportSlot(0, 0);
-            await QrPopup.ShowBinaryAsync(_host, $"{detail.SpeciesName.ToUpperInvariant()} · .PK QR",
+            await QrPopup.ShowBinaryAsync(_host, $"{detail.SpeciesName} · .PK QR",
                 QrEntityService.MakePayload(export.Data, _entry.Info.Generation, detail.SpeciesName));
         }
 
@@ -799,7 +817,7 @@ public static class BankEntryEditor
             // A scan over this entry fabricates its replacement: creation, not a move.
             if (HardcoreMode.Blocks(SaveAction.CreateMon, out var status))
             {
-                await EditorMenu.ShowAsync(_host, "HARDCORE MODE", status, "OK");
+                await EditorMenu.ShowAsync(_host, "Hardcore mode", status, "OK");
                 return;
             }
             var received = await QrEntityService.ScanAsync(_host, _engine,
@@ -828,9 +846,9 @@ public static class BankEntryEditor
             public SummaryRow(string caption, string? icon)
             {
                 HeightRequest = 36;
-                ColumnDefinitions = [new(new GridLength(26)), new(new GridLength(26)), new(new GridLength(104)), new(GridLength.Star)];
+                ColumnDefinitions = [new(new GridLength(10)), new(new GridLength(28)), new(GridLength.Star), new(GridLength.Auto), new(new GridLength(10))];
                 _bg = new SKCanvasView { InputTransparent = true };
-                _bg.PaintSurface += (_, args) => DsFolderButton.DrawRow(args.Surface.Canvas, args.Info, _selected);
+                _bg.PaintSurface += (_, args) => DsFolderButton.DrawListRow(args.Surface.Canvas, args.Info, _selected);
                 _icon = new Image
                 {
                     WidthRequest = 18,
@@ -841,18 +859,18 @@ public static class BankEntryEditor
                 };
                 _caption = new Label
                 {
-                    Text = caption,
+                    Text = Kit.Tidy(caption),
                     FontFamily = Font,
-                    FontSize = 14,
-                    TextColor = UiTokens.Ink0,
+                    FontSize = UiTokens.TextLabel,
+                    TextColor = UiTokens.InkSoft,
                     VerticalTextAlignment = TextAlignment.Center,
                     LineBreakMode = LineBreakMode.TailTruncation,
                 };
                 _value = new Label
                 {
                     FontFamily = Font,
-                    FontSize = 13,
-                    TextColor = UiTokens.Ink1,
+                    FontSize = UiTokens.TextBody,
+                    TextColor = UiTokens.Ink0,
                     VerticalTextAlignment = TextAlignment.Center,
                     HorizontalTextAlignment = TextAlignment.End,
                     LineBreakMode = LineBreakMode.TailTruncation,
@@ -862,9 +880,10 @@ public static class BankEntryEditor
                 Children.Add(_icon);
                 Children.Add(_caption);
                 Children.Add(_value);
-                Grid.SetColumn(_icon, 2);
-                Grid.SetColumn(_caption, 3);
-                Grid.SetColumn(_value, 4);
+                Grid.SetColumnSpan(_bg, 5);
+                Grid.SetColumn(_icon, 1);
+                Grid.SetColumn(_caption, 2);
+                Grid.SetColumn(_value, 3);
 
                 var tap = new TapGestureRecognizer();
                 tap.Tapped += (_, _) => Activated?.Invoke();
@@ -886,7 +905,7 @@ public static class BankEntryEditor
             {
                 if (_selected == focused) return;
                 _selected = focused;
-                _caption.TextColor = focused ? UiTokens.IndigoInk : UiTokens.Ink0;
+                _caption.TextColor = focused ? UiTokens.IndigoInk : UiTokens.InkSoft;
                 _bg.InvalidateSurface();
             }
         }
@@ -913,7 +932,7 @@ public static class BankEntryEditor
                 {
                     Text = stat,
                     FontFamily = Font,
-                    FontSize = 13,
+                    FontSize = UiTokens.TextBody,
                     TextColor = UiTokens.Ink0,
                     VerticalTextAlignment = TextAlignment.Center,
                 };
@@ -932,7 +951,7 @@ public static class BankEntryEditor
             private static Label Number() => new()
             {
                 FontFamily = Font,
-                FontSize = 13,
+                FontSize = UiTokens.TextBody,
                 TextColor = UiTokens.Ink0,
                 HorizontalTextAlignment = TextAlignment.Center,
                 VerticalTextAlignment = TextAlignment.Center,
@@ -946,13 +965,13 @@ public static class BankEntryEditor
             }
         }
 
-        /// <summary>The gold focus ring around the capsules when the d-pad lands on them.</summary>
+        /// <summary>The pale focus rim around the capsules when the d-pad lands on them.</summary>
         private sealed class FocusFrame : Border, IFocusTarget
         {
             public FocusFrame(View content)
             {
                 BackgroundColor = Colors.Transparent;
-                StrokeShape = new RoundRectangle { CornerRadius = 9 };
+                StrokeShape = new RoundRectangle { CornerRadius = UiTokens.PanelRadius };
                 StrokeThickness = 2.5;
                 Stroke = Colors.Transparent;
                 Padding = new Thickness(2);
@@ -961,22 +980,9 @@ public static class BankEntryEditor
 
             public void SetFocused(bool focused)
             {
-                Stroke = focused ? UiTokens.SelectBorder : Colors.Transparent;
-                StrokeThickness = focused ? 4 : 2.5;
-                if (focused)
-                {
-                    Shadow = new Shadow
-                    {
-                        Brush = new SolidColorBrush(UiTokens.SelectBorder),
-                        Opacity = 0.65f,
-                        Radius = 6,
-                        Offset = new Point(0, 0),
-                    };
-                }
-                else
-                {
-                    ClearValue(VisualElement.ShadowProperty);
-                }
+                // The pale focus rim of the selected rows - never a cyan glow.
+                Stroke = focused ? UiTokens.Ink0 : Colors.Transparent;
+                StrokeThickness = focused ? 2 : 2.5;
             }
         }
     }

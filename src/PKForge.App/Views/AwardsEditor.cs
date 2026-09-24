@@ -28,11 +28,11 @@ public static class AwardsEditor
 
             if (options.Count == 0)
             {
-                await EditorMenu.ShowAsync(host, "AWARDS", "This Pokémon format has no Pokérus or ribbon data.", "OK");
+                await EditorMenu.ShowAsync(host, "Awards", "This Pokémon format has no Pokérus or ribbon data.", "OK");
                 return dirty;
             }
 
-            var choice = await EditorMenu.ShowAsync(host, "AWARDS", null, options.ToArray());
+            var choice = await EditorMenu.ShowAsync(host, "Awards", null, options.ToArray());
             if (choice is null) return dirty;
             if (choice.StartsWith("Pokérus", StringComparison.Ordinal))
             {
@@ -82,7 +82,7 @@ public static class AwardsEditor
                     : $"{r.Name} · {r.Value}/{r.MaxValue}",
                 $"ribbons/{r.Id.ToLowerInvariant()}.png"))
                 .ToList();
-            var picked = await PickerMenu.ShowAsync(host, "RIBBONS & MARKS", items);
+            var picked = await PickerMenu.ShowAsync(host, "Ribbons & marks", items);
             if (picked is null) return dirty;
 
             var ribbon = ribbons[picked.Id];
@@ -105,7 +105,7 @@ public static class AwardsEditor
         var info = session.GetAffixedRibbon(box, slot);
         var items = new List<PickItem> { new(-1, "□ No title", "ribbons/none.png") };
         items.AddRange(info.Choices.Select(r => new PickItem(r.Id, $"{(r.Id == info.SelectedIndex ? "✓" : "□")} {r.Name}", "ribbons/ribbon.png")));
-        var picked = await PickerMenu.ShowAsync(host, "SELECT TITLE", items);
+        var picked = await PickerMenu.ShowAsync(host, "Select title", items);
         if (picked is null || picked.Id == info.SelectedIndex) return false;
 
         session.SetAffixedRibbon(box, slot, picked.Id);

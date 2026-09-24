@@ -36,7 +36,8 @@ public static class PartyView
     private static readonly SKColor HpLabel = Pksm.LogoBlue;
     private static readonly SKColor Selected = Pksm.LogoCyan;
 
-    public static void Paint(SKCanvas canvas, SKImageInfo info, ISpriteService sprites, ISaveEngineSession? session, int selectedSlot, Action invalidate, (int Box, int Slot)? carrySource = null, float pulsePhase = 0f)
+    public static void Paint(SKCanvas canvas, SKImageInfo info, ISpriteService sprites, ISaveEngineSession? session, int selectedSlot, Action invalidate, (int Box, int Slot)? carrySource = null, float pulsePhase = 0f,
+        Func<int, bool>? isMarked = null, Func<int, bool?>? rangeMark = null)
     {
         // The navy world with its faint grid.
         using (var bg = new SKPaint { Color = Bg })
@@ -85,6 +86,12 @@ public static class PartyView
             Slot(canvas, pulsed, drawDetail, sprites, i == selectedSlot, invalidate,
                 lifted: heldHere, pulsePhase: pulsePhase,
                 ghost: previewPartner >= 0, ghostTag: isGhost);
+
+            // Multi-select: the same wash, green hand and check badge as the box grid.
+            if (isMarked is null) continue;
+            if (rangeMark?.Invoke(i) is { } mark) PksmPaint.RangeWash(canvas, rect, mark);
+            if (i == selectedSlot) PksmPaint.Selection(canvas, rect, Pksm.CursorGreen);
+            if (detail is { IsEmpty: false } && isMarked(i)) PksmPaint.MarkBadge(canvas, rect);
         }
     }
 
@@ -171,7 +178,7 @@ public static class PartyView
         }
 
         // Sprite free in the slot, vertically a touch above center.
-        var bitmap = sprites.GetSprite(detail.Species, detail.Form, detail.IsShiny);
+        var bitmap = sprites.GetSprite(detail.Look);
         if (bitmap is not null)
         {
             var max = r.Height - 12;
@@ -187,7 +194,7 @@ public static class PartyView
         }
         else
         {
-            sprites.Warm(detail.Species, detail.Form, detail.IsShiny, invalidate);
+            sprites.Warm(detail.Look, invalidate);
         }
 
         var tx = r.Left + r.Width * 0.32f;

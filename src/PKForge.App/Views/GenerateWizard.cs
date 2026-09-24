@@ -32,7 +32,7 @@ public static class GenerateWizard
         }
         if (formOptions.Count > 1)
         {
-            var chosen = await PadMenu.ShowAsync(host, $"FORM OF {species.Name.ToUpperInvariant()}",
+            var chosen = await PadMenu.ShowAsync(host, $"Form of {species.Name}",
                 "This species has multiple forms in this game.", [.. formOptions]);
             if (chosen is null) return null;
             var index = formOptions.FindIndex(o => o.Label == chosen);
@@ -43,26 +43,28 @@ public static class GenerateWizard
         return await ShowFeaturesFormAsync(host, data, session, species, form);
     }
 
-    /// <summary>Caches the bundled form sprite (b_479-5.png style) without blocking the UI thread.</summary>
+    /// <summary>
+    /// Caches the bundled sprite of exactly this form (SpriteCatalog naming: b_479-5.png,
+    /// b_25-8p.png, b_869-1-0.png, Gen 9 artwork) without blocking the UI thread. A form with
+    /// no art of its own gets no icon rather than its base form's: the label carries it.
+    /// </summary>
     private static async Task<string?> FormSpritePathAsync(int species, int form)
     {
-        var source = form == 0 ? $"sprites/b_{species}.png" : $"sprites/b_{species}-{form}.png";
-        var target = System.IO.Path.Combine(FileSystem.CacheDirectory, $"form-{species}-{form}.png");
+        var target = System.IO.Path.Combine(FileSystem.CacheDirectory, $"form-v2-{species}-{form}.png");
         if (File.Exists(target)) return target;
         try
         {
-            var asset = await TryOpenAsync(source);
-            if (asset is null)
+            foreach (var candidate in SpriteCatalog.BundledCandidates(new SpriteLook(species, form, false)))
             {
-                // Gen 9 forms: PKHeX ships artwork, not pixel sprites.
-                var artwork = form == 0 ? $"artwork/a_{species}.png" : $"artwork/a_{species}-{form}.png";
-                asset = await TryOpenAsync(artwork);
+                if (candidate.Fidelity is SpriteFidelity.BaseForm or SpriteFidelity.Unknown) break;
+                var asset = await TryOpenAsync(candidate.Path);
+                if (asset is null) continue;
+                await using (asset)
+                await using (var output = File.Create(target))
+                    await asset.CopyToAsync(output).ConfigureAwait(false);
+                return target;
             }
-            if (asset is null) return null;
-            await using (asset)
-            await using (var output = File.Create(target))
-                await asset.CopyToAsync(output).ConfigureAwait(false);
-            return target;
+            return null;
         }
         catch
         {
@@ -108,25 +110,26 @@ public static class GenerateWizard
         (View Row, Action Refresh) Chooser(string caption, Func<List<PickItem>> items, Func<int?> get, Action<int?> set,
             Func<int?, Task<PickItem?>>? open = null)
         {
-            var value = new Label { TextColor = UiTokens.Ink0, FontSize = 13, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center, Text = "auto" };
+            var value = new Label { TextColor = UiTokens.Ink0, FontSize = UiTokens.TextBody, FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center, Text = "auto" };
             void Refresh()
             {
                 var current = get();
                 value.Text = current is { } id ? items().FirstOrDefault(x => x.Id == id)?.Name ?? "auto" : "auto";
             }
+            // A picker row (flat stripe), not a bordered card.
             var chip = new Border
             {
-                BackgroundColor = UiTokens.ShellPress,
-                Stroke = UiTokens.ShellEdge,
+                BackgroundColor = UiTokens.RowStripe,
+                Stroke = Colors.Transparent,
                 StrokeThickness = 1.2,
-                StrokeShape = new RoundRectangle { CornerRadius = 8 },
+                StrokeShape = new RoundRectangle { CornerRadius = UiTokens.ControlRadius },
                 Padding = new Thickness(10, 6),
                 Content = new Grid
                 {
                     ColumnDefinitions = [new(new GridLength(80)), new(GridLength.Star), new(GridLength.Auto)],
                     Children =
                     {
-                        new Label { Text = caption, FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
+                        new Label { Text = Kit.Tidy(caption), FontSize = UiTokens.TextSmall, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
                         value,
                         PksmIcons.Icon("search", 16),
                     },
@@ -164,9 +167,9 @@ public static class GenerateWizard
         List<PickItem>? moveChoices = null;
         List<PickItem> MoveItems() => moveChoices ??= InfoPickers.MoveRows(data, session);
 
-        var (natureRow, _) = Chooser("NATURE", NatureItems, () => nature, v => nature = v, OpenNature);
+        var (natureRow, _) = Chooser("Nature", NatureItems, () => nature, v => nature = v, OpenNature);
         natureRow.IsVisible = session.Generation >= 3; // Gen 1/2 have no natures
-        var (abilityRow, _) = Chooser("ABILITY", AbilityItems, () => ability, v => ability = v);
+        var (abilityRow, _) = Chooser("Ability", AbilityItems, () => ability, v => ability = v);
         var (ballRow, _) = Chooser("BALL", BallItems, () => ball, v => ball = v);
         var moveRows = new View[4];
         for (var i = 0; i < 4; i++)
@@ -183,9 +186,9 @@ public static class GenerateWizard
                 pickedMoves.Count > 0 ? pickedMoves : null, form, Services.HaXMode.IsOn));
         }
 
-        var generate = Kit.Capsule("GENERATE", UiTokens.Green);
+        var generate = Kit.Capsule("Generate", UiTokens.Green, primary: true, icon: "create");
         generate.Clicked += (_, _) => Generate();
-        var cancel = Kit.Capsule("CANCEL", UiTokens.Ink1);
+        var cancel = Kit.Capsule("Cancel", UiTokens.Ink1, icon: "close");
         cancel.Clicked += (_, _) => Close(null);
 
         var levelRow = new HorizontalStackLayout
@@ -193,9 +196,9 @@ public static class GenerateWizard
             Spacing = 14,
             Children =
             {
-                new Label { Text = "LEVEL", FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
+                new Label { Text = "Level", FontSize = UiTokens.TextSmall, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
                 level,
-                new Label { Text = "SHINY", FontSize = 10, FontAttributes = FontAttributes.Bold, CharacterSpacing = 1, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
+                new Label { Text = "Shiny", FontSize = UiTokens.TextSmall, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
                 shiny,
             },
         };
@@ -205,8 +208,8 @@ public static class GenerateWizard
             Spacing = 8,
             Children =
             {
-                Kit.HeaderBar($"STEP 2 · {species.Name.ToUpperInvariant()}"),
-                new Label { Text = "Everything left on \"auto\" is chosen by the legalizer to guarantee a legal Pokémon.", TextColor = UiTokens.InkSoft, FontSize = 11, LineBreakMode = LineBreakMode.WordWrap },
+                Kit.HeaderBar($"Step 2 · {species.Name}"),
+                new Label { Text = "Everything left on \"auto\" is chosen by the legalizer to guarantee a legal Pokémon.", TextColor = UiTokens.InkSoft, FontSize = UiTokens.TextSmall, LineBreakMode = LineBreakMode.WordWrap },
                 levelRow, natureRow, abilityRow, ballRow,
                 moveRows[0], moveRows[1], moveRows[2], moveRows[3],
                 new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { cancel, generate } },

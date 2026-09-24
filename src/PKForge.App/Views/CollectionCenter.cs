@@ -27,7 +27,7 @@ public static class CollectionCenter
         {
             var (path, title) = trail.Peek();
             IReadOnlyList<CommunityNode> nodes;
-            var loading = LoadingOverlay.Show(host, "COLLECTION CENTER",
+            var loading = LoadingOverlay.Show(host, "Collection center",
                 "Fetching the community shelf from RoC's PC. Visited folders are kept offline.");
             try
             {
@@ -40,7 +40,7 @@ public static class CollectionCenter
             catch (Exception error)
             {
                 loading.Close();
-                await PadMenu.ShowAsync(host, "COLLECTION CENTER", error.Message, "OK");
+                await PadMenu.ShowAsync(host, "Collection center", error.Message, "OK");
                 return;
             }
             finally
@@ -60,13 +60,13 @@ public static class CollectionCenter
 
             if (rows.Count == 0)
             {
-                await PadMenu.ShowAsync(host, title.ToUpperInvariant(),
+                await PadMenu.ShowAsync(host, title,
                     files.Count > 0 ? HardcoreMode.StatusFor(SaveAction.CreateMon) : "This folder holds nothing usable.", "OK");
                 trail.Pop();
                 continue;
             }
 
-            var picked = await PickerMenu.ShowAsync(host, title.ToUpperInvariant(), rows);
+            var picked = await PickerMenu.ShowAsync(host, title, rows);
             if (picked is null)
             {
                 trail.Pop(); // B climbs back one shelf; leaving the root closes the center
@@ -93,16 +93,16 @@ public static class CollectionCenter
     {
         if (HardcoreMode.Blocks(SaveAction.CreateMon, out var hardcoreStatus))
         {
-            await PadMenu.ShowAsync(host, "HARDCORE MODE", hardcoreStatus, "OK");
+            await PadMenu.ShowAsync(host, "Hardcore mode", hardcoreStatus, "OK");
             return false;
         }
         var boxes = (files.Count + FileBankService.SlotsPerBox - 1) / FileBankService.SlotsPerBox;
-        var confirmed = await PadMenu.ConfirmAsync(host, "DEPOSIT IN THE BANK",
+        var confirmed = await PadMenu.ConfirmAsync(host, "Deposit in the bank",
             $"\"{boxName}\" holds {files.Count} Pokémon. They will arrive in {(boxes == 1 ? "a fresh Bank box" : $"{boxes} fresh Bank boxes")}.",
             "Deposit");
         if (!confirmed) return false;
 
-        var overlay = LoadingOverlay.Show(host, "DEPOSITING…",
+        var overlay = LoadingOverlay.Show(host, "Depositing…",
             $"Downloading {boxName} into your Bank. Cancelling keeps what already arrived.");
         var deposited = 0;
         var skipped = 0;
@@ -123,7 +123,7 @@ public static class CollectionCenter
                 catch (OperationCanceledException) { throw; }
                 catch { skipped++; continue; }
 
-                var info = engine.TryDescribeEntity(data, boxName);
+                var info = engine.TryDescribeEntity(data, boxName, files[i].Name); // the extension names the format
                 if (info is null) { skipped++; continue; }
 
                 if (slot == FileBankService.SlotsPerBox)
@@ -150,7 +150,7 @@ public static class CollectionCenter
         var summary = deposited == 0
             ? "Nothing could be deposited - no file in that folder was a readable Pokémon."
             : $"{deposited} Pokémon arrived in the Bank{(skipped > 0 ? $" ({skipped} could not be read and were skipped)" : "")}.";
-        await PadMenu.ShowAsync(host, "COLLECTION CENTER", summary, "OK");
+        await PadMenu.ShowAsync(host, "Collection center", summary, "OK");
         return deposited > 0;
     }
 }

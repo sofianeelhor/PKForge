@@ -33,26 +33,23 @@ public sealed class HomePage : ContentPage, IPadHandler
         // GAMES section: the cartridge shelf (reused), labelled DS-style.
         var gamesLabel = new Label
         {
-            Text = "Games", FontFamily = DsChrome.PixelFont, FontSize = 14,
-            TextColor = UiTokens.Ink1, VerticalOptions = LayoutOptions.Center,
+            Text = "Games", FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextTitle,
+            TextColor = UiTokens.Ink0, VerticalOptions = LayoutOptions.Center,
         };
         var filterCaption = new Label
         {
-            FontFamily = DsChrome.PixelFont, FontSize = 12, FontAttributes = FontAttributes.Bold,
+            FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextLabel,
             TextColor = UiTokens.Ink0, VerticalOptions = LayoutOptions.Center,
         };
         filterCaption.SetBinding(Label.TextProperty, new Binding("Caption",
-            source: _viewModel.Filter, stringFormat: "FILTER: {0}"));
-        var filterChip = new Border
-        {
-            BackgroundColor = UiTokens.ShellPress,
-            Stroke = UiTokens.ShellEdge,
-            StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 6 },
-            Padding = new Thickness(9, 3),
-            Content = filterCaption,
-            HorizontalOptions = LayoutOptions.End,
-        };
+            source: _viewModel.Filter, stringFormat: "Filter · {0}"));
+        // A menu button (the summary's resting tab), not an outlined pill.
+        var filterChip = Kit.Tab("Filter");
+        filterChip.Content = filterCaption;
+        Kit.SetTab(filterChip, false);
+        filterCaption.TextColor = UiTokens.Ink0;
+        filterChip.Padding = new Thickness(12, 4);
+        filterChip.HorizontalOptions = LayoutOptions.End;
         var filterTap = new TapGestureRecognizer();
         filterTap.Tapped += (_, _) => _ = ShowFilterMenuAsync();
         filterChip.GestureRecognizers.Add(filterTap);
@@ -87,20 +84,22 @@ public sealed class HomePage : ContentPage, IPadHandler
 
         // The three destinations as PKSM tiles with bundled pixel icons.
         var bank = new DsCard("bank", "Bank") { Tapped = () => _ = PushAsync<BankPage>() };
+        var autopilot = new DsCard("pokedex", "Dex Autopilot") { Tapped = () => _ = OpenAutopilotAsync() };
         var park = new DsCard("park", "Poképark") { Tapped = () => _ = PushParkAsync() };
         var events = new DsCard("events", "Events") { Tapped = () => _ = ShowEventsMenuAsync() };
         var settings = new DsCard("settings", "Settings") { Tapped = () => _ = ShowSettingsAsync() };
-        _cards = [bank, park, events, settings];
+        _cards = [bank, autopilot, park, events, settings];
         foreach (var card in _cards) BlockNativeFocus(card);
         var cards = new Grid
         {
             ColumnSpacing = 10,
-            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Star), new(GridLength.Star), new(GridLength.Star)],
-            Children = { bank, park, events, settings },
+            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Star), new(GridLength.Star), new(GridLength.Star), new(GridLength.Star)],
+            Children = { bank, autopilot, park, events, settings },
         };
-        Grid.SetColumn(park, 1);
-        Grid.SetColumn(events, 2);
-        Grid.SetColumn(settings, 3);
+        Grid.SetColumn(autopilot, 1);
+        Grid.SetColumn(park, 2);
+        Grid.SetColumn(events, 3);
+        Grid.SetColumn(settings, 4);
 
         var body = new Grid
         {
@@ -203,10 +202,15 @@ public sealed class HomePage : ContentPage, IPadHandler
     private AvailableAppUpdate? _pendingAuthorizedUpdate;
 
     /// <summary>The Thor's lower screen is on from launch - the app *is* dual-screen.</summary>
+    private SecondScreenClaim? _secondClaim;
+
     protected override void OnAppearing()
     {
         base.OnAppearing();
         _isAppearing = true;
+        // The lower screen shows the shelf's highlighted game while Home is in front.
+        _secondClaim ??= IPlatformApplication.Current?.Services.GetService<SecondScreenState>()?.Routes.CreateClaim(SecondScreenOwner.Home);
+        _secondClaim?.Activate();
         if (!_resumeSubscribed)
         {
             App.Resumed += OnAppResumed;
@@ -296,6 +300,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     {
         base.OnDisappearing();
         _isAppearing = false;
+        _secondClaim?.Release();
         if (_resumeSubscribed)
         {
             App.Resumed -= OnAppResumed;
@@ -388,7 +393,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     /// or plain alphabetical.</summary>
     private async Task ShowFilterMenuAsync()
     {
-        var choice = await PadMenu.ShowAsync(_hostGrid, "FILTER GAMES", null,
+        var choice = await PadMenu.ShowAsync(_hostGrid, "Filter games", null,
             new PadOption("All games", IconPath: "all"),
             new PadOption("Release order", IconPath: "calendar"),
             new PadOption("Alphabetical (A-Z)", IconPath: "alpha"),
@@ -408,17 +413,17 @@ public sealed class HomePage : ContentPage, IPadHandler
             new PadOption("Gen IX", IconPath: "generation"));
         var (key, caption) = choice switch
         {
-            "All games" => ("all", "ALL"),
-            "Release order" => ("release", "RELEASE"),
+            "All games" => ("all", "All"),
+            "Release order" => ("release", "Release"),
             "Alphabetical (A-Z)" => ("az", "A-Z"),
-            "Game Boy (Gen I-II)" => ("gb", "GAME BOY"),
+            "Game Boy (Gen I-II)" => ("gb", "Game Boy"),
             "GBA (Gen III)" => ("gba", "GBA"),
             "DS (Gen IV-V)" => ("ds", "DS"),
             "3DS (Gen VI-VII)" => ("3ds", "3DS"),
-            "Switch (Gen VII-IX)" => ("switch", "SWITCH"),
+            "Switch (Gen VII-IX)" => ("switch", "Switch"),
             { } gen when gen is not null && gen.StartsWith("Gen ", StringComparison.Ordinal) && int.TryParse(gen[4..], out var n)
-                => ($"gen{n}", $"GEN {gen[4..]}"),
-            _ => ("all", "ALL"),
+                => ($"gen{n}", $"Gen {gen[4..]}"),
+            _ => ("all", "All"),
         };
         _viewModel.ApplyFilter(key, caption);
         // Groups were replaced wholesale: re-run selection so a cartridge is highlighted.
@@ -443,7 +448,7 @@ public sealed class HomePage : ContentPage, IPadHandler
 
     private Task<DetectedSave?> ChooseSaveAsync(SaveCard card, string message) =>
         SavePickerSheet.ChooseFromTileAsync(_hostGrid, card.Saves,
-            $"{card.DisplayName.ToUpperInvariant()} · {card.SaveCount} SAVES", message);
+            $"{card.DisplayName} · {card.SaveCount} saves", message);
 
     /// <summary>
     /// First open of a save whose editions share one format (FireRed/LeafGreen, Ruby/Sapphire,
@@ -462,7 +467,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         var editions = SaveIdentityRules.ChoicesFor(guess.Family, guess.Label).Where(c => !c.IsHack).ToArray();
         var options = editions.Select(c => new PadOption(c.Label, IconPath: "game"))
             .Append(new PadOption(later, IconPath: "close")).ToArray();
-        var choice = await PadMenu.ShowAsync(_hostGrid, "WHICH VERSION IS THIS?",
+        var choice = await PadMenu.ShowAsync(_hostGrid, "Which version is this?",
             "Both versions write the same save file, so PKForge cannot tell them apart. " +
             "Pick yours once; you can change it later from the save's menu (long-press).", options);
         if (choice is null) return false;
@@ -483,7 +488,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     {
         while (true)
         {
-            var platform = await PadMenu.ShowAsync(_hostGrid, "LINK A STORAGE UNIT", "Choose a platform to see its emulators.",
+            var platform = await PadMenu.ShowAsync(_hostGrid, "Link a storage unit", "Choose a platform to see its emulators.",
                 new PadOption("Game Boy / Game Boy Color", IconPath: "platform-gb"),
                 new PadOption("Game Boy Advance", IconPath: "platform-gba"),
                 new PadOption("Nintendo DS", IconPath: "platform-ds"),
@@ -514,20 +519,26 @@ public sealed class HomePage : ContentPage, IPadHandler
                     new PadOption("RetroArch", IconPath: "retroarch"),
                 },
                 "GameCube" => new[] { new PadOption("Dolphin", IconPath: "dolphin") },
-                "Nintendo 3DS" => new[] { new PadOption("Azahar", IconPath: "azahar") },
+                "Nintendo 3DS" => new[]
+                {
+                    new PadOption("Azahar / Lime3DS", IconPath: "azahar"),
+                    new PadOption("Citra MMJ", IconPath: "azahar"),
+                },
                 _ => new[] { new PadOption("Eden", IconPath: "eden") },
             };
-            var choice = await PadMenu.ShowAsync(_hostGrid, platform.ToUpperInvariant(), null, options);
+            var choice = await PadMenu.ShowAsync(_hostGrid, platform, null, options);
             if (choice is null) continue;
             var guidance = choice switch
             {
                 "Dolphin" => "Save in game and stop emulation before editing Colosseum or XD. Select Dolphin's GC folder, a region folder, or Card A / Card B containing .gci saves. For .raw memory cards, export the game as GCI with Dolphin's Memory Card Manager, or configure that card slot as GCI Folder. After editing, start the game normally; loading an old save state can undo your edits.",
                 "DraStic" => "Save in game and close DraStic. Select its backup folder containing .dsv battery saves, or the DraStic data folder. Save states are not supported. Restart the game normally after editing.",
                 "Pizza Boy A (GBA)" or "Pizza Boy C (GB/GBC)" => "Save in game and close Pizza Boy. Select the folder containing its battery saves (.sav), not save states. If Android hides the folder, export the battery save in Pizza Boy and link that export. Import the edited export back into Pizza Boy, then restart the game normally.",
-                "Azahar" or "Eden" => "Save in game and close the emulator. Select its files root containing the emulated storage. Restart the game normally after editing.",
+                "Azahar / Lime3DS" => "Save in game and close the emulator. Select the user folder you chose in its setup (the one containing sdmc), or sdmc itself. Restart the game normally after editing.",
+                "Citra MMJ" => "Save in game and close Citra MMJ. In the file picker open the Citra MMJ entry (or Android/data/org.citra.emu/files) and select citra-emu, or /citra-emu on older Android. Restart the game normally after editing.",
+                "Eden" => "Save in game and close the emulator. Select its files root containing the emulated storage. Restart the game normally after editing.",
                 _ => "Save in game and close the emulator. Select its saves folder (or the folder containing your battery saves). Save states are not supported. Restart the game normally after editing.",
             };
-            var proceed = await PadMenu.ShowAsync(_hostGrid, $"LINK {choice.ToUpperInvariant()}",
+            var proceed = await PadMenu.ShowAsync(_hostGrid, $"Link {choice}",
                 guidance + " If Android does not offer access to the folder, use Single save file with an exported save.",
                 new PadOption("Choose folder", IconPath: "folder"), new PadOption("Back", IconPath: "back"));
             if (proceed != "Choose folder") continue;
@@ -536,7 +547,8 @@ public sealed class HomePage : ContentPage, IPadHandler
                 case "RetroArch": await _viewModel.AddRetroArchCommand.ExecuteAsync(null); break;
                 case "melonDS": await _viewModel.AddMelonDsCommand.ExecuteAsync(null); break;
                 case "Linkboy": await _viewModel.AddLinkboyCommand.ExecuteAsync(null); break;
-                case "Azahar": await _viewModel.AddAzaharCommand.ExecuteAsync(null); break;
+                case "Azahar / Lime3DS": await _viewModel.AddAzaharCommand.ExecuteAsync(null); break;
+                case "Citra MMJ": await _viewModel.AddCitraMmjCommand.ExecuteAsync(null); break;
                 case "Eden": await _viewModel.AddEdenCommand.ExecuteAsync(null); break;
                 case "Dolphin": await _viewModel.AddDolphinCommand.ExecuteAsync(null); break;
                 case "DraStic": await _viewModel.AddDraSticCommand.ExecuteAsync(null); break;
@@ -567,7 +579,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             new PadOption("Misc", IconPath: "gears"),
             new PadOption("Quit PKForge", IconPath: "quit"),
         ]);
-        var choice = await PadMenu.ShowAsync(_hostGrid, "SETTINGS", null, [.. options]);
+        var choice = await PadMenu.ShowAsync(_hostGrid, "Settings", null, [.. options]);
         if (choice == hiddenOption) { await ShowHiddenSavesAsync(); return; }
         switch (choice)
         {
@@ -580,7 +592,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             case "Music": await ShowMusicAsync(); break;
             case "Misc": await ShowMiscAsync(); break;
             case "Quit PKForge":
-                if (await PadMenu.ConfirmAsync(_hostGrid, "QUIT PKFORGE?", "Unsaved edits in open menus are already backed up per write.", "Quit"))
+                if (await PadMenu.ConfirmAsync(_hostGrid, "Quit PKForge?", "Unsaved edits in open menus are already backed up per write.", "Quit"))
                     Microsoft.Maui.Controls.Application.Current?.Quit();
                 break;
         }
@@ -591,7 +603,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     {
         while (_viewModel.HiddenSaves is { Count: > 0 } hidden)
         {
-            var save = await SavePickerSheet.ChooseFromTileAsync(_hostGrid, hidden, "HIDDEN SAVES",
+            var save = await SavePickerSheet.ChooseFromTileAsync(_hostGrid, hidden, "Hidden saves",
                 "Pick a save to show it on Home and in save pickers again.", allowSingle: true);
             if (save is null) return;
             var current = _viewModel.Identities.Get(save.DocumentId) ?? new SaveIdentity(save.DocumentId);
@@ -604,7 +616,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         EmulatorKind.RetroArch => "retroarch",
         EmulatorKind.MelonDS => "melonds",
         EmulatorKind.Linkboy => "linkboy",
-        EmulatorKind.Azahar => "azahar",
+        EmulatorKind.Azahar or EmulatorKind.CitraMmj => "azahar",
         EmulatorKind.Eden => "eden",
         EmulatorKind.Dolphin => "dolphin",
         EmulatorKind.DraStic => "drastic",
@@ -622,17 +634,17 @@ public sealed class HomePage : ContentPage, IPadHandler
         }
 
         var options = roots
-            .Select(root => new PadOption($"Unlink {root.Kind} · {root.DisplayName}", IconPath: IconFor(root.Kind)))
+            .Select(root => new PadOption($"Unlink {SaveDescriptions.EmulatorName(root.Kind)} · {root.DisplayName}", IconPath: IconFor(root.Kind)))
             .Append(new PadOption("Unlink all storage units", IconPath: "unlink"))
             .Append(new PadOption("Cancel", IconPath: "close"))
             .ToArray();
-        var choice = await PadMenu.ShowAsync(_hostGrid, "LINKED STORAGE", "Remove a linked emulator folder without resetting the app.", options);
+        var choice = await PadMenu.ShowAsync(_hostGrid, "Linked storage", "Remove a linked emulator folder without resetting the app.", options);
         if (choice is null or "Cancel") return;
 
         var store = IPlatformApplication.Current!.Services.GetRequiredService<IWatchedRootStore>();
         if (choice == "Unlink all storage units")
         {
-            var confirmedAll = await PadMenu.ConfirmAsync(_hostGrid, "UNLINK ALL STORAGE?",
+            var confirmedAll = await PadMenu.ConfirmAsync(_hostGrid, "Unlink all storage?",
                 "Every linked emulator folder will be removed from PKForge. Your files stay on the device.", "Unlink all");
             if (!confirmedAll) return;
             foreach (var root in roots)
@@ -644,11 +656,11 @@ public sealed class HomePage : ContentPage, IPadHandler
             var index = Array.FindIndex(options, option => option.Label == choice);
             if (index < 0 || index >= roots.Count) return;
             var root = roots[index];
-            var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "UNLINK STORAGE?",
-                $"Remove {root.Kind} · {root.DisplayName} from PKForge? Your files stay on the device.", "Unlink");
+            var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Unlink storage?",
+                $"Remove {SaveDescriptions.EmulatorName(root.Kind)} · {root.DisplayName} from PKForge? Your files stay on the device.", "Unlink");
             if (!confirmed) return;
             store.RemoveRoot(root);
-            _viewModel.Status = $"{root.Kind} unlinked.";
+            _viewModel.Status = $"{SaveDescriptions.EmulatorName(root.Kind)} unlinked.";
         }
 
         await _viewModel.RescanCommand.ExecuteAsync(null);
@@ -705,7 +717,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     private async Task InstallUpdateAsync(AvailableAppUpdate update)
     {
         var service = IPlatformApplication.Current!.Services.GetRequiredService<AppUpdateService>();
-        var overlay = LoadingOverlay.Show(_hostGrid, "DOWNLOADING THE UPDATE!",
+        var overlay = LoadingOverlay.Show(_hostGrid, "Downloading the update!",
             $"PKForge {update.Version} is on its way. Android will confirm the installation.");
         AppUpdateInstallResult result;
         try
@@ -725,7 +737,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         {
             Android.Util.Log.Error("PKForgeUpdate", $"Download/install failed: {error}");
             _viewModel.Status = $"Update failed: {error.Message}";
-            var openRelease = await PadMenu.ConfirmAsync(_hostGrid, "OPEN THE RELEASE PAGE?",
+            var openRelease = await PadMenu.ConfirmAsync(_hostGrid, "Open the release page?",
                 "The in-app installer could not finish. The GitHub release page has the same APK.", "Open");
             if (openRelease)
                 await Launcher.OpenAsync(update.ReleaseUrl);
@@ -771,7 +783,7 @@ public sealed class HomePage : ContentPage, IPadHandler
                 : $"Library: {music.Library.Count} track(s)";
             if (androidMusic?.LastError is { } err)
                 playing += $"\nLast error: {err}";
-            var choice = await PadMenu.ShowAsync(_hostGrid, "BACKGROUND MUSIC", playing,
+            var choice = await PadMenu.ShowAsync(_hostGrid, "Background music", playing,
                 new PadOption(music.IsPlaying ? "Pause" : "Play", IconPath: music.IsPlaying ? "pause" : "play"),
                 new PadOption("Skip to next track", IconPath: "skip"),
                 new PadOption($"Add music files ({music.Library.Count})", IconPath: "folder"),
@@ -794,7 +806,7 @@ public sealed class HomePage : ContentPage, IPadHandler
                     break;
                 }
                 case "Clear library":
-                    var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "CLEAR MUSIC LIBRARY?",
+                    var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Clear music library?",
                         "Removes every track. Your audio files on storage are untouched.", "Clear");
                     if (confirmed) music.Clear();
                     break;
@@ -814,7 +826,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     private async Task ShowMiscAsync()
     {
         var trainerProfiles = IPlatformApplication.Current!.Services.GetRequiredService<TrainerProfileStore>();
-        var choice = await PadMenu.ShowAsync(_hostGrid, "MISC", null,
+        var choice = await PadMenu.ShowAsync(_hostGrid, "Misc", null,
             new PadOption(trainerProfiles.UseCurrentTrainerForGeneration
                 ? "Generated Pokémon obey trainer: ON"
                 : "Generated Pokémon obey trainer: OFF", IconPath: "profile"),
@@ -837,16 +849,16 @@ public sealed class HomePage : ContentPage, IPadHandler
             case "Rescan games": await _viewModel.RescanCommand.ExecuteAsync(null); break;
             case "Scan report":
             {
-                var action = await PadMenu.ShowAsync(_hostGrid, "SCAN REPORT", _viewModel.ScanReport, "Copy report", "Close");
+                var action = await PadMenu.ShowAsync(_hostGrid, "Scan report", _viewModel.ScanReport, "Copy report", "Close");
                 if (action == "Copy report")
                 {
                     await Clipboard.Default.SetTextAsync(_viewModel.ScanReport);
-                    _viewModel.Status = "SCAN REPORT COPIED";
+                    _viewModel.Status = "Scan report copied";
                 }
                 break;
             }
             case "HaX mode: OFF":
-                var on = await PadMenu.ConfirmAsync(_hostGrid, "TURN ON HAX MODE?",
+                var on = await PadMenu.ConfirmAsync(_hostGrid, "Turn on hax mode?",
                     "Pickers will offer every option instead of the legal subset (any ability on any mon). " +
                     "Use at your own risk: mons edited this way will show as illegal.", "Turn on");
                 if (on) { Services.HaXMode.Set(true); _viewModel.Status = "HaX mode is ON."; }
@@ -856,7 +868,7 @@ public sealed class HomePage : ContentPage, IPadHandler
                 _viewModel.Status = "HaX mode is OFF.";
                 break;
             case "Hardcore mode: OFF":
-                if (await PadMenu.ConfirmAsync(_hostGrid, "TURN ON HARDCORE MODE?", Services.HardcoreMode.SettingExplanation, "Turn on"))
+                if (await PadMenu.ConfirmAsync(_hostGrid, "Turn on hardcore mode?", Services.HardcoreMode.SettingExplanation, "Turn on"))
                 {
                     Services.HardcoreMode.Set(true);
                     _viewModel.Status = $"{Services.HardcoreMode.Marker}: Hardcore mode is ON - moves only, no edits or copies.";
@@ -874,7 +886,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     {
         var downloader = IPlatformApplication.Current?.Services.GetService<SpritePackDownloader>();
         if (downloader is null) return;
-        var overlay = LoadingOverlay.Show(_hostGrid, "CATCHING ALL THE SPRITES!",
+        var overlay = LoadingOverlay.Show(_hostGrid, "Catching all the sprites!",
             "Downloading animated battle sprites and HOME renders for every Pokémon. You can cancel anytime; finished parts are kept and it resumes where it left off.");
         try
         {
@@ -901,7 +913,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         if (_viewModel.OpenedSave)
             await PushAsync<BoxBrowserPage>();
         else if (_viewModel.Status.StartsWith("Could not", StringComparison.Ordinal))
-            await PadMenu.ShowAsync(_hostGrid, "SAVE COULD NOT OPEN", _viewModel.Status, "OK");
+            await PadMenu.ShowAsync(_hostGrid, "Save could not open", _viewModel.Status, "OK");
     }
 
     /// <summary>
@@ -909,7 +921,7 @@ public sealed class HomePage : ContentPage, IPadHandler
     /// and the game art as the cart's label sticker (era-colored plastic behind it).
     /// </summary>
     private const double TilePadding = 8;
-    private const double TileInnerWidth = 118;
+    private const double TileInnerWidth = 128;
 
     private View BuildCartridgeTile()
     {
@@ -945,7 +957,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         var sticker = new Border
         {
             BackgroundColor = UiTokens.ShellPress,
-            Stroke = UiTokens.ShellEdge,
+            Stroke = UiTokens.Outline,
             StrokeThickness = 1,
             StrokeShape = new RoundRectangle { CornerRadius = 4 },
             Margin = new Thickness(7, 5, 7, 7),
@@ -973,7 +985,42 @@ public sealed class HomePage : ContentPage, IPadHandler
         cartBody.SetBinding(BackgroundColorProperty, new Binding(".", converter: CartColor));
         cartBody.SetBinding(Border.StrokeProperty, new Binding(".", converter: CartEdge));
 
-        var iconHost = new Grid { Children = { cartBody } };
+        // Several saves of one game read as a stack of physical carts: up to two plain
+        // carts in the same plastic sit askew behind the labelled one (max 3 layers).
+        Border StackedCart(double rotation, double dx, double dy, string visibleWhen)
+        {
+            var back = new Border
+            {
+                WidthRequest = cartWidth,
+                HeightRequest = cartHeight,
+                StrokeThickness = 1.5,
+                StrokeShape = new RoundRectangle { CornerRadius = 7 },
+                HorizontalOptions = LayoutOptions.Center,
+                Padding = 0,
+                Rotation = rotation,
+                TranslationX = dx,
+                TranslationY = dy,
+                InputTransparent = true,
+                Content = new BoxView { HeightRequest = 9, Color = UiTokens.MaroonDeep, VerticalOptions = LayoutOptions.Start },
+            };
+            back.SetBinding(BackgroundColorProperty, new Binding(".", converter: CartColor));
+            back.SetBinding(Border.StrokeProperty, new Binding(".", converter: CartEdge));
+            back.SetBinding(IsVisibleProperty, visibleWhen);
+            return back;
+        }
+
+        var iconHost = new Grid
+        {
+            WidthRequest = TileInnerWidth,
+            HeightRequest = cartHeight,
+            HorizontalOptions = LayoutOptions.Center,
+            Children =
+            {
+                StackedCart(-9, -13, 0, nameof(SaveCard.HasManySaves)),
+                StackedCart(8, 13, -1, nameof(SaveCard.HasSeveralSaves)),
+                cartBody,
+            },
+        };
 
         // Every line gets the tile's full inner width so long names end in an ellipsis
         // instead of being clipped on both sides of a centred run.
@@ -990,23 +1037,24 @@ public sealed class HomePage : ContentPage, IPadHandler
             Padding = new Thickness(3, 0),
         };
 
-        var name = ShelfLine(13, UiTokens.Ink0, bold: true);
+        var name = ShelfLine(UiTokens.TextLabel, UiTokens.Ink0);
+        name.FontFamily = DsChrome.PixelFont;
         name.SetBinding(Label.TextProperty, nameof(SaveCard.ShelfTitle));
 
-        var trainer = ShelfLine(10, UiTokens.Ink1);
+        var trainer = ShelfLine(UiTokens.TextSmall, UiTokens.Ink1);
         trainer.SetBinding(Label.TextProperty, nameof(SaveCard.TrainerLine));
 
         // Emulator · folder · date: what tells two saves of one game apart at a glance.
-        var detail = ShelfLine(9, UiTokens.Ink1);
+        var detail = ShelfLine(12, UiTokens.InkSoft);
         detail.SetBinding(Label.TextProperty, nameof(SaveCard.DetailLine));
 
         // Every tile is exactly the same size: the shelf must read as a row of carts.
-        // A shared cartridge (the same game in several files) carries its save count,
-        // tucked on the cart's lower corner like a sticker.
+        // A stack also carries a solid "×N" plate on the free right of the carts, fully
+        // inside the tile so it never clips.
         var countLabel = new Label
         {
             TextColor = UiTokens.Ink0,
-            FontSize = 10,
+            FontSize = UiTokens.TextSmall,
             FontAttributes = FontAttributes.Bold,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center,
@@ -1014,16 +1062,16 @@ public sealed class HomePage : ContentPage, IPadHandler
         countLabel.SetBinding(Label.TextProperty, nameof(SaveCard.CountBadge));
         var countBadge = new Border
         {
-            BackgroundColor = UiTokens.ShellPress,
-            Stroke = UiTokens.SelectBorder,
+            BackgroundColor = UiTokens.MaroonDeep,
+            Stroke = UiTokens.Outline,
             StrokeThickness = 1.5,
-            StrokeShape = new RoundRectangle { CornerRadius = 10 },
-            MinimumWidthRequest = 20,
-            HeightRequest = 20,
+            StrokeShape = new RoundRectangle { CornerRadius = 3 },
+            HeightRequest = 22,
+            MinimumWidthRequest = 30,
             Padding = new Thickness(5, 0),
             HorizontalOptions = LayoutOptions.End,
             VerticalOptions = LayoutOptions.End,
-            Margin = new Thickness(0, 0, -8, -4),
+            Margin = new Thickness(0, 0, 0, 2),
             InputTransparent = true,
             Content = countLabel,
         };
@@ -1032,13 +1080,13 @@ public sealed class HomePage : ContentPage, IPadHandler
 
         var card = Kit.DevicePanel(new VerticalStackLayout
         {
-            Spacing = 4,
+            Spacing = 3,
             HorizontalOptions = LayoutOptions.Center,
             VerticalOptions = LayoutOptions.Center,
             Children = { iconHost, name, trainer, detail },
         }, padding: TilePadding);
         card.WidthRequest = TileInnerWidth + 2 * TilePadding;
-        card.HeightRequest = 162;
+        card.HeightRequest = 166;
 
         card.Triggers.Add(new DataTrigger(typeof(Border))
         {
@@ -1046,8 +1094,9 @@ public sealed class HomePage : ContentPage, IPadHandler
             Value = true,
             Setters =
             {
-                new Setter { Property = Border.StrokeProperty, Value = UiTokens.SelectBorder },
-                new Setter { Property = Border.StrokeThicknessProperty, Value = 3.0 },
+                // The selected look: cobalt body, pale 2 dp edge - not a cyan glow ring.
+                new Setter { Property = Border.BackgroundProperty, Value = new SolidColorBrush(UiTokens.SelectFill) },
+                new Setter { Property = Border.StrokeProperty, Value = UiTokens.Ink0.WithAlpha(0.85f) },
             },
         });
         void Select(SaveCard group)
@@ -1083,10 +1132,23 @@ public sealed class HomePage : ContentPage, IPadHandler
         return card;
     }
 
+    /// <summary>The Living Dex Autopilot over every save on the shelf and the Bank.</summary>
+    private async Task OpenAutopilotAsync()
+    {
+        var services = IPlatformApplication.Current?.Services;
+        var boxes = services?.GetService<BoxBrowserViewModel>();
+        var data = services?.GetService<IGameDataService>();
+        var sprites = services?.GetService<ISpriteService>();
+        if (boxes is null || data is null || sprites is null) return;
+        await LivingDexAutopilotPage.ShowAsync(_hostGrid, boxes, data, sprites);
+        // Pokémon moved between games: the shelf's counts and the open save follow.
+        _viewModel.Status = boxes.Status;
+    }
+
     /// <summary>The events shelf: community collections here, wondercards inside the game.</summary>
     private async Task ShowEventsMenuAsync()
     {
-        var choice = await PadMenu.ShowAsync(_hostGrid, "EVENT DATABASE", null,
+        var choice = await PadMenu.ShowAsync(_hostGrid, "Event database", null,
             new PadOption($"Community boxes ({Services.CommunityBoxService.RepoTitle})", IconPath: "community"),
             new PadOption("Wonder cards", IconPath: "events"));
         switch (choice)
@@ -1095,7 +1157,7 @@ public sealed class HomePage : ContentPage, IPadHandler
                 await CollectionCenter.ShowAsync(_hostGrid);
                 break;
             case "Wonder cards":
-                await PadMenu.ShowAsync(_hostGrid, "WONDER CARDS",
+                await PadMenu.ShowAsync(_hostGrid, "Wonder cards",
                     "Wondercards depend on the game they are delivered to. Open a game from the shelf, press the Y button (Save data), and choose Wonder cards there.", "OK");
                 break;
         }
@@ -1120,7 +1182,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         if (save.RequiresExtraCare)
         {
             var confirmed = await PadMenu.ConfirmAsync(_hostGrid,
-                "EMULATED CONSOLE STORAGE",
+                "Emulated console storage",
                 $"{save.GameLabel} lives inside {save.Emulator}'s emulated storage - the delicate path. " +
                 "PKForge backs up before every write, but close the emulator first.",
                 "Connect");
@@ -1130,12 +1192,12 @@ public sealed class HomePage : ContentPage, IPadHandler
         await _viewModel.OpenAsync(save);
         if (_viewModel.OpenedSave)
         {
-            var state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
-            if (state is not null) state.PreviewGame = null;
+            // PreviewGame stays: Home's claim is released while the box is in front, and
+            // coming back shows the game just left instead of blank branding.
             await PushAsync<BoxBrowserPage>();
         }
         else if (_viewModel.Status.StartsWith("Could not", StringComparison.Ordinal))
-            await PadMenu.ShowAsync(_hostGrid, "SAVE COULD NOT OPEN", _viewModel.Status, "OK");
+            await PadMenu.ShowAsync(_hostGrid, "Save could not open", _viewModel.Status, "OK");
     }
 
     private async Task PushAsync<TPage>() where TPage : Page

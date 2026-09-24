@@ -34,4 +34,28 @@ public sealed class SaveSessionService(ISaveFileAccess access, ISaveEngine engin
         // The baseline is a private copy: later engine mutations can never bleed into it.
         Current = current with { Snapshot = current.Snapshot with { OriginalBytes = written.ToArray() } };
     }
+
+    public void RevertToBaseline()
+    {
+        if (Current is not { } current) return;
+        var format = SaveIdentityRules.FormatOfChoice(identities?.Get(current.Document.DocumentId)?.GameChoiceId);
+        ISaveEngineSession reopened;
+        try { reopened = engine.OpenSession(current.Snapshot.OriginalBytes, current.Document.DisplayName, format); }
+        catch
+        {
+            // The baseline no longer opens: a session that cannot be trusted is not kept.
+            Close();
+            throw;
+        }
+        CurrentSession?.Dispose();
+        CurrentSession = reopened;
+        Current = current with { Snapshot = reopened.Snapshot with { OriginalBytes = current.Snapshot.OriginalBytes } };
+    }
+
+    public void Close()
+    {
+        CurrentSession?.Dispose();
+        CurrentSession = null;
+        Current = null;
+    }
 }

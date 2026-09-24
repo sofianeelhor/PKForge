@@ -23,7 +23,7 @@ public sealed record PksmEncoded(PksmGeneration Generation, byte[]? Data, string
     public static PksmEncoded Skip(string reason) => new(PksmGeneration.Unused, null, reason);
 }
 
-public delegate PksmEncoded PksmEntityEncoder(byte[] bankBytes);
+public delegate PksmEncoded PksmEntityEncoder(byte[] bankBytes, string? format);
 
 /// <summary>One mon found in an import source, ready or skipped with a reason.</summary>
 /// <param name="Box">Box in the source bank; -1 for loose files (they have no layout).</param>
@@ -346,7 +346,7 @@ public static class PksmBankTransfer
         foreach (var entry in ordered)
         {
             PksmEncoded result;
-            try { result = encode(bank.GetData(entry.Id)); }
+            try { result = encode(bank.GetData(entry.Id), entry.Info.Format); }
             catch (Exception error) { result = PksmEncoded.Skip(error.Message); }
             if (result.Data is null || result.Generation == PksmGeneration.Unused)
                 skipped.Add((entry, result.Reason ?? "PKSM has no slot for this format"));

@@ -32,7 +32,7 @@ public static class AboutPopup
                 ColumnDefinitions = [new(new GridLength(140)), new(GridLength.Star)],
                 Children =
                 {
-                    new Label { Text = caption, FontSize = 11, FontFamily = DsChrome.PixelFont, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
+                    new Label { Text = caption, FontSize = UiTokens.TextSmall, FontFamily = DsChrome.PixelFont, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
                     valueLabel,
                 },
             };
@@ -49,13 +49,13 @@ public static class AboutPopup
             result.TrySetResult();
         }
 
-        var close = Kit.Capsule("CLOSE", UiTokens.Ink1);
+        var close = Kit.Capsule("Close", UiTokens.Ink1);
         close.Clicked += (_, _) => Close();
 
         Label Small(string text, Color? color = null) => new()
         {
             Text = text,
-            FontSize = 11,
+            FontSize = UiTokens.TextSmall,
             FontFamily = DsChrome.PixelFont,
             TextColor = color ?? UiTokens.InkSoft,
             HorizontalTextAlignment = TextAlignment.Center,
@@ -66,15 +66,15 @@ public static class AboutPopup
             Spacing = 10,
             Children =
             {
-                Kit.HeaderBar("ABOUT PKFORGE"),
-                new Label { Text = "PKFORGE", FontSize = 20, FontAttributes = FontAttributes.Bold, FontFamily = DsChrome.PixelFont, TextColor = UiTokens.Ink0, HorizontalTextAlignment = TextAlignment.Center },
+                Kit.HeaderBar("About PKForge"),
+                new Label { Text = "PKForge", FontSize = 20, FontAttributes = FontAttributes.Bold, FontFamily = DsChrome.PixelFont, TextColor = UiTokens.Ink0, HorizontalTextAlignment = TextAlignment.Center },
                 Small("Pokémon save manager and bank"),
-                Row("VERSION", diagnostic ? $"v{version} · DIAGNOSTIC" : $"v{version}"),
-                Row("DEVELOPED BY", "@22sh"),
-                Row("LOGO BY", "@spritedmistery"),
-                Small("ENGINE PKHEX · CHROME PKSM (GPL-3)"),
-                Small("SPRITES (C) NINTENDO · CREATURES · GAME FREAK"),
-                Small("GITHUB.COM/SOFIANEELHOR/PKFORGE", UiTokens.MenuBlue),
+                Row("Version", diagnostic ? $"v{version} · diagnostic" : $"v{version}"),
+                Row("Developed by", "@22sh"),
+                Row("Logo by", "@spritedmistery"),
+                Small("Engine PKHeX · chrome PKSM (GPL-3)"),
+                Small("Sprites © Nintendo · Creatures · Game Freak"),
+                Small("github.com/sofianeelhor/pkforge", UiTokens.MenuBlue),
                 new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { close } },
             },
         };

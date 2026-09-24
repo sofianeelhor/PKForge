@@ -86,7 +86,7 @@ public sealed class DsFolderButton : Grid
             _detail = new Label
             {
                 Text = option.Detail,
-                FontSize = 11,
+                FontSize = UiTokens.TextSmall,
                 TextColor = UiTokens.InkSoft,
                 LineBreakMode = LineBreakMode.TailTruncation,
                 InputTransparent = true,
@@ -162,12 +162,32 @@ public sealed class DsFolderButton : Grid
         _label.TranslationX = 0;
     }
 
-    /// <summary>Draws the row chrome: glossy black idle, navy + light-blue border selected.</summary>
+    /// <summary>
+    /// Draws a flat list row (a fact row inside a panel, not a button): soft stripe resting,
+    /// the selected-button look under the cursor.
+    /// </summary>
+    internal static void DrawListRow(SKCanvas canvas, SKImageInfo info, bool selected)
+    {
+        canvas.Clear(SKColors.Transparent);
+        var d = (float)DeviceDisplay.MainDisplayInfo.Density;
+        canvas.Save();
+        canvas.Scale(d);
+        PksmPaint.StripeRow(canvas, new SKRect(0.5f, 1, info.Width / d - 0.5f, info.Height / d - 1), selected);
+        canvas.Restore();
+    }
+
+    /// <summary>Draws the row chrome: the resting menu button, or the cobalt selected look.</summary>
     internal static void DrawRow(SKCanvas canvas, SKImageInfo info, bool selected)
     {
-        var r = new SKRect(1, 1, info.Width - 1, info.Height - 1);
-        if (selected) PksmPaint.SelectedButton(canvas, r, 5);
-        else PksmPaint.BlackButton(canvas, r, 5);
+        // Radius and edges scale with density so the row matches the MAUI-drawn buttons.
+        canvas.Clear(SKColors.Transparent);
+        var d = (float)DeviceDisplay.MainDisplayInfo.Density;
+        canvas.Save();
+        canvas.Scale(d);
+        var r = new SKRect(0.5f, 0.5f, info.Width / d - 0.5f, info.Height / d - 0.5f);
+        if (selected) PksmPaint.SelectedButton(canvas, r, 4);
+        else PksmPaint.BlackButton(canvas, r, 4);
+        canvas.Restore();
     }
 }
 
@@ -313,12 +333,17 @@ public sealed class DsCard : Grid
         }
     }
 
-    /// <summary>Glossy black tile; the navy + light-blue selection when chosen.</summary>
+    /// <summary>The resting menu tile; the cobalt selected look when chosen.</summary>
     internal static void DrawTile(SKCanvas canvas, SKImageInfo info, bool selected)
     {
-        var r = new SKRect(1, 1, info.Width - 1, info.Height - 1);
-        if (selected) PksmPaint.SelectedButton(canvas, r, 7);
-        else PksmPaint.BlackButton(canvas, r, 7);
+        canvas.Clear(SKColors.Transparent);
+        var d = (float)DeviceDisplay.MainDisplayInfo.Density;
+        canvas.Save();
+        canvas.Scale(d);
+        var r = new SKRect(0.5f, 0.5f, info.Width / d - 0.5f, info.Height / d - 0.5f);
+        if (selected) PksmPaint.SelectedButton(canvas, r, 6);
+        else PksmPaint.BlackButton(canvas, r, 6);
+        canvas.Restore();
     }
 }
 
@@ -338,11 +363,10 @@ public static class DsChrome
             ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto), new(GridLength.Star)],
             Children =
             {
-                new BoxView { Color = UiTokens.BagCyanEdge, HeightRequest = 2, VerticalOptions = LayoutOptions.End, InputTransparent = true },
+                new BoxView { Color = UiTokens.ShellEdge, HeightRequest = 2, VerticalOptions = LayoutOptions.End, InputTransparent = true },
                 new Label
                 {
-                    Text = title, FontFamily = PixelFont, FontSize = 16, TextColor = Colors.White,
-                    FontAttributes = FontAttributes.Bold, VerticalTextAlignment = TextAlignment.Center,
+                    Text = title, FontFamily = PixelFont, FontSize = 16, TextColor = Colors.White, VerticalTextAlignment = TextAlignment.Center,
                     HorizontalOptions = LayoutOptions.Center, HorizontalTextAlignment = TextAlignment.Center,
                 },
             },
@@ -360,7 +384,7 @@ public static class DsChrome
         foreach (var f in flags)
         {
             row.Children.Add(new BoxView { WidthRequest = 6, HeightRequest = 6, CornerRadius = 1, Color = UiTokens.InkSoft, VerticalOptions = LayoutOptions.Center });
-            row.Children.Add(new Label { Text = f, FontFamily = PixelFont, FontSize = 13, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center });
+            row.Children.Add(new Label { Text = f, FontFamily = PixelFont, FontSize = UiTokens.TextBody, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center });
         }
 
         var batt = new Border

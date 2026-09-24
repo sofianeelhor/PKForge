@@ -17,13 +17,22 @@ afterwards: an old save state can overwrite edited battery-save data.
   saves (`.sav`), including a configured save folder or exported saves. If only
   an export is accessible, import the edited file back in Pizza Boy. Do not
   promise a fixed storage path across versions or Android storage policies.
+- **Azahar / Lime3DS / Citra MMJ (3DS):** one Citra-family layout,
+  `sdmc/Nintendo 3DS/<ID0>/<ID1>/title/00040000/<title>/data/00000001/main`
+  (plain files, same format in every fork). The granted folder may be the user
+  folder (containing `sdmc`), `citra-emu`, `sdmc`, `Nintendo 3DS`, or MMJ's
+  `files` folder. Azahar and Lime3DS (`io.github.lime3ds.android`) use the user
+  folder picked in their setup. Citra MMJ (`org.citra.emu`) uses
+  `Android/data/org.citra.emu/files/citra-emu` on Android 10+ (exposed through its
+  own "Citra MMJ" documents provider) or `/sdcard/citra-emu` with legacy storage.
+  Writes are in place on the emulated SD and get the extra-care confirmation.
 - **RetroArch:** per-core save folders are traversed, including nested GCI folders.
   **melonDS, Linkboy, Azahar and Eden** remain available in their platform menus.
 
 Android decides which folders providers expose and whether it grants access.
 Selecting a platform groups the choices; a linked root is still scanned for all
 supported Pokémon saves, so one RetroArch root need not be linked per platform.
-Old persisted enum values (0–4) remain stable. Parse caches include the emulator
+Persisted enum values (0–9) remain stable. Parse caches include the emulator
 kind so overlapping grants do not inherit another emulator's identity.
 
 ## Evidence
@@ -34,6 +43,9 @@ Reviewed September 2026:
 - [Dolphin Android strings](https://github.com/dolphin-emu/dolphin/blob/master/Source/Android/app/src/main/res/values/strings.xml): GCI Folder device and scoped-storage limitations.
 - [Dolphin GCI-folder implementation history](https://dolphin-emu.org/download/list/memcard_directory/1/): GCI-folder virtual cards and state interactions.
 - [DraStic support forum](https://drastic-ds.com/viewtopic.php?t=5295): developer support confirms `DraStic/backup` and ROM-named `.dsv` battery saves.
+- [weihuoya/citra CitraDirectory.java](https://github.com/weihuoya/citra/blob/302b0c3bc4312bc96489c11584a97664894b343f/src/android/app/src/main/java/org/citra/emu/utils/CitraDirectory.java): MMJ user dir `getExternalFilesDir(null)/citra-emu` (scoped) or `getExternalStorageDirectory()/citra-emu` (legacy); `build.gradle` applicationId `org.citra.emu`; `UserPathProvider` DocumentsProvider rooted at `getExternalFilesDir(null)`.
+- [weihuoya/citra archive_source_sd_savedata.cpp](https://github.com/weihuoya/citra/blob/302b0c3bc4312bc96489c11584a97664894b343f/src/core/file_sys/archive_source_sd_savedata.cpp): `Nintendo 3DS/<id0>/<id1>/title/<high>/<low>/data/00000001/`, identical to upstream Citra/Azahar.
+- [Lime3DS/Azahar build.gradle.kts](https://github.com/Lime3DS/Lime3DS/blob/master/src/android/app/build.gradle.kts): the repo now builds Azahar (`org.azahar_emu.azahar`) and keeps a legacy flavor with applicationId `io.github.lime3ds.android`; `MainActivity.kt` picks the user directory with `OpenDocumentTree`; `common_paths.h` `SDMC_DIR "sdmc"`.
 - [Pizza Emulators](https://pizzaemulators.com/): current A/C product platform mapping. No authoritative fixed save-path documentation was found; setup instructions use the user's chosen folder/export.
 
 The added menu art uses attributed CC-BY illustrations, not official emulator logos.

@@ -10,15 +10,23 @@ public interface ISaveEngine
     /// <summary>Cheap metadata probe for detection listings; null when the bytes are not a save.</summary>
     SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes, string? displayName = null);
 
-    /// <summary>Describes loose .pk* bytes for a bank deposit; null when unrecognizable.</summary>
-    BankEntryInfo? TryDescribeEntity(byte[] bytes, string sourceName);
+    /// <summary>
+    /// Describes loose .pk* bytes for a bank deposit; null when unrecognizable.
+    /// <paramref name="format"/> is the exact entity format the bytes were exported as
+    /// (<see cref="SlotExport.Format"/>, a file extension such as ".pb8", or a stored
+    /// <see cref="BankEntryInfo.Format"/>); it is recorded on the result so the bytes are
+    /// never re-read as a same-size sibling (PK8/PB8, PK6/PK7, PK9/PA9).
+    /// </summary>
+    BankEntryInfo? TryDescribeEntity(byte[] bytes, string sourceName, string? format = null);
 
     /// <summary>
     /// Opens a single loose entity (e.g. a bank mon) for editing in its own throwaway
     /// save context, so the full editor - legality, ability choices, stats - works on it.
     /// The mon sits at box 0, slot 0. Null when the bytes are not a recognizable entity.
     /// </summary>
-    ISaveEngineSession? OpenEntitySession(byte[] entityBytes, string? displayName = null);
+    /// <remarks><paramref name="format"/>: the entity's exact format (e.g. a bank entry's
+    /// <see cref="BankEntryInfo.Format"/>); null reads the bytes by PKHeX's heuristics.</remarks>
+    ISaveEngineSession? OpenEntitySession(byte[] entityBytes, string? displayName = null, string? format = null);
 
     /// <summary>
     /// Opens a blank throwaway save of the given generation (1-9) with a placeholder
@@ -108,6 +116,16 @@ public interface ISaveSessionService
     /// instead of the state from when the save was opened.
     /// </summary>
     void MarkWritten(string documentId, ReadOnlyMemory<byte> written);
+
+    /// <summary>
+    /// Discards whatever the live engine session holds beyond the tracked baseline (the bytes
+    /// last read or written), reopening it from that baseline. Used when a mutation failed
+    /// half-way, so its partial edits can never ride along with the next write.
+    /// </summary>
+    void RevertToBaseline();
+
+    /// <summary>Drops the open save: nothing stale can be written back once the file changed underneath it.</summary>
+    void Close();
 }
 
 /// <summary>Commits validated bytes only after a durable backup has completed.</summary>
@@ -190,6 +208,17 @@ public interface IBankService
     void Replace(Guid id, byte[] data, BankEntryInfo info);
     /// <summary>Adds one more empty box.</summary>
     void AddBox();
+    /// <summary>Rewrites the facts of several entries in one index write, bytes untouched
+    /// (index migrations). Unknown ids are ignored; returns how many entries changed.</summary>
+    int UpdateInfo(IReadOnlyList<(Guid Id, BankEntryInfo Info)> updates);
+    /// <summary>The index migrations this bank has already been through (0 for an index written
+    /// before the marker existed). A finished migration is never attempted again.</summary>
+    int MigrationVersion { get; }
+    /// <summary>Records that migration <paramref name="version"/> ran over every entry, applying its
+    /// fixes in the same single index write. A fix lands only while the entry still holds
+    /// <c>Expected</c>, so a migration computed off-lock never undoes a concurrent edit.
+    /// Returns how many entries changed.</summary>
+    int CompleteMigration(int version, IReadOnlyList<(Guid Id, BankEntryInfo Expected, BankEntryInfo Info)> updates);
     /// <summary>
     /// Applies a batch of slot placements in one index write - what the organizer's sorts and
     /// bulk moves write. Every id must exist, no two placements may share a slot, and every
@@ -200,8 +229,27 @@ public interface IBankService
 }
 
 /// <summary>Descriptive facts captured at deposit time (display without parsing bytes).</summary>
+/// <param name="Format">
+/// The exact PKHeX entity type the bytes are ("PK8", "PB8", "PK6", "PA9", ...). Raw bytes alone
+/// are ambiguous between same-size formats, so every re-read of bank bytes goes through this.
+/// Null only on entries from an index written before the field existed and not yet migrated
+/// (or whose format could not be proven); those fall back to PKHeX's heuristics.
+/// </param>
 public sealed record BankEntryInfo(
-    int Species, int Form, bool Shiny, string Nickname, int Level, int Generation, string SourceName);
+    int Species, int Form, bool Shiny, string Nickname, int Level, int Generation, string SourceName,
+    string? Format = null, int? HeldItem = null, SpriteTraits? Traits = null)
+{
+    /// <summary>The sprite key of this entry. <see cref="Traits"/> (gender art, Alcremie sweet,
+    /// cosplay) is null on entries indexed before the field existed until
+    /// EntityBytes.MigrateSpriteTraits reads it from the stored bytes.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public SpriteLook Look => new(Species, Form, Shiny, Traits ?? default);
+
+    /// <summary>Held item id when known; null on entries deposited before the field existed
+    /// (backfilled lazily from the stored bytes).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasItem => HeldItem is > 0;
+}
 
 public sealed record BankEntry(
     Guid Id, int Box, int Slot, BankEntryInfo Info, DateTimeOffset AddedUtc);
@@ -213,7 +261,18 @@ public sealed record SaveSnapshot(
     IReadOnlyList<SlotSummary> Slots,
     string? DisplayName);
 
-public sealed record SlotSummary(int Box, int Slot, int? Species, string? Nickname, bool IsShiny, bool IsLegal, int Form = 0, bool IsEgg = false);
+/// <param name="HeldItem">The held item's national (PKHeX) item id, 0 when empty. ROM-hack
+/// sessions bridge their own ids to national ones; unknown bridges still read non-zero.</param>
+public sealed record SlotSummary(int Box, int Slot, int? Species, string? Nickname, bool IsShiny, bool IsLegal, int Form = 0, bool IsEgg = false,
+    int HeldItem = 0, SpriteTraits Traits = default)
+{
+    /// <summary>The sprite key of this slot (species 0 when empty).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public SpriteLook Look => new(Species ?? 0, Form, IsShiny, Traits);
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasItem => HeldItem != 0;
+}
 
 public sealed record BackupReceipt(string BackupId, DateTimeOffset CreatedUtc, string Sha256);
 
@@ -247,3 +306,14 @@ public sealed record BankEntity(
     int Species,
     DateTimeOffset AddedUtc,
     string SourceKind);
+
+/// <summary>File-name conventions for bank entries, shared by exports and archives.</summary>
+public static class BankEntryFiles
+{
+    /// <summary>
+    /// The PKHeX file extension for an entry: its recorded format (".pb8", ".pk6", ".pa9"), so a
+    /// re-import reads the same type; ".pk{generation}" for an entry with no recorded format.
+    /// </summary>
+    public static string ExtensionFor(BankEntryInfo info) =>
+        info.Format is { Length: > 0 } format ? "." + format.ToLowerInvariant() : $".pk{info.Generation}";
+}

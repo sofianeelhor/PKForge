@@ -11,7 +11,7 @@ public static class MoveShopEditor
         var info = session.GetMoveShop(box, slot);
         if (!info.Supported)
         {
-            await EditorMenu.ShowAsync(host, "MOVE SHOP", "Move Shop and move mastery are only stored by Legends: Arceus Pokémon.", "OK");
+            await EditorMenu.ShowAsync(host, "Move shop", "Move Shop and move mastery are only stored by Legends: Arceus Pokémon.", "OK");
             return false;
         }
 
@@ -29,7 +29,7 @@ public static class MoveShopEditor
             var options = info.Entries.Select(entry => new PickItem(entry.Index,
                 $"{Name(entry.Move)} · {(entry.Purchased ? "PURCHASED" : "NOT PURCHASED")} · {(entry.Mastered ? "MASTERED" : "NOT MASTERED")}"))
                 .ToArray();
-            var choice = await PickerMenu.ShowAsync(host, $"MOVE SHOP · {purchased} P · {mastered} M", options);
+            var choice = await PickerMenu.ShowAsync(host, $"Move shop · {purchased} P · {mastered} M", options);
             if (choice is null)
                 return dirty;
 

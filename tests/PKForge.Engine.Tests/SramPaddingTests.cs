@@ -168,4 +168,40 @@ public sealed class SramPaddingTests
         var payload = SramPadding.Trim(exact);
         Assert.Equal(0x20000, SramPadding.Pad(payload, exact).Length);
     }
+
+    /// <summary>mGBA appends a 16-byte RTC state to RTC cartridges' flash (Unbound, Emerald):
+    /// live data, not padding. It is dropped for parsing and comes back byte for byte.</summary>
+    [Fact]
+    public void MgbaRtcFooterIsDroppedForParsingAndKeptOnWrite()
+    {
+        var file = new byte[0x20000 + 16];
+        Random.Shared.NextBytes(file);
+        var payload = SramPadding.Trim(file);
+        Assert.Equal(0x20000, payload.Length);
+
+        Assert.True(SramPadding.Pad(payload, file).AsSpan().SequenceEqual(file), "an unedited save must round trip");
+
+        payload[7] ^= 0xFF;
+        var written = SramPadding.Pad(payload, file);
+        Assert.Equal(file.Length, written.Length);
+        Assert.True(written.AsSpan(0x20000).SequenceEqual(file.AsSpan(0x20000)), "the RTC footer must survive an edit");
+    }
+
+    /// <summary>Field report: an Unbound save exported by mGBA (RTC footer) was listed as
+    /// Unbound but refused to open ("These bytes are not a Pokémon Unbound save").</summary>
+    [Fact]
+    public void UnboundSaveWithAnRtcFooterOpensAndRoundTrips()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "PKForge.sln")))
+            directory = directory.Parent;
+        var path = directory is null ? null : Path.Combine(directory.FullName, ".local-testdata", "romhacks", "unbound-report.sav");
+        if (path is null || !File.Exists(path)) return; // gitignored player save: dev-only
+        var bytes = File.ReadAllBytes(path);
+
+        using var session = new SaveEngine().OpenSession(bytes, null, PKForge.Domain.SaveFormat.Unbound);
+        Assert.Contains(session.Snapshot.Slots, s => s.Species is not null);
+        Assert.True(session.Serialize().Span.SequenceEqual(bytes), "an unedited save must round trip with its footer");
+        Assert.Null(new SaveEngine().AssessLayoutRisk(bytes));
+    }
 }

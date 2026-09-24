@@ -46,13 +46,54 @@ public static class GameArt
 }
 
 /// <summary>
-/// What the lower screen should show when no Pokémon is selected: the shelf's highlighted
-/// game (hero art), or the Pokédex picker's highlighted species (red dex view).
+/// The second screen's inputs. <see cref="Routes"/> decides WHO owns the lower display
+/// (the foreground page or overlay, see <see cref="SecondScreenOwner"/>); the properties
+/// below are only the owners' payloads, read while their owner is on top. A stale payload
+/// can therefore never show: leaving a surface releases its claim and the screen follows.
 /// </summary>
 public partial class SecondScreenState : ObservableObject
 {
+    public SecondScreenState()
+    {
+        Routes.Changed += () => Owner = Routes.Current;
+    }
+
+    /// <summary>The ownership stack pages and overlays claim and release.</summary>
+    public SecondScreenRoutes Routes { get; } = new();
+
+    /// <summary>The top claim's owner; the lower screen is a pure function of it.</summary>
+    [ObservableProperty] private SecondScreenOwner _owner;
+
+    /// <summary>Home's payload: the shelf's highlighted game (hero art).</summary>
     [ObservableProperty] private DetectedSave? _previewGame;
 
-    /// <summary>Species highlighted in the Pokédex picker; the dex view outranks everything while set.</summary>
+    /// <summary>The Pokédex picker's payload: its highlighted species.</summary>
     [ObservableProperty] private int? _previewSpecies;
+
+    /// <summary>The Bank's payload: the mon under its cursor, decoded for the inspector
+    /// (null summary = the empty-slot card). One record so the screen never sees half an update.</summary>
+    [ObservableProperty] private InspectorContent? _inspected;
+
+    /// <summary>The full-screen summary's payload: the box it walks and the mon it shows.</summary>
+    [ObservableProperty] private SummaryOverview? _overview;
+
+    /// <summary>The inspector's page; SELECT in the Bank and the tabs on the lower screen turn it.</summary>
+    [ObservableProperty] private SummaryPage _inspectorPage;
+
+    /// <summary>The Living Dex Autopilot's payload: its route map.</summary>
+    [ObservableProperty] private LivingDexRoute? _autopilotRoute;
 }
+
+/// <summary>What the inspector shows for a surface that drives it: the mon (null = empty slot),
+/// whether its legality verdict is still being computed, and the context line.</summary>
+public sealed record InspectorContent(MonSummary? Summary, bool LegalityPending, string? Caption);
+
+/// <summary>One occupied slot's icon on the summary's box overview.</summary>
+public sealed record SlotIcon(int Species, int Form, bool Shiny, bool HasItem = false, SpriteTraits Traits = default)
+{
+    public SpriteLook Look => new(Species, Form, Shiny, Traits);
+}
+
+/// <summary>The box the full-screen summary walks, drawn on the lower screen while the top
+/// screen shows the details: every slot's icon and the mon being viewed.</summary>
+public sealed record SummaryOverview(string Context, int Count, int Slot, IReadOnlyList<SlotIcon?> Icons, int Position, int Total);

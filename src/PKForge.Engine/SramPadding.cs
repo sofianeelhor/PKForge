@@ -32,6 +32,16 @@ internal static class SramPadding
     }
 
     /// <summary>
+    /// mGBA stores a real-time-clock cartridge's RTC state as 16 bytes appended to the flash
+    /// dump (Unbound, Emerald and Ruby/Sapphire carry an RTC). Unlike padding it is live
+    /// data, so it is dropped for parsing and handed back verbatim on write.
+    /// </summary>
+    private const int RtcFooterLength = 16;
+
+    private static bool IsRtcFooter(int fileLength) =>
+        fileLength - RtcFooterLength is 0x20000 or 0x10000;
+
+    /// <summary>
     /// How many trailing bytes an oversized dump carries beyond its chip, or 0 when the
     /// file is an exact chip size or its tail is not an erased run. The largest chip that
     /// fits wins, so a flash dump whose upper half is erased is never cut down to SRAM.
@@ -41,6 +51,7 @@ internal static class SramPadding
         // An exact chip size means the dump is the chip: nothing was appended, and a
         // smaller chip must never be inferred from an erased tail.
         if (Array.IndexOf(ChipSizes, original.Length) >= 0) return 0;
+        if (IsRtcFooter(original.Length)) return RtcFooterLength;
 
         foreach (var size in ChipSizes)
         {
@@ -52,6 +63,14 @@ internal static class SramPadding
     }
 
     /// <summary>
+    /// The file to write back for a parsed payload: the dropped tail re-applied inside the
+    /// RetroArch container (the pad and RTC footer are part of what the core wrote, so they
+    /// sit inside the rzip stream), then re-wrapped exactly like the original.
+    /// </summary>
+    internal static byte[] Restore(ReadOnlySpan<byte> payload, byte[] original) =>
+        RetroArchSaveContainer.Repack(Pad(payload, RetroArchSaveContainer.Decode(original)), original);
+
+    /// <summary>
     /// Re-applies exactly the bytes that were dropped at open, and only when the payload
     /// is what the rest of the original file already was. An unchanged payload is handed
     /// back byte-for-byte so the safe writer still sees "nothing changed".
@@ -60,7 +79,8 @@ internal static class SramPadding
     {
         if (payload.Length >= original.Length) return payload.ToArray(); // nothing was dropped
         var dropped = original[payload.Length..];
-        if (!IsUniformPad(dropped)) return payload.ToArray();            // not ours to re-append
+        var rtcFooter = dropped.Length == RtcFooterLength && IsRtcFooter(original.Length);
+        if (!rtcFooter && !IsUniformPad(dropped)) return payload.ToArray(); // not ours to re-append
         if (payload.SequenceEqual(original[..payload.Length])) return original.ToArray();
 
         var result = new byte[original.Length];

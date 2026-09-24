@@ -25,8 +25,12 @@ public static class SaveBlockEditorService
 
     public static IReadOnlyList<SaveBlockEntry> GetBlocks(ISaveEngineSession session)
     {
-        if (Blocks(session) is not { } array)
-            return [];
+        return Blocks(session) is { } array ? GetBlocks(array) : [];
+    }
+
+    /// <summary>Same listing over a save that has no session (the event editor's opened-file baseline).</summary>
+    internal static IReadOnlyList<SaveBlockEntry> GetBlocks(ISCBlockArray array)
+    {
         var names = TryLoadNames(array);
         return array.AllBlocks.Select(block => Describe(block, names?.GetBlockName(block, out _))).ToList();
     }
