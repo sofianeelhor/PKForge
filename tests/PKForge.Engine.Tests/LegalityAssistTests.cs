@@ -37,7 +37,10 @@ public sealed class LegalityAssistTests(ITestOutputHelper output)
     {
         var engine = new SaveEngine();
         foreach (var file in Directory.EnumerateFiles(LegalRoot(), "*.*", SearchOption.AllDirectories)
-                     .Where(f => System.Text.RegularExpressions.Regex.IsMatch(Path.GetExtension(f), @"^\.(pk[3-9]|pb8|pa8)$")))
+                     .Where(f => System.Text.RegularExpressions.Regex.IsMatch(Path.GetExtension(f), @"^\.(pk[3-9]|pb8|pa8)$"))
+                     // Enumeration order is the file system's (sorted on APFS, not on ext4): pin it so
+                     // every machine picks the same sample.
+                     .Order(StringComparer.Ordinal))
         {
             var session = engine.OpenEntitySession(File.ReadAllBytes(file), "corpus");
             if (session is null) continue;
@@ -45,6 +48,14 @@ public sealed class LegalityAssistTests(ITestOutputHelper output)
             if (!new LegalityAnalysis(pk).Valid) { session.Dispose(); continue; }
             yield return (Path.GetFileName(file), session, pk);
         }
+    }
+
+    private static bool ForbidsMasterBall(PKM pk)
+    {
+        var trial = pk.Clone();
+        trial.Ball = (byte)Ball.Master;
+        trial.RefreshChecksum();
+        return new LegalityAnalysis(trial).Results.Any(r => r.Identifier == CheckIdentifier.Ball && !r.Valid);
     }
 
     private static void Put(ISaveEngineSession session, PKM pk) =>
@@ -157,7 +168,9 @@ public sealed class LegalityAssistTests(ITestOutputHelper output)
     [Fact]
     public void ReportGroupsFailuresAndOffersTheMatchingFix()
     {
-        var (_, session, pk) = LegalCorpus().First(m => m.Pk.Format >= 6 && m.Pk.Ball != (byte)Ball.Master);
+        // A sample whose encounter really forbids the Master Ball: for some encounters it is legal,
+        // and those would never produce the Ball failure this test is about.
+        var (_, session, pk) = LegalCorpus().First(m => m.Pk.Format >= 6 && m.Pk.Ball != (byte)Ball.Master && ForbidsMasterBall(m.Pk));
         using (session)
         {
             var clean = Assist.GetReport(session, 0, 0);
