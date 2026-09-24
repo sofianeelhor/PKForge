@@ -32,8 +32,8 @@ public static class PokeBeansEditor
             if (choice == "Fill every Bean stack" || choice == "Clear every Bean stack")
             {
                 var filling = choice.StartsWith("Fill", StringComparison.Ordinal);
-                var verb = filling ? "FILL" : "CLEAR";
-                var confirmed = await PadMenu.ConfirmAsync(host, $"{verb} ALL BEANS?",
+                var verb = filling ? "Fill" : "Clear";
+                var confirmed = await PadMenu.ConfirmAsync(host, $"{verb} all beans?",
                     filling ? "Every Poké Bean stack becomes 255. A restore point is created first." : "Every Poké Bean stack becomes 0. A restore point is created first.",
                     filling ? "Fill" : "Clear");
                 if (!confirmed) continue;
@@ -49,7 +49,7 @@ public static class PokeBeansEditor
             var index = Array.FindIndex(beans.ToArray(), bean => choice.StartsWith(bean.Name, StringComparison.Ordinal));
             if (index < 0) continue;
             var selected = beans[index];
-            var count = await StatsPopup.ShowSingleAsync(host, selected.Name.ToUpperInvariant(), selected.Count, selected.MaxCount);
+            var count = await StatsPopup.ShowSingleAsync(host, selected.Name, selected.Count, selected.MaxCount);
             if (count is not { } next || next == selected.Count) continue;
             var saved = await viewModel.RunMutationAsync(s =>
             {

@@ -32,7 +32,8 @@ public sealed class TransferService(
     /// transfer on the user confirming this preview.
     /// </summary>
     public async Task<TransferPreviewOutcome> PreviewAsync(
-        ReadOnlyMemory<byte> entityBytes, string nickname, DetectedSave target, CancellationToken cancellationToken = default)
+        ReadOnlyMemory<byte> entityBytes, string nickname, DetectedSave target, CancellationToken cancellationToken = default,
+        string? format = null)
     {
         ArgumentNullException.ThrowIfNull(target);
 
@@ -43,16 +44,17 @@ public sealed class TransferService(
         if (landing is null)
             return new TransferPreviewOutcome(false, $"{target.GameLabel} has no empty slot in any box.");
 
-        var preview = new TransferPreviewService(legality).Preview(session, landing.Box, landing.Slot, entityBytes.ToArray());
+        var preview = new TransferPreviewService(legality).Preview(session, landing.Box, landing.Slot, entityBytes.ToArray(), format);
         if (preview is null)
-            return new TransferPreviewOutcome(false, Refusal(entityBytes, nickname, snapshot, target.GameLabel));
+            return new TransferPreviewOutcome(false, Refusal(entityBytes, nickname, snapshot, target.GameLabel, format));
         return new TransferPreviewOutcome(true, $"{nickname} → {target.GameLabel} (box {landing.Box + 1}).",
             landing.Box, landing.Slot, preview);
     }
 
     /// <summary>Places the entity into the first empty slot of the target save, across every box.</summary>
     public async Task<TransferOutcome> SendToGameAsync(
-        ReadOnlyMemory<byte> entityBytes, string nickname, DetectedSave target, CancellationToken cancellationToken = default)
+        ReadOnlyMemory<byte> entityBytes, string nickname, DetectedSave target, CancellationToken cancellationToken = default,
+        string? format = null)
     {
         ArgumentNullException.ThrowIfNull(target);
 
@@ -63,9 +65,9 @@ public sealed class TransferService(
         if (landing is null)
             return new TransferOutcome(false, $"{target.GameLabel} has no empty slot in any box.");
 
-        if (!TryImport(session, landing.Box, landing.Slot, entityBytes.ToArray(), out var refusal))
+        if (!TryImport(session, landing.Box, landing.Slot, entityBytes.ToArray(), out var refusal, format))
             return new TransferOutcome(false, refusal is null
-                ? Refusal(entityBytes, nickname, snapshot, target.GameLabel)
+                ? Refusal(entityBytes, nickname, snapshot, target.GameLabel, format)
                 : $"{nickname} cannot go to {target.GameLabel}. {refusal}");
 
         var candidate = session.Serialize();
@@ -81,16 +83,16 @@ public sealed class TransferService(
     /// throwaway copy of its current bytes takes the import). Same diff, warnings and
     /// verdict as <see cref="PreviewAsync"/>, for the bank's and boxes' "send to this game" paths.
     /// </summary>
-    public TransferPreviewOutcome PreviewIntoConnected(ReadOnlyMemory<byte> entityBytes, string nickname, int box, int slot)
+    public TransferPreviewOutcome PreviewIntoConnected(ReadOnlyMemory<byte> entityBytes, string nickname, int box, int slot, string? format = null)
     {
         var live = sessions.CurrentSession;
         if (live is null)
             return new TransferPreviewOutcome(false, "No game is connected.");
         const string label = "the connected game";
         using var scratch = engine.OpenSession(live.Serialize().ToArray(), sessions.Current?.Document.DisplayName);
-        var preview = new TransferPreviewService(legality).Preview(scratch, box, slot, entityBytes.ToArray());
+        var preview = new TransferPreviewService(legality).Preview(scratch, box, slot, entityBytes.ToArray(), format);
         if (preview is null)
-            return new TransferPreviewOutcome(false, Refusal(entityBytes, nickname, scratch.Snapshot, label));
+            return new TransferPreviewOutcome(false, Refusal(entityBytes, nickname, scratch.Snapshot, label, format));
         return new TransferPreviewOutcome(true, $"{nickname} → {label} (box {box + 1}).", box, slot, preview);
     }
 
@@ -98,17 +100,17 @@ public sealed class TransferService(
     /// Imports through the engine's reporting path when available, so a refusal says why.
     /// Downgrades are allowed: only call this after the user confirmed the transfer preview.
     /// </summary>
-    public static bool TryImport(ISaveEngineSession session, int box, int slot, byte[] bytes, out string? refusal)
+    public static bool TryImport(ISaveEngineSession session, int box, int slot, byte[] bytes, out string? refusal, string? format = null)
     {
         refusal = null;
         if (session is SaveEngineSession engineSession)
-            return engineSession.ImportSlotWithReport(box, slot, bytes, out refusal) is not null;
-        return session.ImportSlot(box, slot, bytes);
+            return engineSession.ImportSlotWithReport(box, slot, bytes, out refusal, format) is not null;
+        return session.ImportSlot(box, slot, bytes, format);
     }
 
     /// <summary>Why the entity cannot enter the target (the species or file names itself), else the generic refusal.</summary>
-    internal static string Refusal(ReadOnlyMemory<byte> entityBytes, string nickname, SaveSnapshot snapshot, string targetLabel) =>
-        TransferCompatibility.ExplainRefusal(entityBytes.ToArray(), nickname, snapshot.Format, snapshot.Generation, targetLabel)
+    internal static string Refusal(ReadOnlyMemory<byte> entityBytes, string nickname, SaveSnapshot snapshot, string targetLabel, string? format = null) =>
+        TransferCompatibility.ExplainRefusal(entityBytes.ToArray(), nickname, snapshot.Format, snapshot.Generation, targetLabel, format)
             ?? $"{nickname} cannot enter {targetLabel}.";
 
     /// <summary>Re-reads the target save and opens it as a throwaway session; the caller disposes it.</summary>

@@ -15,40 +15,22 @@ public static class TrainerCardPopup
     {
         var result = new TaskCompletionSource<TrainerInfo?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        Entry MakeEntry(string text, Keyboard? keyboard = null) => new()
+        Entry MakeEntry(string text, Keyboard? keyboard = null)
         {
-            Text = text,
-            Keyboard = keyboard ?? Keyboard.Default,
-            FontSize = 16,
-            FontFamily = DsChrome.PixelFont,
-            TextColor = UiTokens.Ink0,
-            BackgroundColor = UiTokens.ShellPress,
-            IsSpellCheckEnabled = false,
-            IsTextPredictionEnabled = false,
-            IsReadOnly = readOnly,
-        };
+            var entry = Kit.TextField(keyboard: keyboard);
+            entry.Text = text;
+            entry.FontSize = UiTokens.TextTitle;
+            entry.IsReadOnly = readOnly;
+            return entry;
+        }
 
         var name = MakeEntry(current.Name);
         var tid = MakeEntry(current.TID.ToString(), Keyboard.Numeric);
         var sid = MakeEntry(current.SID.ToString(), Keyboard.Numeric);
         var money = MakeEntry(current.Money.ToString(), Keyboard.Numeric);
-        var genderIsFemale = new Switch { OnColor = UiTokens.GiftRed, IsToggled = current.Gender == 1, IsEnabled = !readOnly };
+        var genderIsFemale = new Switch { OnColor = UiTokens.AccentInfo, ThumbColor = UiTokens.Ink0, IsToggled = current.Gender == 1, IsEnabled = !readOnly };
 
-        View Row(string caption, View value)
-        {
-            var grid = new Grid
-            {
-                ColumnSpacing = 8,
-                ColumnDefinitions = [new(new GridLength(90)), new(GridLength.Star)],
-                Children =
-                {
-                    new Label { Text = caption, FontSize = 11, FontFamily = DsChrome.PixelFont, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
-                    value,
-                },
-            };
-            Grid.SetColumn(value, 1);
-            return grid;
-        }
+        View Row(string caption, View value) => Kit.FormRow(caption, value);
 
         Grid overlay = null!;
         PadOverlay pad = null!;
@@ -71,12 +53,12 @@ public static class TrainerCardPopup
         }
 
         var buttons = new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End };
-        var cancel = Kit.Capsule(readOnly ? "CLOSE" : "CANCEL", UiTokens.Ink1);
+        var cancel = Kit.Capsule(readOnly ? "Close" : "Cancel", UiTokens.Ink1);
         cancel.Clicked += (_, _) => Close(null);
         buttons.Children.Add(cancel);
         if (!readOnly)
         {
-            var save = Kit.Capsule("SAVE", UiTokens.Green);
+            var save = Kit.Capsule("Save", UiTokens.Green);
             save.Clicked += (_, _) => Save();
             buttons.Children.Add(save);
         }
@@ -86,19 +68,19 @@ public static class TrainerCardPopup
             Spacing = 8,
             Children =
             {
-                Kit.HeaderBar(readOnly ? $"TRAINER CARD · {HardcoreMode.Marker}" : "TRAINER CARD"),
-                Row("NAME", name),
+                Kit.HeaderBar(readOnly ? $"Trainer card · {HardcoreMode.Marker}" : "Trainer card"),
+                Row("Name", name),
                 Row("TID", tid),
                 Row("SID", sid),
-                Row("MONEY", money),
-                Row("FEMALE", genderIsFemale),
+                Row("Money", money),
+                Row("Female", genderIsFemale),
             },
         };
         if (readOnly)
             content.Children.Add(new Label
             {
                 Text = HardcoreMode.StatusFor(SaveAction.EditTrainer),
-                FontSize = 11, FontFamily = DsChrome.PixelFont, TextColor = UiTokens.GiftRed,
+                FontSize = UiTokens.TextSmall, FontFamily = DsChrome.PixelFont, TextColor = UiTokens.TextTone(UiTokens.GiftRed),
             });
         content.Children.Add(buttons);
 

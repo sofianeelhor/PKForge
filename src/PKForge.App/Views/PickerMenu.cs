@@ -77,14 +77,8 @@ public sealed class PickerMenu : IPadHandler
         _filtered = Filter("");
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
 
-        var search = new Entry
-        {
-            Placeholder = "Search…",
-            FontSize = 14,
-            TextColor = UiTokens.Ink0,
-            PlaceholderColor = UiTokens.Ink1,
-            BackgroundColor = UiTokens.ShellPress,
-        };
+        var search = Kit.TextField();
+        search.Placeholder = "Search…";
         search.TextChanged += (_, args) =>
         {
             _query = args.NewTextValue ?? "";
@@ -97,16 +91,13 @@ public sealed class PickerMenu : IPadHandler
         {
             _filterLabel = new Label
             {
-                FontFamily = DsChrome.PixelFont, FontSize = 11, FontAttributes = FontAttributes.Bold,
+                FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextLabel,
                 VerticalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.NoWrap,
             };
-            var chip = new Border
-            {
-                StrokeThickness = 1.5,
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                Padding = new Thickness(10, 0),
-                Content = _filterLabel,
-            };
+            // A toggle in the menu-button language (resting / active), not an outline pill.
+            var chip = Kit.Tab("");
+            chip.Content = _filterLabel;
+            chip.Padding = new Thickness(12, 0);
             var tap = new TapGestureRecognizer();
             tap.Tapped += (_, _) => ToggleFilter();
             chip.GestureRecognizers.Add(tap);
@@ -137,24 +128,16 @@ public sealed class PickerMenu : IPadHandler
         {
             TextColor = UiTokens.Ink0,
             FontFamily = DsChrome.PixelFont,
-            FontSize = 14,
-            FontAttributes = FontAttributes.Bold,
+            FontSize = UiTokens.TextLabel,
             HorizontalTextAlignment = TextAlignment.Center,
             VerticalTextAlignment = TextAlignment.Center,
             LineBreakMode = LineBreakMode.TailTruncation,
         };
         var hints = filter is null
-            ? Kit.HintBar(("A", "PICK", livePreview is null ? null : PickHighlighted), ("B", "CANCEL", () => Close(null)))
-            : Kit.HintBar(("A", "PICK", livePreview is null ? null : PickHighlighted), ("Y", "FILTER", ToggleFilter), ("B", "CANCEL", () => Close(null)));
-        var previewBar = new Border
-        {
-            BackgroundColor = UiTokens.ShellPress,
-            Stroke = UiTokens.ShellEdge,
-            StrokeThickness = 1,
-            StrokeShape = new RoundRectangle { CornerRadius = 5 },
-            Padding = new Thickness(10, 2),
-            Content = _preview,
-        };
+            ? Kit.WindowHints(("A", "PICK", livePreview is null ? null : PickHighlighted), ("B", "Cancel", () => Close(null)))
+            : Kit.WindowHints(("A", "PICK", livePreview is null ? null : PickHighlighted), ("Y", "Filter", ToggleFilter), ("B", "Cancel", () => Close(null)));
+        var previewBar = Kit.Well(_preview, padding: 4);
+        previewBar.Padding = new Thickness(10, 4);
         // The selected-item preview used to be layered over the controller hints in a
         // single grid cell. Keep both useful pad affordances, but give each its own row.
         var hintRow = new VerticalStackLayout
@@ -172,7 +155,7 @@ public sealed class PickerMenu : IPadHandler
             RowDefinitions = [new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto)],
             Children =
             {
-                Kit.HeaderBar(title),
+                Kit.HeaderBar(Kit.Tidy(title)),
                 searchRow,
                 _list,
                 hintRow,
@@ -206,7 +189,7 @@ public sealed class PickerMenu : IPadHandler
         // Two lines at most: enough for an item or ability effect, still a scannable list.
         var detail = new Label
         {
-            TextColor = UiTokens.InkSoft, FontSize = 11, IsVisible = false, MaxLines = 2,
+            TextColor = UiTokens.InkSoft, FontSize = UiTokens.TextSmall, IsVisible = false, MaxLines = 2,
             LineBreakMode = LineBreakMode.TailTruncation, VerticalTextAlignment = TextAlignment.Center,
         };
         detail.SetBinding(Label.TextProperty, nameof(PickItem.Detail));
@@ -240,12 +223,14 @@ public sealed class PickerMenu : IPadHandler
             row.Opacity = item?.Muted == true ? 0.72 : 1;
         };
 
+        // A flat list row: soft stripe resting, the selected-button look when highlighted.
         var cell = new Border
         {
-            BackgroundColor = UiTokens.ShellPress,
-            StrokeThickness = 1.5,
+            BackgroundColor = UiTokens.RowStripe,
+            StrokeThickness = 1.2,
             Stroke = Colors.Transparent,
-            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            StrokeShape = new RoundRectangle { CornerRadius = UiTokens.ControlRadius },
+            Margin = new Thickness(0, 0, 0, 3),
             Content = row,
         };
         if (tapOwner is not null)
@@ -263,8 +248,7 @@ public sealed class PickerMenu : IPadHandler
                 {
                     new VisualState { Name = "Normal", Setters = { new Setter { Property = Border.StrokeProperty, Value = Colors.Transparent } } },
                     new VisualState { Name = "Selected", Setters = {
-                        new Setter { Property = Border.StrokeProperty, Value = UiTokens.SelectBorder },
-                        new Setter { Property = Border.StrokeThicknessProperty, Value = 3 },
+                        new Setter { Property = Border.StrokeProperty, Value = UiTokens.Rim },
                         new Setter { Property = Border.BackgroundColorProperty, Value = UiTokens.SelectFill } } },
                 },
             },
@@ -305,9 +289,8 @@ public sealed class PickerMenu : IPadHandler
     {
         if (_filter is null || _filterChip is null || _filterLabel is null) return;
         _filterLabel.Text = _filterOn ? $"✓ {_filter.OnLabel}" : _filter.OffLabel;
-        _filterLabel.TextColor = _filterOn ? UiTokens.SelectInk : UiTokens.Ink1;
-        _filterChip.BackgroundColor = _filterOn ? UiTokens.SelectFill : UiTokens.ShellPress;
-        _filterChip.Stroke = _filterOn ? UiTokens.SelectBorder : UiTokens.ShellEdge;
+        Kit.SetTab(_filterChip, _filterOn);
+        _filterLabel.TextColor = _filterOn ? UiTokens.SelectInk : UiTokens.Ink0;
     }
 
     /// <summary>Rebuilds the visible list, keeping the highlight on <paramref name="keepId"/> when it survives.</summary>

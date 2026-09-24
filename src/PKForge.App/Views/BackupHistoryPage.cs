@@ -21,11 +21,11 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
         BackgroundColor = UiTokens.Housing;
         NavigationPage.SetHasNavigationBar(this, false);
 
-        var back = Kit.MiniCapsule("BACK", UiTokens.Ink0);
+        var back = Kit.MiniCapsule("Back", UiTokens.Ink0);
         back.WidthRequest = 72;
         back.Clicked += async (_, _) => await Navigation.PopAsync();
 
-        var header = Kit.HeaderBar("RESTORE POINTS");
+        var header = Kit.HeaderBar("Restore points");
         header.VerticalOptions = LayoutOptions.Center;
         var titleRow = new Grid
         {
@@ -39,10 +39,10 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
         {
             TextColor = UiTokens.InkSoft,
             FontFamily = DsChrome.PixelFont,
-            FontSize = 14,
+            FontSize = UiTokens.TextBody,
             LineBreakMode = LineBreakMode.WordWrap,
         };
-        readout.SetBinding(Label.TextProperty, nameof(BackupHistoryViewModel.Status));
+        readout.SetBinding(Label.TextProperty, new Binding(nameof(BackupHistoryViewModel.Status), converter: Kit.TidyText));
 
         _list = new CollectionView
         {
@@ -56,7 +56,7 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
         {
             RowSpacing = 10,
             RowDefinitions = [new(GridLength.Auto), new(GridLength.Star)],
-            Children = { Kit.DevicePanel(readout, padding: 8), _list },
+            Children = { Kit.Well(readout, padding: 8), _list },
         };
         Grid.SetRow(_list, 1);
 
@@ -119,7 +119,7 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
         var title = new Label { TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 15 };
         title.SetBinding(Label.TextProperty, nameof(BackupInfo.DisplayName));
 
-        var detail = new Label { TextColor = UiTokens.InkSoft, FontFamily = DsChrome.PixelFont, FontSize = 12 };
+        var detail = new Label { TextColor = UiTokens.InkSoft, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall };
         detail.SetBinding(Label.TextProperty, new MultiBinding
         {
             Bindings =
@@ -135,7 +135,7 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
         {
             TextColor = UiTokens.Ink0,
             FontFamily = DsChrome.PixelFont,
-            FontSize = 12,
+            FontSize = UiTokens.TextSmall,
             LineBreakMode = LineBreakMode.WordWrap,
         };
         change.SetBinding(Label.TextProperty, nameof(BackupInfo.ChangeDescription));
@@ -150,8 +150,22 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
         };
         Grid.SetColumn(text, 1);
 
-        var card = Kit.DevicePanel(row, padding: 10);
-        card.Margin = new Thickness(2, 4);
+        // A flat list row on the page's panel (no card per restore point); the cursor
+        // wears the selected-button look.
+        var card = Kit.Row(row, shaded: true, new Thickness(10, 8));
+        card.Margin = new Thickness(0, 0, 0, 4);
+        VisualStateManager.SetVisualStateGroups(card, new VisualStateGroupList
+        {
+            new VisualStateGroup
+            {
+                Name = "CommonStates",
+                States =
+                {
+                    new VisualState { Name = "Normal", Setters = { new Setter { Property = Border.StrokeProperty, Value = Colors.Transparent }, new Setter { Property = VisualElement.BackgroundColorProperty, Value = UiTokens.RowStripe } } },
+                    new VisualState { Name = "Selected", Setters = { new Setter { Property = Border.StrokeProperty, Value = UiTokens.Rim }, new Setter { Property = VisualElement.BackgroundColorProperty, Value = UiTokens.SelectFill } } },
+                },
+            },
+        });
         return card;
     }
 

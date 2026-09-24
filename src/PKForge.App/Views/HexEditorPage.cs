@@ -71,15 +71,15 @@ public sealed class HexEditorPage : IPadHandler
         _bytes = session.Serialize().ToArray();
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
 
-        _title = new Label { Text = "BYTE MANIPULATION", TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 15 };
-        _progress = new Label { TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = 13, HorizontalTextAlignment = TextAlignment.End, HorizontalOptions = LayoutOptions.End };
-        _cursorInfo = new Label { TextColor = UiTokens.Maroon, FontFamily = DsChrome.PixelFont, FontSize = 13 };
+        _title = new Label { Text = "Byte manipulation", TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 15 };
+        _progress = new Label { TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextBody, HorizontalTextAlignment = TextAlignment.End, HorizontalOptions = LayoutOptions.End };
+        _cursorInfo = new Label { TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextBody };
 
         _canvas = new SKCanvasView { EnableTouchEvents = true, VerticalOptions = LayoutOptions.Fill };
         _canvas.PaintSurface += Paint;
         _canvas.Touch += Touch;
 
-        View hints = Kit.HintBar(
+        View hints = Kit.WindowHints(
             ("A", "Edit", null),
             ("B", "Done", () => _ = CloseAsync()),
             ("X", "Actions", () => _ = ShowActionsAsync()),
@@ -307,7 +307,7 @@ public sealed class HexEditorPage : IPadHandler
             options.Add(new PadOption(undoLabel, IconPath: "restore"));
         options.Add(new PadOption("Close", IconPath: "close"));
 
-        var choice = await PadMenu.ShowAsync(_host, "BYTE EDITOR", $"{_edits.Count} byte(s) changed.", options.ToArray());
+        var choice = await PadMenu.ShowAsync(_host, "Byte editor", $"{_edits.Count} byte(s) changed.", options.ToArray());
         if (choice == "Jump to offset")
         {
             await JumpAsync();
@@ -349,9 +349,9 @@ public sealed class HexEditorPage : IPadHandler
                 Close(target);
         }
 
-        var jump = Kit.Capsule("JUMP", UiTokens.Green);
+        var jump = Kit.Capsule("Jump", UiTokens.Green);
         jump.Clicked += (_, _) => Apply();
-        var cancel = Kit.Capsule("CANCEL", UiTokens.Ink1);
+        var cancel = Kit.Capsule("Cancel", UiTokens.Ink1);
         cancel.Clicked += (_, _) => Close(null);
 
         var content = new VerticalStackLayout
@@ -359,8 +359,8 @@ public sealed class HexEditorPage : IPadHandler
             Spacing = 10,
             Children =
             {
-                Kit.HeaderBar("JUMP TO OFFSET"),
-                new Label { Text = $"0 to 0x{_bytes.Length - 1:X} · hex (0x…) or decimal", TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = 12 },
+                Kit.HeaderBar("Jump to offset"),
+                new Label { Text = $"0 to 0x{_bytes.Length - 1:X} · hex (0x…) or decimal", TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall },
                 entry,
                 new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { cancel, jump } },
             },
@@ -402,7 +402,7 @@ public sealed class HexEditorPage : IPadHandler
     {
         if (_edits.Count > 0)
         {
-            var choice = await PadMenu.ShowAsync(_host, "SAVE BYTE CHANGES?",
+            var choice = await PadMenu.ShowAsync(_host, "Save byte changes?",
                 $"{_edits.Count} byte(s) changed. Raw edits skip format checks; a restore point is created first.",
                 "Save changes", "Discard changes", "Keep editing");
             if (choice == "Save changes") { await CommitAsync(); return; }
@@ -452,12 +452,12 @@ public sealed class HexEditorPage : IPadHandler
             return;
         }
 
-        var confirmed = await PadMenu.ConfirmAsync(_host, "WRITE BYTE CHANGES?",
+        var confirmed = await PadMenu.ConfirmAsync(_host, "Write byte changes?",
             $"{_edits.Count} byte(s) will be written to {current.Document.DisplayName}. A restore point is created first.",
             "Write");
         if (!confirmed) return;
 
-        var loader = LoadingOverlay.Show(_host, "WRITING BYTES…", "Validating, backing up, writing.");
+        var loader = LoadingOverlay.Show(_host, "Writing bytes…", "Validating, backing up, writing.");
         try
         {
             var receipt = await writer.WriteAsync(current.Document.DocumentId, current.Snapshot, candidate,
@@ -496,7 +496,7 @@ public sealed class HexEditorPage : IPadHandler
     private void RefreshChrome()
     {
         var page = _offset / PageSize;
-        _progress.Text = $"{_bytes.Length:N0} BYTES · {_edits.Count} CHANGED · PAGE {page + 1}/{PageCount}";
+        _progress.Text = $"{_bytes.Length:N0} bytes · {_edits.Count} changed · page {page + 1}/{PageCount}";
         var value = ByteAt(_offset);
         _cursorInfo.Text = $"SELECTED BYTE 0x{_offset:X} = 0x{value:X2} ({value}/{(sbyte)value})"
             + (_edits.ContainsKey(_offset) ? " · EDITED" : "");

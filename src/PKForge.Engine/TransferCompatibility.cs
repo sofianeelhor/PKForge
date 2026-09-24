@@ -17,11 +17,11 @@ public static class TransferCompatibility
     /// or null when no specific reason is known (the caller keeps its generic message).
     /// Bytes are parsed with the target's context, exactly like the import itself.
     /// </summary>
-    public static string? ExplainRefusal(byte[] entityBytes, string nickname, string targetFormat, int targetGeneration, string targetLabel)
+    public static string? ExplainRefusal(byte[] entityBytes, string nickname, string targetFormat, int targetGeneration, string targetLabel, string? format = null)
     {
         ArgumentNullException.ThrowIfNull(entityBytes);
         var context = Enum.TryParse<EntityContext>(targetFormat, out var parsed) ? parsed : EntityContext.None;
-        var entity = EntityFormat.GetFromBytes(entityBytes, context);
+        var entity = EntityBytes.Parse(entityBytes, format, context);
         if (entity is null || entity.Species == 0)
             return $"{nickname} is not a readable Pokémon file.";
 

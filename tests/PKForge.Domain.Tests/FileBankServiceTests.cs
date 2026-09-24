@@ -9,6 +9,100 @@ public sealed class FileBankServiceTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "pkforge-tests", Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public void FormatPersistsAndUpdateInfoRewritesFactsInOneIndexWrite()
+    {
+        var bank = new FileBankService(_root);
+        var mesprit = bank.Add([1, 2, 3], new BankEntryInfo(481, 0, false, "Mesprit", 50, 8, "BD", "PB8"));
+        var legacy = bank.Add([4, 5, 6], new BankEntryInfo(25, 0, false, "Pika", 30, 7, "Y"));
+        Assert.Equal("PB8", new FileBankService(_root).GetAll().Single(e => e.Id == mesprit.Id).Info.Format);
+
+        var changed = bank.UpdateInfo([
+            (legacy.Id, legacy.Info with { Format = "PK6", Generation = 6 }),
+            (mesprit.Id, mesprit.Info), // unchanged: not counted
+            (Guid.NewGuid(), legacy.Info), // unknown: ignored
+        ]);
+
+        Assert.Equal(1, changed);
+        var reloaded = new FileBankService(_root).GetAll().Single(e => e.Id == legacy.Id);
+        Assert.Equal(("PK6", 6), (reloaded.Info.Format, reloaded.Info.Generation));
+        Assert.Equal([4, 5, 6], bank.GetData(legacy.Id)); // bytes untouched
+        Assert.Equal((legacy.Box, legacy.Slot), (reloaded.Box, reloaded.Slot));
+    }
+
+    [Fact]
+    public void AFailedIndexWriteLeavesEveryMutationUndone()
+    {
+        var bank = new FileBankService(_root);
+        var a = bank.Add([1], new BankEntryInfo(25, 0, false, "A", 5, 8, "t", "PK8"));
+        var b = bank.Add([2], new BankEntryInfo(26, 0, false, "B", 5, 8, "t", "PK8"));
+        var blocker = Path.Combine(_root, "index.json.tmp");
+        Directory.CreateDirectory(blocker); // the index can no longer be written
+
+        Assert.ThrowsAny<Exception>(() => bank.RemoveMany([a.Id, b.Id]));
+        Assert.ThrowsAny<Exception>(() => bank.Add([3], new BankEntryInfo(27, 0, false, "C", 5, 8, "t", "PK8")));
+        Assert.ThrowsAny<Exception>(() => bank.Move(a.Id, 2, 5));
+
+        Assert.Equal([a, b], bank.GetAll());
+        Assert.Equal([1], bank.GetData(a.Id));
+        Assert.Equal([2], bank.GetData(b.Id));
+        Assert.Equal(2, Directory.GetFiles(_root, "*.bin").Length); // no orphan from the failed Add
+        Directory.Delete(blocker);
+        Assert.Equal([a, b], new FileBankService(_root).GetAll());
+    }
+
+    [Fact]
+    public void AnUnreadableIndexIsNeverOverwrittenByTheEmptyFallback()
+    {
+        Directory.CreateDirectory(_root);
+        var index = Path.Combine(_root, "index.json");
+        File.WriteAllText(index, "{ not json");
+
+        var bank = new FileBankService(_root);
+        Assert.Empty(bank.GetAll());
+        Assert.Throws<InvalidOperationException>(() => bank.Add([1], new BankEntryInfo(25, 0, false, "A", 5, 8, "t")));
+        Assert.Throws<InvalidOperationException>(bank.AddBox);
+        Assert.Equal("{ not json", File.ReadAllText(index));
+        Assert.False(File.Exists(index + ".bak"));
+    }
+
+    [Fact]
+    public void TheMigrationMarkerPersistsWithTheFixesAndOlderIndexesReadAsZero()
+    {
+        Directory.CreateDirectory(_root);
+        File.WriteAllText(Path.Combine(_root, "index.json"), """{"BoxCount":3,"Entries":[]}""");
+        var bank = new FileBankService(_root);
+        Assert.Equal(0, bank.MigrationVersion);
+        var entry = bank.Add([1], new BankEntryInfo(25, 0, false, "A", 5, 8, "t"));
+        var edited = entry.Info with { Nickname = "edited meanwhile" };
+        var other = bank.Add([2], new BankEntryInfo(26, 0, false, "B", 5, 8, "t"));
+        bank.Replace(entry.Id, [1], edited);
+
+        var changed = bank.CompleteMigration(1, [
+            (entry.Id, entry.Info, entry.Info with { Format = "PK8" }), // stale: the edit wins
+            (other.Id, other.Info, other.Info with { Format = "PK8" }),
+        ]);
+
+        Assert.Equal(1, changed);
+        var reloaded = new FileBankService(_root);
+        Assert.Equal(1, reloaded.MigrationVersion);
+        Assert.Equal(edited, reloaded.GetAll().Single(e => e.Id == entry.Id).Info);
+        Assert.Equal("PK8", reloaded.GetAll().Single(e => e.Id == other.Id).Info.Format);
+        Assert.Equal(0, reloaded.CompleteMigration(1, [(other.Id, other.Info, other.Info)])); // done once
+    }
+
+    [Fact]
+    public void ExportFileNamesCarryTheRecordedFormat()
+    {
+        Assert.Equal(".pb8", BankEntryFiles.ExtensionFor(new BankEntryInfo(481, 0, false, "M", 50, 8, "BD", "PB8")));
+        Assert.Equal(".pk6", BankEntryFiles.ExtensionFor(new BankEntryInfo(25, 0, false, "P", 5, 6, "Y", "PK6")));
+        Assert.Equal(".pk7", BankEntryFiles.ExtensionFor(new BankEntryInfo(25, 0, false, "P", 5, 7, "old")));
+        var bank = new FileBankService(_root);
+        var entry = bank.Add([1], new BankEntryInfo(481, 0, false, "Mesprit", 50, 8, "BD", "PB8"));
+        Assert.EndsWith(".pb8", BankArchive.FileNameFor(entry));
+        Assert.True(BankArchive.IsPkFileName(BankArchive.FileNameFor(entry)));
+    }
+
+    [Fact]
     public void OldIndexStillLoads()
     {
         // The exact on-disk shape written before the search/archive features shipped:
@@ -52,6 +146,7 @@ public sealed class FileBankServiceTests : IDisposable
         Assert.True(entry.Info.Shiny);
         Assert.Equal("Sparky", entry.Info.Nickname);
         Assert.Equal("Emerald", entry.Info.SourceName);
+        Assert.Null(entry.Info.Format); // written before the field existed: optional, awaits migration
 
         // And the loaded bank keeps working: mutations rewrite the index in today's shape.
         bank.Add([9, 9, 9], new BankEntryInfo(133, 0, false, "Eevee", 30, 4, "HeartGold"));

@@ -13,7 +13,7 @@ public static class TrainerRecordsEditor
         var info = session.GetTrainerRecords();
         if (!info.Supported)
         {
-            await EditorMenu.ShowAsync(host, "TRAINER RECORDS", "This game does not expose a supported trainer-record table.", "OK");
+            await EditorMenu.ShowAsync(host, "Trainer records", "This game does not expose a supported trainer-record table.", "OK");
             return;
         }
 
@@ -25,7 +25,7 @@ public static class TrainerRecordsEditor
             var options = entries.Select(Format).Select(text => new PadOption(text)).ToList();
             if (page > 0) options.Add(new PadOption("Previous page", IconPath: "back"));
             if (page < pageCount - 1) options.Add(new PadOption("Next page", IconPath: "next"));
-            var choice = await EditorMenu.ShowAsync(host, $"TRAINER RECORDS · {page + 1}/{pageCount}",
+            var choice = await EditorMenu.ShowAsync(host, $"Trainer records · {page + 1}/{pageCount}",
                 "Read-only: record meanings and safe limits differ by game.", options.ToArray());
             if (choice is null) return;
             if (choice == "Previous page") { page--; continue; }

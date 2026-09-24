@@ -58,6 +58,29 @@ public sealed class SaveSessionServiceTests
         Assert.NotEmpty(previous.Serialize().ToArray());
     }
 
+    [Fact]
+    public async Task RevertToBaselineDropsUnwrittenEditsAndCloseDropsTheSession()
+    {
+        var bytes = File.ReadAllBytes(CorpusPath("SM Project 802.main"));
+        var service = new SaveSessionService(new FakeAccess(bytes), new SaveEngine());
+        await service.OpenAsync(new PickedDocument("content://save", "PKM Sun"));
+        var pristine = service.CurrentSession!.Serialize().ToArray();
+        var occupied = service.Current!.Snapshot.Slots.First(s => s.Box >= 0 && s.Species is > 0);
+
+        var halfApplied = service.CurrentSession!;
+        halfApplied.ApplyEdit(occupied.Box, occupied.Slot, new EntityEdit(Nickname: "HALF"));
+        Assert.False(halfApplied.Serialize().Span.SequenceEqual(pristine));
+
+        service.RevertToBaseline();
+        Assert.NotSame(halfApplied, service.CurrentSession);
+        Assert.True(service.CurrentSession!.Serialize().Span.SequenceEqual(pristine));
+        Assert.True(service.Current!.Snapshot.OriginalBytes.Span.SequenceEqual(bytes));
+
+        service.Close();
+        Assert.Null(service.Current);
+        Assert.Null(service.CurrentSession);
+    }
+
     private sealed class SwitchingAccess(byte[] bytes) : ISaveFileAccess
     {
         public ValueTask<ReadOnlyMemory<byte>> ReadAsync(string documentId, CancellationToken cancellationToken = default) =>

@@ -125,7 +125,10 @@ public interface ISaveEngineSession : IDisposable
     void ClearBox(int box);
 
     /// <summary>Imports a .pk* file's bytes into the slot; false if the bytes are not a compatible entity.</summary>
-    bool ImportSlot(int box, int slot, byte[] fileBytes);
+    /// <remarks><paramref name="format"/>: the bytes' exact entity format when known (a bank
+    /// entry's <see cref="BankEntryInfo.Format"/>, <see cref="SlotExport.Format"/>); null reads
+    /// them by PKHeX's heuristics with this save as the preferred context.</remarks>
+    bool ImportSlot(int box, int slot, byte[] fileBytes, string? format = null);
 
     // ── Trainer card ──
     TrainerInfo GetTrainer();
@@ -499,6 +502,13 @@ public interface IEventDatabaseService
 {
     IReadOnlyList<EventGift> GetGifts(ISaveEngineSession session);
     GenerationOutcome Receive(ISaveEngineSession session, int giftId, int box, int slot);
+    /// <summary>Delivers an item card's items into the open save's bag.</summary>
+    GenerationOutcome ReceiveItems(ISaveEngineSession session, int giftId);
+    /// <summary>The card itself as a gift file (.pcd/.pgf/.wc6...), or null when unknown.</summary>
+    SlotExport? ExportCard(ISaveEngineSession session, int giftId);
+    /// <summary>The Pokémon the card delivers, converted for the open save's trainer, as
+    /// decrypted party bytes (.pk file / Bank deposit); null for item cards.</summary>
+    SlotExport? ExportEntity(ISaveEngineSession session, int giftId);
     /// <summary>The open save's identity for the gallery's compatibility filter and
     /// injected-history keys; null when the session is not an engine save (compatibility
     /// then can never apply and browsing stays unchanged).</summary>
@@ -512,7 +522,42 @@ public interface IEventDatabaseService
 /// injected-history ledger key on.</summary>
 public sealed record EventGift(
     int Id, string Title, string Header, int Species, int Level, bool Shiny,
-    int CardId, int Generation, int Language, int? Year);
+    int CardId, int Generation, int Language, int? Year,
+    EventGiftKind Kind = EventGiftKind.Pokemon, EventGiftDetails? Details = null);
+
+/// <summary>What a card delivers: a Pokémon into a box, or items into the bag.</summary>
+public enum EventGiftKind { Pokemon, Item }
+
+/// <summary>One bag item a card delivers.</summary>
+public sealed record EventGiftItem(int ItemId, string Name, int Quantity);
+
+/// <summary>
+/// The printed facts of a card, already resolved to English names by the engine: what the
+/// album shows (OT/ID, ball, held item, moves, met location, date) and where the card came
+/// from (its gallery file, when the archive supplied it). Every field has a neutral default
+/// so a sparse card still renders.
+/// </summary>
+public sealed record EventGiftDetails
+{
+    public int Form { get; init; }
+    public bool IsEgg { get; init; }
+    public int Ball { get; init; }
+    public string BallName { get; init; } = "";
+    public int HeldItem { get; init; }
+    public string HeldItemName { get; init; } = "";
+    public IReadOnlyList<string> Moves { get; init; } = [];
+    /// <summary>Card OT; empty when the receiving trainer becomes the OT.</summary>
+    public string OriginalTrainer { get; init; } = "";
+    /// <summary>Card ID as the games print it; empty when the receiving trainer's ID is used.</summary>
+    public string TrainerId { get; init; } = "";
+    public string MetLocation { get; init; } = "";
+    public DateOnly? Date { get; init; }
+    /// <summary>The gallery path the card was loaded from (event name, language, region).</summary>
+    public string? SourceFile { get; init; }
+    /// <summary>The card format, e.g. "PCD" or "WC7".</summary>
+    public string Format { get; init; } = "";
+    public IReadOnlyList<EventGiftItem> Items { get; init; } = [];
+}
 
 /// <summary>What the user asked for; null fields mean "let the legalizer decide".</summary>
 public sealed record GenerationRequest(
@@ -530,7 +575,9 @@ public sealed record GenerationOutcome(bool Success, string Message);
 
 public sealed record BaseStats(int Hp, int Atk, int Def, int SpA, int SpD, int Spe);
 
-public sealed record SlotExport(byte[] Data, string FileName);
+/// <param name="Format">The exact PKHeX entity type of <paramref name="Data"/> ("PB8", "PK6", ...),
+/// so a deposit can record it: same-size formats cannot be told apart from the bytes alone.</param>
+public sealed record SlotExport(byte[] Data, string FileName, string? Format = null);
 
 public sealed record TrainerInfo(string Name, int TID, int SID, uint Money, int Gender);
 
@@ -662,7 +709,12 @@ public sealed record EntityDetail(
     int Friendship = 0,
     IReadOnlyList<int>? Stats = null,
     int CurrentHp = 0,
-    int StatusCondition = 0);
+    int StatusCondition = 0,
+    SpriteTraits Traits = default)
+{
+    /// <summary>The sprite key (gender art, Alcremie sweet, cosplay via <see cref="Traits"/>).</summary>
+    public SpriteLook Look => new(Species, Form, IsShiny, Traits);
+}
 
 /// <summary>A partial entity mutation; only non-null fields are applied.</summary>
 public sealed record EntityEdit(

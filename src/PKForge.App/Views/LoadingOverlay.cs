@@ -31,7 +31,7 @@ public sealed class LoadingOverlay
         };
         _bar = new ProgressBar { ProgressColor = UiTokens.Green };
 
-        var cancel = Kit.Capsule("CANCEL", UiTokens.Ink1);
+        var cancel = Kit.Capsule("Cancel", UiTokens.Ink1);
         cancel.HorizontalOptions = LayoutOptions.Center;
         cancel.Clicked += (_, _) => Cancellation.Cancel();
 
@@ -41,7 +41,7 @@ public sealed class LoadingOverlay
             Children =
             {
                 Kit.HeaderBar(title),
-                new Label { Text = subtitle, TextColor = UiTokens.InkSoft, FontSize = 12, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap },
+                new Label { Text = subtitle, TextColor = UiTokens.InkSoft, FontSize = UiTokens.TextBody, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap },
                 Kit.WalkerStrip(34),
                 _bar,
                 _progress,

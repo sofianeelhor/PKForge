@@ -30,9 +30,9 @@ public sealed class PokeparkJournalPage : ContentPage
                 Spacing = 10,
                 Children =
                 {
-                    new Label { Text = "POKÉPARK  /  FIELD JOURNAL", FontSize = 18, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0 },
+                    new Label { Text = "Poképark  /  field journal", FontSize = 18, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0 },
                     _name, _mood, new BoxView { HeightRequest = 2, Color = UiTokens.SelectBorder }, _activity, _journal, _likes,
-                    new Label { Text = "This journal is a playful Poképark story. Game data stays unchanged.", FontSize = 12, TextColor = UiTokens.InkSoft },
+                    new Label { Text = "This journal is a playful Poképark story. Game data stays unchanged.", FontSize = UiTokens.TextSmall, TextColor = UiTokens.InkSoft },
                 },
             },
         };
@@ -67,6 +67,6 @@ public sealed class PokeparkJournalPage : ContentPage
         _mood.Text = resident is null ? "" : $"Mood: {_state!.Mood}";
         _activity.Text = resident is null ? "" : $"Right now: {_state!.Activity}";
         _journal.Text = resident is null ? "" : $"PERSONALITY  {_state!.Trait}\n\nMEADOW MEMORY  {_state!.Story}";
-        _likes.Text = resident is null ? "" : $"FAVORITE LITTLE THINGS  {_state!.Likes}";
+        _likes.Text = resident is null ? "" : $"Favorite little things  {_state!.Likes}";
     }
 }

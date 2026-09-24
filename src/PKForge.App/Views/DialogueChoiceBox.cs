@@ -61,7 +61,7 @@ public sealed class DialogueChoiceBox : IPadHandler
             };
             _cursors[i] = new BoxView
             {
-                Color = UiTokens.MaroonDeep,
+                Color = UiTokens.Bad,
                 WidthRequest = 3,
                 HeightRequest = 15,
                 VerticalOptions = LayoutOptions.Center,
@@ -91,9 +91,10 @@ public sealed class DialogueChoiceBox : IPadHandler
         _answers = new Border
         {
             BackgroundColor = UiTokens.Paper,
-            Stroke = UiTokens.MaroonDeep,
-            StrokeThickness = 3,
-            StrokeShape = new RoundRectangle { CornerRadius = 8 },
+            Stroke = UiTokens.ShellEdge,
+            StrokeThickness = UiTokens.PanelEdge,
+            StrokeShape = new RoundRectangle { CornerRadius = UiTokens.PanelRadius },
+            Shadow = Kit.HardShadow(),
             Padding = new Thickness(10, 7),
             WidthRequest = Math.Max(160, choices.Max(c => c.Length) * 11 + 44),
             HorizontalOptions = LayoutOptions.End,
@@ -106,10 +107,10 @@ public sealed class DialogueChoiceBox : IPadHandler
         var dialogue = new Border
         {
             BackgroundColor = UiTokens.Maroon,
-            Stroke = UiTokens.MaroonDeep,
-            StrokeThickness = 3,
-            StrokeShape = new RoundRectangle { CornerRadius = 10 },
-            Shadow = new Shadow { Brush = Brush.Black, Opacity = 0.28f, Radius = 10, Offset = new Point(0, 4) },
+            Stroke = UiTokens.Outline,
+            StrokeThickness = UiTokens.PanelEdge,
+            StrokeShape = new RoundRectangle { CornerRadius = UiTokens.PanelRadius },
+            Shadow = Kit.HardShadow(),
             Padding = new Thickness(16, 13),
             Margin = new Thickness(18, 0, 18, 16),
             MinimumHeightRequest = 100,
@@ -198,7 +199,7 @@ public sealed class DialogueChoiceBox : IPadHandler
         for (var i = 0; i < _labels.Length; i++)
         {
             var selected = i == _index;
-            _labels[i].TextColor = selected ? UiTokens.MaroonDeep : UiTokens.Ink0;
+            _labels[i].TextColor = selected ? UiTokens.Ink0 : UiTokens.InkSoft;
             _labels[i].FontAttributes = selected ? FontAttributes.Bold : FontAttributes.None;
             _cursors[i].IsVisible = selected;
         }

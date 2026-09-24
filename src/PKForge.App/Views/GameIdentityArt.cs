@@ -94,7 +94,6 @@ public sealed class GameHeroBackdrop : Grid
             FontFamily = DsChrome.PixelFont,
             FontSize = 24,
             FontAttributes = FontAttributes.Bold,
-            CharacterSpacing = 1,
             LineBreakMode = LineBreakMode.TailTruncation,
             HorizontalTextAlignment = TextAlignment.Center,
         };
@@ -102,8 +101,7 @@ public sealed class GameHeroBackdrop : Grid
         {
             TextColor = UiTokens.InkSoft,
             FontFamily = DsChrome.PixelFont,
-            FontSize = 11,
-            CharacterSpacing = 2,
+            FontSize = UiTokens.TextSmall,
             HorizontalTextAlignment = TextAlignment.Center,
         };
         var copy = new VerticalStackLayout
@@ -120,8 +118,8 @@ public sealed class GameHeroBackdrop : Grid
 
     public void SetGame(DetectedSave game)
     {
-        _title.Text = game.GameLabel.ToUpperInvariant();
-        _meta.Text = "PKFORGE GAME LIBRARY";
+        _title.Text = game.GameLabel;
+        _meta.Text = "PKForge game library";
         _ = LoadLogoAsync(game);
     }
 
@@ -133,7 +131,7 @@ public sealed class GameHeroBackdrop : Grid
             // an unnamed ROM hack has no logo and keeps the logo-grid scene.
             var path = game.ArtLabel is { } art ? await GameArt.GetLogoAsync(art) : null;
             // The selection can move while the package asset is copied to cache.
-            if (_title.Text != game.GameLabel.ToUpperInvariant()) return;
+            if (_title.Text != game.GameLabel) return;
             _logo.Source = path;
             _logo.IsVisible = path is not null;
         }

@@ -57,6 +57,7 @@ public static class UiTokens
 
     // ---- Worlds ----
     public static readonly Color SummaryBg = As(Pksm.SummaryBg);
+    public static readonly Color RibbonGold = As(Pksm.RibbonGold);
     public static readonly Color GiftPink = As(Pksm.GiftPink);
     public static readonly Color GiftPinkLight = As(Pksm.GiftPinkLight);
     public static readonly Color GiftRed = As(Pksm.GiftRed);
@@ -93,6 +94,61 @@ public static class UiTokens
     public static readonly SKColor SkLcdText = Pksm.Ink;
     public static readonly SKColor SkLcdTileEdge = Pksm.PaperEdge;
     public static readonly SKColor SkEmptyMark = Pksm.PaperShade;
+
+    // ---- The approved summary language, as tokens (one source for every screen) ----
+
+    // Type scale (dp). Nothing readable goes under TextSmall; no tracking, no forced caps.
+    public const double TextSmall = 12.5;   // captions, detail lines, secondary facts
+    public const double TextBody = 13.5;    // body copy, row values, buttons
+    public const double TextLabel = 14;     // row labels, hint labels
+    public const double TextTitle = 15;     // header strips, menu rows
+    public const double TextHeading = 17;   // screen / hero names
+
+    // Spacing rhythm (dp): 4 / 8 / 12 / 16 - pick by relationship, not by habit.
+    public const double Space1 = 4;
+    public const double Space2 = 8;
+    public const double Space3 = 12;
+    public const double Space4 = 16;
+
+    // Shape.
+    public const double PanelRadius = 6;    // device panels
+    public const double ControlRadius = 4;  // strips, rows, tabs, buttons
+    public const double PanelEdge = 2;      // the cobalt bezel
+    public const double ControlEdge = 1.5;  // menu-button edge
+
+    public static readonly Color PanelTop = As(PksmPaint.Lighter(Pksm.Paper, 0.05f));       // faint top light
+    public static readonly Color PanelShadow = As(Pksm.LogoVoid);                            // hard pixel drop
+    public static readonly Color StripTop = As(PksmPaint.Lighter(Pksm.HeaderBlue, 0.16f));
+    public static readonly Color StripBottom = As(PksmPaint.Darker(Pksm.HeaderBlue, 0.1f));
+    public static readonly Color ButtonTop = As(PksmPaint.Lighter(Pksm.LogoDeck, 0.04f));
+    public static readonly Color ButtonBottom = As(PksmPaint.Darker(Pksm.LogoDeck, 0.05f));
+    public static readonly Color ButtonEdge = As(Pksm.LogoGrid);                             // cobalt
+    public static readonly Color Outline = As(Pksm.ButtonBlueDeep);                          // void outline
+    public static readonly Color Rim = Color.FromRgba(0xF4, 0xF8, 0xFF, 0x70);                // the pale focus rim
+    public static readonly Color RowStripe = Color.FromRgba(Pksm.PaperShade.Red, Pksm.PaperShade.Green, Pksm.PaperShade.Blue, (byte)0x90);
+    public static readonly Color Divider = Color.FromRgba(Pksm.PaperEdge.Red, Pksm.PaperEdge.Green, Pksm.PaperEdge.Blue, (byte)0x70);
+    public static readonly Color Well = As(Pksm.PaperShade);                                 // recessed field / inset
+
+    // Toned per-context accents (the summary bands): quiet surfaces, never neon edges.
+    public static readonly Color AccentInfo = As(Pksm.BandInfo);
+    public static readonly Color AccentStats = As(Pksm.BandStats);
+    public static readonly Color AccentMoves = As(Pksm.BandMoves);
+    public static readonly Color AccentOrigin = As(Pksm.BandOrigin);
+    public static readonly Color AccentLegal = As(Pksm.BandLegal);
+    public static readonly Color AccentDanger = As(PksmPaint.Tone(Pksm.Illegal));
+    public static readonly Color AccentGift = As(PksmPaint.Tone(Pksm.GiftRed));
+    public static readonly Color AccentNeutral = As(Pksm.HeaderBlue);
+
+    /// <summary>A signal colour toned into the navy world (for filled accent surfaces).</summary>
+    public static Color Tone(Color signal)
+    {
+        var sk = PksmPaint.Tone(new SKColor((byte)(signal.Red * 255), (byte)(signal.Green * 255), (byte)(signal.Blue * 255)));
+        return As(sk);
+    }
+
+    /// <summary>Readable text colour for a signal used AS text on navy (chips become plain coloured text).</summary>
+    public static Color TextTone(Color signal) =>
+        signal.GetLuminosity() < 0.62f ? signal.WithLuminosity(0.66f) : signal;
 
     /// <summary>MAUI color for a box wallpaper index (cycled like the games' PC boxes).</summary>
     public static Color Wallpaper(int boxIndex) => As(Pksm.BoxWallpapers[((boxIndex % Pksm.BoxWallpapers.Length) + Pksm.BoxWallpapers.Length) % Pksm.BoxWallpapers.Length]);

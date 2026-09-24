@@ -28,9 +28,9 @@ public static class PksmTransferFlow
         return new PksmDecoded(result.Bytes, result.Info, result.Reason);
     }
 
-    public static PksmEncoded Encode(byte[] bankBytes)
+    public static PksmEncoded Encode(byte[] bankBytes, string? format)
     {
-        var result = PksmEntityConversion.Encode(bankBytes);
+        var result = PksmEntityConversion.Encode(bankBytes, format);
         return result.Data is not null && PksmBankFile.FromGenerationNumber(result.Generation, result.LetsGo) is { } tag
             ? new PksmEncoded(tag, result.Data, null)
             : PksmEncoded.Skip(result.Reason ?? "PKSM has no slot for this format");
@@ -48,14 +48,14 @@ public static class PksmTransferFlow
         var access = services?.GetService<ISaveFileAccess>();
         if (picker is null || access is null) return null;
 
-        var go = await PadMenu.ShowAsync(host, "IMPORT FROM PKSM",
+        var go = await PadMenu.ShowAsync(host, "Import from PKSM",
             "Pick the bank's .bnk (and its .json for box names), a zip of /3ds/PKSM/dumps, or .pk files.\n" + PksmBankTransfer.SdCardHelp,
             new PadOption("Choose files…", IconPath: "folder"));
         if (go is null) return null;
         var documents = await picker.PickManyAsync();
         if (documents.Count == 0) return null;
 
-        var overlay = LoadingOverlay.Show(host, "READING PKSM FILES…", $"{documents.Count} file(s).");
+        var overlay = LoadingOverlay.Show(host, "Reading PKSM files…", $"{documents.Count} file(s).");
         List<PksmImportPlan> plans;
         var notes = new List<string>();
         try
@@ -84,7 +84,7 @@ public static class PksmTransferFlow
             var why = new StringBuilder("Nothing importable found.");
             foreach (var plan in plans) AppendPlan(why, plan);
             foreach (var note in notes) why.Append('\n').Append(note);
-            await PadMenu.ShowAsync(host, "PKSM IMPORT", why.ToString(), "OK");
+            await PadMenu.ShowAsync(host, "PKSM import", why.ToString(), "OK");
             return "No importable Pokémon in those files.";
         }
 
@@ -92,13 +92,13 @@ public static class PksmTransferFlow
         foreach (var plan in plans) AppendPlan(preview, plan);
         foreach (var note in notes) preview.Append('\n').Append(note);
         preview.Append("\nExact copies of mons already in the bank are skipped.");
-        var choice = await PadMenu.ShowAsync(host, $"IMPORT {plans.Sum(p => p.ReadyCount)} POKÉMON?", preview.ToString().Trim(),
+        var choice = await PadMenu.ShowAsync(host, $"Import {plans.Sum(p => p.ReadyCount)} pokémon?", preview.ToString().Trim(),
             new PadOption("Add as new boxes (keep layout + names)", IconPath: "box"),
             new PadOption("Merge into free slots", IconPath: "compact"));
         if (choice is null) return "PKSM import cancelled.";
         var mode = choice.StartsWith("Add", StringComparison.Ordinal) ? PksmImportMode.NewBoxes : PksmImportMode.Merge;
 
-        var writing = LoadingOverlay.Show(host, "FILLING THE BANK…", "Writing entries.");
+        var writing = LoadingOverlay.Show(host, "Filling the bank…", "Writing entries.");
         try
         {
             var result = await Task.Run(() => PksmBankTransfer.Apply(bank, BoxNames, plans, mode));
@@ -158,14 +158,14 @@ public static class PksmTransferFlow
         var files = services?.GetService<IFolderFileAccess>();
         if (picker is null || files is null) return null;
 
-        var typed = await TextPopup.ShowAsync(host, "PKSM BANK NAME",
+        var typed = await TextPopup.ShowAsync(host, "PKSM bank name",
             "Becomes NAME.bnk + NAME.json. Blank = pkforge. Use pksm_1 only to replace PKSM's default bank.");
         if (typed is null) return null;
         var name = PksmBankTransfer.SanitizeBankName(typed);
         var folder = await picker.PickFolderAsync();
         if (folder is null) return null;
 
-        var overlay = LoadingOverlay.Show(host, "BUILDING A PKSM BANK…", $"{entries.Count} Pokémon from {label}.");
+        var overlay = LoadingOverlay.Show(host, "Building a PKSM bank…", $"{entries.Count} Pokémon from {label}.");
         PksmExportResult result;
         try
         {
@@ -192,7 +192,7 @@ public static class PksmTransferFlow
             message.Append($"\nLeft out {group.Count()}: {group.Key}");
         if (result.Written > 0)
             message.Append("\n\n").Append(PksmBankTransfer.ReturnHelp.Replace("NAME", name).Replace("box count", result.Boxes.ToString()));
-        await PadMenu.ShowAsync(host, "PKSM EXPORT", message.ToString(), "OK");
+        await PadMenu.ShowAsync(host, "PKSM export", message.ToString(), "OK");
         return result.Written == 0
             ? "PKSM export: nothing PKSM can hold."
             : $"PKSM bank written: {result.Written} Pokémon ({result.Skipped.Count} left out) → {folder.DisplayName}/{name}.bnk";

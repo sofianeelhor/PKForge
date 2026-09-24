@@ -13,7 +13,7 @@ namespace PKForge.App.Views;
 /// </summary>
 public static class KeyItemEventsEditor
 {
-    private const string Title = "KEY ITEM EVENTS";
+    private const string Title = "Key item events";
 
     public static async Task ShowAsync(Grid host, ISaveEngineSession session, BoxBrowserViewModel viewModel)
     {
@@ -67,17 +67,17 @@ public static class KeyItemEventsEditor
                 "Disable event" => UiTokens.GiftRed,
                 _ => null,
             })).ToArray();
-        var choice = await EditorMenu.ShowAsync(host, status.Title.ToUpperInvariant(), string.Join("\n", lines), options);
+        var choice = await EditorMenu.ShowAsync(host, status.Title, string.Join("\n", lines), options);
         if (choice is not ("Enable event" or "Disable event")) return true;
 
         if (HardcoreMode.Blocks(SaveAction.InjectEvent, out var blocked))
         {
-            await EditorMenu.ShowAsync(host, "HARDCORE MODE", blocked, "OK");
+            await EditorMenu.ShowAsync(host, "Hardcore mode", blocked, "OK");
             return true;
         }
 
         var enabling = choice == "Enable event";
-        var confirmed = await PadMenu.ConfirmAsync(host, enabling ? "ENABLE EVENT?" : "DISABLE EVENT?",
+        var confirmed = await PadMenu.ConfirmAsync(host, enabling ? "Enable event?" : "Disable event?",
             (enabling, status.NeedsItem) switch
             {
                 (true, true) => $"Adds the {status.ItemName} and sets the event flags. A restore point is created first.",

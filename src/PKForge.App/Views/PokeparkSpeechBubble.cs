@@ -1,3 +1,4 @@
+using PKForge.App.Theme;
 using Microsoft.Maui.Controls.Shapes;
 using PKForge.App.Services;
 using SkiaSharp;
@@ -32,7 +33,7 @@ public sealed class PokeparkSpeechBubble : IPadHandler
         _line = new Label { TextColor = ink, FontFamily = "PixelUI", FontSize = 17,
             LineBreakMode = LineBreakMode.WordWrap, VerticalOptions = LayoutOptions.Center };
         _hint = new Label { Text = "A / tap · reveal", TextColor = Color.FromArgb("#74846A"),
-            FontFamily = "PixelUI", FontSize = 11, HorizontalOptions = LayoutOptions.End };
+            FontFamily = "PixelUI", FontSize = UiTokens.TextSmall, HorizontalOptions = LayoutOptions.End };
         var name = new Label { Text = speaker, FontFamily = "PixelUI", FontSize = 17,
             TextColor = Color.FromArgb("#FFF7DA"), FontAttributes = FontAttributes.Bold };
         var nameplate = new Border { BackgroundColor = ink, StrokeThickness = 0,
@@ -47,7 +48,7 @@ public sealed class PokeparkSpeechBubble : IPadHandler
             var portrait = new SKCanvasView { WidthRequest = 64, HeightRequest = 64, VerticalOptions = LayoutOptions.Center };
             portrait.PaintSurface += (_, e) =>
             {
-                var c = e.Surface.Canvas; c.Clear(SKColor.Parse("#DCEABC"));
+                var c = e.Surface.Canvas; c.Clear(SKColor.Parse("#Dceabc"));
                 var frame = walking.GetFrame(mon.Species, mon.Form, mon.Shiny, 0, 0, false);
                 var bitmap = frame?.Bitmap ?? sprites.GetSprite(mon.Species, mon.Form, mon.Shiny);
                 if (bitmap is null) return;
@@ -64,7 +65,7 @@ public sealed class PokeparkSpeechBubble : IPadHandler
             BackgroundColor = Color.FromArgb("#FFF9E6"), Stroke = ink, StrokeThickness = 3,
             StrokeShape = new RoundRectangle { CornerRadius = 13 }, Padding = new Thickness(13, 11),
             MinimumHeightRequest = 110,
-            Shadow = new Shadow { Brush = Brush.Black, Opacity = .2f, Radius = 8, Offset = new Point(0, 4) },
+            Shadow = Kit.HardShadow(),
             Content = body
         };
         var tail = new SKCanvasView { HeightRequest = 15, WidthRequest = 28, Margin = new Thickness(0, 0, 35, -3),

@@ -25,6 +25,10 @@ public interface IBankFacts
     /// <summary>Poké Ball id from the stored bytes (PKHeX's <c>Ball</c> numbering; 0 when the
     /// format carries none). Shares the egg probe's single parse.</summary>
     int Ball(BankEntry entry);
+
+    /// <summary>Held item id (PKHeX national numbering, 0 = none). The index carries it for
+    /// entries deposited since the field existed; older entries are read from the bytes.</summary>
+    int HeldItem(BankEntry entry) => entry.Info.HeldItem ?? 0;
 }
 
 /// <summary>Which rare mons a filter keeps.</summary>
@@ -66,12 +70,17 @@ public sealed record BankFilter
     public int? LevelMax { get; init; }
     /// <summary>PKHeX gender code (0 male, 1 female, 2 genderless); read from the bytes.</summary>
     public int? Gender { get; init; }
+    /// <summary>Only mons holding something (any item).</summary>
+    public bool HoldsItemOnly { get; init; }
+    /// <summary>Only mons holding exactly this item id (PKHeX national numbering).</summary>
+    public int? HeldItemId { get; init; }
 
     /// <summary>True when anything at all narrows the vault (drives the RESET chip).</summary>
     public bool IsActive =>
         Query.Trim().Length > 0 || ShinyOnly || Generation is not null || SourceName is { Length: > 0 }
         || TypeId is not null || Rarity != BankRarity.Any || EggOnly || DefaultNamedOnly
-        || LevelMin is not null || LevelMax is not null || Gender is not null;
+        || LevelMin is not null || LevelMax is not null || Gender is not null
+        || HoldsItemOnly || HeldItemId is not null;
 
     /// <summary>How many of the optional filters are set, ignoring the text box and the sort.</summary>
     public int ActiveCount
@@ -88,6 +97,8 @@ public sealed record BankFilter
             if (DefaultNamedOnly) count++;
             if (LevelMin is not null || LevelMax is not null) count++;
             if (Gender is not null) count++;
+            if (HoldsItemOnly) count++;
+            if (HeldItemId is not null) count++;
             return count;
         }
     }
@@ -117,7 +128,14 @@ public sealed record BankFilter
             && !speciesName.Contains(query, StringComparison.OrdinalIgnoreCase)) return false;
 
         if (EggOnly && !facts.IsEgg(entry)) return false;
-        return Gender is not { } gender || facts.Gender(entry) == gender;
+        if (Gender is { } gender && facts.Gender(entry) != gender) return false;
+        if (HoldsItemOnly || HeldItemId is not null)
+        {
+            var item = facts.HeldItem(entry);
+            if (HoldsItemOnly && item == 0) return false;
+            if (HeldItemId is { } wanted && item != wanted) return false;
+        }
+        return true;
     }
 
     private bool MatchesRarity(int species) => Rarity switch

@@ -60,7 +60,7 @@ public static class QrPopup
             done.TrySetResult();
         }
 
-        var close = Kit.Capsule("CLOSE", UiTokens.Ink1);
+        var close = Kit.Capsule("Close", UiTokens.Ink1);
         close.HorizontalOptions = LayoutOptions.Center;
         close.Clicked += (_, _) => Close();
 

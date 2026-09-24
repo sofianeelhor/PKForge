@@ -26,7 +26,7 @@ public static class HoneyTreeEditor
     {
         if (!HoneyTreeService.IsSupported(session))
         {
-            await EditorMenu.ShowAsync(host, "HONEY TREES", "Honey trees exist only in Diamond, Pearl and Platinum.", "OK");
+            await EditorMenu.ShowAsync(host, "Honey trees", "Honey trees exist only in Diamond, Pearl and Platinum.", "OK");
             return;
         }
 
@@ -39,7 +39,7 @@ public static class HoneyTreeEditor
                 string.Join(", ", munchlax.Select(i => HoneyTreeService.Locations[i])) + ".";
             var options = trees.Select(tree => new PadOption(TreeLabel(tree),
                 Accent: tree.IsMunchlaxTree ? UiTokens.Green : null)).ToArray();
-            var choice = await EditorMenu.ShowAsync(host, "HONEY TREES", summary, options);
+            var choice = await EditorMenu.ShowAsync(host, "Honey trees", summary, options);
             if (choice is null) return;
             var index = Array.FindIndex(options, o => o.Label == choice);
             if (index < 0) continue;
@@ -57,7 +57,7 @@ public static class HoneyTreeEditor
 
         if (HardcoreMode.Blocks(Action, out var status))
         {
-            await EditorMenu.ShowAsync(host, tree.Location.ToUpperInvariant(), detail + Environment.NewLine + status, "OK");
+            await EditorMenu.ShowAsync(host, tree.Location, detail + Environment.NewLine + status, "OK");
             return true;
         }
 
@@ -67,7 +67,7 @@ public static class HoneyTreeEditor
         actions.Add(new PadOption(Slather));
         actions.Add(new PadOption(SetEncounter));
         actions.Add(new PadOption(SetShakes));
-        var choice = await EditorMenu.ShowAsync(host, tree.Location.ToUpperInvariant(), detail, actions.ToArray());
+        var choice = await EditorMenu.ShowAsync(host, tree.Location, detail, actions.ToArray());
         switch (choice)
         {
             case MunchlaxReady:
@@ -89,7 +89,7 @@ public static class HoneyTreeEditor
             }
             case SetShakes:
             {
-                var shakes = await StatsPopup.ShowSingleAsync(host, "SHAKES", tree.Shakes, HoneyTreeService.MaxShakes);
+                var shakes = await StatsPopup.ShowSingleAsync(host, "Shakes", tree.Shakes, HoneyTreeService.MaxShakes);
                 if (shakes is not { } next || next == tree.Shakes) return true;
                 return await WriteAsync(viewModel, slot,
                     s => HoneyTreeService.SetTree(s, tree.Index, tree.Time, tree.Group, tree.Slot, next),
@@ -108,7 +108,7 @@ public static class HoneyTreeEditor
             .Where(g => g != HoneyTreeService.GroupMunchlax || tree.IsMunchlaxTree)
             .ToArray();
         var labels = groups.Select(g => HoneyTreeService.GroupNames[g]).ToArray();
-        var choice = await EditorMenu.ShowAsync(host, "ENCOUNTER GROUP", null, labels);
+        var choice = await EditorMenu.ShowAsync(host, "Encounter group", null, labels);
         var index = Array.IndexOf(labels, choice);
         return index < 0 ? null : groups[index];
     }
@@ -116,7 +116,7 @@ public static class HoneyTreeEditor
     private static async Task<int?> PickSlotAsync(Grid host, IReadOnlyList<string> species)
     {
         var labels = species.Select((name, i) => $"Slot {i + 1} · {name}").ToArray();
-        var choice = await EditorMenu.ShowAsync(host, "ENCOUNTER SLOT", null, labels);
+        var choice = await EditorMenu.ShowAsync(host, "Encounter slot", null, labels);
         var index = Array.IndexOf(labels, choice);
         return index < 0 ? null : index;
     }

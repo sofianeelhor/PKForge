@@ -36,7 +36,9 @@ public static class PksmEntityConversion
         {
             pk = generation switch
             {
-                null => EntityFormat.GetFromBytes(data),
+                // A loose dump (no PKSM tag): its file extension, when it names a format, is
+                // the same authority PKHeX's own file loader uses (".pb8" vs ".pk8").
+                null => EntityBytes.Parse(data, EntityBytes.Normalize(Path.GetExtension(sourceName))),
                 _ when letsGo => null,
                 1 => data.Length is 59 or 69 ? PokeList1.ReadFromSingle(data) : new PK1(data.ToArray()),
                 2 => data.Length is 63 or 73 ? PokeList2.ReadFromSingle(data) : new PK2(data.ToArray()),
@@ -45,6 +47,8 @@ public static class PksmEntityConversion
                 5 => new PK5(data.ToArray()),
                 6 => new PK6(data.ToArray()),
                 7 => new PK7(data.ToArray()),
+                // PKSM's EIGHT tag is Sword/Shield: PKSM-Core has no BDSP or Legends class, so a
+                // tagged Gen 8 mon is always PK8, never PB8/PA8.
                 8 => new PK8(data.ToArray()),
                 _ => null,
             };
@@ -78,16 +82,16 @@ public static class PksmEntityConversion
                 break;
         }
 
-        // The bank re-reads its bytes by size and content alone. Where PKHeX's heuristics would
-        // read them back as another format (the PK6/PK7 and PK8/PB8 size collisions), refuse
-        // rather than store a mon the rest of the app would misread.
-        var reread = EntityFormat.GetFromBytes(bytes);
+        // The bank records the exact format with the bytes, so the PK6/PK7 and PK8/PB8 size
+        // collisions no longer decide how the mon is read back; check the round trip anyway.
+        var format = EntityBytes.FormatOf(pk);
+        var reread = EntityBytes.Parse(bytes, format);
         if (reread is null || reread.GetType() != pk.GetType())
             return new(null, null, $"PKForge would read this {pk.GetType().Name} back as {reread?.GetType().Name ?? "nothing"}");
 
         var info = new BankEntryInfo(pk.Species, pk.Form, pk.IsShiny,
             pk.IsNicknamed ? pk.Nickname : GameInfo.GetStrings("en").specieslist[pk.Species],
-            pk.CurrentLevel, pk.Format, sourceName);
+            pk.CurrentLevel, pk.Format, sourceName, format, pk.HeldItem, EntitySprite.Traits(pk));
         return new(bytes, info, null);
     }
 
@@ -96,9 +100,11 @@ public static class PksmEntityConversion
     /// classes for (PK1-PK8, PB7); same-generation side formats (Stadium 2, Colosseum/XD,
     /// Battle Revolution) are converted to their mainline sibling, everything else is refused.
     /// </summary>
-    public static Encoded Encode(byte[] bankBytes)
+    /// <remarks><paramref name="format"/>: the entry's recorded <see cref="BankEntryInfo.Format"/>;
+    /// without it a PB8 would be read as PK8 and exported into PKSM's Sword/Shield slot.</remarks>
+    public static Encoded Encode(byte[] bankBytes, string? format = null)
     {
-        var pk = EntityFormat.GetFromBytes(bankBytes);
+        var pk = EntityBytes.Parse(bankBytes, format);
         if (pk is null || pk.Species == 0)
             return new(0, false, null, "not a readable Pokémon");
 

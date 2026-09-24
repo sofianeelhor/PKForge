@@ -15,7 +15,7 @@ public static class GrandUndergroundEditor
             var items = session.GetGrandUndergroundItems();
             if (items.Count == 0)
             {
-                await EditorMenu.ShowAsync(host, "GRAND UNDERGROUND", "This game has no Grand Underground inventory.", "OK");
+                await EditorMenu.ShowAsync(host, "Grand underground", "This game has no Grand Underground inventory.", "OK");
                 return;
             }
 
@@ -23,14 +23,14 @@ public static class GrandUndergroundEditor
                 .Append(new PadOption("Fill every stack", IconPath: "fill"))
                 .Append(new PadOption("Clear every stack", IconPath: "clear"))
                 .ToArray();
-            var choice = await EditorMenu.ShowAsync(host, "GRAND UNDERGROUND", "Spheres, treasures, statues, and pedestals", options);
+            var choice = await EditorMenu.ShowAsync(host, "Grand underground", "Spheres, treasures, statues, and pedestals", options);
             if (choice is null) return;
 
             if (choice is "Fill every stack" or "Clear every stack")
             {
                 var filling = choice == "Fill every stack";
-                var verb = filling ? "FILL" : "CLEAR";
-                var confirmed = await PadMenu.ConfirmAsync(host, $"{verb} UNDERGROUND ITEMS?",
+                var verb = filling ? "Fill" : "Clear";
+                var confirmed = await PadMenu.ConfirmAsync(host, $"{verb} underground items?",
                     filling ? "Every Grand Underground stack becomes full. A restore point is created first." : "Every Grand Underground stack becomes 0. A restore point is created first.",
                     filling ? "Fill" : "Clear");
                 if (!confirmed) continue;
@@ -46,7 +46,7 @@ public static class GrandUndergroundEditor
 
             var selected = items.FirstOrDefault(item => choice.StartsWith($"{item.Name} ·", StringComparison.Ordinal));
             if (selected is null) continue;
-            var next = await StatsPopup.ShowSingleAsync(host, selected.Name.ToUpperInvariant(), selected.Count, selected.MaxCount);
+            var next = await StatsPopup.ShowSingleAsync(host, selected.Name, selected.Count, selected.MaxCount);
             if (next is not { } count || count == selected.Count) continue;
             var savedCount = await viewModel.RunMutationAsync(s =>
             {

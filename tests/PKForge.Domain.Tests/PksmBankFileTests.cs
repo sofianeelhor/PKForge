@@ -278,7 +278,7 @@ public sealed class PksmBankFileTests : IDisposable
                 new BankEntryInfo(bytes[0], 0, false, $"mon{bytes[0]}", 5, PksmBankFile.GenerationNumber(generation ?? PksmGeneration.Four), source), null);
 
     /// <summary>Inverse of <see cref="FakeDecode"/>: the leading byte carries the PKSM tag.</summary>
-    private static PksmEncoded FakeEncode(byte[] bankBytes) =>
+    private static PksmEncoded FakeEncode(byte[] bankBytes, string? format) =>
         (PksmGeneration)bankBytes[0] == PksmGeneration.Nine
             ? PksmEncoded.Skip("PKSM banks have no slot for PK9")
             : new PksmEncoded((PksmGeneration)bankBytes[0], bankBytes[1..], null);

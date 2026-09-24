@@ -25,10 +25,12 @@ public static class EventArchive
             {
                 var target = Extract(generation);
                 EncounterEvent.RefreshMGDB(target);
+                PKForge.Engine.EventDatabaseService.IndexArchive(target);
                 _loadedGeneration = generation;
             }
-            catch
+            catch (Exception error)
             {
+                Console.WriteLine($"PKForge EventArchive: {error}");
                 // A missing or corrupt archive must never break the wonder card menu;
                 // the embedded database still works.
                 _loadedGeneration = -1;

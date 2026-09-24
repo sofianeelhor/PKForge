@@ -4,6 +4,7 @@ using PKForge.App.Services;
 using PKForge.App.Theme;
 using PKForge.App.ViewModels;
 using PKForge.Chrome;
+using PKForge.Domain;
 using SkiaSharp;
 using SkiaSharp.Views.Maui;
 using SkiaSharp.Views.Maui.Controls;
@@ -11,9 +12,12 @@ using SkiaSharp.Views.Maui.Controls;
 namespace PKForge.App.Views;
 
 /// <summary>
-/// The Thor's second screen: a Pokémon summary that follows the box cursor - modern
-/// HOME render (tap it: it hops), name, gender, dex number, level, type badges,
-/// legality verdict. Hero art of the highlighted game on the home shelf; idle branding otherwise.
+/// The Thor's second screen, a pure function of <see cref="SecondScreenState.Owner"/>:
+/// the Pokémon inspector (the shared <see cref="MonSummaryView"/>) following the box or
+/// Bank cursor, with its INFO / STATS / MOVES / ORIGIN / LEGAL pages turned by the tabs
+/// here or SELECT in the Bank; the box overview while the full-screen summary shows the
+/// details on top; the Pokédex picker's species; the Poképark journal; hero art of the
+/// home shelf's highlighted game; idle branding when nobody claims it.
 /// </summary>
 public sealed class SecondScreenBoxPage : ContentPage
 {
@@ -26,32 +30,15 @@ public sealed class SecondScreenBoxPage : ContentPage
 
     private readonly BoxBrowserViewModel _viewModel;
     private readonly ISpriteService _sprites;
-    private readonly SKCanvasView _sprite;
     private readonly PropertyChangedEventHandler _viewModelHandler;
     private readonly SecondScreenState? _secondScreenState;
     private readonly PokeparkJournalState? _journalState;
     private readonly PropertyChangedEventHandler? _secondScreenHandler;
     private readonly PropertyChangedEventHandler? _journalHandler;
+    private readonly MonSummaryView _inspector;
     private Func<Task>? _swapAsync;
     private bool _cleanedUp;
 
-    private readonly Label _name = null!; // the maroon header strip's label, captured in the ctor
-    private readonly Image _gender = new() { WidthRequest = 24, HeightRequest = 24, VerticalOptions = LayoutOptions.Center, IsVisible = false };
-    private readonly Label _facts = new() { TextColor = UiTokens.Ink0, FontSize = 15 };
-    private readonly HorizontalStackLayout _typeBadges = new() { Spacing = 8 };
-    private readonly Image _shinyMark = new()
-    {
-        Source = PksmIcons.Source("shiny", PksmIcons.Indigo),
-        WidthRequest = 18,
-        HeightRequest = 18,
-        VerticalOptions = LayoutOptions.Center,
-        IsVisible = false,
-    };
-    private readonly Label _badge = new() { FontFamily = DsChrome.PixelFont, FontSize = 15, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End, VerticalTextAlignment = TextAlignment.Center };
-
-    private SKCanvasView _statRadar = null!;
-    private float _bounce;        // current hop offset in fractions of sprite height
-    private int _bounceTicks = -1; // -1 = not bouncing
     private long _animElapsedMs;
     private IDispatcherTimer? _animTimer;
 
@@ -60,64 +47,24 @@ public sealed class SecondScreenBoxPage : ContentPage
         _viewModel = viewModel;
         _sprites = sprites;
         BackgroundColor = UiTokens.Housing;
-        _sprite = new SKCanvasView { EnableTouchEvents = true };
 
-        _sprite.PaintSurface += PaintSprite;
-        _sprite.Touch += (_, args) =>
+        var state = _secondScreenState = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
+        var services = IPlatformApplication.Current?.Services;
+        var summaries = services?.GetService<Domain.IMonSummaryService>();
+        var sessions = services?.GetService<Domain.ISaveSessionService>();
+
+        // The inspector: the Gen-6 summary surface, a light-blue world carrying white panels.
+        _inspector = new MonSummaryView(sprites);
+        if (state is not null)
         {
-            if (args.ActionType == SKTouchAction.Pressed) { args.Handled = true; return; }
-            if (args.ActionType != SKTouchAction.Released) return;
-            args.Handled = true;
-            StartBounce();
-        };
-        // The mon name rides the maroon Gen-5 header strip; gender icon and the
-        // legality verdict sit beside it - the verdict must never scroll or clip away.
-        var nameHeader = (Border)Kit.HeaderBar("Pokémon");
-        _name = (Label)nameHeader.Content!;
-
-        var header = new Grid
-        {
-            ColumnSpacing = 8,
-            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto)],
-            Children = { nameHeader, _gender, _badge },
-        };
-        Grid.SetColumn(_gender, 1);
-        Grid.SetColumn(_badge, 2);
-
-        _statRadar = new SKCanvasView { HeightRequest = 160, HorizontalOptions = LayoutOptions.Fill };
-        _statRadar.PaintSurface += PaintRadar;
-
-        // The stat radar sits on its own inset white panel (paper + chrome border).
-        var radarPanel = new Border
-        {
-            BackgroundColor = UiTokens.Paper,
-            Stroke = UiTokens.ShellEdge,
-            StrokeThickness = 2,
-            StrokeShape = new RoundRectangle { CornerRadius = 6 },
-            Padding = new Thickness(8, 8, 8, 2),
-            Content = _statRadar,
-        };
-
-        var factsRow = new HorizontalStackLayout { Spacing = 8, Children = { _facts, _shinyMark } };
-
-        var factsPanel = Kit.DevicePanel(new VerticalStackLayout
-        {
-            Spacing = 8,
-            VerticalOptions = LayoutOptions.Center,
-            Children = { header, factsRow, _typeBadges, radarPanel },
-        }, padding: 16);
-        factsPanel.VerticalOptions = LayoutOptions.Center;
-
-        // The Gen-6 summary surface: a light-blue world carrying white panels.
+            _inspector.SetPage(state.InspectorPage);
+            _inspector.PageChanged += page => state.InspectorPage = page;
+        }
         var summary = new Grid
         {
-            BackgroundColor = UiTokens.SummaryBg,
-            Padding = 20,
-            ColumnSpacing = 16,
-            ColumnDefinitions = [new(GridLength.Star), new(GridLength.Star)],
-            Children = { Kit.LcdPanel(_sprite, padding: 8), factsPanel },
+            Padding = new Thickness(14, 12),
+            Children = { _inspector },
         };
-        Grid.SetColumn(factsPanel, 1);
 
         // A purpose-built game banner replaces inconsistent third-party hero art and covers every title.
         var hero = new GameHeroBackdrop { IsVisible = false };
@@ -135,33 +82,98 @@ public sealed class SecondScreenBoxPage : ContentPage
             },
         };
 
-        var state = _secondScreenState = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
-        var journalState = _journalState = IPlatformApplication.Current?.Services.GetService<PokeparkJournalState>();
+        var journalState = _journalState = services?.GetService<PokeparkJournalState>();
         var journal = BuildPokeparkJournal(journalState, out _journalHandler);
         var dex = BuildDexView();
+        var overview = BuildOverview();
+        // The Living Dex Autopilot's route map: cartridges and the Pokémon travelling between them.
+        var routeMap = new LivingDexRouteMap(sprites, compact: false) { Margin = new Thickness(14, 12) };
+        routeMap.IsVisible = false;
 
+        // The box cursor's mon, decoded from the live session OFF the UI thread (latest
+        // request wins) and cached per (session, edit generation, slot), so a cursor sweep
+        // never decodes on the UI thread and a revisit is one repaint. Legality comes from
+        // the view model's own verdict (sweep cache or one-slot analysis), never recomputed.
+        var boxCache = new Dictionary<(Domain.ISaveEngineSession, long, int, int), Domain.MonSummary?>();
+        var boxSequence = 0;
+        Domain.MonSummary? WithVerdict(Domain.MonSummary? built, Domain.ISaveEngineSession session, out bool pending)
+        {
+            pending = false;
+            if (built is null) return null;
+            switch (_viewModel.LegalityBadge)
+            {
+                case "✓" or "✗":
+                    return built.WithLegality(_viewModel.LegalityBadge == "✓",
+                        (_viewModel.LegalityText ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries));
+                default:
+                    pending = session.SupportsLegalityAnalysis;
+                    return built;
+            }
+        }
+        async void ShowBoxSummary(Domain.EntityDetail detail)
+        {
+            var session = sessions?.CurrentSession;
+            var box = detail.Box == -1 ? "PARTY" : $"BOX {detail.Box + 1:00}";
+            var caption = $"{box} · SLOT {detail.Slot + 1:00}";
+            if (session is null || summaries is null) { _inspector.Show(null, caption: caption); return; }
+            var key = (session, _viewModel.MutationGeneration, detail.Box, detail.Slot);
+            var sequence = ++boxSequence;
+            if (!boxCache.TryGetValue(key, out var built))
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                try { built = await Task.Run(() => summaries.Build(session, detail.Box, detail.Slot)); }
+                catch (Exception) { built = null; }
+                PerfTrace.Log("second.box-build", watch);
+                if (boxCache.Count > 64) boxCache.Clear();
+                boxCache[key] = built;
+                // A newer cursor position (or another surface) took over meanwhile.
+                if (sequence != boxSequence || _viewModel.Selected != detail) return;
+            }
+            var shown = WithVerdict(built, session, out var pending);
+            _inspector.Show(shown, pending, caption);
+        }
+
+        // The lower screen is a pure function of the top claim (SecondScreenState.Routes):
+        // each owner reads only its own payload, so leaving a surface can never leave its
+        // content behind.
         async void SwapAsync()
         {
+            var swapWatch = System.Diagnostics.Stopwatch.StartNew();
+            var owner = state?.Owner ?? SecondScreenOwner.Box;
             var detail = _viewModel.Selected;
-            // The Pokédex preview outranks everything while the picker is open.
-            var showJournal = journalState?.IsOpen == true;
-            var showDex = !showJournal && state?.PreviewSpecies is not null;
-            var showSummary = !showJournal && !showDex && detail is { IsEmpty: false };
-            if (showDex) UpdateDex(state!.PreviewSpecies!.Value);
-            if (showSummary) UpdateSummary();
-
+            var species = state?.PreviewSpecies;
             var preview = state?.PreviewGame;
-            var showHero = !showDex && !showSummary && preview is not null;
+            var showJournal = owner == SecondScreenOwner.Pokepark;
+            var showDex = owner == SecondScreenOwner.Pokedex && species is not null;
+            var showOverview = owner == SecondScreenOwner.Summary && state?.Overview is not null;
+            var bankDriven = owner == SecondScreenOwner.Bank;
+            var showSummary = bankDriven || (owner == SecondScreenOwner.Box && detail is { IsEmpty: false });
+            var showHero = owner == SecondScreenOwner.Home && preview is not null;
+            var showRoute = owner == SecondScreenOwner.Autopilot && state?.AutopilotRoute is not null;
+
+            boxSequence++; // any in-flight box decode is now stale
+            if (showDex) UpdateDex(species!.Value);
+            if (showOverview) { _overview = state!.Overview; _overviewCanvas.InvalidateSurface(); }
+            if (showSummary)
+            {
+                if (bankDriven)
+                    _inspector.Show(state!.Inspected?.Summary, state.Inspected?.LegalityPending == true, state.Inspected?.Caption, "EMPTY BANK SLOT");
+                else
+                    ShowBoxSummary(detail!);
+            }
+            if (showHero) hero.SetGame(preview!);
 
             journal.IsVisible = showJournal;
             dex.IsVisible = showDex;
+            overview.IsVisible = showOverview;
             summary.IsVisible = showSummary;
-            _summaryVisible = showSummary;
-            _dexVisible = showDex;
-            SetAnimating(showSummary || showDex);
             hero.IsVisible = showHero;
-            if (showHero) hero.SetGame(preview!);
-            idle.IsVisible = !journal.IsVisible && !dex.IsVisible && !summary.IsVisible && !hero.IsVisible;
+            if (showRoute) routeMap.Show(state!.AutopilotRoute);
+            routeMap.IsVisible = showRoute;
+            idle.IsVisible = !showJournal && !showDex && !showOverview && !showSummary && !showHero && !showRoute;
+            _dexVisible = showDex;
+            SetAnimating(showDex);
+            PerfTrace.Log("second.swap", swapWatch);
         }
 
         _swapAsync = () =>
@@ -169,23 +181,40 @@ public sealed class SecondScreenBoxPage : ContentPage
             SwapAsync();
             return Task.CompletedTask;
         };
-        Content = new Grid { Children = { DsChrome.GridBackground(), hero, summary, journal, dex, idle } };
+        Content = new Grid { Children = { DsChrome.GridBackground(), hero, summary, overview, journal, dex, routeMap, idle } };
         SwapAsync();
 
+        // Selected, LegalityBadge and friends change together on a cursor move: coalesce
+        // them into one swap on the next dispatcher turn instead of one per property.
+        var swapQueued = false;
+        void QueueSwap()
+        {
+            if (swapQueued) return;
+            swapQueued = true;
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                swapQueued = false;
+                if (!_cleanedUp) SwapAsync();
+            });
+        }
         _viewModelHandler = (_, args) =>
         {
+            if (state is not null && state.Owner != SecondScreenOwner.Box) return; // the cursor is not in front
             if (args.PropertyName is nameof(BoxBrowserViewModel.Selected) or nameof(BoxBrowserViewModel.LegalityBadge))
-                MainThread.BeginInvokeOnMainThread(() =>
-                {
-                    SwapAsync();
-                    _sprite.InvalidateSurface();
-                    _statRadar.InvalidateSurface();
-                });
+                QueueSwap();
         };
         _viewModel.PropertyChanged += _viewModelHandler;
         if (state is not null)
         {
-            _secondScreenHandler = (_, _) => MainThread.BeginInvokeOnMainThread(SwapAsync);
+            _secondScreenHandler = (_, args) =>
+            {
+                if (args.PropertyName == nameof(SecondScreenState.AutopilotRoute) && state.Owner == SecondScreenOwner.Autopilot && routeMap.IsVisible)
+                    // Every dry-run step publishes a route: feed the map directly, no full swap.
+                    MainThread.BeginInvokeOnMainThread(() => routeMap.Show(state.AutopilotRoute));
+                else if (args.PropertyName == nameof(SecondScreenState.InspectorPage))
+                    MainThread.BeginInvokeOnMainThread(() => _inspector.SetPage(state.InspectorPage));
+                else QueueSwap();
+            };
             state.PropertyChanged += _secondScreenHandler;
         }
     }
@@ -233,10 +262,11 @@ public sealed class SecondScreenBoxPage : ContentPage
         SetAnimating(false);
     }
 
-    // Which view is showing, and whether the sprite it shows is an animated GIF (vs a
-    // static HOME/pixel render). The timer only repaints a canvas that is both visible AND
-    // animated - a still sprite was being redrawn 25x/sec for nothing.
-    private bool _summaryVisible, _dexVisible, _spriteAnimated, _dexAnimated;
+
+    // Whether the dex view is showing, and whether its sprite is an animated GIF (vs a
+    // static render): the timer only repaints a canvas that is both visible AND animated.
+    // The inspector runs its own loop.
+    private bool _dexVisible, _dexAnimated;
 
     /// <summary>The GIF loop only ticks while an animated Pokémon is actually on screen.</summary>
     private void SetAnimating(bool on)
@@ -253,132 +283,82 @@ public sealed class SecondScreenBoxPage : ContentPage
         _animTimer.Tick += (_, _) =>
         {
             _animElapsedMs += 40;
-            if (_summaryVisible && _spriteAnimated) _sprite.InvalidateSurface();
             if (_dexVisible && _dexAnimated) _dexSprite.InvalidateSurface();
         };
         _animTimer.Start();
     }
 
-    /// <summary>All facts set directly from the model - no fragile nested bindings, no ghost labels.</summary>
-    private void UpdateSummary()
+    // ── The box overview (while the full-screen summary owns the details) ──
+
+    private SKCanvasView _overviewCanvas = null!;
+    private SummaryOverview? _overview;
+
+    /// <summary>The walked box as the PKSM grid, the viewed mon under the red hand: where you
+    /// are in the box, not the details the top screen already carries.</summary>
+    private View BuildOverview()
     {
-        var detail = _viewModel.Selected;
-        if (detail is null || detail.IsEmpty) return;
-
-        _name.Text = detail.Nickname is { Length: > 0 } nick ? nick : $"#{detail.Species}";
-        _gender.Source = detail.Gender switch
-        {
-            0 => PksmIcons.Source("male", PksmIcons.Indigo),
-            1 => PksmIcons.Source("female", PksmIcons.Indigo),
-            _ => null,
-        };
-        _gender.IsVisible = detail.Gender is 0 or 1;
-        _facts.Text = $"No. {detail.Species:000}   Lv. {detail.Level}";
-        _shinyMark.IsVisible = detail.IsShiny;
-
-        _typeBadges.Children.Clear();
-        foreach (var type in detail.Types ?? [])
-        {
-            var typeName = (uint)type < (uint)TypeNames.Length ? TypeNames[type] : $"?{type}";
-            _typeBadges.Children.Add(new Border
-            {
-                BackgroundColor = TypePalette.ForType(type),
-                StrokeThickness = 0,
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                Padding = new Thickness(12, 3),
-                Content = new Label
-                {
-                    Text = typeName.ToUpperInvariant(),
-                    TextColor = Colors.White,
-                    FontSize = 12,
-                    FontAttributes = FontAttributes.Bold,
-                    CharacterSpacing = 1,
-                },
-            });
-        }
-
-        _badge.Text = _viewModel.LegalityBadge switch
-        {
-            "✓" => "✓ LEGAL",
-            "✗" => "✗ NOT LEGAL",
-            _ => "",
-        };
-        _badge.TextColor = _viewModel.LegalityBadge == "✓" ? UiTokens.Ok : UiTokens.Bad;
+        _overviewCanvas = new SKCanvasView { IsVisible = true };
+        _overviewCanvas.PaintSurface += PaintOverview;
+        return new Grid { IsVisible = false, Padding = new Thickness(14, 12), Children = { _overviewCanvas } };
     }
 
-    private static readonly string[] StatAxes = ["HP", "ATK", "DEF", "SPA", "SPD", "SPE"];
-
-    /// <summary>
-    /// The mon's final battle stats as a six-point radar (spider) chart - HP top, then
-    /// clockwise. The largest stat reaches the outer ring so the build's shape reads at a
-    /// glance; the exact numbers sit at each vertex. Base-stat outline shows the raw frame.
-    /// </summary>
-    private void PaintRadar(object? sender, SKPaintSurfaceEventArgs args)
+    private void PaintOverview(object? sender, SKPaintSurfaceEventArgs args)
     {
         var canvas = args.Surface.Canvas;
         canvas.Clear(SKColors.Transparent);
-        var detail = _viewModel.Selected;
-        if (detail?.Stats is not { Count: 6 } stats) return;
-
+        if (_overview is not { } o) return;
         var info = args.Info;
-        var cx = info.Width / 2f;
-        var cy = info.Height / 2f;
-        var radius = Math.Min(info.Width, info.Height) * 0.26f;
-        var max = Math.Max(1, stats.Max());
+        var unit = info.Width / 360f;
+        using var font = new SKFont(PixelFont.Face, 13 * unit) { Edging = SKFontEdging.Antialias, Embolden = true };
+        using var small = new SKFont(PixelFont.Face, 11 * unit) { Edging = SKFontEdging.Antialias };
 
-        SKPoint Vertex(int i, float r)
-        {
-            var angle = (float)(-Math.PI / 2 + i * Math.PI / 3); // -90° + 60°·i, clockwise
-            return new SKPoint(cx + r * (float)Math.Cos(angle), cy + r * (float)Math.Sin(angle));
-        }
+        var bar = new SKRect(0, 0, info.Width, 30 * unit);
+        var label = o.Total > 0 ? $"{o.Context} · {o.Position} / {o.Total}" : o.Context;
+        PksmPaint.BoxNameBar(canvas, bar, label, font, false, false);
 
-        // Grid rings + spokes.
-        using var grid = new SKPaint { Color = UiTokens.SkLcdTileEdge.WithAlpha(0x66), Style = SKPaintStyle.Stroke, StrokeWidth = 1f, IsAntialias = true };
-        for (var ring = 1; ring <= 4; ring++)
+        var hintHeight = 24 * unit;
+        var gridArea = new SKRect(0, bar.Bottom + 8 * unit, info.Width, info.Height - hintHeight - 6 * unit);
+        var size = new SKSize(gridArea.Width, gridArea.Height);
+        var wallpaper = BoxGridRenderer.WallpaperAt(0);
+        var shadow = Pksm.WallpaperShade(wallpaper);
+        canvas.Save();
+        canvas.Translate(gridArea.Left, gridArea.Top);
+        var bounds = BoxGridRenderer.GridBounds(size);
+        PksmPaint.Wallpaper(canvas, SKRect.Inflate(bounds, 6 * unit, 6 * unit), wallpaper);
+        var slots = Math.Min(o.Count, BoxGridRenderer.Columns * BoxGridRenderer.Rows);
+        for (var i = 0; i < slots; i++)
         {
-            using var ringPath = new SKPath();
-            for (var i = 0; i < 6; i++)
-            {
-                var p = Vertex(i, radius * ring / 4f);
-                if (i == 0) ringPath.MoveTo(p); else ringPath.LineTo(p);
-            }
-            ringPath.Close();
-            canvas.DrawPath(ringPath, grid);
+            var rect = BoxGridRenderer.SlotRect(size, i);
+            var icon = i < o.Icons.Count ? o.Icons[i] : null;
+            PksmPaint.Slot(canvas, rect, wallpaper, empty: icon is null);
+            if (icon is not null) DrawOverviewSprite(canvas, rect, icon);
+            if (icon is { Shiny: true })
+                BoxGridRenderer.DrawSparkle(canvas, rect.Right - rect.Width * 0.14f, rect.Top + rect.Height * 0.16f,
+                    Math.Min(rect.Width, rect.Height) * 0.09f, BoxGridRenderer.SparklePaint);
+            if (icon is { HasItem: true }) BoxGridRenderer.DrawHeldItemBadge(canvas, rect);
+            if (i == o.Slot) PksmPaint.Selection(canvas, rect);
         }
-        for (var i = 0; i < 6; i++)
-            canvas.DrawLine(cx, cy, Vertex(i, radius).X, Vertex(i, radius).Y, grid);
+        canvas.Restore();
 
-        // The stat polygon.
-        using var fill = new SKPaint { Color = Pksm.IndigoLight.WithAlpha(0x66), Style = SKPaintStyle.Fill, IsAntialias = true };
-        using var edge = new SKPaint { Color = Pksm.Indigo, Style = SKPaintStyle.Stroke, StrokeWidth = 2.5f, IsAntialias = true };
-        using var dot = new SKPaint { Color = Pksm.IndigoDeep, Style = SKPaintStyle.Fill, IsAntialias = true };
-        using var shape = new SKPath();
-        for (var i = 0; i < 6; i++)
-        {
-            var p = Vertex(i, radius * stats[i] / max);
-            if (i == 0) shape.MoveTo(p); else shape.LineTo(p);
-        }
-        shape.Close();
-        canvas.DrawPath(shape, fill);
-        canvas.DrawPath(shape, edge);
-        for (var i = 0; i < 6; i++)
-        {
-            var p = Vertex(i, radius * stats[i] / max);
-            canvas.DrawCircle(p.X, p.Y, 3f, dot);
-        }
+        PksmPaint.CenterText(canvas, "SUMMARY ON THE TOP SCREEN  ·  L / R  NEXT POKéMON  ·  B  CLOSE",
+            info.Width / 2f, info.Height - hintHeight / 2, small, SKColors.White, shadow, SKTextAlign.Center);
+    }
 
-        // Axis captions + values just outside each vertex.
-        using var capFont = new SKFont { Size = 13f, Edging = SKFontEdging.Antialias, Embolden = true };
-        using var valFont = new SKFont { Size = 15f, Edging = SKFontEdging.Antialias, Embolden = true };
-        using var capPaint = new SKPaint { Color = UiTokens.SkLcdText.WithAlpha(0xB0), IsAntialias = true };
-        using var valPaint = new SKPaint { Color = UiTokens.SkLcdText, IsAntialias = true };
-        for (var i = 0; i < 6; i++)
+    private void DrawOverviewSprite(SKCanvas canvas, SKRect rect, SlotIcon icon)
+    {
+        var bitmap = _sprites.GetSprite(icon.Look);
+        if (bitmap is null)
         {
-            var label = Vertex(i, radius + 15f);
-            var align = Math.Abs(label.X - cx) < 4 ? SKTextAlign.Center : label.X < cx ? SKTextAlign.Right : SKTextAlign.Left;
-            canvas.DrawText(StatAxes[i], label.X, label.Y - 2, align, capFont, capPaint);
-            canvas.DrawText(stats[i].ToString(), label.X, label.Y + 12, align, valFont, valPaint);
+            _sprites.Warm(icon.Look, () => MainThread.BeginInvokeOnMainThread(_overviewCanvas.InvalidateSurface));
+            return;
         }
+        var inset = Math.Min(rect.Width, rect.Height) * 0.03f;
+        var box = SKRect.Inflate(rect, -inset, -inset);
+        var scale = Math.Min(box.Width / bitmap.Width, box.Height / bitmap.Height);
+        var w = bitmap.Width * scale;
+        var h = bitmap.Height * scale;
+        using var image = SKImage.FromBitmap(bitmap);
+        canvas.DrawImage(image, new SKRect(rect.MidX - w / 2, rect.MidY - h / 2, rect.MidX + w / 2, rect.MidY + h / 2), BoxGridRenderer.SpriteSampling);
     }
 
     // ── The logo-deck Pokédex view (species preview while the picker is open) ──
@@ -502,7 +482,7 @@ public sealed class SecondScreenBoxPage : ContentPage
                     StrokeThickness = 0,
                     StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 5 },
                     Padding = new Thickness(9, 2),
-                    Content = new Label { Text = typeName.ToUpperInvariant(), TextColor = Colors.White, FontSize = 10, FontAttributes = FontAttributes.Bold },
+                    Content = new Label { Text = typeName, TextColor = Colors.White, FontSize = 10, FontAttributes = FontAttributes.Bold },
                 });
             }
 
@@ -524,9 +504,9 @@ public sealed class SecondScreenBoxPage : ContentPage
         _dexAnimated = false;
         if (_dexSpecies <= 0) return;
 
-        if (!_sprites.TryGetShowdown(_dexSpecies, false, out var animated))
+        if (!_sprites.TryGetShowdown(new SpriteLook(_dexSpecies, 0, false), out var animated))
         {
-            _sprites.WarmShowdown(_dexSpecies, false, () => MainThread.BeginInvokeOnMainThread(_dexSprite.InvalidateSurface));
+            _sprites.WarmShowdown(new SpriteLook(_dexSpecies, 0, false), () => MainThread.BeginInvokeOnMainThread(_dexSprite.InvalidateSurface));
             return;
         }
         _dexAnimated = animated is not null;
@@ -545,90 +525,5 @@ public sealed class SecondScreenBoxPage : ContentPage
         var dest = new SKRect(info.Width / 2f - w / 2, info.Height / 2f - h / 2, info.Width / 2f + w / 2, info.Height / 2f + h / 2);
         using var image = SKImage.FromBitmap(bitmap);
         canvas.DrawImage(image, dest, new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
-    }
-
-    /// <summary>Tap response: a happy little hop.</summary>
-    private void StartBounce()
-    {
-        try { HapticFeedback.Default.Perform(HapticFeedbackType.Click); }
-        catch { }
-        if (_bounceTicks >= 0) return; // already hopping
-        _bounceTicks = 0;
-        var timer = Dispatcher.CreateTimer();
-        timer.Interval = TimeSpan.FromMilliseconds(30);
-        timer.Tick += (_, _) =>
-        {
-            _bounceTicks++;
-            // Two quick decaying hops over ~0.6s.
-            var progress = _bounceTicks / 20f;
-            _bounce = (float)(Math.Abs(Math.Sin(progress * Math.PI * 2)) * (1 - progress) * 0.12);
-            _sprite.InvalidateSurface();
-            if (_bounceTicks >= 20)
-            {
-                _bounce = 0;
-                _bounceTicks = -1;
-                timer.Stop();
-                _sprite.InvalidateSurface();
-            }
-        };
-        timer.Start();
-    }
-
-    private void PaintSprite(object? sender, SKPaintSurfaceEventArgs args)
-    {
-        var canvas = args.Surface.Canvas;
-        canvas.Clear(Pksm.SummaryStripe);
-        _spriteAnimated = false;
-        var detail = _viewModel.Selected;
-        if (detail is null || detail.IsEmpty) return;
-
-        // Preference order: animated Showdown sprite → HOME render → crisp pixel sprite.
-        // While the animation's availability is UNKNOWN we draw nothing at all -
-        // an empty beat is calm; a 2D sprite flashing into a GIF is a bug.
-        if (!_sprites.TryGetShowdown(detail.Species, detail.IsShiny, out var animated))
-        {
-            _sprites.WarmShowdown(detail.Species, detail.IsShiny, () => MainThread.BeginInvokeOnMainThread(_sprite.InvalidateSurface));
-            return;
-        }
-        _spriteAnimated = animated is not null;
-        var home = animated is null ? _sprites.GetHome(detail.Species, detail.IsShiny) : null;
-        if (animated is null && home is null)
-            _sprites.WarmHome(detail.Species, detail.IsShiny, () => MainThread.BeginInvokeOnMainThread(_sprite.InvalidateSurface));
-
-        var bitmap = animated?.FrameAt(_animElapsedMs) ?? home ?? _sprites.GetSprite(detail.Species, detail.Form, detail.IsShiny);
-        if (bitmap is null)
-        {
-            _sprites.Warm(detail.Species, detail.Form, detail.IsShiny, () => MainThread.BeginInvokeOnMainThread(_sprite.InvalidateSurface));
-            return;
-        }
-
-        var info = args.Info;
-        // Animated battle sprites are small pixel-art: cap their upscale so they stay clean.
-        var box = Math.Min(info.Width, info.Height) * (animated is not null ? 0.72f : 0.86f);
-        var scale = Math.Min(box / bitmap.Width, box / bitmap.Height);
-        var w = bitmap.Width * scale;
-        var h = bitmap.Height * scale;
-        var hop = _bounce * h;
-        var dest = new SKRect(info.Width / 2f - w / 2, info.Height / 2f - h / 2 - hop, info.Width / 2f + w / 2, info.Height / 2f + h / 2 - hop);
-        using var image = SKImage.FromBitmap(bitmap);
-        // HOME renders are smooth art: linear scaling. Animated + pixel stay nearest for crisp pixels.
-        var sampling = home is not null
-            ? new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear)
-            : new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None);
-        canvas.DrawImage(image, dest, sampling);
-
-        // The mon's ball, top-left, like the in-game summary page.
-        var ballBitmap = _sprites.GetBall(detail.Ball);
-        if (ballBitmap is null)
-        {
-            _sprites.WarmBall(detail.Ball, () => MainThread.BeginInvokeOnMainThread(_sprite.InvalidateSurface));
-        }
-        else
-        {
-            var ballSize = Math.Min(info.Width, info.Height) * 0.15f;
-            using var ballImage = SKImage.FromBitmap(ballBitmap);
-            canvas.DrawImage(ballImage, new SKRect(10, 10, 10 + ballSize, 10 + ballSize),
-                new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
-        }
     }
 }

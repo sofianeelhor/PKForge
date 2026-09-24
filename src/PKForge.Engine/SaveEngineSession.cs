@@ -106,7 +106,8 @@ public sealed class SaveEngineSession : ISaveEngineSession
             entity.CurrentFriendship,
             ComputeStats(entity),
             entity.Stat_HPCurrent,
-            (int)entity.Status_Condition);
+            (int)entity.Status_Condition,
+            EntitySprite.Traits(entity));
     }
 
     /// <summary>The mon's final battle stats (HP/Atk/Def/SpA/SpD/Spe) at its current level.</summary>
@@ -509,6 +510,10 @@ public sealed class SaveEngineSession : ISaveEngineSession
         else
             _save.SetBoxSlotAtIndex(entity, box, slot, ImportNone);
     }
+
+    /// <summary>The file bytes as opened (empty for a session built around an in-memory save);
+    /// the event-flag editor's "changed since open" baseline.</summary>
+    internal ReadOnlyMemory<byte> OriginalBytes => _originalBytes;
 
     /// <summary>Engine-internal access for sibling adapters (legalizer); never leaves the assembly.</summary>
     internal PKHeX.Core.SaveFile SaveFile
@@ -974,7 +979,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         var data = new byte[entity.SIZE_PARTY];
         entity.WriteDecryptedDataParty(data);
         var safeName = string.Concat(entity.FileName.Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_' or ' ' ? c : '_'));
-        return new SlotExport(data, safeName);
+        return new SlotExport(data, safeName, EntityBytes.FormatOf(entity));
     }
 
     public string GetShowdownText(int box, int slot)
@@ -1391,8 +1396,8 @@ public sealed class SaveEngineSession : ISaveEngineSession
     /// here because this path has no way to show its warnings; the transfer flows, which
     /// preview them, go through <see cref="ImportSlotWithReport"/>.
     /// </summary>
-    public bool ImportSlot(int box, int slot, byte[] fileBytes) =>
-        ImportCore(box, slot, fileBytes, allowBackwards: false, out _) is not null;
+    public bool ImportSlot(int box, int slot, byte[] fileBytes, string? format = null) =>
+        ImportCore(box, slot, fileBytes, format, allowBackwards: false, out _) is not null;
 
     /// <summary>
     /// <see cref="ImportSlot"/> with the conversion's report, downgrades included: the landed
@@ -1400,18 +1405,17 @@ public sealed class SaveEngineSession : ISaveEngineSession
     /// nothing was written; <paramref name="refusal"/> then says why in plain language when
     /// a reason is known. Callers must show <see cref="TransferConversion.Warnings"/>.
     /// </summary>
-    public TransferConversion? ImportSlotWithReport(int box, int slot, byte[] fileBytes, out string? refusal) =>
-        ImportCore(box, slot, fileBytes, allowBackwards: true, out refusal);
+    public TransferConversion? ImportSlotWithReport(int box, int slot, byte[] fileBytes, out string? refusal, string? format = null) =>
+        ImportCore(box, slot, fileBytes, format, allowBackwards: true, out refusal);
 
-    private TransferConversion? ImportCore(int box, int slot, byte[] fileBytes, bool allowBackwards, out string? refusal)
+    private TransferConversion? ImportCore(int box, int slot, byte[] fileBytes, string? format, bool allowBackwards, out string? refusal)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(fileBytes);
         refusal = null;
-        // Gen 6 stored/party bytes are ambiguous with PK7 when parsed without a
-        // destination context. Prefer the target save so native PK6 and edited PK6
-        // entities from the Bank remain importable into XY/ORAS.
-        var imported = EntityFormat.GetFromBytes(fileBytes, _save.Context);
+        // Same-size formats (PK6/PK7, PK8/PB8, PK9/PA9) are ambiguous from bytes alone. A
+        // recorded format is authoritative; without one, prefer the target save's context.
+        var imported = EntityBytes.Parse(fileBytes, format, _save.Context);
         if (imported is null || imported.Species == 0)
         {
             refusal = "This is not a readable Pokémon file.";
@@ -2500,7 +2504,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public ReadOnlyMemory<byte> Serialize()
     {
         ThrowIfDisposed();
-        return SramPadding.Pad(RetroArchSaveContainer.Repack(_save.Write().Span, _originalBytes), _originalBytes);
+        return SramPadding.Restore(_save.Write().Span, _originalBytes);
     }
 
     public bool ValidateUnchangedRoundTrip() => Serialize().Span.SequenceEqual(_originalBytes);
@@ -2574,13 +2578,13 @@ public sealed class SaveEngineSession : ISaveEngineSession
             var entity = _save.GetBoxSlotAtIndex(box, slot);
             slots.Add(new SlotSummary(box, slot, entity.Species == 0 ? null : entity.Species,
                 entity.IsNicknamed ? entity.Nickname : null, entity.IsShiny,
-                entity.Species == 0 || entity.Valid, entity.Form, entity.IsEgg));
+                entity.Species == 0 || entity.Valid, entity.Form, entity.IsEgg, entity.HeldItem, EntitySprite.Traits(entity)));
         }
         for (var i = 0; i < _save.PartyCount && i < 6; i++)
         {
             var partyMon = _save.GetPartySlotAtIndex(i);
             slots.Add(new SlotSummary(-1, i, partyMon.Species == 0 ? null : partyMon.Species,
-                partyMon.Species == 0 ? null : partyMon.Nickname, partyMon.IsShiny, true, partyMon.Form, partyMon.IsEgg));
+                partyMon.Species == 0 ? null : partyMon.Nickname, partyMon.IsShiny, true, partyMon.Form, partyMon.IsEgg, partyMon.HeldItem, EntitySprite.Traits(partyMon)));
         }
         return new SaveSnapshot(_save.Context.ToString(), _save.Generation, _originalBytes, slots, displayName);
     }

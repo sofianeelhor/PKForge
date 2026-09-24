@@ -74,9 +74,9 @@ public sealed class CollectionDexPage : IPadHandler
         _sprites = sprites;
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
 
-        _title = new Label { Text = "LIVING DEX", TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 15 };
-        _progress = new Label { TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = 13, HorizontalTextAlignment = TextAlignment.End, HorizontalOptions = LayoutOptions.End };
-        _cursorInfo = new Label { TextColor = UiTokens.Maroon, FontFamily = DsChrome.PixelFont, FontSize = 13 };
+        _title = new Label { Text = "Living dex", TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 15 };
+        _progress = new Label { TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextBody, HorizontalTextAlignment = TextAlignment.End, HorizontalOptions = LayoutOptions.End };
+        _cursorInfo = new Label { TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextBody };
 
         _canvas = new SKCanvasView { EnableTouchEvents = true, VerticalOptions = LayoutOptions.Fill };
         _canvas.PaintSurface += Paint;
@@ -84,12 +84,13 @@ public sealed class CollectionDexPage : IPadHandler
 
         _chips = new HorizontalStackLayout { Spacing = 5 };
 
-        View hints = Kit.HintBar(
+        View hints = Kit.WindowHints(
             ("A", "Actions", () => _ = ShowActionsAsync()),
             ("B", "Done", () => Close()),
             ("LR", "Page", null),
             ("X", "Scope", () => _ = ShowScopeMenuAsync()),
-            ("Y", "Missing only", ToggleMissingOnly));
+            ("Y", "Missing only", ToggleMissingOnly),
+            ("+", "Autopilot", () => _ = OpenAutopilotAsync()));
 
         var content = new Grid
         {
@@ -126,7 +127,7 @@ public sealed class CollectionDexPage : IPadHandler
         Grid.SetColumnSpan(_overlay, Math.Max(1, _host.ColumnDefinitions.Count));
         Kit.AnimateIn(window);
 
-        var loader = LoadingOverlay.Show(_host, "COUNTING YOUR COLLECTION…",
+        var loader = LoadingOverlay.Show(_host, "Counting your collection…",
             "Reading the bank and every game on your shelf.");
         _ = Task.Run(async () =>
         {
@@ -206,15 +207,15 @@ public sealed class CollectionDexPage : IPadHandler
     private void RefreshChrome()
     {
         if (_progressData is null) return;
-        var scope = _shinyDex ? "SHINY LIVING DEX" : "LIVING DEX";
+        var scope = _shinyDex ? "Shiny living dex" : "Living dex";
         var scoped = ScopedProgress();
         _title.Text = scope;
-        _progress.Text = $"{scoped.Owned}/{scoped.Total} · SHINY {_progressData.Shiny}/{_progressData.TotalSpecies}";
+        _progress.Text = $"{scoped.Owned}/{scoped.Total} · shiny {_progressData.Shiny}/{_progressData.TotalSpecies}";
 
         _chips.Children.Clear();
         _chipBorders.Clear();
         AddChip("ALL", null);
-        if (_session is not null) AddChip("THIS GAME", 0);
+        if (_session is not null) AddChip("This game", 0);
         foreach (var segment in _progressData.Segments)
             AddChip($"{Roman(segment.Generation)} {(_shinyDex ? segment.Shiny : segment.Owned)}/{segment.Total}", segment.Generation);
     }
@@ -242,15 +243,9 @@ public sealed class CollectionDexPage : IPadHandler
     private void AddChip(string label, int? scope)
     {
         var selected = _genScope == scope;
-        var chip = new Border
-        {
-            BackgroundColor = selected ? UiTokens.MenuBlue : UiTokens.ShellPress,
-            Stroke = UiTokens.ShellEdge,
-            StrokeThickness = 1,
-            StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 6 },
-            Padding = new Thickness(8, 3),
-            Content = new Label { Text = label, TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 11, FontAttributes = FontAttributes.Bold },
-        };
+        // A segment in the menu-button language: active = cobalt with the pale rim.
+        var chip = Kit.Tab(label, selected);
+        chip.Padding = new Thickness(10, 3);
         var tap = new TapGestureRecognizer();
         tap.Tapped += (_, _) => SetScope(scope);
         chip.GestureRecognizers.Add(tap);
@@ -328,8 +323,8 @@ public sealed class CollectionDexPage : IPadHandler
         var id = IdAt(_page, _cursor);
         var name = _data.SpeciesNames[id];
         var state = _shiny.Contains(id)
-            ? (_shinyDex ? "SHINY OWNED" : "OWNED + SHINY")
-            : _owned.Contains(id) ? "OWNED" : "MISSING";
+            ? (_shinyDex ? "Shiny owned" : "Owned + shiny")
+            : _owned.Contains(id) ? "Owned" : "Missing";
         _cursorInfo.Text = $"#{id:000} {name} · {state}";
     }
 
@@ -443,6 +438,7 @@ public sealed class CollectionDexPage : IPadHandler
             case PadButton.B: Close(); return true;
             case PadButton.X: _ = ShowScopeMenuAsync(); return true;
             case PadButton.Y: ToggleMissingOnly(); return true;
+            case PadButton.Start: _ = OpenAutopilotAsync(); return true;
             default: return true; // the tracker owns the pad while open
         }
     }
@@ -474,7 +470,7 @@ public sealed class CollectionDexPage : IPadHandler
         if (_session is not null) options.Add(new PadOption("This game"));
         options.AddRange(_progressData!.Segments.Select(s => new PadOption($"Gen {Roman(s.Generation)} · {(_shinyDex ? s.Shiny : s.Owned)}/{s.Total}")));
         options.Add(new PadOption(_shinyDex ? "View: normal living dex" : "View: SHINY living dex"));
-        var choice = await PadMenu.ShowAsync(_host, "SCOPE", null, options.ToArray());
+        var choice = await PadMenu.ShowAsync(_host, "Scope", null, options.ToArray());
         if (choice is null) return;
         if (choice == "All generations") SetScope(null);
         else if (choice == "This game") SetScope(0);
@@ -494,7 +490,7 @@ public sealed class CollectionDexPage : IPadHandler
         if (!_loaded || Count == 0) return;
         var id = IdAt(_page, _cursor);
         var name = _data.SpeciesNames[id];
-        var choice = await PadMenu.ShowAsync(_host, $"#{id:000} {name.ToUpperInvariant()}", null,
+        var choice = await PadMenu.ShowAsync(_host, $"#{id:000} {name}", null,
             new PadOption("How to get", IconPath: "map"),
             new PadOption("Close", IconPath: "close"));
         if (choice == "How to get")
@@ -508,6 +504,23 @@ public sealed class CollectionDexPage : IPadHandler
             Apply(await CollectAsync(_session));
             RefreshView();
         }
+    }
+
+    /// <summary>From the tracker straight into the plan that fills it; the count follows the moves.</summary>
+    private async Task OpenAutopilotAsync()
+    {
+        if (!_loaded) return;
+        _router?.Remove(this);
+        try
+        {
+            await LivingDexAutopilotPage.ShowAsync(_host, _viewModel, _data, _sprites);
+        }
+        finally
+        {
+            _router?.Push(this);
+        }
+        Apply(await CollectAsync(_session));
+        RefreshView();
     }
 
     private void Close()

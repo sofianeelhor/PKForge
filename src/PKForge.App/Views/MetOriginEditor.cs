@@ -12,6 +12,10 @@ namespace PKForge.App.Views;
 /// </summary>
 public static class MetOriginEditor
 {
+    private const string SuggestMet = "Suggest met data";
+    private const string SuggestBall = "Suggest ball";
+    private const string SuggestEgg = "Suggest egg data";
+
     public static async Task<bool> ShowAsync(Grid host, ISaveEngineSession session, int box, int slot)
     {
         var dirty = false;
@@ -19,16 +23,26 @@ public static class MetOriginEditor
         {
             MetInfo m;
             try { m = session.GetMetInfo(box, slot); }
-            catch (Exception error) { await EditorMenu.ShowAsync(host, "MET / ORIGIN", error.Message, "OK"); return dirty; }
+            catch (Exception error) { await EditorMenu.ShowAsync(host, "Met / origin", error.Message, "OK"); return dirty; }
 
-            var options = new List<PadOption>
+            var options = new List<PadOption>();
+            if (session.SupportsLegalityAnalysis)
+            {
+                // PKHeX's suggest buttons, preview-first: nothing changes until "Apply".
+                options.Add(new(SuggestMet, Glyph: "●", Accent: UiTokens.Blueprint,
+                    Detail: "Location, level and date from a legal encounter; the ball too if it no longer fits"));
+                options.Add(new(SuggestBall, Glyph: "●", Accent: UiTokens.Blueprint, Detail: "A ball its encounter allows"));
+                if (m.IsEgg)
+                    options.Add(new(SuggestEgg, Glyph: "●", Accent: UiTokens.Blueprint, Detail: "The egg location and date its origin expects"));
+            }
+            options.AddRange(new PadOption[]
             {
                 new($"Origin game · {m.VersionName}"),
                 new($"Met location · {m.MetLocationName}"),
                 new($"Met level · {m.MetLevel}"),
                 new($"Met date · {(m.MetDate.Length == 0 ? "unset" : m.MetDate)}"),
                 new($"Hatched from egg · {(m.IsEgg ? "yes" : "no")}"),
-            };
+            });
             if (m.IsEgg)
             {
                 options.Add(new($"Egg location · {m.EggLocationName}"));
@@ -39,27 +53,32 @@ public static class MetOriginEditor
             options.Add(new($"Trainer ID · {m.TID:00000}"));
             options.Add(new($"Secret ID · {m.SID:00000}"));
 
-            var choice = await EditorMenu.ShowAsync(host, "MET / ORIGIN", null, options.ToArray());
+            var choice = await EditorMenu.ShowAsync(host, "Met / origin", null, options.ToArray());
             if (choice is null) return dirty;
 
-            if (choice.StartsWith("Origin game", StringComparison.Ordinal))
+            if (choice is SuggestMet or SuggestBall or SuggestEgg)
             {
-                var pick = await PickChoiceAsync(host, "ORIGIN GAME", session.GetVersionChoices(), m.Version);
+                var fix = choice switch { SuggestMet => LegalityFix.MetInfo, SuggestBall => LegalityFix.Ball, _ => LegalityFix.EggLocation };
+                if (await LegalityAssistUi.OfferAsync(host, session, box, slot, fix)) dirty = true;
+            }
+            else if (choice.StartsWith("Origin game", StringComparison.Ordinal))
+            {
+                var pick = await PickChoiceAsync(host, "Origin game", session.GetVersionChoices(), m.Version);
                 if (pick is { } v) { session.ApplyMetEdit(box, slot, new MetEdit(Version: v)); dirty = true; }
             }
             else if (choice.StartsWith("Met location", StringComparison.Ordinal))
             {
-                var pick = await PickChoiceAsync(host, "MET LOCATION", session.GetLocationChoices(box, slot, egg: false), m.MetLocation);
+                var pick = await PickChoiceAsync(host, "Met location", session.GetLocationChoices(box, slot, egg: false), m.MetLocation);
                 if (pick is { } v) { session.ApplyMetEdit(box, slot, new MetEdit(MetLocation: v)); dirty = true; }
             }
             else if (choice.StartsWith("Met level", StringComparison.Ordinal))
             {
-                var lv = await StatsPopup.ShowSingleAsync(host, "MET LEVEL", m.MetLevel, 100);
+                var lv = await StatsPopup.ShowSingleAsync(host, "Met level", m.MetLevel, 100);
                 if (lv is { } v) { session.ApplyMetEdit(box, slot, new MetEdit(MetLevel: v)); dirty = true; }
             }
             else if (choice.StartsWith("Met date", StringComparison.Ordinal))
             {
-                if (await EditDateAsync(host, "MET DATE", m.MetDate) is { } d) { session.ApplyMetEdit(box, slot, new MetEdit(MetDate: d)); dirty = true; }
+                if (await EditDateAsync(host, "Met date", m.MetDate) is { } d) { session.ApplyMetEdit(box, slot, new MetEdit(MetDate: d)); dirty = true; }
             }
             else if (choice.StartsWith("Hatched from egg", StringComparison.Ordinal))
             {
@@ -68,16 +87,16 @@ public static class MetOriginEditor
             }
             else if (choice.StartsWith("Egg location", StringComparison.Ordinal))
             {
-                var pick = await PickChoiceAsync(host, "EGG LOCATION", session.GetLocationChoices(box, slot, egg: true), m.EggLocation);
+                var pick = await PickChoiceAsync(host, "Egg location", session.GetLocationChoices(box, slot, egg: true), m.EggLocation);
                 if (pick is { } v) { session.ApplyMetEdit(box, slot, new MetEdit(EggLocation: v)); dirty = true; }
             }
             else if (choice.StartsWith("Egg date", StringComparison.Ordinal))
             {
-                if (await EditDateAsync(host, "EGG DATE", m.EggDate) is { } d) { session.ApplyMetEdit(box, slot, new MetEdit(EggDate: d)); dirty = true; }
+                if (await EditDateAsync(host, "Egg date", m.EggDate) is { } d) { session.ApplyMetEdit(box, slot, new MetEdit(EggDate: d)); dirty = true; }
             }
             else if (choice.StartsWith("Language", StringComparison.Ordinal))
             {
-                var pick = await PickChoiceAsync(host, "LANGUAGE", session.GetLanguageChoices(box, slot), m.Language);
+                var pick = await PickChoiceAsync(host, "Language", session.GetLanguageChoices(box, slot), m.Language);
                 if (pick is { } v) { session.ApplyMetEdit(box, slot, new MetEdit(Language: v)); dirty = true; }
             }
             else if (choice.StartsWith("Fateful", StringComparison.Ordinal))
@@ -87,12 +106,12 @@ public static class MetOriginEditor
             }
             else if (choice.StartsWith("Trainer ID", StringComparison.Ordinal))
             {
-                var id = await StatsPopup.ShowSingleAsync(host, "TRAINER ID (TID)", m.TID, 65535);
+                var id = await StatsPopup.ShowSingleAsync(host, "Trainer ID (TID)", m.TID, 65535);
                 if (id is { } v) { session.ApplyMetEdit(box, slot, new MetEdit(TID: v)); dirty = true; }
             }
             else if (choice.StartsWith("Secret ID", StringComparison.Ordinal))
             {
-                var id = await StatsPopup.ShowSingleAsync(host, "SECRET ID (SID)", m.SID, 65535);
+                var id = await StatsPopup.ShowSingleAsync(host, "Secret ID (SID)", m.SID, 65535);
                 if (id is { } v) { session.ApplyMetEdit(box, slot, new MetEdit(SID: v)); dirty = true; }
             }
         }
@@ -173,12 +192,12 @@ internal sealed class EditorMenu : IPadHandler
                 Text = message,
                 TextColor = UiTokens.Ink1,
                 FontFamily = DsChrome.PixelFont,
-                FontSize = 13,
+                FontSize = UiTokens.TextBody,
                 LineBreakMode = LineBreakMode.WordWrap,
             });
         }
         content.Children.Add(grid);
-        content.Children.Add(Kit.HintBar(("A", "CHOOSE", null), ("B", "CANCEL", () => Close(null))));
+        content.Children.Add(Kit.WindowHints(("A", "Choose", null), ("B", "Cancel", () => Close(null))));
 
         var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 460);
         _overlay = Kit.AttachOverlay(host, window, () => Close(null));

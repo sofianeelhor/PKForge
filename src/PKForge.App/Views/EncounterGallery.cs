@@ -10,6 +10,11 @@ using SkiaSharp.Views.Maui.Controls;
 
 namespace PKForge.App.Views;
 
+file static class DpScale
+{
+    public static float Value => (float)DeviceDisplay.MainDisplayInfo.Density;
+}
+
 /// <summary>
 /// "How do I get this?" - the whole answer, no save required.
 ///
@@ -70,7 +75,7 @@ public static class EncounterGallery
             }
             var card = listing.Cards[pick.Value];
             await viewModel.RunMutationAsync(s => s.PlaceEncounter(species, form, pick.Value, viewModel.BoxIndex, target), target, action: SaveAction.CreateMon);
-            viewModel.Status = $"CAUGHT · {(string.IsNullOrEmpty(card.Location) ? card.Kind : card.Location)}";
+            viewModel.Status = $"Caught · {(string.IsNullOrEmpty(card.Location) ? card.Kind : card.Location)}";
             repaint();
             return;
         }
@@ -83,7 +88,7 @@ public static class EncounterGallery
         var options = new List<PadOption>();
         for (var index = 0; index < forms.Count; index++)
             options.Add(new PadOption(forms[index]));
-        var picked = await PadMenu.ShowAsync(host, "FORM", null, options.ToArray());
+        var picked = await PadMenu.ShowAsync(host, "Form", null, options.ToArray());
         if (picked is null) return (0, true);
         var form = options.FindIndex(o => o.Label == picked);
         return (form < 0 ? 0 : form, false);
@@ -172,7 +177,7 @@ public static class EncounterGallery
         });
         if (listings.Count == 0)
         {
-            await PadMenu.ShowAsync(host, "HOW TO GET", $"{title} is not in the encounter database.", "OK");
+            await PadMenu.ShowAsync(host, "How to get", $"{title} is not in the encounter database.", "OK");
             return;
         }
 
@@ -188,7 +193,7 @@ public static class EncounterGallery
 
             if (viewModel is null || session is null || !canCatch)
             {
-                await PadMenu.ShowAsync(host, "KEEP BROWSING",
+                await PadMenu.ShowAsync(host, "Keep browsing",
                     $"Open {listing.GameName} to catch this one - the database answers for every game, but a Pokémon needs that save open to land in it.", "OK");
                 continue;
             }
@@ -200,7 +205,7 @@ public static class EncounterGallery
             }
             var card = listing.Cards[pick.Value];
             await viewModel.RunMutationAsync(s => s.PlaceEncounter(species, form, pick.Value, viewModel.BoxIndex, target), target, action: SaveAction.CreateMon);
-            viewModel.Status = $"CAUGHT · {title} · {(string.IsNullOrEmpty(card.Location) ? card.Kind : card.Location)}";
+            viewModel.Status = $"Caught · {title} · {(string.IsNullOrEmpty(card.Location) ? card.Kind : card.Location)}";
             repaint();
             return;
         }
@@ -277,7 +282,7 @@ public static class EncounterGallery
             };
             var heroRow = new Grid { ColumnSpacing = 10, ColumnDefinitions = [new(new GridLength(64)), new(GridLength.Star)] };
             heroRow.Children.Add(hero);
-            var header = Kit.HeaderBar($"HOW TO GET · {listings.Count(l => l.Obtainable)} OF {listings.Count} GAMES");
+            var header = Kit.HeaderBar($"How to get · {listings.Count(l => l.Obtainable)} of {listings.Count} games");
             heroRow.Children.Add(header);
             Grid.SetColumn(header, 1);
 
@@ -289,7 +294,7 @@ public static class EncounterGallery
                 {
                     heroRow,
                     _wall,
-                    Kit.HintBar(("A", "WAYS", null), ("B", "BACK", () => Close(null))),
+                    Kit.WindowHints(("A", "WAYS", null), ("B", "BACK", () => Close(null))),
                 },
             };
             content.SetRow(_wall, 1);
@@ -301,7 +306,7 @@ public static class EncounterGallery
                 Stroke = UiTokens.ShellEdge,
                 StrokeThickness = 2,
                 StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                Shadow = new Shadow { Brush = Brush.Black, Opacity = 0.14f, Radius = 12, Offset = new Point(0, 4) },
+                Shadow = Kit.HardShadow(),
                 Padding = 14,
                 Content = new Grid { Children = { Backdrop(), content } },
             };
@@ -334,7 +339,7 @@ public static class EncounterGallery
                 if (listing.Generation != generation)
                 {
                     generation = listing.Generation;
-                    rows.Add((true, $"GENERATION {Roman(generation)}", -1, generation));
+                    rows.Add((true, $"Generation {Roman(generation)}", -1, generation));
                 }
                 rows.Add((false, listing.GameName, i, generation));
             }
@@ -350,12 +355,15 @@ public static class EncounterGallery
         {
             var canvas = args.Surface.Canvas;
             canvas.Clear(SKColors.Transparent);
-            var info = args.Info;
+            // Laid out in dp (row heights, card widths): scale the pixel canvas to match.
+            var density = (float)DeviceDisplay.MainDisplayInfo.Density;
+            canvas.Scale(density);
+            var info = new SKImageInfo((int)(args.Info.Width / density), (int)(args.Info.Height / density));
             _rowsPerScreen = Math.Max(2, (int)((info.Height - 8 + Gap) / (RowH + Gap)));
 
-            using var headerFont = new SKFont { Size = 14f, Edging = SKFontEdging.Antialias, Embolden = true };
-            using var nameFont = new SKFont { Size = 18f, Edging = SKFontEdging.Antialias, Embolden = true };
-            using var detailFont = new SKFont { Size = 13f, Edging = SKFontEdging.Antialias, Embolden = true };
+            using var headerFont = new SKFont(PixelFont.Face, 14f) { Edging = SKFontEdging.Antialias };
+            using var nameFont = new SKFont(PixelFont.Face, 15f) { Edging = SKFontEdging.Antialias };
+            using var detailFont = new SKFont(PixelFont.Face, 12.5f) { Edging = SKFontEdging.Antialias };
             using var ink = new SKPaint { Color = Pksm.Ink, IsAntialias = true };
             using var inkSoft = new SKPaint { Color = Pksm.InkSoft, IsAntialias = true };
 
@@ -385,7 +393,7 @@ public static class EncounterGallery
                     var summary = listing.Obtainable ? Summarize(listing) : "Not obtainable here";
                     canvas.DrawText(EventGallery.Fit(detailFont, summary, rect.Width * 0.48f), rect.Right - 12, rect.MidY + 6, SKTextAlign.Right, detailFont, listing.Obtainable ? inkSoft : dim);
                     if (IsCurrent(row.Display))
-                        canvas.DrawText("THIS GAME", rect.Left + 12, rect.Top + 15, SKTextAlign.Left, detailFont, inkSoft);
+                        canvas.DrawText("This game", rect.Left + 12, rect.Top + 15, SKTextAlign.Left, detailFont, inkSoft);
                     if (selected) PksmPaint.Selection(canvas, rect);
                 }
                 y += height + Gap;
@@ -420,7 +428,7 @@ public static class EncounterGallery
             foreach (var row in rows)
             {
                 var height = row.IsHeader ? HeaderH : RowH;
-                if (!row.IsHeader && args.Location.Y >= y && args.Location.Y <= y + height)
+                if (!row.IsHeader && args.Location.Y / DpScale.Value >= y && args.Location.Y / DpScale.Value <= y + height)
                 {
                     _index = row.Display;
                     _wall.InvalidateSurface();
@@ -522,7 +530,7 @@ public static class EncounterGallery
             };
             var heroRow = new Grid { ColumnSpacing = 10, ColumnDefinitions = [new(new GridLength(64)), new(GridLength.Star)] };
             heroRow.Children.Add(hero);
-            var header = Kit.HeaderBar($"{listing.GameName.ToUpperInvariant()} · {listing.Cards.Count} WAYS");
+            var header = Kit.HeaderBar($"{listing.GameName} · {listing.Cards.Count} ways");
             heroRow.Children.Add(header);
             Grid.SetColumn(header, 1);
 
@@ -534,7 +542,7 @@ public static class EncounterGallery
                 {
                     heroRow,
                     _wall,
-                    Kit.HintBar(("A", canCatch ? "CATCH" : "INFO", null), ("B", "GAMES", () => Close(null))),
+                    Kit.WindowHints(("A", canCatch ? "Catch" : "INFO", null), ("B", "Games", () => Close(null))),
                 },
             };
             content.SetRow(_wall, 1);
@@ -546,7 +554,7 @@ public static class EncounterGallery
                 Stroke = UiTokens.ShellEdge,
                 StrokeThickness = 2,
                 StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                Shadow = new Shadow { Brush = Brush.Black, Opacity = 0.14f, Radius = 12, Offset = new Point(0, 4) },
+                Shadow = Kit.HardShadow(),
                 Padding = 14,
                 Content = new Grid { Children = { Backdrop(), content } },
             };
@@ -613,10 +621,10 @@ public static class EncounterGallery
         {
             "Egg" => "EGGS",
             "Wild" => "WILD",
-            "Static" => "STATIC",
-            "Trade" => "IN-GAME TRADES",
-            "Event" => "EVENTS",
-            _ => "SPECIAL",
+            "Static" => "Static",
+            "Trade" => "In-game trades",
+            "Event" => "Events",
+            _ => "Special",
         };
 
         private List<LayoutRow> BuildLayout()
@@ -655,11 +663,14 @@ public static class EncounterGallery
         {
             var canvas = args.Surface.Canvas;
             canvas.Clear(SKColors.Transparent);
-            var info = args.Info;
+            // Laid out in dp (row heights, card widths): scale the pixel canvas to match.
+            var density = (float)DeviceDisplay.MainDisplayInfo.Density;
+            canvas.Scale(density);
+            var info = new SKImageInfo((int)(args.Info.Width / density), (int)(args.Info.Height / density));
 
-            using var headerFont = new SKFont { Size = 16f, Edging = SKFontEdging.Antialias, Embolden = true };
-            using var nameFont = new SKFont { Size = 22f, Edging = SKFontEdging.Antialias, Embolden = true };
-            using var lvFont = new SKFont { Size = 15f, Edging = SKFontEdging.Antialias, Embolden = true };
+            using var headerFont = new SKFont(PixelFont.Face, 14f) { Edging = SKFontEdging.Antialias };
+            using var nameFont = new SKFont(PixelFont.Face, 15f) { Edging = SKFontEdging.Antialias };
+            using var lvFont = new SKFont(PixelFont.Face, 12.5f) { Edging = SKFontEdging.Antialias };
             using var ink = new SKPaint { Color = Pksm.Ink, IsAntialias = true };
             using var inkSoft = new SKPaint { Color = Pksm.InkSoft, IsAntialias = true };
 
@@ -728,7 +739,7 @@ public static class EncounterGallery
             if (args.ActionType != SKTouchAction.Released) return;
             args.Handled = true;
 
-            var index = HitTest(args.Location.X, args.Location.Y);
+            var index = HitTest(args.Location.X / DpScale.Value, args.Location.Y / DpScale.Value);
             if (index < 0) return;
             _index = index;
             EnsureVisible();
@@ -824,11 +835,11 @@ public static class EncounterGallery
                 var where = string.IsNullOrEmpty(card.Location) ? card.Kind.ToLowerInvariant() : card.Location;
                 if (!_canCatch)
                 {
-                    await PadMenu.ShowAsync(_host, "NOT YOUR GAME",
+                    await PadMenu.ShowAsync(_host, "Not your game",
                         $"This is how {_listing.GameName} gives out this Pokémon. Open that save to catch one into it.", "OK");
                     return;
                 }
-                var confirmed = await PadMenu.ConfirmAsync(_host, "CATCH THIS ENCOUNTER?",
+                var confirmed = await PadMenu.ConfirmAsync(_host, "Catch this encounter?",
                     $"A legal Pokémon from {_listing.GameName} ({card.Kind.ToLowerInvariant()}, {where}) is placed in this box's first empty slot. One backed-up write.", "Catch");
                 if (confirmed) Close(group.Indices[0]);
             }

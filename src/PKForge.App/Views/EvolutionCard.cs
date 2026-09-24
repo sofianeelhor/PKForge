@@ -44,7 +44,7 @@ public sealed class EvolutionCard : IPadHandler
         var plan = await Task.Run(() => service.Plan(session, box, slot, hax));
         if (plan.Options.Count == 0)
         {
-            await PadMenu.ShowAsync(host, "EVOLUTION", plan.Unavailable ?? "It can't evolve.", "OK");
+            await PadMenu.ShowAsync(host, "Evolution", plan.Unavailable ?? "It can't evolve.", "OK");
             return null;
         }
         var card = new EvolutionCard(host, plan);
@@ -66,7 +66,7 @@ public sealed class EvolutionCard : IPadHandler
             var why = offer.EvolutionMove ? "an evolution move" : $"learned at Lv.{plan.Level}";
             if (known.Count < 4)
             {
-                var pick = await PadMenu.ShowAsync(host, $"LEARN {offer.Name.ToUpperInvariant()}?",
+                var pick = await PadMenu.ShowAsync(host, $"Learn {offer.Name}?",
                     $"{option.SpeciesName} can learn {offer.Name} ({why}).",
                     new PadOption($"Learn {offer.Name}", IconPath: "moves"), new PadOption("Don't learn", IconPath: "close"));
                 if (pick is null) return null;
@@ -79,7 +79,7 @@ public sealed class EvolutionCard : IPadHandler
             }
             var options = known.Select(m => new PadOption($"Forget {m}", IconPath: "delete")).ToList();
             options.Add(new PadOption($"Don't learn {offer.Name}", IconPath: "close"));
-            var forget = await PadMenu.ShowAsync(host, $"LEARN {offer.Name.ToUpperInvariant()}?",
+            var forget = await PadMenu.ShowAsync(host, $"Learn {offer.Name}?",
                 $"{option.SpeciesName} wants to learn {offer.Name} ({why}), but already knows four moves. Forget one?",
                 options.ToArray());
             if (forget is null) return null;
@@ -104,12 +104,7 @@ public sealed class EvolutionCard : IPadHandler
         for (var i = 0; i < plan.Options.Count; i++)
         {
             var index = i;
-            var chip = new Border
-            {
-                StrokeShape = new RoundRectangle { CornerRadius = 9 },
-                Padding = new Thickness(10, 4),
-                Content = new Label { Text = plan.Options[i].SpeciesName, FontSize = 12, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0 },
-            };
+            var chip = Kit.Tab(plan.Options[i].SpeciesName);
             Tap(chip, () => Select(index));
             _chips.Add(chip);
             chipRow.Children.Add(chip);
@@ -128,39 +123,40 @@ public sealed class EvolutionCard : IPadHandler
         {
             Text = plan.Nickname.Length > 0 && !string.Equals(plan.Nickname, plan.SpeciesName, StringComparison.OrdinalIgnoreCase)
                 ? $"{plan.Nickname} ({plan.SpeciesName})" : plan.SpeciesName,
-            FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.Ink0,
+            FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextTitle, TextColor = UiTokens.Ink0,
             HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.TailTruncation,
         };
         _toName = new Label
         {
-            FontSize = 14, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.IndigoInk,
+            FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextTitle, TextColor = UiTokens.IndigoInk,
             HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.TailTruncation,
         };
         var names = new Grid { ColumnDefinitions = [new(GridLength.Star), new(new GridLength(36)), new(GridLength.Star)] };
         names.Add(fromName, 0);
-        names.Add(new Label { Text = $"Lv.{plan.Level}", FontSize = 10, TextColor = UiTokens.InkSoft, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center }, 1);
+        names.Add(new Label { Text = $"Lv.{plan.Level}", FontSize = UiTokens.TextSmall, TextColor = UiTokens.InkSoft, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center }, 1);
         names.Add(_toName, 2);
 
-        _requirement = new Label { FontFamily = DsChrome.PixelFont, FontSize = 13, TextColor = Colors.White, HorizontalTextAlignment = TextAlignment.Center };
+        // The requirement reads as coloured text (met = green, trade = blue), not a pill.
+        _requirement = new Label { FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextLabel, TextColor = UiTokens.Ink0, HorizontalTextAlignment = TextAlignment.Center };
         _requirementChip = new Border
         {
             StrokeThickness = 0,
-            StrokeShape = new RoundRectangle { CornerRadius = 11 },
-            Padding = new Thickness(14, 4),
+            BackgroundColor = Colors.Transparent,
+            Padding = new Thickness(0, 2),
             HorizontalOptions = LayoutOptions.Center,
             Content = _requirement,
         };
-        _status = new Label { FontSize = 11, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap };
+        _status = new Label { FontSize = UiTokens.TextSmall, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.WordWrap };
         _changes = new VerticalStackLayout { Spacing = 6 };
 
-        var cancel = Kit.Capsule("CANCEL", UiTokens.Ink1);
+        var cancel = Kit.Capsule("Cancel", UiTokens.Ink1);
         cancel.Clicked += (_, _) => Close(null);
-        _evolve = Kit.Capsule("EVOLVE", UiTokens.Green, primary: true);
+        _evolve = Kit.Capsule("Evolve", UiTokens.Green, primary: true);
         _evolve.Clicked += (_, _) => Confirm();
         var buttons = new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { cancel, _evolve } };
 
         var content = new VerticalStackLayout { Spacing = 8 };
-        content.Children.Add(Kit.HeaderBar(HaXMode.IsOn ? "EVOLUTION · HAX" : "EVOLUTION"));
+        content.Children.Add(Kit.HeaderBar(HaXMode.IsOn ? "Evolution · hax" : "Evolution"));
         if (plan.Options.Count > 1) content.Children.Add(new ScrollView { Orientation = ScrollOrientation.Horizontal, Content = chipRow });
         content.Children.Add(_stage);
         content.Children.Add(names);
@@ -168,10 +164,10 @@ public sealed class EvolutionCard : IPadHandler
         content.Children.Add(_status);
         content.Children.Add(_changes);
         content.Children.Add(buttons);
-        content.Children.Add(Kit.HintBar(
-            ("◀▶", "BRANCH", null),
-            ("A", "EVOLVE", Confirm),
-            ("B", "CANCEL", () => Close(null))));
+        content.Children.Add(Kit.WindowHints(
+            ("◀▶", "Branch", null),
+            ("A", "Evolve", Confirm),
+            ("B", "Cancel", () => Close(null))));
 
         var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 560);
         _overlay = Kit.AttachOverlay(host, window, () => Close(null));
@@ -187,18 +183,13 @@ public sealed class EvolutionCard : IPadHandler
         _index = (index + _plan.Options.Count) % _plan.Options.Count;
         var option = Current;
         for (var i = 0; i < _chips.Count; i++)
-        {
-            var on = i == _index;
-            _chips[i].BackgroundColor = on ? UiTokens.SelectFill : UiTokens.PaperShade;
-            _chips[i].Stroke = on ? UiTokens.SelectBorder : UiTokens.ShellEdge;
-            _chips[i].StrokeThickness = on ? 2 : 1;
-        }
+            Kit.SetTab(_chips[i], i == _index);
 
         _toName.Text = option.SpeciesName;
-        _requirement.Text = option.Requirement.ToUpperInvariant();
-        _requirementChip.BackgroundColor = option.IsTrade ? UiTokens.MenuBlue
+        _requirement.Text = option.Requirement;
+        _requirement.TextColor = UiTokens.TextTone(option.IsTrade ? UiTokens.Cyan
             : option.ConditionMet ? UiTokens.Green
-            : UiTokens.Ink1;
+            : UiTokens.Ink1);
         (_status.Text, _status.TextColor) = option switch
         {
             { Available: false } => (option.BlockedReason ?? "Not possible right now.", UiTokens.GiftRed),
@@ -216,8 +207,8 @@ public sealed class EvolutionCard : IPadHandler
             lines.Add(("ABILITY", option.AbilityBefore == option.AbilityAfter ? option.AbilityAfter : $"{option.AbilityBefore} → {option.AbilityAfter}", UiTokens.Ink0));
         lines.Add(("NAME", option.NewNickname is { } nick ? $"Becomes {nick}" : $"Keeps the nickname {_plan.Nickname}", UiTokens.Ink0));
         if (option.ConsumedItem is { } item) lines.Add(("ITEM", $"{item} is used up", UiTokens.RedOrange));
-        if (option.HandlerNote is { } handler) lines.Add(("TRADE", handler, UiTokens.Ink1));
-        if (option.Moves.Count > 0) lines.Add(("MOVES", $"Can learn {string.Join(", ", option.Moves.Select(m => m.Name))} (you choose next)", UiTokens.IndigoInk));
+        if (option.HandlerNote is { } handler) lines.Add(("Trade", handler, UiTokens.Ink1));
+        if (option.Moves.Count > 0) lines.Add(("Moves", $"Can learn {string.Join(", ", option.Moves.Select(m => m.Name))} (you choose next)", UiTokens.IndigoInk));
         lines.Add(("DEX", $"{option.SpeciesName} is registered as caught", UiTokens.Ink1));
         foreach (var (caption, text, tone) in lines) _changes.Children.Add(Line(caption, text, tone));
 
@@ -242,21 +233,19 @@ public sealed class EvolutionCard : IPadHandler
             var text = new FormattedString();
             if (d != 0) text.Spans.Add(new Span { Text = $"{before}→", TextColor = UiTokens.InkSoft });
             text.Spans.Add(new Span { Text = $"{after}", TextColor = tone, FontAttributes = FontAttributes.Bold });
-            if (d != 0) text.Spans.Add(new Span { Text = d > 0 ? $" ▲{d}" : $" ▼{-d}", TextColor = tone, FontSize = 10 });
+            if (d != 0) text.Spans.Add(new Span { Text = d > 0 ? $" ▲{d}" : $" ▼{-d}", TextColor = tone, FontSize = UiTokens.TextSmall });
             var cell = new Border
             {
-                BackgroundColor = UiTokens.ShellPress,
-                Stroke = UiTokens.ShellEdge,
-                StrokeThickness = 1,
-                StrokeShape = new RoundRectangle { CornerRadius = 5 },
-                Padding = new Thickness(6, 2),
+                BackgroundColor = Colors.Transparent,
+                StrokeThickness = 0,
+                Padding = new Thickness(2, 1),
                 Content = new VerticalStackLayout
                 {
                     Spacing = 0,
                     Children =
                     {
-                        new Label { FontFamily = DsChrome.PixelFont, FontSize = 10, TextColor = UiTokens.InkSoft, Text = NatureFacts.StatNames[i].ToUpperInvariant() },
-                        new Label { FontSize = 12, LineBreakMode = LineBreakMode.NoWrap, FormattedText = text },
+                        new Label { FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall, TextColor = UiTokens.InkSoft, Text = NatureFacts.StatNames[i] },
+                        new Label { FontSize = UiTokens.TextBody, LineBreakMode = LineBreakMode.NoWrap, FormattedText = text },
                     },
                 },
             };
@@ -268,12 +257,12 @@ public sealed class EvolutionCard : IPadHandler
     private static View Line(string caption, string text, Color tone)
     {
         var grid = new Grid { ColumnSpacing = 8, ColumnDefinitions = [new(new GridLength(64)), new(GridLength.Star)] };
-        grid.Add(new Label { Text = caption, FontFamily = DsChrome.PixelFont, FontSize = 10, TextColor = UiTokens.IndigoInk, VerticalTextAlignment = TextAlignment.Start }, 0);
-        grid.Add(new Label { Text = text, FontSize = 12, TextColor = tone, LineBreakMode = LineBreakMode.WordWrap }, 1);
+        grid.Add(new Label { Text = caption, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall, TextColor = UiTokens.IndigoInk, VerticalTextAlignment = TextAlignment.Start }, 0);
+        grid.Add(new Label { Text = text, FontSize = UiTokens.TextSmall, TextColor = tone, LineBreakMode = LineBreakMode.WordWrap }, 1);
         return grid;
     }
 
-    /// <summary>Two pedestals and the evolution arrow; the destination glows.</summary>
+    /// <summary>Two shadow pedestals and the evolution arrow; a soft cobalt light under the destination.</summary>
     private void PaintStage(object? sender, SkiaSharp.Views.Maui.SKPaintSurfaceEventArgs e)
     {
         var canvas = e.Surface.Canvas;
@@ -286,21 +275,21 @@ public sealed class EvolutionCard : IPadHandler
         var radius = Math.Min(w * 0.2f, h * 0.46f);
 
         using var paint = new SKPaint { IsAntialias = true };
-        paint.Color = SKColor.Parse("#E4E8F0");
+        paint.Color = PKForge.Chrome.Pksm.LogoVoid.WithAlpha(0xA0);
         canvas.DrawOval(left.X, h * 0.86f, radius * 0.9f, radius * 0.22f, paint);
         using (var glow = SKShader.CreateRadialGradient(right, radius * 1.1f,
-                   [SKColor.Parse(option.Available ? "#FFF6C8" : "#E9E9EE"), SKColor.Parse(option.Available ? "#00FFF6C8" : "#00E9E9EE")],
+                   [PKForge.Chrome.Pksm.LogoGrid.WithAlpha(option.Available ? (byte)0x90 : (byte)0x40), PKForge.Chrome.Pksm.LogoGrid.WithAlpha(0)],
                    SKShaderTileMode.Clamp))
         {
             paint.Shader = glow;
             canvas.DrawCircle(right, radius * 1.1f, paint);
             paint.Shader = null;
         }
-        paint.Color = SKColor.Parse("#DCE6F6");
+        paint.Color = PKForge.Chrome.Pksm.LogoVoid.WithAlpha(0xA0);
         canvas.DrawOval(right.X, h * 0.86f, radius * 0.9f, radius * 0.22f, paint);
 
         // The arrow: three chevrons, the evolution beat of the games.
-        var accent = option.IsTrade ? SKColor.Parse("#3E6FD8") : option.Available ? SKColor.Parse("#3C9A5B") : SKColor.Parse("#9AA0AA");
+        var accent = option.IsTrade ? PKForge.Chrome.Pksm.LogoCyan : option.Available ? PKForge.Chrome.Pksm.Legal : PKForge.Chrome.Pksm.InkSoft;
         using var stroke = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = Math.Max(3, h * 0.035f), StrokeCap = SKStrokeCap.Round, StrokeJoin = SKStrokeJoin.Round };
         var cx = w * 0.5f;
         var cy = h * 0.5f;

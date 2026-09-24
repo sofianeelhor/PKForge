@@ -27,7 +27,8 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     public UnboundEngineSession(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
         _originalBytes = bytes.ToArray();
-        _data = RetroArchSaveContainer.Decode(bytes.Span);
+        // Emulator padding and mGBA's RTC footer sit past the flash chip; Serialize re-appends them.
+        _data = SramPadding.Trim(RetroArchSaveContainer.Decode(bytes.Span));
         if (_data.Length != FileSize || !SaveParser.IsPokemonUnbound(_data))
             throw new InvalidDataException("These bytes are not a Pokémon Unbound save.");
         _sections = SectionOffsets(_data);
@@ -521,7 +522,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         buffer.AsSpan(location.Value.Offset, PcMonSize).Clear();
     }
 
-    public bool ImportSlot(int box, int slot, byte[] fileBytes)
+    public bool ImportSlot(int box, int slot, byte[] fileBytes, string? format = null)
     {
         var entity = EntityFormat.GetFromBytes(fileBytes);
         if (entity is null || entity.Species == 0) return false;
@@ -636,6 +637,11 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         return new SlotExport(bytes, $"{UnboundData.SpeciesName(mon.Species)}.pk3");
     }
 
+    /// <summary>The grid's held-item flag: the bridged national id, or -1 when the ROM item has
+    /// no national twin (it still "holds something").</summary>
+    private static int HeldItemId(UnboundMon mon) =>
+        mon.HeldItem == 0 ? 0 : UnboundData.ItemToNational(mon.HeldItem) is > 0 and var national ? national : -1;
+
     private SaveSnapshot BuildSnapshot(string? displayName)
     {
         var slots = new List<SlotSummary>(Boxes * BoxSlotCount + 6);
@@ -644,14 +650,14 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         {
             var mon = TryMon(box, slot);
             slots.Add(mon is { LooksValid: true } valid
-                ? new SlotSummary(box, slot, UnboundData.NationalIdOf(valid.Species), valid.Nickname, valid.IsShiny, true)
+                ? new SlotSummary(box, slot, UnboundData.NationalIdOf(valid.Species), valid.Nickname, valid.IsShiny, true, HeldItem: HeldItemId(valid))
                 : new SlotSummary(box, slot, null, null, false, true));
         }
         for (var slot = 0; slot < 6; slot++)
         {
             var mon = TryMon(-1, slot);
             slots.Add(mon is { LooksValid: true } valid
-                ? new SlotSummary(-1, slot, UnboundData.NationalIdOf(valid.Species), valid.Nickname, valid.IsShiny, true)
+                ? new SlotSummary(-1, slot, UnboundData.NationalIdOf(valid.Species), valid.Nickname, valid.IsShiny, true, HeldItem: HeldItemId(valid))
                 : new SlotSummary(-1, slot, null, null, false, true));
         }
         return new SaveSnapshot("UNBOUND", 3, _originalBytes.ToArray(), slots, displayName);
@@ -661,7 +667,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         // Every mutation commits to _data immediately; serialization is a plain copy.
-        return SramPadding.Pad(RetroArchSaveContainer.Repack(_data, _originalBytes), _originalBytes);
+        return SramPadding.Restore(_data, _originalBytes);
     }
 
     public IReadOnlyList<int> GetAbilityChoices(int species, int form)

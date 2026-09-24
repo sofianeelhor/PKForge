@@ -11,7 +11,7 @@ namespace PKForge.App.Views;
 public static class StatsPopup
 {
     /// <summary>Single numeric value popup (item counts and friends). Null on cancel.</summary>
-    public static Task<int?> ShowSingleAsync(Grid host, string title, int current, int max)
+    public static Task<int?> ShowSingleAsync(Grid host, string title, int current, int max, string? hint = null)
     {
         var result = new TaskCompletionSource<int?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var entry = new Entry
@@ -40,9 +40,9 @@ public static class StatsPopup
                 Close(Math.Clamp(value, 0, max));
         }
 
-        var ok = Kit.Capsule("APPLY", UiTokens.Green);
+        var ok = Kit.Capsule("Apply", UiTokens.Green);
         ok.Clicked += (_, _) => Apply();
-        var cancel = Kit.Capsule("CANCEL", UiTokens.Ink1);
+        var cancel = Kit.Capsule("Cancel", UiTokens.Ink1);
         cancel.Clicked += (_, _) => Close(null);
 
         var content = new VerticalStackLayout
@@ -51,7 +51,7 @@ public static class StatsPopup
             Children =
             {
                 Kit.HeaderBar(title),
-                new Label { Text = $"0 - {max} (0 removes)", TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = 12 },
+                new Label { Text = hint ?? $"0 - {max} (0 removes)", TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall },
                 entry,
                 new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { cancel, ok } },
             },
@@ -87,7 +87,7 @@ public static class StatsPopup
 
         for (var i = 0; i < 6; i++)
         {
-            var caption = new Label { Text = StatNames[i], TextColor = UiTokens.Indigo, FontFamily = DsChrome.PixelFont, FontSize = 11, FontAttributes = FontAttributes.Bold };
+            var caption = new Label { Text = StatNames[i], TextColor = UiTokens.InkSoft, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall };
             entries[i] = new Entry
             {
                 Text = i < current.Count ? current[i].ToString() : "0",
@@ -123,9 +123,9 @@ public static class StatsPopup
             Close(values);
         }
 
-        var ok = Kit.Capsule("APPLY", UiTokens.Green);
+        var ok = Kit.Capsule("Apply", UiTokens.Green);
         ok.Clicked += (_, _) => Apply();
-        var cancel = Kit.Capsule("CANCEL", UiTokens.Ink1);
+        var cancel = Kit.Capsule("Cancel", UiTokens.Ink1);
         cancel.Clicked += (_, _) => Close(null);
 
         var buttons = new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { cancel, ok } };
@@ -135,7 +135,7 @@ public static class StatsPopup
             Children =
             {
                 Kit.HeaderBar(title),
-                new Label { Text = $"0 - {max} per stat", TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = 12 },
+                new Label { Text = $"0 - {max} per stat", TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall },
                 grid,
             },
         };
@@ -152,8 +152,8 @@ public static class StatsPopup
     /// <summary>The live card under the entries; it re-reads the entries on every keystroke.</summary>
     private static View BuildPreview(Grid host, Entry[] entries, int max, StatsPreview preview)
     {
-        var heading = InfoKit.Heading("RESULTING STATS");
-        var total = new Label { FontFamily = DsChrome.PixelFont, FontSize = 11, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End };
+        var heading = InfoKit.Heading("Resulting stats");
+        var total = new Label { FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall, FontAttributes = FontAttributes.Bold, HorizontalTextAlignment = TextAlignment.End };
         var grid = new InfoKit.StatDeltaGrid();
         var overCap = InfoKit.Note(tone: InfoKit.NoteTone.Bad);
         var card = InfoKit.Card(InfoKit.HeaderRow(heading, total), grid, overCap);
@@ -163,8 +163,8 @@ public static class StatsPopup
         if (preview.HiddenPower is not null)
         {
             hpBadge = InfoKit.TypeBadge();
-            var change = Kit.Capsule("CHANGE", UiTokens.Blue);
-            change.FontSize = 10;
+            var change = Kit.Capsule("Change", UiTokens.Blue);
+            change.FontSize = UiTokens.TextSmall;
             change.Padding = new Thickness(10, 2);
             change.HeightRequest = 30;
             change.Clicked += async (_, _) =>
@@ -182,7 +182,7 @@ public static class StatsPopup
                 ColumnDefinitions = [new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto)],
                 Children =
                 {
-                    new Label { Text = "HIDDEN POWER", FontFamily = DsChrome.PixelFont, FontSize = 10, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
+                    new Label { Text = "Hidden power", FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center },
                     hpBadge,
                     change,
                 },

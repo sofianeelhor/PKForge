@@ -45,7 +45,7 @@ public static class SaveIdentitySheet
         options.Add(new PadOption(HideOption, IconPath: "hide", Detail: "Remove from Home and pickers. Settings can show it again."));
         if (resolved is { IsCustomized: true }) options.Add(new PadOption(ResetOption, IconPath: "restore"));
 
-        var choice = await PadMenu.ShowAsync(host, save.GameLabel.ToUpperInvariant(), Describe(save), [.. options]);
+        var choice = await PadMenu.ShowAsync(host, save.GameLabel, Describe(save), [.. options]);
         var current = store.Get(save.DocumentId) ?? new SaveIdentity(save.DocumentId);
         switch (choice)
         {
@@ -71,7 +71,7 @@ public static class SaveIdentitySheet
                 store.Set(current with { Hidden = true });
                 return false;
             case ResetOption:
-                if (await PadMenu.ConfirmAsync(host, "RESET TO DETECTED",
+                if (await PadMenu.ConfirmAsync(host, "Reset to detected",
                         "Forget this save's name, color, game choice and ROM-hack editing choice, and show it again if hidden? The save file itself is not touched.", "Reset"))
                     store.Reset(save.DocumentId);
                 return false;
@@ -95,7 +95,7 @@ public static class SaveIdentitySheet
 
     private static async Task RenameAsync(Grid host, ISaveIdentityStore store, SaveIdentity current, string shown)
     {
-        var text = await TextPopup.ShowLineAsync(host, "NAME THIS SAVE", "Leave empty to use the game's name", shown);
+        var text = await TextPopup.ShowLineAsync(host, "Name this save", "Leave empty to use the game's name", shown);
         if (text is null) return;
         store.Set(current with { DisplayName = text.Length == 0 ? null : text[..Math.Min(text.Length, 32)] });
     }
@@ -106,7 +106,7 @@ public static class SaveIdentitySheet
         var options = new List<PadOption> { new(eraOption, Glyph: "●", Accent: Kit.EraColor(generation)) };
         options.AddRange(SaveIdentityPalette.Swatches.Select(s =>
             new PadOption(s.Key == current.ColorKey ? $"{s.Name} ✓" : s.Name, Glyph: "●", Accent: SaveColors.For(s.Key, generation))));
-        var choice = await PadMenu.ShowAsync(host, "CARTRIDGE COLOR", null, [.. options]);
+        var choice = await PadMenu.ShowAsync(host, "Cartridge color", null, [.. options]);
         if (choice is null) return;
         var picked = SaveIdentityPalette.Swatches.FirstOrDefault(s => choice.StartsWith(s.Name, StringComparison.Ordinal));
         store.Set(current with { ColorKey = choice == eraOption ? null : picked.Key });
@@ -125,7 +125,7 @@ public static class SaveIdentitySheet
             SaveLayoutFamily.Other => "Pick the retail game, or mark it as a ROM hack built on it.",
             _ => "Only games that share this save's layout are listed. A ROM hack built on it keeps the retail engine.",
         };
-        var choice = await PadMenu.ShowAsync(host, "THIS GAME IS…", message, options);
+        var choice = await PadMenu.ShowAsync(host, "This game is…", message, options);
         if (choice is null) return;
         var picked = choices.First(c => choice.StartsWith(c.Label, StringComparison.Ordinal));
         var updated = current with { GameChoiceId = picked.Id };

@@ -26,7 +26,7 @@ public static class TransferPreviewPrompt
     {
         if (!preview.Success || preview.Preview is null)
         {
-            await PadMenu.ShowAsync(host, "TRANSFER", preview.Message, "OK");
+            await PadMenu.ShowAsync(host, "Transfer", preview.Message, "OK");
             return false;
         }
 
@@ -35,7 +35,7 @@ public static class TransferPreviewPrompt
         if (detail.Warnings.Count > 0)
         {
             lines.Add(string.Empty);
-            lines.Add(detail.Backwards ? "WARNINGS (backwards transfer)" : "WARNINGS");
+            lines.Add(detail.Backwards ? "Warnings (backwards transfer)" : "Warnings");
             lines.AddRange(detail.Warnings.Take(MaxWarningLines).Select(w => $"• {w}"));
             if (detail.Warnings.Count > MaxWarningLines)
                 lines.Add($"… and {detail.Warnings.Count - MaxWarningLines} more warnings");
@@ -43,14 +43,14 @@ public static class TransferPreviewPrompt
         if (detail.Changes.Count > 0)
         {
             lines.Add(string.Empty);
-            lines.Add("CHANGES");
+            lines.Add("Changes");
             lines.AddRange(detail.Changes.Take(MaxChangeLines));
             if (detail.Changes.Count > MaxChangeLines)
                 lines.Add($"… and {detail.Changes.Count - MaxChangeLines} more");
         }
         var risky = detail.Legality == TransferLegality.Illegal || detail.Backwards;
         var send = risky ? "Send anyway" : "Send";
-        var choice = await PadMenu.ShowAsync(host, "TRANSFER PREVIEW", string.Join('\n', lines), send, "Cancel");
+        var choice = await PadMenu.ShowAsync(host, "Transfer preview", string.Join('\n', lines), send, "Cancel");
         return choice == send;
     }
 }

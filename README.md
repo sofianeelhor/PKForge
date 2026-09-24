@@ -116,7 +116,7 @@ Link a storage unit and PKForge finds your saves automatically:
 - **Game Boy Advance:** RetroArch, Linkboy, Pizza Boy A
 - **Nintendo DS:** melonDS, DraStic, RetroArch
 - **GameCube:** Dolphin
-- **Nintendo 3DS:** Azahar
+- **Nintendo 3DS:** Azahar, Lime3DS, Citra MMJ
 - **Nintendo Switch:** Eden
 
 You can also open a single save file directly.
@@ -125,7 +125,7 @@ You can also open a single save file directly.
 
 Download the APK from [Releases](https://github.com/sofianeelhor/PKForge/releases) and
 allow installs from unknown sources. First run walks you through linking an emulator
-(RetroArch, melonDS, Azahar, Eden) or opening a single save file.
+(RetroArch, melonDS, Azahar/Lime3DS, Citra MMJ, Eden) or opening a single save file.
 
 ## 💬 Discord
 

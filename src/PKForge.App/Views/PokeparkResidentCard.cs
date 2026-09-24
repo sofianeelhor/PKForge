@@ -29,7 +29,7 @@ public sealed class PokeparkResidentCard : IPadHandler
         _host = host;
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
         var heading = new Grid { ColumnDefinitions = [new(GridLength.Star), new(40)], HeightRequest = 34 };
-        heading.Add(new Label { Text = "POKÉPARK  /  RESIDENT JOURNAL", FontSize = 11, FontAttributes = FontAttributes.Bold,
+        heading.Add(new Label { Text = "Poképark  /  resident journal", FontSize = UiTokens.TextSmall, FontAttributes = FontAttributes.Bold,
             TextColor = UiTokens.IndigoInk, VerticalTextAlignment = TextAlignment.Center });
         var close = new Label { Text = "×", FontFamily = "Rounded", FontSize = 26, TextColor = UiTokens.Ink0, HorizontalTextAlignment = TextAlignment.Center };
         Tap(close, () => Close(null)); heading.Add(close); Grid.SetColumn(close, 1);
@@ -57,20 +57,20 @@ public sealed class PokeparkResidentCard : IPadHandler
         walking.Warm(mon.Species, mon.Form, mon.Shiny, Repaint);
         var name = new Label { Text = mon.Name + (mon.Shiny ? " ★" : ""), FontSize = 17, FontAttributes = FontAttributes.Bold,
             TextColor = UiTokens.Ink0, HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.TailTruncation };
-        var chip = new Border { BackgroundColor = Color.FromArgb("#E5EDDC"), StrokeThickness = 0,
-            StrokeShape = new RoundRectangle { CornerRadius = 9 }, Padding = new Thickness(7, 3),
-            Content = new Label { Text = mood, TextColor = Color.FromArgb("#42604A"), FontSize = 11, HorizontalTextAlignment = TextAlignment.Center } };
+        // The mood as plain coloured text under the name (was a tinted pill).
+        var moodLabel = new Label { Text = mood, TextColor = UiTokens.TextTone(UiTokens.Green), FontSize = UiTokens.TextSmall,
+            HorizontalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.TailTruncation };
         var left = new Grid { RowSpacing = 4, RowDefinitions = [new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto)],
-            Children = { portrait, name, chip } };
-        Grid.SetRow(name, 1); Grid.SetRow(chip, 2);
+            Children = { portrait, name, moodLabel } };
+        Grid.SetRow(name, 1); Grid.SetRow(moodLabel, 2);
         var notes = new VerticalStackLayout { Spacing = 8 };
-        notes.Add(Section("RIGHT NOW", activity));
-        notes.Add(Section("PERSONALITY", trait));
-        notes.Add(Section("FAVORITE LITTLE THINGS", likes));
-        notes.Add(Section("MEADOW MEMORY", story));
+        notes.Add(Section("Right now", activity));
+        notes.Add(Section("Personality", trait));
+        notes.Add(Section("Favorite little things", likes));
+        notes.Add(Section("Meadow memory", story));
         var origin = OriginText(mon);
-        if (origin.Length > 0) notes.Add(Section("ORIGIN", origin));
-        notes.Add(new Label { Text = "Park personality is just for fun. Your Pokémon's game data stays unchanged.", FontSize = 10, TextColor = UiTokens.InkSoft });
+        if (origin.Length > 0) notes.Add(Section("Origin", origin));
+        notes.Add(new Label { Text = "Park personality is just for fun. Your Pokémon's game data stays unchanged.", FontSize = UiTokens.TextSmall, TextColor = UiTokens.InkSoft });
         var journal = new ScrollView { Content = notes };
         var body = new Grid { ColumnSpacing = 14, ColumnDefinitions = [new(new GridLength(0.36, GridUnitType.Star)), new(new GridLength(0.64, GridUnitType.Star))], Children = { left, journal } };
         Grid.SetColumn(journal, 1);
@@ -80,14 +80,14 @@ public sealed class PokeparkResidentCard : IPadHandler
         {
             var index = i;
             var tile = new Border { StrokeShape = new RoundRectangle { CornerRadius = 8 }, Padding = new Thickness(3, 5),
-                Content = new Label { Text = captions[i].Item1 + "  " + captions[i].Item2, FontFamily = "Rounded", FontSize = 12, FontAttributes = FontAttributes.Bold,
+                Content = new Label { Text = captions[i].Item1 + "  " + captions[i].Item2, FontFamily = "Rounded", FontSize = UiTokens.TextSmall, FontAttributes = FontAttributes.Bold,
                     TextColor = UiTokens.Ink0, HorizontalTextAlignment = TextAlignment.Center, VerticalTextAlignment = TextAlignment.Center }, HeightRequest = 38 };
             Tap(tile, () => Close(Keys[index])); _actions.Add(tile); actions.Add(tile); Grid.SetColumn(tile, i);
         }
         var bottom = new Grid { ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto)] };
-        bottom.Add(new Label { Text = "A  Choose    B  Back", FontSize = 10, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center });
+        bottom.Add(new Label { Text = "A  Choose    B  Back", FontSize = UiTokens.TextSmall, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center });
         var leave = new Border { StrokeShape = new RoundRectangle { CornerRadius = 5 }, Padding = new Thickness(7, 4),
-            Content = new Label { Text = "↗  Leave park", FontFamily = "Rounded", FontSize = 11, TextColor = UiTokens.InkSoft } };
+            Content = new Label { Text = "↗  Leave park", FontFamily = "Rounded", FontSize = UiTokens.TextSmall, TextColor = UiTokens.InkSoft } };
         Tap(leave, () => Close("leave")); _actions.Add(leave); bottom.Add(leave); Grid.SetColumn(leave, 1);
         var content = new Grid { RowSpacing = 8, RowDefinitions = [new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto)],
             Children = { heading, body, actions, bottom } };
@@ -122,8 +122,8 @@ public sealed class PokeparkResidentCard : IPadHandler
     private static View Section(string caption, string text) => new VerticalStackLayout
     {
         Spacing = 2,
-        Children = { new Label { Text = caption, FontSize = 9, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.IndigoInk },
-            new Label { Text = text, FontSize = 12, TextColor = UiTokens.Ink0, LineBreakMode = LineBreakMode.WordWrap } }
+        Children = { new Label { Text = caption, FontSize = UiTokens.TextSmall, FontAttributes = FontAttributes.Bold, TextColor = UiTokens.IndigoInk },
+            new Label { Text = text, FontSize = UiTokens.TextSmall, TextColor = UiTokens.Ink0, LineBreakMode = LineBreakMode.WordWrap } }
     };
     private static void Tap(View view, Action action)
     {
@@ -155,9 +155,9 @@ public sealed class PokeparkResidentCard : IPadHandler
         _selected = index;
         for (var i = 0; i < _actions.Count; i++)
         {
-            _actions[i].BackgroundColor = i == index ? UiTokens.SelectFill : UiTokens.PaperShade;
-            _actions[i].Stroke = i == index ? UiTokens.SelectBorder : UiTokens.ShellEdge;
-            _actions[i].StrokeThickness = i == index ? 2 : 1;
+            _actions[i].BackgroundColor = i == index ? UiTokens.SelectFill : UiTokens.ButtonTop;
+            _actions[i].Stroke = i == index ? UiTokens.Rim : UiTokens.ButtonEdge;
+            _actions[i].StrokeThickness = i == index ? 1.2 : UiTokens.ControlEdge;
         }
     }
     private void Close(string? result)

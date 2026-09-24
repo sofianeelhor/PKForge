@@ -60,6 +60,7 @@ public sealed class PokedexPicker : IPadHandler
     private int _index;
     private DexEntry? _selectedEntry;
     private readonly SecondScreenState? _state;
+    private readonly SecondScreenClaim? _claim;
     private readonly List<Border> _typeChips = [];
     private readonly List<Border> _genChips = [];
     private string _category = "Any";
@@ -229,6 +230,8 @@ public sealed class PokedexPicker : IPadHandler
         _host = host;
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
         _state = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
+        // The lower screen previews the highlighted species until the picker closes.
+        _claim = _state?.Routes.OpenOverlay(SecondScreenOwner.Pokedex);
 
         _all = [];
         _filtered = [];
@@ -257,19 +260,19 @@ public sealed class PokedexPicker : IPadHandler
             RowSpacing = 8,
             RowDefinitions = [new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto)],
         };
-        var title = new Label { Text = "POKéDEX", TextColor = UiTokens.Ink0, FontSize = 15, FontAttributes = FontAttributes.Bold, CharacterSpacing = 2 };
+        var title = new Label { Text = "Pokédex", TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextHeading };
         content.Add(title);
         content.Add(search); Grid.SetRow(search, 1);
         var filters = BuildFilterRows();
         content.Add(filters); Grid.SetRow(filters, 2);
         content.Add(_grid); Grid.SetRow(_grid, 3);
-        var hints = Kit.HintBar(
-            ("Ⓐ", "CHOOSE", null),
-            ("Ⓑ", "CANCEL", () => Close(null)),
-            ("Ⓛ Ⓡ", "GEN", null),
-            ("Ⓧ", "TYPES", () => _ = ShowTypeFilterMenuAsync()),
-            ("Ⓢ", "FILTERS", () => _ = ShowFilterAxisMenuAsync()),
-            ("Ⓨ", "CLEAR", ClearFilters));
+        var hints = Kit.WindowHints(
+            ("A", "Choose", null),
+            ("B", "Cancel", () => Close(null)),
+            ("LR", "Gen", null),
+            ("X", "Types", () => _ = ShowTypeFilterMenuAsync()),
+            ("+", "Filters", () => _ = ShowFilterAxisMenuAsync()),
+            ("Y", "Clear", ClearFilters));
         content.Add(hints); Grid.SetRow(hints, 4);
 
         var window = Kit.DevicePanel(content, padding: 12);
@@ -343,9 +346,9 @@ public sealed class PokedexPicker : IPadHandler
     private void RefreshCapsules()
     {
         if (_categoryLabel is null) return;
-        _categoryLabel.Text = $"CATEGORY: {_category.ToUpperInvariant()}";
-        _powerLabel.Text = $"POWER: {_power.ToUpperInvariant()}";
-        _themeLabel.Text = $"THEME: {_theme.ToUpperInvariant()}";
+        _categoryLabel.Text = $"Category: {_category}";
+        _powerLabel.Text = $"Power: {_power}";
+        _themeLabel.Text = $"Theme: {_theme}";
     }
 
     private void RefreshChipStates()
@@ -370,7 +373,7 @@ public sealed class PokedexPicker : IPadHandler
                 Opacity = 0.55,
                 StrokeShape = new RoundRectangle { CornerRadius = 6 },
                 Padding = new Thickness(8, 3),
-                Content = new Label { Text = TypeNames[type].ToUpperInvariant(), TextColor = TypePalette.ForegroundForType(type), FontSize = 9, FontAttributes = FontAttributes.Bold },
+                Content = new Label { Text = TypeNames[type], TextColor = TypePalette.ForegroundForType(type), FontSize = UiTokens.TextSmall, FontAttributes = FontAttributes.Bold },
             };
             var tap = new TapGestureRecognizer();
             tap.Tapped += (_, _) => ToggleType(captured);
@@ -390,7 +393,7 @@ public sealed class PokedexPicker : IPadHandler
                 Opacity = 0.55,
                 StrokeShape = new RoundRectangle { CornerRadius = 6 },
                 Padding = new Thickness(10, 3),
-                Content = new Label { Text = $"GEN {RomanGens[gen - 1]}", TextColor = Colors.White, FontSize = 9, FontAttributes = FontAttributes.Bold },
+                Content = new Label { Text = $"Gen {RomanGens[gen - 1]}", TextColor = Colors.White, FontSize = UiTokens.TextSmall, FontAttributes = FontAttributes.Bold },
             };
             var tap = new TapGestureRecognizer();
             tap.Tapped += (_, _) =>
@@ -410,7 +413,7 @@ public sealed class PokedexPicker : IPadHandler
             StrokeThickness = 0,
             StrokeShape = new RoundRectangle { CornerRadius = 6 },
             Padding = new Thickness(10, 3),
-            Content = new Label { Text = "CLEAR", TextColor = Colors.White, FontSize = 9, FontAttributes = FontAttributes.Bold },
+            Content = new Label { Text = "Clear", TextColor = Colors.White, FontSize = UiTokens.TextSmall, FontAttributes = FontAttributes.Bold },
         };
         var clearTap = new TapGestureRecognizer();
         clearTap.Tapped += (_, _) => ClearFilters();
@@ -418,9 +421,9 @@ public sealed class PokedexPicker : IPadHandler
         genRow.Children.Add(clear);
 
         var extras = new HorizontalStackLayout { Spacing = 5 };
-        extras.Children.Add(FilterCapsule("CATEGORY", () => _ = ShowCategoryMenuAsync(), ref _categoryLabel));
-        extras.Children.Add(FilterCapsule("POWER", () => _ = ShowPowerMenuAsync(), ref _powerLabel));
-        extras.Children.Add(FilterCapsule("THEME", () => _ = ShowThemeMenuAsync(), ref _themeLabel));
+        extras.Children.Add(FilterCapsule("Category", () => _ = ShowCategoryMenuAsync(), ref _categoryLabel));
+        extras.Children.Add(FilterCapsule("Power", () => _ = ShowPowerMenuAsync(), ref _powerLabel));
+        extras.Children.Add(FilterCapsule("Theme", () => _ = ShowThemeMenuAsync(), ref _themeLabel));
 
         return new VerticalStackLayout
         {
@@ -437,7 +440,7 @@ public sealed class PokedexPicker : IPadHandler
     /// <summary>A live capsule showing the current selection of one filter axis.</summary>
     private Border FilterCapsule(string caption, Action open, ref Label valueLabel)
     {
-        valueLabel = new Label { Text = $"{caption}: ANY", TextColor = Colors.White, FontSize = 9, FontAttributes = FontAttributes.Bold };
+        valueLabel = new Label { Text = $"{caption}: Any", TextColor = Colors.White, FontSize = UiTokens.TextSmall, FontAttributes = FontAttributes.Bold };
         var capsule = new Border
         {
             BackgroundColor = UiTokens.MenuBlue,
@@ -469,7 +472,7 @@ public sealed class PokedexPicker : IPadHandler
         {
             TextColor = UiTokens.Ink0,
             FontFamily = DsChrome.PixelFont,
-            FontSize = 10,
+            FontSize = UiTokens.TextSmall,
             FontAttributes = FontAttributes.Bold,
             HorizontalTextAlignment = TextAlignment.Center,
             LineBreakMode = LineBreakMode.TailTruncation,
@@ -481,7 +484,7 @@ public sealed class PokedexPicker : IPadHandler
         {
             TextColor = UiTokens.InkSoft,
             FontFamily = DsChrome.PixelFont,
-            FontSize = 8,
+            FontSize = UiTokens.TextSmall,
             HorizontalTextAlignment = TextAlignment.Center,
         };
         number.SetBinding(Label.TextProperty, new Binding(nameof(DexEntry.Id), stringFormat: "No.{0:000}"));
@@ -489,8 +492,7 @@ public sealed class PokedexPicker : IPadHandler
         var namePlate = new Border
         {
             BackgroundColor = UiTokens.MaroonDeep,
-            Stroke = UiTokens.ShellEdge,
-            StrokeThickness = 1,
+            StrokeThickness = 0,
             StrokeShape = new RoundRectangle { CornerRadius = 3 },
             Padding = new Thickness(3, 1),
             Content = new VerticalStackLayout { Spacing = 0, Children = { name, number } },
@@ -499,10 +501,10 @@ public sealed class PokedexPicker : IPadHandler
         var cell = new Border
         {
             HeightRequest = 78,
-            BackgroundColor = UiTokens.ShellPress,
-            Stroke = UiTokens.ShellEdge,
-            StrokeThickness = 1.5,
-            StrokeShape = new RoundRectangle { CornerRadius = 5 },
+            BackgroundColor = UiTokens.RowStripe,
+            Stroke = Colors.Transparent,
+            StrokeThickness = 1.2,
+            StrokeShape = new RoundRectangle { CornerRadius = UiTokens.ControlRadius },
             Padding = new Thickness(4, 3),
             Content = new Grid
             {
@@ -518,8 +520,8 @@ public sealed class PokedexPicker : IPadHandler
             Value = true,
             Setters =
             {
-                new Setter { Property = Border.StrokeProperty, Value = UiTokens.SelectBorder },
-                new Setter { Property = Border.StrokeThicknessProperty, Value = 4.0 },
+                new Setter { Property = Border.StrokeProperty, Value = UiTokens.Ink0 },
+                new Setter { Property = Border.StrokeThicknessProperty, Value = 2.0 },
                 new Setter { Property = VisualElement.BackgroundColorProperty, Value = UiTokens.SelectFill },
             },
         });
@@ -686,7 +688,7 @@ public sealed class PokedexPicker : IPadHandler
     /// <summary>Pad path into the three deep-filter axes (the capsules are the touch path).</summary>
     private async Task ShowFilterAxisMenuAsync()
     {
-        var choice = await PadMenu.ShowAsync(_host, "FILTERS",
+        var choice = await PadMenu.ShowAsync(_host, "Filters",
             "Categories, power, and themes combine with the type gems and generation chips.",
             new PadOption($"Category: {_category}", IconPath: "type"),
             new PadOption($"Power: {_power}", IconPath: "battle"),
@@ -703,7 +705,7 @@ public sealed class PokedexPicker : IPadHandler
 
     private async Task ShowCategoryMenuAsync()
     {
-        var choice = await PadMenu.ShowAsync(_host, "CATEGORY",
+        var choice = await PadMenu.ShowAsync(_host, "Category",
             "Rarity and special families. Combines with types, generation, power, and theme.",
             "Any", "Legendary", "Mythical", "Ultra Beast", "Paradox", "Pseudo-Legendary",
             "Starter", "Fossil", "Baby", "Regional Form", "Mega-capable",
@@ -716,7 +718,7 @@ public sealed class PokedexPicker : IPadHandler
 
     private async Task ShowPowerMenuAsync()
     {
-        var choice = await PadMenu.ShowAsync(_host, "POWER", null,
+        var choice = await PadMenu.ShowAsync(_host, "Power", null,
             "Any", "400+ BST", "500+ BST", "600+ BST", "Physical Attacker",
             "Special Attacker", "Fast", "Sturdy");
         if (choice is null) return;
@@ -727,7 +729,7 @@ public sealed class PokedexPicker : IPadHandler
 
     private async Task ShowThemeMenuAsync()
     {
-        var choice = await PadMenu.ShowAsync(_host, "THEME", "The fun filters. Subjective by design.",
+        var choice = await PadMenu.ShowAsync(_host, "Theme", "The fun filters. Subjective by design.",
             "Any", "Dragons", "Aquatic", "Felines", "Canines", "Birds", "Dinosaurs");
         if (choice is null) return;
         _theme = choice;
@@ -737,6 +739,7 @@ public sealed class PokedexPicker : IPadHandler
 
     private void Close(PickItem? result)
     {
+        _claim?.Release();
         if (_state is not null) _state.PreviewSpecies = null;
         if (_router is not null) _router.Remove(this);
         _host.Remove(_overlay);

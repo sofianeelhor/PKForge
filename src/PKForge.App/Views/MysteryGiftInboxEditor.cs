@@ -12,13 +12,13 @@ public static class MysteryGiftInboxEditor
         var inbox = session.GetMysteryGiftInbox();
         if (!inbox.Supported)
         {
-            await EditorMenu.ShowAsync(host, "MYSTERY GIFT INBOX",
+            await EditorMenu.ShowAsync(host, "Mystery gift inbox",
                 "This game does not expose a supported Mystery Gift card store.", "OK");
             return;
         }
         if (inbox.Cards.Count == 0)
         {
-            await EditorMenu.ShowAsync(host, "MYSTERY GIFT INBOX",
+            await EditorMenu.ShowAsync(host, "Mystery gift inbox",
                 "No Mystery Gift cards or received-gift records are stored in this save.", "OK");
             return;
         }
@@ -33,7 +33,7 @@ public static class MysteryGiftInboxEditor
             inbox = session.GetMysteryGiftInbox();
             var options = inbox.Cards.Select(card => new PickItem(card.Slot,
                 $"{card.Title} · {CardNumber(card)}")).ToArray();
-            var picked = await PickerMenu.ShowAsync(host, $"MYSTERY GIFT INBOX · {inbox.Cards.Count}", options);
+            var picked = await PickerMenu.ShowAsync(host, $"Mystery gift inbox · {inbox.Cards.Count}", options);
             if (picked is null)
                 return;
             var card = inbox.Cards.FirstOrDefault(candidate => candidate.Slot == picked.Id);
@@ -45,7 +45,7 @@ public static class MysteryGiftInboxEditor
                 ? $"Pokémon: {SpeciesName(card.Species)} · Lv. {card.Level}"
                 : "Non-Pokémon gift or record";
             var state = card.IsReceivedRecord ? "History entry" : card.GiftUsed ? "Gift used" : "Gift unused";
-            await EditorMenu.ShowAsync(host, card.Title.ToUpperInvariant(),
+            await EditorMenu.ShowAsync(host, card.Title,
                 $"{kind}\n{CardNumber(card)} · {card.Type}\n{contents}\n{state}\n\nRead-only: PKForge does not alter cards or received flags.", "Back");
         }
     }

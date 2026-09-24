@@ -122,9 +122,13 @@ public static class BoxGridRenderer
                 }
             }
 
+            if (viewModel.PendingRectangle is { } range && viewModel.InPendingRectangle(index))
+                PksmPaint.RangeWash(canvas, rect, range.Mark);
+
             if (index == viewModel.SelectedSlot)
             {
-                PksmPaint.Selection(canvas, rect);
+                // The games' two hands: red moves one Pokémon, green marks many.
+                PksmPaint.Selection(canvas, rect, viewModel.SelectMode ? Pksm.CursorGreen : null);
                 if (viewModel.CarriedSummary is { } carried && viewModel.CarrySource is not null)
                 {
                     var lift = cell * 0.18f;
@@ -140,6 +144,9 @@ public static class BoxGridRenderer
             if (occupied && lockedSlots is not null && lockedSlots.Contains(index))
                 DrawLockBadge(canvas, rect, Math.Min(rect.Width, rect.Height));
 
+            if (occupied && !isCarryOrigin && slots[index].HasItem)
+                DrawHeldItemBadge(canvas, rect, besideLock: lockedSlots is not null && lockedSlots.Contains(index));
+
             if (occupied && verdicts is not null && verdicts.TryGetValue(index, out var legal))
                 DrawLegalityDot(canvas, rect, legal);
 
@@ -152,7 +159,7 @@ public static class BoxGridRenderer
     private static void DrawSprite(SKCanvas canvas, SKRect rect, Domain.SlotSummary slot,
         ISpriteService sprites, Action invalidate, SKFont font, SKColor shadow)
     {
-        var bitmap = sprites.GetSprite(slot.Species!.Value, slot.Form, slot.IsShiny);
+        var bitmap = sprites.GetSprite(slot.Look);
         if (bitmap is not null)
         {
             // The sprite fills ~94% of the tile - it IS the slot.
@@ -169,7 +176,7 @@ public static class BoxGridRenderer
         else
         {
             // invalidate is expected to be a coalescing, thread-safe repaint request.
-            sprites.Warm(slot.Species.Value, slot.Form, slot.IsShiny, invalidate);
+            sprites.Warm(slot.Look, invalidate);
             PksmPaint.CenterText(canvas, slot.Nickname ?? $"#{slot.Species}", rect.MidX, rect.MidY,
                 font, SKColors.White, shadow, SKTextAlign.Center);
         }
@@ -188,6 +195,37 @@ public static class BoxGridRenderer
         using var gold = new SKPaint { Color = UiTokens.SkShinyGold, IsAntialias = true };
         canvas.DrawRoundRect(SKRect.Inflate(dest, size * 0.16f, size * 0.16f), size * 0.22f, size * 0.22f, gold);
         using var image = SKImage.FromBitmap(_lockIcon);
+        canvas.DrawImage(image, dest, SpriteSampling);
+    }
+
+    private static SKBitmap? _itemIcon;
+
+    /// <summary>
+    /// The held-item badge, as the Gen 4-7 PC boxes show it: a small bag glyph tucked into the
+    /// slot's lower-right corner (top-right is the shiny star, top-left the mark, bottom-left the
+    /// legality pip). Crisp white px_item on a logo-void plate with a pale rim, so it reads on
+    /// every wallpaper and over any sprite. When the release lock owns the corner, the badge
+    /// sits just left of it. Shared with the Bank, Bank search and second-screen grids.
+    /// </summary>
+    public static void DrawHeldItemBadge(SKCanvas canvas, SKRect rect, bool besideLock = false)
+    {
+        _itemIcon ??= SKBitmap.Decode(PksmIcons.GetPng("item", PksmIcons.White));
+        var cell = Math.Min(rect.Width, rect.Height);
+        var pad = cell * 0.05f;
+        // Whole device pixels so the 16-px-grid glyph stays pixel-crisp under nearest sampling.
+        var size = MathF.Max(8f, MathF.Round(cell * 0.20f));
+        var right = rect.Right - pad - (besideLock ? cell * 0.26f + cell * 0.10f : 0f);
+        var dest = new SKRect(MathF.Round(right - size), MathF.Round(rect.Bottom - pad - size),
+            MathF.Round(right), MathF.Round(rect.Bottom - pad));
+        var plate = SKRect.Inflate(dest, size * 0.14f, size * 0.14f);
+        var corner = size * 0.2f;
+        using var rim = new SKPaint { Color = Pksm.IndigoInk.WithAlpha(0xE6), IsAntialias = true };
+        using var fill = new SKPaint { Color = Pksm.LogoVoid.WithAlpha(0xE6), IsAntialias = true };
+        var outer = SKRect.Inflate(plate, MathF.Max(1f, size * 0.06f), MathF.Max(1f, size * 0.06f));
+        canvas.DrawRoundRect(outer, corner * 1.2f, corner * 1.2f, rim);
+        canvas.DrawRoundRect(plate, corner, corner, fill);
+        if (_itemIcon is null) return;
+        using var image = SKImage.FromBitmap(_itemIcon);
         canvas.DrawImage(image, dest, SpriteSampling);
     }
 

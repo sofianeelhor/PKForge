@@ -1,0 +1,6 @@
+# PKHeX forms with no bundled pixel sprite or artwork: drawn as the base form (SpriteFidelity.BaseForm).
+# PKHeX itself folds these (SpriteName.SpeciesDefaultFormSprite) and ships no per-form art;
+# HOME / Showdown do have the exact form, so the Summary hero shows it when downloaded.
+778-1
+892-1
+982-1

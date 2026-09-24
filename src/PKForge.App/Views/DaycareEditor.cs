@@ -14,7 +14,7 @@ public static class DaycareEditor
             var info = session.GetDaycare();
             if (!info.Supported)
             {
-                await EditorMenu.ShowAsync(host, "DAY CARE", "This game has no supported Day Care or Nursery storage.", "OK");
+                await EditorMenu.ShowAsync(host, "Day care", "This game has no supported Day Care or Nursery storage.", "OK");
                 return;
             }
 
@@ -22,7 +22,7 @@ public static class DaycareEditor
             var facilityIndex = 0;
             if (facilities.Count > 1)
             {
-                var picked = await PickerMenu.ShowAsync(host, "DAY CARE", facilities.Select((f, i) =>
+                var picked = await PickerMenu.ShowAsync(host, "Day care", facilities.Select((f, i) =>
                     new PickItem(i, $"{f.Name} · {(f.EggAvailable ? "egg ready" : "no egg")}")).ToList());
                 if (picked is null) return;
                 facilityIndex = picked.Id;
@@ -30,14 +30,14 @@ public static class DaycareEditor
 
             var facility = session.GetDaycare().Facilities[facilityIndex];
             var choices = facility.Slots.Select(slot => new PadOption(SlotLabel(slot))).ToArray();
-            var choice = await EditorMenu.ShowAsync(host, facility.Name.ToUpperInvariant(),
+            var choice = await EditorMenu.ShowAsync(host, facility.Name,
                 facility.EggAvailable ? "An egg is ready. Egg state is read-only." : "Deposited Pokémon", choices);
             if (choice is null) return;
             var slotIndex = Array.FindIndex(facility.Slots.ToArray(), slot => choice == SlotLabel(slot));
             if (slotIndex < 0 || !facility.Slots[slotIndex].Occupied)
             {
                 if (slotIndex >= 0)
-                    await EditorMenu.ShowAsync(host, facility.Name.ToUpperInvariant(), "This slot is empty.", "OK");
+                    await EditorMenu.ShowAsync(host, facility.Name, "This slot is empty.", "OK");
                 continue;
             }
 
