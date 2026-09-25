@@ -133,7 +133,7 @@ Join for updates, support, bug reports, feature requests, or just to chat about 
 
 👉 **[Join the PKForge Discord](https://discord.gg/bMtzZmTDfu)**
 
-[![Discord](https://discordapp.com/api/guilds/1542192456018427926/widget.png?style=banner3&time-)](https://discord.gg/bGKEyfY)
+[![Discord](https://discordapp.com/api/guilds/1542192456018427926/widget.png?style=banner3&time-)](https://discord.gg/XkeD2vKJCZ)
 
 ## Building
 
