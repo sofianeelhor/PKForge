@@ -1,3 +1,5 @@
+using PKForge.Domain;
+
 namespace PKForge.App.Services;
 
 /// <summary>
@@ -16,17 +18,13 @@ public static class ItemArt
     /// ("Poké Doll") that must fold to their base letters (poke-doll) - the old
     /// filter turned é into a dash and every accented item 404'd forever.
     /// </summary>
-    public static string Slug(string itemName)
+    public static string Slug(string itemName) => SpritePack.ItemSlug(itemName);
+
+    /// <summary>True when the icon is on disk, or a recent attempt found none upstream.</summary>
+    public static bool IsCachedOrKnownMissing(string itemName)
     {
-        var folded = itemName.ToLowerInvariant().Normalize(System.Text.NormalizationForm.FormD);
-        var sb = new System.Text.StringBuilder(folded.Length);
-        foreach (var ch in folded)
-        {
-            if (char.IsAsciiLetterOrDigit(ch)) sb.Append(ch);
-            else if (char.GetUnicodeCategory(ch) is not System.Globalization.UnicodeCategory.NonSpacingMark)
-                sb.Append('-');
-        }
-        return sb.ToString().Replace("--", "-").Trim('-');
+        var cache = Path.Combine(FileSystem.AppDataDirectory, "items", Slug(itemName) + ".png");
+        return File.Exists(cache) || IsFreshMiss(cache + ".miss");
     }
 
     /// <summary>Local path of the item's sprite, or null (unknown item / offline first time).</summary>
