@@ -103,4 +103,22 @@ public sealed class GameIdentificationTests
         SaveParser.ApplyVersionHint(save, "Pokémon Ruby");
         Assert.Equal(GameVersion.R, save.Version);
     }
+
+    /// <summary>
+    /// The stored party count is one raw byte; an early or damaged FireRed save can hold 7 or
+    /// more while the party has 6 slots. Reading the edition from it must not run off the end.
+    /// </summary>
+    [Theory]
+    [InlineData(7)]
+    [InlineData(0xFF)]
+    public void AnOutOfRangePartyCountNeverBreaksTheEditionRead(byte storedCount)
+    {
+        var save = new SAV3FRLG { OT = "RED", TID16 = 1234, SID16 = 5678 };
+        save.SetPartySlotAtIndex(OwnMon(save, GameVersion.LG, "RED"), 0);
+        save.LargeBlock.PartyCount = storedCount;
+
+        Assert.Equal(GameVersion.LG, SaveParser.EditionFromOwnPokemon(save));
+        SaveParser.ApplyVersionHint(save, "FireRed / LeafGreen");
+        Assert.Equal(GameVersion.LG, save.Version);
+    }
 }

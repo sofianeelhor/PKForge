@@ -20,18 +20,25 @@ afterwards: an old save state can overwrite edited battery-save data.
 - **Azahar / Lime3DS / Citra MMJ (3DS):** one Citra-family layout,
   `sdmc/Nintendo 3DS/<ID0>/<ID1>/title/00040000/<title>/data/00000001/main`
   (plain files, same format in every fork). The granted folder may be the user
-  folder (containing `sdmc`), `citra-emu`, `sdmc`, `Nintendo 3DS`, or MMJ's
-  `files` folder. Azahar and Lime3DS (`io.github.lime3ds.android`) use the user
+  folder (containing `sdmc`), `citra-emu`, `sdmc`, `Nintendo 3DS`, MMJ's
+  `files` folder, a parent of any of those (a bounded search, four levels deep),
+  or any folder below `Nintendo 3DS` down to one game's. Folder names match in
+  any case. Azahar and Lime3DS (`io.github.lime3ds.android`) use the user
   folder picked in their setup. Citra MMJ (`org.citra.emu`) uses
   `Android/data/org.citra.emu/files/citra-emu` on Android 10+ (exposed through its
   own "Citra MMJ" documents provider) or `/sdcard/citra-emu` with legacy storage.
   Writes are in place on the emulated SD and get the extra-care confirmation.
 - **RetroArch:** per-core save folders are traversed, including nested GCI folders.
-  **melonDS, Linkboy, Azahar and Eden** remain available in their platform menus.
+  Its `roms` folders are skipped to keep a whole-RetroArch grant fast.
+- **melonDS:** battery saves (`.sav`) sit next to the ROM by default, or in the
+  save folder set in its settings; link that folder. `roms` folders are walked.
+  **Linkboy, Azahar and Eden** remain available in their platform menus.
 
 Android decides which folders providers expose and whether it grants access.
-Selecting a platform groups the choices; a linked root is still scanned for all
-supported Pokémon saves, so one RetroArch root need not be linked per platform.
+Selecting a platform groups the choices. Each linked root is scanned with its own
+emulator's layout; RetroArch roots cover every core, so one RetroArch root need not
+be linked per platform. After a link the app reports how many saves the folder
+held, or which folder to pick when it found none.
 Persisted enum values (0–9) remain stable. Parse caches include the emulator
 kind so overlapping grants do not inherit another emulator's identity.
 

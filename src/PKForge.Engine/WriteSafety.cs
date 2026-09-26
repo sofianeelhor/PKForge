@@ -130,7 +130,7 @@ internal static class WriteSafety
 
     private static IEnumerable<G3PKM> Mons(SAV3 save)
     {
-        for (var slot = 0; slot < save.PartyCount; slot++)
+        for (var slot = 0; slot < SaveParser.PartySlots(save); slot++)
             if (save.GetPartySlotAtIndex(slot) is G3PKM pk) yield return pk;
         for (var box = 0; box < save.BoxCount; box++)
         for (var slot = 0; slot < save.BoxSlotCount; slot++)
@@ -153,7 +153,7 @@ internal static class WriteSafety
         // (2) Retail Gen 3 mons always carry a valid checksum (bad eggs are the only
         // exception). Most of them failing means the Pokémon are in a foreign format.
         var images = StockImages(save);
-        var party = images.Where(i => i.Slot.Box == -1 && i.Slot.Slot < save.PartyCount && i.Bytes.Any(b => b != 0)).ToList();
+        var party = images.Where(i => i.Slot.Box == -1 && i.Slot.Slot < SaveParser.PartySlots(save) && i.Bytes.Any(b => b != 0)).ToList();
         if (party.Count > 0 && party.Count(i => !i.Valid) * 2 > party.Count)
             return $"{party.Count(i => !i.Valid)} of {party.Count} party Pokémon do not decode as vanilla {save.Version} data, " +
                    "so this is most likely a ROM hack PKForge does not recognize.";

@@ -167,6 +167,32 @@ public partial class SavePickerViewModel : ObservableObject
 
     [ObservableProperty] private string _status = "Link an emulator's storage to begin.";
     [ObservableProperty] private bool _isBusy;
+
+    private DateTimeOffset _busySince;
+    private string _busyWith = "";
+
+    partial void OnIsBusyChanged(bool value)
+    {
+        if (value) _busySince = DateTimeOffset.Now;
+    }
+
+    /// <summary>What is running while <see cref="IsBusy"/>, for "still busy" messages.</summary>
+    public string BusyWith => _busyWith;
+
+    /// <summary>No scan or open takes this long; past it, the busy flag is a leftover.</summary>
+    private static readonly TimeSpan StuckAfter = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Clears a busy flag left behind by an operation that never finished (an Android picker
+    /// that never answered, say), so the shelf is never locked for good. True when it did.
+    /// </summary>
+    public bool ReleaseIfStuck()
+    {
+        if (!IsBusy || DateTimeOffset.Now - _busySince < StuckAfter) return false;
+        _scanDiagnostics.Add($"RELEASED a busy state left by {_busyWith} since {_busySince:O}");
+        IsBusy = false;
+        return true;
+    }
     [ObservableProperty] private bool _showWizard = !Preferences.Default.Get(SetupDoneKey, false);
 
     /// <summary>First-run setup is done once the user links anything (or skips).</summary>
@@ -213,7 +239,7 @@ public partial class SavePickerViewModel : ObservableObject
     [RelayCommand]
     public async Task RescanAsync()
     {
-        if (IsBusy) return;
+        if (IsBusy && !ReleaseIfStuck()) return;
         var roots = _roots.GetRoots();
         if (roots.Count == 0)
         {
@@ -223,6 +249,7 @@ public partial class SavePickerViewModel : ObservableObject
 
         try
         {
+            _busyWith = "a scan";
             IsBusy = true;
             Saves.Clear();
             Groups.Clear();
@@ -230,6 +257,7 @@ public partial class SavePickerViewModel : ObservableObject
             _detected.Clear();
             var filesSeen = 0;
             _rejectedCandidates.Clear();
+            _savesPerRoot.Clear();
             _scanDiagnostics.Clear();
             _scanDiagnostics.Add($"PKForge scan report · {DateTimeOffset.Now:O}");
             _scanDiagnostics.Add($"Linked roots: {roots.Count}");
@@ -238,6 +266,7 @@ public partial class SavePickerViewModel : ObservableObject
                 _scanDiagnostics.Add(string.Empty);
                 _scanDiagnostics.Add($"ROOT kind={root.Kind} name={root.DisplayName}");
                 _scanDiagnostics.Add($"TREE URI {root.TreeId}");
+                _scanningRoot = root.TreeId;
                 Status = $"Scanning {SaveDescriptions.EmulatorName(root.Kind)} unit · {root.DisplayName}…";
                 try
                 {
@@ -282,6 +311,7 @@ public partial class SavePickerViewModel : ObservableObject
                     Status = $"Scan of {SaveDescriptions.EmulatorName(root.Kind)} failed: {error.Message}";
                 }
             }
+            _scanningRoot = null;
             RebuildGroups();
             Status = Saves.Count == 0
                 ? $"No games found. Scanned {filesSeen} file(s), {_rejectedCandidates.Count} looked like saves but did not parse."
@@ -297,6 +327,8 @@ public partial class SavePickerViewModel : ObservableObject
     {
         if (!_saveIds.Add(save.DocumentId))
             return;
+        if (_scanningRoot is { } scanning)
+            _savesPerRoot[scanning] = _savesPerRoot.GetValueOrDefault(scanning) + 1;
 
         _detected.Add(save);
         var resolved = Resolve(save);
@@ -451,6 +483,7 @@ public partial class SavePickerViewModel : ObservableObject
         OpenedSave = false;
         try
         {
+            _busyWith = "opening a save file";
             IsBusy = true;
             Status = "Select the save file to link…";
             var document = await _filePicker.PickSaveAsync();
@@ -464,6 +497,9 @@ public partial class SavePickerViewModel : ObservableObject
         }
         catch (Exception error)
         {
+            // Release builds shorten framework messages to resource keys; the full error goes
+            // to the copyable scan report so a player can send it.
+            _scanDiagnostics.Add($"OPEN FAILED (single file) {error}");
             Status = $"Could not link save: {error.Message}";
         }
         finally
@@ -471,6 +507,12 @@ public partial class SavePickerViewModel : ObservableObject
             IsBusy = false;
         }
     }
+
+    private string? _scanningRoot;
+    private readonly Dictionary<string, int> _savesPerRoot = new(StringComparer.Ordinal);
+
+    /// <summary>Raised after a folder is linked: a title and what the scan found there, for the UI to show.</summary>
+    public event Action<string, string>? LinkReported;
 
     private async Task AddRootAndScanAsync(EmulatorKind kind)
     {
@@ -480,7 +522,33 @@ public partial class SavePickerViewModel : ObservableObject
         _roots.AddRoot(new WatchedRoot(kind, folder.TreeId, folder.DisplayName));
         CompleteSetup();
         await RescanAsync();
+
+        // Always say what the link found: "linked" with an empty shelf reads as broken.
+        var found = _savesPerRoot.GetValueOrDefault(folder.TreeId);
+        var emulator = SaveDescriptions.EmulatorName(kind);
+        if (found > 0)
+        {
+            LinkReported?.Invoke($"{emulator} linked",
+                $"Found {found} Pokémon save{(found == 1 ? "" : "s")} in {folder.DisplayName}.");
+            return;
+        }
+        var rejected = _rejectedCandidates.Count(r => r.StartsWith($"{kind}:", StringComparison.Ordinal));
+        LinkReported?.Invoke($"No saves found in {folder.DisplayName}",
+            (rejected > 0 ? $"{rejected} file(s) looked like saves but could not be read. " : "")
+            + WhereToPoint(kind) + " The folder stays linked; unlink it from Manage linked storage.");
     }
+
+    /// <summary>Which folder to pick, per emulator, for the "nothing found" message.</summary>
+    private static string WhereToPoint(EmulatorKind kind) => kind switch
+    {
+        EmulatorKind.Azahar or EmulatorKind.CitraMmj =>
+            "Pick the emulator's user folder, the one that contains sdmc (sdmc or Nintendo 3DS work too). Saves live in sdmc/Nintendo 3DS/…/title/00040000/<game>/data/00000001/main.",
+        EmulatorKind.MelonDS =>
+            "Pick the folder that holds your .sav files: next to your ROMs by default, or the save folder set in melonDS's settings.",
+        EmulatorKind.DraStic => "Pick DraStic's backup folder (its .dsv battery saves) or the DraStic data folder.",
+        EmulatorKind.Eden => "Pick Eden's files root, the folder that contains its emulated storage.",
+        _ => "Pick the folder that holds your save files.",
+    };
 
     public async Task OpenAsync(DetectedSave save)
     {
@@ -488,6 +556,7 @@ public partial class SavePickerViewModel : ObservableObject
         OpenedSave = false;
         try
         {
+            _busyWith = $"opening {save.GameLabel}";
             IsBusy = true;
             Status = $"Connecting to {save.GameLabel}…";
             // EngineHint carries the chosen game (FireRed vs LeafGreen), never the custom
@@ -499,6 +568,7 @@ public partial class SavePickerViewModel : ObservableObject
         }
         catch (Exception error)
         {
+            _scanDiagnostics.Add($"OPEN FAILED {save.FileName} {error}");
             Status = $"Could not connect: {error.Message}";
         }
         finally

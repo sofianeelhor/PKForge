@@ -37,6 +37,42 @@ public sealed class ThreeDsSaveLayoutTests : IDisposable
         return n3ds is null ? [] : ThreeDsSaveLayout.EnumerateMainSaves(n3ds, List).ToList();
     }
 
+    private static List<ThreeDsSaveHit<string>> Find(string root) =>
+        ThreeDsSaveLayout.FindMainSaves(root, Path.GetFileName(root), List).ToList();
+
+    [Theory]
+    // A parent of the Azahar folder (found by the bounded search).
+    [InlineData("Emulation/azahar/sdmc", "Emulation")]
+    // Below "Nintendo 3DS": ID0, ID1, title, 00040000, one game, its data folder.
+    [InlineData("user/sdmc", "user/sdmc/Nintendo 3DS/" + Id0)]
+    [InlineData("user/sdmc", "user/sdmc/Nintendo 3DS/" + Id0 + "/" + Id1)]
+    [InlineData("user/sdmc", "user/sdmc/Nintendo 3DS/" + Id0 + "/" + Id1 + "/title")]
+    [InlineData("user/sdmc", "user/sdmc/Nintendo 3DS/" + Id0 + "/" + Id1 + "/title/00040000")]
+    [InlineData("user/sdmc", "user/sdmc/Nintendo 3DS/" + Id0 + "/" + Id1 + "/title/00040000/" + SunTitle)]
+    public void FindsMainSaveFromParentAndDeeperGrants(string layout, string grant)
+    {
+        Build(layout);
+        var hit = Assert.Single(Find(Path.Combine(_temp, grant)));
+        Assert.Equal("main", Path.GetFileName(hit.File));
+        Assert.Equal(SunTitle, hit.TitleId);
+    }
+
+    [Fact]
+    public void FolderNamesMatchInAnyCase()
+    {
+        var slot = Path.Combine(_temp, "user", "SDMC", "nintendo 3ds", Id0, Id1, "Title", "00040000", SunTitle, "Data", "00000001");
+        Directory.CreateDirectory(slot);
+        File.WriteAllBytes(Path.Combine(slot, "main"), [1]);
+        Assert.Equal(SunTitle, Assert.Single(Find(Path.Combine(_temp, "user"))).TitleId);
+    }
+
+    [Fact]
+    public void AnUnrelatedFolderFindsNothing()
+    {
+        Directory.CreateDirectory(Path.Combine(_temp, "music", "albums"));
+        Assert.Empty(Find(Path.Combine(_temp, "music")));
+    }
+
     [Theory]
     // Azahar / Lime3DS: user-picked folder containing sdmc/.
     [InlineData("user/sdmc", "user")]
