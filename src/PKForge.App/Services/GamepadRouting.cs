@@ -15,6 +15,16 @@ public interface IPadReleaseHandler
 }
 
 /// <summary>
+/// A screen where L/R step through boxes or pages: holding a shoulder keeps stepping.
+/// Screens where L/R open something stay one press, one action.
+/// </summary>
+public interface IPadPagingHandler : IPadHandler
+{
+    /// <summary>False while L/R would write something (moving a held save box), so a hold never repeats a write.</summary>
+    bool ShouldersRepeat => true;
+}
+
+/// <summary>
 /// Routes physical buttons to the top-most visible screen. Pages push themselves in
 /// OnAppearing and remove themselves in OnDisappearing, so mapping is always per-screen
 /// and never falls through to stale handlers.
@@ -32,6 +42,9 @@ public sealed class GamepadRouter
     public void Remove(IPadHandler handler) => _stack.Remove(handler);
 
     public bool Dispatch(PadButton button) => _stack.Count > 0 && _stack[^1].OnPadButton(button);
+
+    /// <summary>True when the top-most screen pages with L/R (see <see cref="IPadPagingHandler"/>).</summary>
+    public bool TopPagesWithShoulders => _stack.Count > 0 && _stack[^1] is IPadPagingHandler { ShouldersRepeat: true };
 
     /// <summary>Tells the top-most screen a button was released, when it listens for that.</summary>
     public void DispatchRelease(PadButton button)

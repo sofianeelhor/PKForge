@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Builds PKForge's offline dex facts: move power/accuracy/category/type + short effect,
-ability short effects and item short effects, English only.
+ability short effects, item short effects, and each species' category and Pokédex entries,
+English only.
 
 Source: PokeAPI's CSV data (https://github.com/PokeAPI/pokeapi, data/v2/csv), BSD-3-Clause,
 Copyright (c) 2014 Paul Hallett and PokeAPI contributors. The notice travels inside the
@@ -21,6 +22,8 @@ Format (UTF-8 TSV, one record per line; see PKForge.Domain.DexFacts):
     M  id  type(0-17)  category(0 status,1 physical,2 special)  power(0 = none)  accuracy(0 = never misses)  effect
     A  id  effect
     I  normalised-english-name  effect       (items are keyed by name: item ids differ per generation)
+    S  species  genus                        ("Seed Pokémon")
+    F  species  version  entry               (each distinct Pokédex entry once, oldest version first)
 """
 import csv
 import gzip
@@ -33,7 +36,8 @@ import urllib.request
 
 BASE = "https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/"
 FILES = ["moves.csv", "move_effect_prose.csv", "ability_prose.csv", "item_prose.csv", "item_names.csv",
-         "move_flavor_text.csv", "ability_flavor_text.csv", "item_flavor_text.csv"]
+         "move_flavor_text.csv", "ability_flavor_text.csv", "item_flavor_text.csv",
+         "pokemon_species_names.csv", "pokemon_species_flavor_text.csv", "version_names.csv"]
 ENGLISH = "9"
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEFAULT_OUT = os.path.join(ROOT, "src", "PKForge.Domain", "Resources", "dexfacts.tsv.gz")
@@ -130,12 +134,36 @@ def main():
     for key in sorted(items):
         lines.append("I\t%s\t%s" % (key, items[key]))
 
+    genera = {int(r["pokemon_species_id"]): clean(r["genus"]) for r in data["pokemon_species_names.csv"]
+              if r["local_language_id"] == ENGLISH and r["genus"].strip()}
+    for species in sorted(genera):
+        lines.append("S\t%d\t%s" % (species, genera[species]))
+
+    versions = {r["version_id"]: r["name"] for r in data["version_names.csv"] if r["local_language_id"] == ENGLISH}
+    entries = {}
+    for r in sorted(data["pokemon_species_flavor_text.csv"], key=lambda r: (int(r["species_id"]), int(r["version_id"]))):
+        if r["language_id"] != ENGLISH or r["version_id"] not in versions:
+            continue
+        # The first games wrote "POKéMON" in capitals.
+        text = clean(r["flavor_text"].replace("\f", " ")).replace("POKéMON", "Pokémon")
+        seen = entries.setdefault(int(r["species_id"]), {})
+        # Games often reprint an entry; keep each text once, credited to its first game.
+        key = normalise_name(text)
+        if text and key not in seen:
+            seen[key] = (versions[r["version_id"]], text)
+    flavor_count = 0
+    for species in sorted(entries):
+        for version, text in entries[species].values():
+            lines.append("F\t%d\t%s\t%s" % (species, version, text))
+            flavor_count += 1
+
     payload = ("\n".join(lines) + "\n").encode("utf-8")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "wb") as raw:
         with gzip.GzipFile(filename="", mode="wb", fileobj=raw, compresslevel=9, mtime=0) as gz:
             gz.write(payload)
-    print("moves %d, abilities %d, items %d -> %s (%d bytes)" % (len(moves), len(abilities), len(items), out, os.path.getsize(out)))
+    print("moves %d, abilities %d, items %d, species %d, entries %d -> %s (%d bytes)"
+          % (len(moves), len(abilities), len(items), len(genera), flavor_count, out, os.path.getsize(out)))
 
 
 if __name__ == "__main__":

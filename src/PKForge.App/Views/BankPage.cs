@@ -19,7 +19,7 @@ namespace PKForge.App.Views;
 /// actions (bulk moves, releases, sorting), and the readout under the grid carries the
 /// mark count. Every write is an index write: the bank never touches a save itself.
 /// </summary>
-public sealed class BankPage : ContentPage, IPadHandler
+public sealed class BankPage : ContentPage, IPadPagingHandler
 {
     private const int Columns = 6;
     private const int Rows = 5;
@@ -28,6 +28,7 @@ public sealed class BankPage : ContentPage, IPadHandler
     private readonly ISpriteService _sprites;
     private readonly BoxBrowserViewModel _boxViewModel; // for send-to-game and shared status
     private readonly BankFacts _facts;
+    private readonly IGameDataService _data;
     private readonly SKCanvasView _canvas;
     private readonly FrameInvalidator _frame;
     private readonly Grid _hostGrid;
@@ -50,6 +51,7 @@ public sealed class BankPage : ContentPage, IPadHandler
         _sprites = sprites;
         _boxViewModel = boxViewModel;
         _facts = new BankFacts(bank, data);
+        _data = data;
         Title = "Bank";
         NavigationPage.SetHasNavigationBar(this, false);
 
@@ -69,8 +71,8 @@ public sealed class BankPage : ContentPage, IPadHandler
         _pageLabel = (Label)((Border)Kit.HeaderBar("00 / 00")).Content!;
         _pageLabel.HorizontalTextAlignment = TextAlignment.Center;
 
-        var addBox = Kit.Capsule("+ Box", UiTokens.Green);
-        addBox.Clicked += (_, _) => { _bank.AddBox(); UpdatePageLabel(); _canvas.InvalidateSurface(); };
+        var addBox = Kit.Capsule("Boxes", UiTokens.Green);
+        addBox.Clicked += (_, _) => _ = OpenBoxOverviewAsync();
 
         var exportArchive = Kit.Capsule("Export", UiTokens.Green);
         exportArchive.Clicked += (_, _) => _ = ExportArchiveAsync();
@@ -160,11 +162,13 @@ public sealed class BankPage : ContentPage, IPadHandler
         RefreshBoxEntries();
         UpdatePreview();
         UpdateStatus();
+        StartFactRotation();
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        _factTimer?.Stop();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
         _inspectCancel?.Cancel();
         // Releasing the claim hands the lower screen back (and drops any overlay opened on it).
@@ -391,7 +395,7 @@ public sealed class BankPage : ContentPage, IPadHandler
     }
 
 
-    private void UpdatePageLabel() => _pageLabel.Text = PksmTransferFlow.BoxNames.Get(_boxIndex) is { } name
+    private void UpdatePageLabel() => _pageLabel.Text = BankBoxDecor.Names.Get(_boxIndex) is { } name
         ? $"{_boxIndex + 1:00} / {_bank.BoxCount:00} · {name}"
         : $"{_boxIndex + 1:00} / {_bank.BoxCount:00}";
 
@@ -431,6 +435,7 @@ public sealed class BankPage : ContentPage, IPadHandler
     /// </summary>
     private void UpdatePreview()
     {
+        RequestPanelSummary();
         var services = IPlatformApplication.Current?.Services;
         var state = services?.GetService<SecondScreenState>();
         if (state is null) return;
@@ -773,7 +778,7 @@ public sealed class BankPage : ContentPage, IPadHandler
             : "Nothing selected";
         var targets = TransferTargets();
 
-        var options = new List<PadOption>();
+        var options = new List<PadOption> { new("Boxes…", IconPath: "box") };
         if (selection.Count > 0)
         {
             options.Add(new PadOption("Move to another box…", IconPath: "move"));
@@ -797,6 +802,10 @@ public sealed class BankPage : ContentPage, IPadHandler
         options.Add(new PadOption("Sort the whole bank…", IconPath: "sort"));
         if (_marked.Count > 1) options.Add(new PadOption("Sort the marked into boxes…", IconPath: "sort"));
         options.Add(new PadOption("Compact the bank (close gaps)", IconPath: "compact"));
+        options.Add(new PadOption($"Rename box {_boxIndex + 1:00}…", IconPath: "rename"));
+        options.Add(new PadOption($"Wallpaper for box {_boxIndex + 1:00}…", IconPath: "fashion"));
+        if (_bank.BoxCount > 1)
+            options.Add(new PadOption($"Delete box {_boxIndex + 1:00}…", IconPath: "delete"));
 
         var choice = await PadMenu.ShowAsync(_hostGrid, $"Bank actions · {noun}",
             Note(_marked.Count > 0
@@ -858,6 +867,18 @@ public sealed class BankPage : ContentPage, IPadHandler
                 return;
             case "Compact the bank (close gaps)":
                 await CompactAsync();
+                return;
+            case "Boxes…":
+                await OpenBoxOverviewAsync();
+                return;
+            case string label when label.StartsWith("Rename box ", StringComparison.Ordinal):
+                await RenameBoxAsync(_boxIndex);
+                return;
+            case string label when label.StartsWith("Wallpaper for box ", StringComparison.Ordinal):
+                await PickWallpaperAsync(_boxIndex);
+                return;
+            case string label when label.StartsWith("Delete box ", StringComparison.Ordinal):
+                await DeleteBoxAsync(_boxIndex);
                 return;
         }
     }
@@ -1076,6 +1097,113 @@ public sealed class BankPage : ContentPage, IPadHandler
         var boxes = (selection.Count + IBankService.SlotsPerBox - 1) / IBankService.SlotsPerBox;
         await ApplyLayoutAsync(before, BankPlacement.Reorder(shelf, BankSorting.Order(selection, order, _facts, reverse)),
             label, boxes == 1 ? $"box {shelf + 1:00}" : $"boxes {shelf + 1:00}-{shelf + boxes:00}", selection.Count);
+    }
+
+    // ── Box management ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The one write path for whole-box changes: the bank rewrites every entry's box in one
+    /// index write, then everything keyed by box index follows (names, wallpapers, the living
+    /// dex region, marks, the cursor). False when the bank refused it; nothing changed then.
+    /// </summary>
+    public bool ApplyBoxRemap(BankBoxRemap remap)
+    {
+        // Hardcore mode allows this: whole boxes move, no Pokémon data is edited or copied.
+        if (remap.IsIdentity) return true;
+        try
+        {
+            _bank.RemapBoxes(remap);
+        }
+        catch (Exception error) when (error is InvalidOperationException or ArgumentException or IOException)
+        {
+            _boxViewModel.Status = error.Message;
+            return false;
+        }
+        BankBoxDecor.Names.Remap(remap);
+        BankBoxDecor.Wallpapers.Remap(remap);
+        if (LivingDexAutopilot.BankStartBox is { } start)
+            LivingDexAutopilot.BankStartBox = remap.Map(start);
+        var marks = _marked.Where(m => remap.Map(m.Box) is not null).Select(m => (remap.Map(m.Box)!.Value, m.Slot)).ToList();
+        _marked.Clear();
+        _marked.UnionWith(marks);
+        if (_anchor is { } anchor) _anchor = remap.Map(anchor.Box) is { } box ? (box, anchor.Slot) : null;
+        _boxIndex = Math.Clamp(remap.Map(_boxIndex) ?? _boxIndex, 0, _bank.BoxCount - 1);
+        ChangeBox(0);
+        return true;
+    }
+
+    /// <summary>
+    /// Deletes a box. An empty one just goes; a full one first moves its Pokémon into free
+    /// spaces in the other boxes (in order, new boxes at the end if needed), so nothing is lost.
+    /// </summary>
+    public async Task<bool> DeleteBoxAsync(int box)
+    {
+        var inside = _bank.GetAll().Where(e => e.Box == box).OrderBy(e => e.Slot).ToList();
+        var later = _bank.BoxCount - box - 1;
+        var shift = later > 0 ? $" The {later} box{(later == 1 ? "" : "es")} after it move{(later == 1 ? "s" : "")} down one." : "";
+        var message = inside.Count == 0
+            ? $"It is empty.{shift}"
+            : $"Its {inside.Count} Pokémon move to free spaces in your other boxes first, so none are lost.{shift}";
+        if (!await PadMenu.ConfirmAsync(_hostGrid, $"Delete {BankBoxDecor.Label(box)}?", message, "Delete"))
+            return false;
+
+        if (inside.Count > 0)
+        {
+            var taken = _bank.GetAll().Where(e => e.Box != box).Select(e => (e.Box, e.Slot)).ToHashSet();
+            var placements = new List<(Guid Id, int Box, int Slot)>(inside.Count);
+            var cursor = 0;
+            foreach (var entry in inside)
+            {
+                while (cursor / IBankService.SlotsPerBox == box || taken.Contains((cursor / IBankService.SlotsPerBox, cursor % IBankService.SlotsPerBox))) cursor++;
+                placements.Add((entry.Id, cursor / IBankService.SlotsPerBox, cursor % IBankService.SlotsPerBox));
+                cursor++;
+            }
+            try
+            {
+                _bank.Place(placements);
+            }
+            catch (Exception error) when (error is InvalidOperationException or ArgumentException or IOException)
+            {
+                _boxViewModel.Status = error.Message;
+                return false;
+            }
+        }
+        if (!ApplyBoxRemap(BankBoxRemap.Remove(_bank.BoxCount, box))) return false;
+        _boxViewModel.Status = inside.Count == 0 ? "Box deleted." : $"Box deleted; its {inside.Count} Pokémon moved to free spaces.";
+        return true;
+    }
+
+    public async Task<bool> RenameBoxAsync(int box)
+    {
+        var name = await TextPopup.ShowLineAsync(_hostGrid, $"Rename box {box + 1:00}", "Up to 24 characters · empty for its number",
+            BankBoxDecor.Names.Get(box) ?? "");
+        if (name is null) return false;
+        name = name.Trim();
+        if (name.Length > 24) name = name[..24];
+        BankBoxDecor.Names.SetMany([(box, name)]);
+        UpdatePageLabel();
+        _boxViewModel.Status = name.Length == 0 ? $"Box {box + 1:00} shows its number again." : $"Box {box + 1:00} is now \"{name}\".";
+        return true;
+    }
+
+    public async Task<bool> PickWallpaperAsync(int box)
+    {
+        var chosen = await BankWallpaperPicker.ShowAsync(_hostGrid, $"Wallpaper · {BankBoxDecor.Label(box)}", BankBoxArt.Of(box));
+        if (chosen is null) return false;
+        BankBoxDecor.Wallpapers.Set(box, chosen);
+        _canvas.InvalidateSurface();
+        return true;
+    }
+
+    private async Task OpenBoxOverviewAsync()
+    {
+        var opened = await BankBoxOverview.ShowAsync(this, _hostGrid, _bank, _sprites, _boxIndex);
+        if (opened is { } box)
+        {
+            _boxIndex = Math.Clamp(box, 0, _bank.BoxCount - 1);
+            _selectedSlot = 0;
+        }
+        ChangeBox(0);
     }
 
     /// <summary>Closes every gap in the vault while keeping the current order: packed box by
@@ -1442,14 +1570,27 @@ public sealed class BankPage : ContentPage, IPadHandler
     {
         var canvas = args.Surface.Canvas;
         var info = args.Info;
-        var wallpaper = BoxGridRenderer.WallpaperAt(_boxIndex);
-        var cell = BoxGridRenderer.GridMetrics(info).Cell;
-        BoxGridRenderer.PaintBackdrop(canvas, info, _boxIndex);
+        var wallpaper = BankBoxArt.Tone(_boxIndex);
+        LayOut(info);
+        canvas.Clear(Pksm.Housing);
+        using (var clip = new SKRoundRect(_boxArea, _boxArea.Height * 0.02f))
+        {
+            canvas.Save();
+            canvas.ClipRoundRect(clip, antialias: true);
+            BankBoxArt.Paint(canvas, _boxArea, _boxIndex, _frame.Request);
+            canvas.Restore();
+        }
+        if (_infoArea.Width > 0) PaintInfoPanel(canvas, _infoArea);
 
+        // The box keeps its real 6 × 5 proportions; slots are laid out inside it.
+        canvas.Save();
+        canvas.Translate(_boxArea.Left, _boxArea.Top);
+        var boxSize = _boxArea.Size;
+        var cell = BoxGridRenderer.GridMetrics(boxSize).Cell;
         var entries = _boxEntries;
         for (var index = 0; index < Columns * Rows; index++)
         {
-            var rect = BoxGridRenderer.SlotRect(info, index);
+            var rect = BoxGridRenderer.SlotRect(boxSize, index);
             var has = entries.TryGetValue(index, out var entry);
             PksmPaint.Slot(canvas, rect, wallpaper, empty: !has);
             if (!has)
@@ -1459,42 +1600,359 @@ public sealed class BankPage : ContentPage, IPadHandler
                 continue;
             }
 
+            // The one in hand leaves a ghost behind; a dropped one still settling is drawn by the hand.
             var isCarried = _carryId == entry!.Id;
-            var drawRect = isCarried && index == _selectedSlot
-                ? new SKRect(rect.Left, rect.Top - cell * 0.18f, rect.Right, rect.Bottom - cell * 0.18f)
-                : rect;
-            var bitmap = _sprites.GetSprite(entry.Info.Look);
-            if (bitmap is not null)
+            var settling = _hand.IsLandingOn(index);
+            if (isCarried) canvas.SaveLayer(BoxGridRenderer.GhostPaint);
+            if (!settling) DrawEntrySprite(canvas, rect, entry);
+            if (isCarried)
             {
-                if (isCarried && index != _selectedSlot)
-                    canvas.SaveLayer(BoxGridRenderer.GhostPaint);
-                var inset = rect.Width * 0.03f;
-                var box = SKRect.Inflate(drawRect, -inset, -inset);
-                var scale = Math.Min(box.Width / bitmap.Width, box.Height / bitmap.Height);
-                var w = bitmap.Width * scale;
-                var h = bitmap.Height * scale;
-                var dest = new SKRect(drawRect.MidX - w / 2, drawRect.MidY - h / 2, drawRect.MidX + w / 2, drawRect.MidY + h / 2);
-                using var image = SKImage.FromBitmap(bitmap);
-                canvas.DrawImage(image, dest, BoxGridRenderer.SpriteSampling);
-                if (isCarried && index != _selectedSlot)
-                    canvas.Restore();
-            }
-            else
-            {
-                _sprites.Warm(entry.Info.Look, _frame.Request);
-            }
-            if (isCarried && index != _selectedSlot)
+                canvas.Restore();
                 PksmPaint.CarryGhost(canvas, rect);
-            if (entry.Info.Shiny)
+            }
+            if (entry.Info.Shiny && !settling)
                 BoxGridRenderer.DrawSparkle(canvas, rect.Right - rect.Width * 0.14f, rect.Top + rect.Height * 0.16f,
                     Math.Min(rect.Width, rect.Height) * 0.09f, BoxGridRenderer.SparklePaint);
-            if (!(isCarried && index != _selectedSlot) && _facts.HeldItem(entry) != 0)
+            if (!isCarried && !settling && _facts.HeldItem(entry) != 0)
                 BoxGridRenderer.DrawHeldItemBadge(canvas, rect);
             if (_marked.Contains((_boxIndex, index)))
                 PksmPaint.MarkBadge(canvas, rect);
             if (index == _selectedSlot)
                 PksmPaint.Selection(canvas, rect);
         }
+
+        // The Pokémon in hand follows the cursor from slot to slot.
+        var cursorRect = BoxGridRenderer.SlotRect(boxSize, _selectedSlot);
+        var origin = _boxEntries.Values.FirstOrDefault(e => e.Id == _carryId) is { } source
+            ? BoxGridRenderer.SlotRect(boxSize, source.Slot)
+            : cursorRect;
+        var underCursor = EntryAt(_selectedSlot);
+        _hand.Sync(CarriedEntry() is not null, origin, cursorRect, _selectedSlot, (c, r) =>
+        {
+            if (underCursor is not null) DrawEntrySprite(c, r, underCursor);
+        });
+        if (_hand.Draw(canvas, cell, DrawCarriedSprite)) _frame.Request();
+        canvas.Restore();
+    }
+
+    private readonly CarryHand _hand = new();
+
+    // The entry in hand, looked up once per carry: it travels across boxes, out of _boxEntries.
+    private BankEntry? _carriedEntry;
+
+    private BankEntry? CarriedEntry()
+    {
+        if (_carryId is not { } id) return null;
+        if (_carriedEntry?.Id != id) _carriedEntry = _bank.GetAll().FirstOrDefault(e => e.Id == id);
+        return _carriedEntry;
+    }
+
+    private void DrawCarriedSprite(SKCanvas canvas, SKRect rect)
+    {
+        if (CarriedEntry() is { } carried) DrawEntrySprite(canvas, rect, carried);
+    }
+
+    private void DrawEntrySprite(SKCanvas canvas, SKRect rect, BankEntry entry)
+    {
+        var bitmap = _sprites.GetSprite(entry.Info.Look);
+        if (bitmap is null)
+        {
+            _sprites.Warm(entry.Info.Look, _frame.Request);
+            return;
+        }
+        var inset = rect.Width * 0.03f;
+        var box = SKRect.Inflate(rect, -inset, -inset);
+        var scale = Math.Min(box.Width / bitmap.Width, box.Height / bitmap.Height);
+        var w = bitmap.Width * scale;
+        var h = bitmap.Height * scale;
+        using var image = SKImage.FromBitmap(bitmap);
+        canvas.DrawImage(image, new SKRect(rect.MidX - w / 2, rect.MidY - h / 2, rect.MidX + w / 2, rect.MidY + h / 2), BoxGridRenderer.SpriteSampling);
+    }
+
+    // ── Layout and the side panel ──────────────────────────────────────────
+
+    private SKRect _boxArea;
+    private SKRect _infoArea;
+    private Guid? _factFor;
+    private int _factPick;
+    private IDispatcherTimer? _factTimer;
+
+    /// <summary>
+    /// The box on the left at its true 6 × 5 shape (a wallpaper is never stretched), the
+    /// side panel in the room that is left; a narrow screen keeps just the centered box.
+    /// </summary>
+    private void LayOut(SKImageInfo info)
+    {
+        var pad = info.Height * 0.03f;
+        var cell = Math.Min((info.Height - pad * 2) / Rows, (info.Width * 0.6f - pad * 2) / Columns);
+        var width = cell * Columns;
+        var height = cell * Rows;
+        var room = info.Width - width - pad * 3;
+        if (room < info.Height * 0.6f)
+        {
+            _boxArea = SKRect.Create((info.Width - width) / 2, (info.Height - height) / 2, width, height);
+            _infoArea = SKRect.Empty;
+            return;
+        }
+        _boxArea = SKRect.Create(pad, (info.Height - height) / 2, width, height);
+        _infoArea = new SKRect(_boxArea.Right + pad, _boxArea.Top, info.Width - pad, _boxArea.Bottom);
+    }
+
+    // The panel's full summary of the selected entry, decoded in the background.
+    private MonSummary? _panelSummary;
+    private Guid? _panelFor;
+    private CancellationTokenSource? _panelCancel;
+
+    /// <summary>Decodes the selected entry's summary for the side panel (debounced, latest wins).</summary>
+    private void RequestPanelSummary()
+    {
+        var entry = EntryAt(_selectedSlot);
+        if (entry?.Id == _panelFor) return;
+        _panelCancel?.Cancel();
+        _panelFor = entry?.Id;
+        _panelSummary = null;
+        if (entry is null) return;
+        var services = IPlatformApplication.Current?.Services;
+        if (services?.GetService<ISaveEngine>() is not { } engine || services.GetService<IMonSummaryService>() is not { } summaries) return;
+        var cancel = _panelCancel = new CancellationTokenSource();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(40, cancel.Token);
+                var summary = await SummaryLoaders.FromBank(_bank, engine, summaries, entry, analyzeLegality: false);
+                if (cancel.IsCancellationRequested) return;
+                MainThread.BeginInvokeOnMainThread(() =>
+                {
+                    if (cancel.IsCancellationRequested || _panelFor != entry.Id) return;
+                    _panelSummary = summary;
+                    _canvas.InvalidateSurface();
+                });
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception error) when (error is InvalidOperationException or ArgumentException or IOException)
+            {
+                // Unreadable entry: the panel keeps the facts the index already has.
+            }
+        });
+    }
+
+    /// <summary>
+    /// The selected Pokémon at a glance, built from the chrome kit only: one panel, the cobalt
+    /// header strip, the Pokémon in a window onto the box's own wallpaper, striped menu rows,
+    /// and one of its Pokédex entries (a different one every visit and every little while).
+    /// The name bar and the type badges carry the Pokémon's type colors. Rows that do not fit
+    /// are left out rather than squeezed.
+    /// </summary>
+    private void PaintInfoPanel(SKCanvas canvas, SKRect pixels)
+    {
+        const float text = 16f; // NDS12 is drawn at multiples of 16
+        const float rowHeight = 26f;
+        var density = _canvas.Width > 0 ? _canvas.CanvasSize.Width / (float)_canvas.Width : 1;
+        canvas.Save();
+        canvas.Scale(density);
+        var area = new SKRect(pixels.Left / density, pixels.Top / density, pixels.Right / density, pixels.Bottom / density);
+        SummaryChrome.Panel(canvas, area);
+        var inner = SKRect.Inflate(area, -10, -10);
+        var header = new SKRect(inner.Left, inner.Top, inner.Right, inner.Top + 30);
+
+        if (EntryAt(_selectedSlot) is not { } entry)
+        {
+            var count = _boxEntries.Count;
+            SummaryChrome.Strip(canvas, header, BankBoxDecor.Label(_boxIndex), size: text,
+                trailing: $"{count} / {IBankService.SlotsPerBox}", trailingColor: SKColors.White);
+            SummaryInk.Draw(canvas, count == 0 ? "This box is empty." : "An empty space.", inner.Left + 4, header.Bottom + 28, text, Pksm.InkSoft);
+            canvas.Restore();
+            return;
+        }
+
+        var info = entry.Info;
+        var summary = _panelSummary is { } loaded && _panelFor == entry.Id ? loaded : null;
+        var species = summary?.SpeciesName
+            ?? ((uint)info.Species < (uint)_data.SpeciesNames.Count ? _data.SpeciesNames[info.Species] : $"#{info.Species}");
+        var name = summary?.DisplayName ?? (string.IsNullOrWhiteSpace(info.Nickname) ? species : info.Nickname);
+
+        // ── Header: name, then the PKSM gender and shiny icons; level on the right ──
+        var level = $"Lv. {info.Level}";
+        var levelWidth = SummaryInk.Width(level, text, bold: true);
+        var shownName = SummaryInk.Fit(name, text, header.Width - levelWidth - 70, bold: true);
+        // The name bar wears the Pokémon's first type, like the games' summary headers.
+        var tint = summary?.Types is { Count: > 0 } types ? PksmPaint.Darker(ToSk(InfoKit.TypeColor(types[0])), 0.3f) : (SKColor?)null;
+        SummaryChrome.Strip(canvas, header, shownName, accent: tint, size: text, trailing: level, trailingColor: SKColors.White);
+        var iconX = header.Left + 10 + SummaryInk.Width(shownName, text, bold: true) + 6;
+        foreach (var icon in HeaderIcons(summary?.Gender, info.Shiny))
+        {
+            if (AutopilotArt.Icon(icon) is not { } bitmap) continue;
+            using var image = SKImage.FromBitmap(bitmap);
+            canvas.DrawImage(image, SKRect.Create(iconX, header.MidY - 8, 16, 16), BoxGridRenderer.SpriteSampling);
+            iconX += 18;
+        }
+
+        // ── Pokédex entry along the bottom, as tall as its text ──
+        var (dexLines, version) = DexEntryLines(entry.Id, info.Species, text, inner.Width - 8);
+        var dexHeight = dexLines.Count == 0 ? 0 : 8 + dexLines.Count * SummaryInk.Leading(text);
+        var dex = new SKRect(inner.Left, inner.Bottom - dexHeight, inner.Right, inner.Bottom);
+        if (dexLines.Count > 0) PaintDexEntry(canvas, dex, dexLines, version, text);
+        var body = new SKRect(inner.Left, header.Bottom + 8, inner.Right, dexLines.Count > 0 ? dex.Top - 8 : inner.Bottom);
+
+        // ── The Pokémon, in a window onto this box's wallpaper ──
+        var window = new SKRect(body.Left, body.Top, body.Left + Math.Min(body.Width * 0.4f, body.Height), body.Bottom);
+        using (var clip = new SKRoundRect(window, 4, 4))
+        {
+            canvas.Save();
+            canvas.ClipRoundRect(clip, antialias: true);
+            BankBoxArt.Paint(canvas, window, _boxIndex, _frame.Request);
+            canvas.Restore();
+            using var bezel = new SKPaint { Color = Pksm.PaperEdge, Style = SKPaintStyle.Stroke, StrokeWidth = 2, IsAntialias = true };
+            canvas.DrawRoundRect(clip, bezel);
+        }
+        // One look for the whole visit (the index already has the traits): switching to the
+        // summary's look halfway would start a second load. The pixel sprite only stands in
+        // when no HOME render will come; while it loads, the window stays empty for a blink.
+        var look = info.Look;
+        var home = _sprites.GetHome(look);
+        if (home is null) _sprites.WarmHome(look, _frame.Request);
+        var standIn = home is null && _sprites.HomeUnavailable(look);
+        var picture = home ?? (standIn ? _sprites.GetSprite(look) : null);
+        if (standIn && picture is null) _sprites.Warm(look, _frame.Request);
+        if (picture is not null)
+        {
+            var side = Math.Min(window.Width, window.Height) - 12;
+            var scale = side / Math.Max(picture.Width, picture.Height);
+            var w = picture.Width * scale;
+            var h = picture.Height * scale;
+            using var image = SKImage.FromBitmap(picture);
+            canvas.DrawImage(image, new SKRect(window.MidX - w / 2, window.MidY - h / 2, window.MidX + w / 2, window.MidY + h / 2),
+                home is null ? BoxGridRenderer.SpriteSampling : new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+        }
+
+        // ── Striped rows: label on the left, value on the right ──
+        var rows = new SKRect(window.Right + 10, body.Top, body.Right, body.Bottom);
+        var lines = new List<(string Label, Action<SKRect> Value)>();
+        void Text(string label, string? value) => lines.Add((label, r =>
+            SummaryInk.Draw(canvas, SummaryInk.Fit(value ?? "None", text, r.Width - 8), r.Right - 8, SummaryInk.Center(r.MidY, text), text, Pksm.Ink, align: SKTextAlign.Right)));
+
+        Text($"No. {info.Species:000}", DexFacts.Default.Genus(info.Species) ?? species);
+        if (summary is not null)
+        {
+            if (summary.Types.Count > 0)
+                lines.Add(("Type", r =>
+                {
+                    var x = r.Right - 8;
+                    for (var t = summary.Types.Count - 1; t >= 0; t--)
+                    {
+                        SummaryChrome.TypeBadge(canvas, new SKRect(x - 64, r.MidY - 9, x, r.MidY + 9), summary.Types[t]);
+                        x -= 70;
+                    }
+                }));
+            Text("Nature", summary.NatureName);
+            Text("Ability", summary.AbilityName);
+            Text("Item", summary.HeldItem > 0 ? summary.HeldItemName : "None");
+            Text("OT", summary.TrainerId is { } tid ? $"{summary.OriginalTrainer} {tid:00000}" : summary.OriginalTrainer);
+            lines.Add(("Ball", r =>
+            {
+                var ballName = SummaryInk.Fit(summary.BallName, text, r.Width - 34);
+                var nameWidth = SummaryInk.Draw(canvas, ballName, r.Right - 8, SummaryInk.Center(r.MidY, text), text, Pksm.Ink, align: SKTextAlign.Right);
+                var ball = _sprites.GetBall(summary.Ball);
+                if (ball is null) _sprites.WarmBall(summary.Ball, _frame.Request);
+                else
+                {
+                    using var ballImage = SKImage.FromBitmap(ball);
+                    canvas.DrawImage(ballImage, SKRect.Create(r.Right - 8 - nameWidth - 22, r.MidY - 8, 16, 16), BoxGridRenderer.SpriteSampling);
+                }
+            }));
+        }
+
+        var fit = Math.Max(1, (int)(rows.Height / rowHeight));
+        var y = rows.Top;
+        for (var index = 0; index < Math.Min(fit, lines.Count); index++)
+        {
+            var row = new SKRect(rows.Left, y, rows.Right, y + rowHeight);
+            if (index % 2 == 0) PksmPaint.StripeRow(canvas, row, selected: false);
+            SummaryInk.Draw(canvas, lines[index].Label, row.Left + 8, SummaryInk.Center(row.MidY, text), text, Pksm.InkSoft);
+            lines[index].Value(row);
+            y += rowHeight;
+        }
+        canvas.Restore();
+    }
+
+    private static IEnumerable<string> HeaderIcons(int? gender, bool shiny)
+    {
+        if (gender is 0) yield return "ui:icon_male.png";
+        if (gender is 1) yield return "ui:icon_female.png";
+        if (shiny) yield return "ui:icon_shiny.png";
+    }
+
+    private const int DexMaxLines = 3;
+
+    /// <summary>
+    /// The Pokédex entry to show, wrapped, and its game. Only entries that fit whole in
+    /// <see cref="DexMaxLines"/> lines (the game's name included) are picked; a species whose
+    /// entries are all longer shows its shortest, cut at the last line.
+    /// </summary>
+    private (List<string> Lines, string Version) DexEntryLines(Guid entryId, int species, float size, float width)
+    {
+        var entries = DexFacts.Default.Entries(species);
+        if (entries.Count == 0) return ([], "");
+        List<string> Wrap(DexEntry fact)
+        {
+            var lines = SummaryInk.Wrap(fact.Text, size, width);
+            var credit = SummaryInk.Width($"Pokémon {fact.Version}", size) + 16;
+            // The game's name rides the last line when there is room, else it takes its own.
+            if (lines.Count == 0 || SummaryInk.Width(lines[^1], size) + credit > width) lines.Add("");
+            return lines;
+        }
+        var wrapped = entries.Select(Wrap).ToList();
+        var fitting = Enumerable.Range(0, entries.Count).Where(i => wrapped[i].Count <= DexMaxLines).ToList();
+        if (_factFor != entryId)
+        {
+            _factFor = entryId;
+            _factPick = Random.Shared.Next(Math.Max(1, fitting.Count));
+        }
+        if (fitting.Count == 0)
+        {
+            var shortest = Enumerable.Range(0, entries.Count).MinBy(i => wrapped[i].Count);
+            var cut = wrapped[shortest].Take(DexMaxLines).ToList();
+            cut[^1] = SummaryInk.Fit(cut[^1] + " …", size, width - SummaryInk.Width($"Pokémon {entries[shortest].Version}", size) - 16);
+            return (cut, entries[shortest].Version);
+        }
+        var pick = fitting[_factPick % fitting.Count];
+        return (wrapped[pick], entries[pick].Version);
+    }
+
+    /// <summary>The entry under a hairline, its game's name in the soft ink closing the last line.</summary>
+    private static void PaintDexEntry(SKCanvas canvas, SKRect area, List<string> lines, string version, float size)
+    {
+        SummaryChrome.Divider(canvas, area.Left, area.Right, area.Top);
+        var y = area.Top + 6 + size;
+        foreach (var line in lines)
+        {
+            SummaryInk.Draw(canvas, line, area.Left + 4, y, size, Pksm.Ink);
+            y += SummaryInk.Leading(size);
+        }
+        SummaryInk.Draw(canvas, $"Pokémon {version}", area.Right - 4, y - SummaryInk.Leading(size), size, Pksm.InkSoft, align: SKTextAlign.Right);
+    }
+
+    private static SKColor ToSk(Color color) =>
+        new((byte)(color.Red * 255), (byte)(color.Green * 255), (byte)(color.Blue * 255));
+
+    /// <summary>A new Pokédex entry every little while, like flipping through the dex.</summary>
+    private void StartFactRotation()
+    {
+        _factTimer ??= Dispatcher.CreateTimer();
+        _factTimer.Interval = TimeSpan.FromSeconds(14);
+        _factTimer.Tick -= RotateFact;
+        _factTimer.Tick += RotateFact;
+        _factTimer.Start();
+    }
+
+    private void RotateFact(object? sender, EventArgs e)
+    {
+        if (EntryAt(_selectedSlot) is null || _infoArea.Width <= 0) return;
+        _factPick++;
+        _canvas.InvalidateSurface();
     }
 
     private void Touch(object? sender, SKTouchEventArgs args)
@@ -1503,7 +1961,7 @@ public sealed class BankPage : ContentPage, IPadHandler
         if (args.ActionType != SKTouchAction.Released) return;
         args.Handled = true;
 
-        var slot = BoxGridRenderer.SlotFromTouch(_canvas.CanvasSize, args.Location);
+        var slot = BoxGridRenderer.SlotFromTouch(_boxArea.Size, new SKPoint(args.Location.X - _boxArea.Left, args.Location.Y - _boxArea.Top));
         if (slot < 0) return;
 
         var wasSelected = _selectedSlot == slot;

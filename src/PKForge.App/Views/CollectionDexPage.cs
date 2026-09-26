@@ -17,7 +17,7 @@ namespace PKForge.App.Views;
 /// the open save. A missing species can jump straight into "How to get" to plan the
 /// catch. Read-only: nothing here writes a save or the bank.
 /// </summary>
-public sealed class CollectionDexPage : IPadHandler
+public sealed class CollectionDexPage : IPadPagingHandler
 {
     private const int Columns = BoxGridRenderer.Columns;
     private const int Rows = BoxGridRenderer.Rows;

@@ -26,6 +26,8 @@ public sealed class HomePage : ContentPage, IPadHandler
     {
         _viewModel = viewModel;
         BindingContext = viewModel;
+        _viewModel.LinkReported += (title, message) =>
+            MainThread.BeginInvokeOnMainThread(() => _ = PadMenu.ShowAsync(_hostGrid, title, message, "OK"));
         Title = "PKForge";
         BackgroundColor = UiTokens.Housing;
         NavigationPage.SetHasNavigationBar(this, false);
@@ -113,6 +115,11 @@ public sealed class HomePage : ContentPage, IPadHandler
 
         var footer = DsChrome.Footer(
             ("A", "Open", null),
+            // The cartridge identity menu (rename, color, which game): B on the pad, a hold by touch.
+            ("B", "Edit game · hold", () =>
+            {
+                if ((uint)_shelfIndex < (uint)_viewModel.Groups.Count) _ = ShowSaveMenuAsync(_viewModel.Groups[_shelfIndex]);
+            }),
             ("L", "Filter", () => _ = ShowFilterMenuAsync()),
             ("Y", "Link", () => _ = ShowLinkMenuAsync()),
             ("X", "File", () => _ = LinkFileAsync()),
@@ -533,9 +540,10 @@ public sealed class HomePage : ContentPage, IPadHandler
                 "Dolphin" => "Save in game and stop emulation before editing Colosseum or XD. Select Dolphin's GC folder, a region folder, or Card A / Card B containing .gci saves. For .raw memory cards, export the game as GCI with Dolphin's Memory Card Manager, or configure that card slot as GCI Folder. After editing, start the game normally; loading an old save state can undo your edits.",
                 "DraStic" => "Save in game and close DraStic. Select its backup folder containing .dsv battery saves, or the DraStic data folder. Save states are not supported. Restart the game normally after editing.",
                 "Pizza Boy A (GBA)" or "Pizza Boy C (GB/GBC)" => "Save in game and close Pizza Boy. Select the folder containing its battery saves (.sav), not save states. If Android hides the folder, export the battery save in Pizza Boy and link that export. Import the edited export back into Pizza Boy, then restart the game normally.",
-                "Azahar / Lime3DS" => "Save in game and close the emulator. Select the user folder you chose in its setup (the one containing sdmc), or sdmc itself. Restart the game normally after editing.",
+                "Azahar / Lime3DS" => "Save in game and close the emulator. Select the user folder you chose in its setup (the one containing sdmc); sdmc, Nintendo 3DS or a folder above the user folder also work. Restart the game normally after editing.",
                 "Citra MMJ" => "Save in game and close Citra MMJ. In the file picker open the Citra MMJ entry (or Android/data/org.citra.emu/files) and select citra-emu, or /citra-emu on older Android. Restart the game normally after editing.",
                 "Eden" => "Save in game and close the emulator. Select its files root containing the emulated storage. Restart the game normally after editing.",
+                "melonDS" => "Save in game and close melonDS. Select the folder containing your .sav battery saves: next to your ROMs by default, or the save folder set in melonDS's settings. Save states are not supported. Restart the game normally after editing.",
                 _ => "Save in game and close the emulator. Select its saves folder (or the folder containing your battery saves). Save states are not supported. Restart the game normally after editing.",
             };
             var proceed = await PadMenu.ShowAsync(_hostGrid, $"Link {choice}",
@@ -846,7 +854,16 @@ public sealed class HomePage : ContentPage, IPadHandler
             case var pack when pack?.StartsWith("Download full sprite pack", StringComparison.Ordinal) == true:
                 await DownloadSpritePackAsync();
                 break;
-            case "Rescan games": await _viewModel.RescanCommand.ExecuteAsync(null); break;
+            case "Rescan games":
+                if (_viewModel.IsBusy && !_viewModel.ReleaseIfStuck())
+                {
+                    await PadMenu.ShowAsync(_hostGrid, "Still busy",
+                        $"PKForge is still busy with {_viewModel.BusyWith}. Try again in a moment; if it stays stuck, close and reopen PKForge.", "OK");
+                    break;
+                }
+                // Called directly: the command refuses to start while an older run it owns is still pending.
+                await _viewModel.RescanAsync();
+                break;
             case "Scan report":
             {
                 var action = await PadMenu.ShowAsync(_hostGrid, "Scan report", _viewModel.ScanReport, "Copy report", "Close");
@@ -886,6 +903,11 @@ public sealed class HomePage : ContentPage, IPadHandler
     {
         var downloader = IPlatformApplication.Current?.Services.GetService<SpritePackDownloader>();
         if (downloader is null) return;
+        if (await Task.Run(downloader.CountMissing) == 0)
+        {
+            await PadMenu.ShowAsync(_hostGrid, "Sprite pack", "Already downloaded: every sprite is on this device, so it all works offline.", "OK");
+            return;
+        }
         var overlay = LoadingOverlay.Show(_hostGrid, "Catching all the sprites!",
             "Downloading animated battle sprites and HOME renders for every Pokémon. You can cancel anytime; finished parts are kept and it resumes where it left off.");
         try

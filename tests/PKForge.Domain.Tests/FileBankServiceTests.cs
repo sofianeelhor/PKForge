@@ -30,6 +30,79 @@ public sealed class FileBankServiceTests : IDisposable
     }
 
     [Fact]
+    public void BoxRemapsMoveEveryEntryWithItsBoxInOneWrite()
+    {
+        var bank = new FileBankService(_root);
+        while (bank.BoxCount < 4) bank.AddBox();
+        var a = bank.Add([1], new BankEntryInfo(25, 0, false, "A", 5, 8, "t", "PK8"));
+        var b = bank.Add([2], new BankEntryInfo(26, 0, false, "B", 5, 8, "t", "PK8"));
+        bank.Move(b.Id, 3, 7);
+        (int, int) At(IBankService source, Guid id) => source.GetAll().Single(e => e.Id == id) is var e ? (e.Box, e.Slot) : default;
+
+        bank.RemapBoxes(BankBoxRemap.Swap(bank.BoxCount, 0, 3));
+        Assert.Equal((3, a.Slot), At(bank, a.Id));
+        Assert.Equal((0, 7), At(bank, b.Id));
+
+        bank.RemapBoxes(BankBoxRemap.Move(bank.BoxCount, 3, 1));
+        Assert.Equal((1, a.Slot), At(bank, a.Id));
+
+        bank.RemapBoxes(BankBoxRemap.Insert(bank.BoxCount, 0));
+        Assert.Equal(5, bank.BoxCount);
+        Assert.Equal((1, 7), At(bank, b.Id));
+        Assert.Equal((2, a.Slot), At(bank, a.Id));
+
+        Assert.Throws<InvalidOperationException>(() => bank.RemapBoxes(BankBoxRemap.Remove(bank.BoxCount, 2)));
+        bank.RemapBoxes(BankBoxRemap.Remove(bank.BoxCount, 0));
+
+        var reloaded = new FileBankService(_root);
+        Assert.Equal(4, reloaded.BoxCount);
+        Assert.Equal((0, 7), At(reloaded, b.Id));
+        Assert.Equal((1, a.Slot), At(reloaded, a.Id));
+        Assert.Equal([2], reloaded.GetData(b.Id));
+    }
+
+    [Fact]
+    public void ABadRemapIsRefusedAndWritesNothing()
+    {
+        var bank = new FileBankService(_root);
+        bank.AddBox(); // writes the index
+        var count = bank.BoxCount;
+        var index = Path.Combine(_root, "index.json");
+        var before = File.ReadAllText(index);
+        var same = Enumerable.Range(0, count).Select(box => box == 1 ? 0 : box).ToArray();
+        var outside = Enumerable.Range(0, count).Select(box => box == 1 ? count + 5 : box).ToArray();
+        Assert.Throws<ArgumentException>(() => bank.RemapBoxes(new BankBoxRemap(same, count)));
+        Assert.Throws<ArgumentException>(() => bank.RemapBoxes(new BankBoxRemap([0], 1)));
+        Assert.Throws<ArgumentException>(() => bank.RemapBoxes(new BankBoxRemap(outside, count)));
+        Assert.Equal(before, File.ReadAllText(index));
+    }
+
+    [Fact]
+    public void NamesAndWallpapersFollowTheirBoxes()
+    {
+        var names = new BankBoxNames(_root);
+        var wallpapers = new BankBoxWallpapers(_root);
+        names.SetMany([(0, "Kanto"), (1, "Gone"), (2, "Johto")]);
+        wallpapers.Set(2, BankWallpaper.Art("box_wp01xy"));
+        wallpapers.Set(0, BankWallpaper.Color(3));
+
+        var remove = BankBoxRemap.Remove(3, 1);
+        names.Remap(remove);
+        wallpapers.Remap(remove);
+        var swap = BankBoxRemap.Swap(2, 0, 1);
+        names.Remap(swap);
+        wallpapers.Remap(swap);
+
+        var reloadedNames = new BankBoxNames(_root);
+        var reloadedWallpapers = new BankBoxWallpapers(_root);
+        Assert.Equal(("Johto", "Kanto", (string?)null), (reloadedNames.Get(0), reloadedNames.Get(1), reloadedNames.Get(2)));
+        Assert.Equal("art:box_wp01xy", reloadedWallpapers.Get(0)?.Id);
+        Assert.Equal("color:3", reloadedWallpapers.Get(1)?.Id);
+        reloadedWallpapers.Set(1, null);
+        Assert.Null(new BankBoxWallpapers(_root).Get(1));
+    }
+
+    [Fact]
     public void AFailedIndexWriteLeavesEveryMutationUndone()
     {
         var bank = new FileBankService(_root);

@@ -18,6 +18,8 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
     private sealed class ScanState
     {
         public int FilesSeen;
+        /// <summary>The emulator this root was linked for; decides which folders are pruned.</summary>
+        public EmulatorKind Kind;
         /// <summary>Names in the folder currently being walked, for ROM-name hints.</summary>
         public IReadOnlyList<string>? Siblings;
         public readonly List<string> Rejected = [];
@@ -75,7 +77,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         var treeUri = AndroidUri.Parse(treeId) ?? throw new ArgumentException("Invalid tree URI.", nameof(treeId));
         var rootDocId = DocumentsContract.GetTreeDocumentId(treeUri)
             ?? throw new InvalidOperationException("The folder grant has no tree document id.");
-        var state = new ScanState();
+        var state = new ScanState { Kind = kind };
         state.Trace($"Scanner={nameof(AndroidEmulatorScanner)} kind={kind}");
         state.Trace($"TreeUri={treeUri}");
         state.Trace($"RootDocId={rootDocId}");
@@ -112,6 +114,12 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         "info", "logs", "overlays", "playlists", "remaps", "screenshots", "shaders", "states",
         "system", "thumbnails", "cache", "temp", "roms", "shader_cache",
     };
+
+    // RetroArch keeps ROMs apart from its saves folder, so skipping "roms" keeps a whole-folder
+    // grant fast. Standalone emulators (melonDS, DraStic, Pizza Boy...) save beside the ROM.
+    private static bool IsPruned(string folder, EmulatorKind kind) =>
+        PrunedDirectories.Contains(folder)
+        && (kind == EmulatorKind.RetroArch || !string.Equals(folder, "roms", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Battery saves and GCI files can be nested: RetroArch uses per-core folders,
@@ -223,17 +231,18 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         IEnumerable<TreeEntry<ChildDocument>> List(ChildDocument doc) =>
             ListChildren(treeUri, doc.DocId).Select(x => new TreeEntry<ChildDocument>(x.Name, x.IsDirectory, x));
         var rootName = ThreeDsSaveLayout.LastSegment(rootDocId);
-        var n3ds = ThreeDsSaveLayout.FindNintendoThreeDs(new ChildDocument(rootDocId, rootName, true, null), rootName, List, state.Trace);
-        if (n3ds is null) return results;
-
-        foreach (var hit in ThreeDsSaveLayout.EnumerateMainSaves(n3ds, List, cancellationToken))
+        var root = new ChildDocument(rootDocId, rootName, true, null);
+        foreach (var hit in ThreeDsSaveLayout.FindMainSaves(root, rootName, List, state.Trace, cancellationToken))
         {
+            state.FilesSeen++;
             var main = hit.File;
             if (TryDetect(treeUri, main, kind, gameLabel: $"3DS save ({hit.TitleId})", state: state) is { } save)
             {
                 results.Add(save);
                 onSave?.Invoke(save);
             }
+            else
+                state.Rejected.Add($"3DS save {hit.TitleId}");
         }
         return results;
     }
@@ -259,7 +268,10 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
             var cacheKey = documentUri + "#" + kind + "#" + InstallEpoch;
             var modifiedTicks = child.LastModified?.UtcTicks ?? 0;
             if (ScanCache.TryGet(cacheKey, modifiedTicks, out var cached))
+            {
+                state.Trace(cached is null ? "CACHED rejection (unchanged since it last failed to parse)" : $"CACHED {cached.GameLabel}");
                 return cached;
+            }
 
             using var stream = Platform.AppContext.ContentResolver?.OpenInputStream(documentUri);
             if (stream is null)
@@ -297,7 +309,11 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
             if (description is null)
             {
                 state.Trace("PARSER REJECTED: ISaveEngine.TryDescribe returned null");
-                ScanCache.Store(cacheKey, modifiedTicks, null);
+                // Remembering a rejection keeps big RetroArch folders fast. A 3DS or Switch save
+                // is one known file per game: always re-read it, so a read that caught the
+                // emulator mid-write does not hide the game until the file changes again.
+                if (!EmulatorSaveHeuristics.RequiresExtraCare(kind))
+                    ScanCache.Store(cacheKey, modifiedTicks, null);
                 return null;
             }
             state.Trace($"PARSER ACCEPTED game={description.GameName} generation={description.Generation} trainer={description.TrainerName} playTime={description.PlayTime}");
@@ -361,7 +377,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
     {
         // Detection support can expand between releases. Keep cached negative
         // results versioned so a newly supported save is always retried once.
-        private const string Key = "scan_cache_v4"; // v4: identity comes from bytes only, plus the save language
+        private const string Key = "scan_cache_v5"; // v5: cards re-read after the out-of-range party count fix
         private const int MaxEntries = 512;
         private static Dictionary<string, CacheEntry>? _entries;
         private static readonly Lock Gate = new();
@@ -442,7 +458,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
             if (child.IsDirectory)
             {
                 if (diagnostic) state.Trace($"DIR name={child.Name} docId={child.DocId}");
-                if (PrunedDirectories.Contains(child.Name))
+                if (IsPruned(child.Name, state.Kind))
                 {
                     if (diagnostic) state.Trace($"PRUNED directory {child.Name}");
                     continue;

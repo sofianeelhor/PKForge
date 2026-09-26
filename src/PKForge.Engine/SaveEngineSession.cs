@@ -2580,7 +2580,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
                 entity.IsNicknamed ? entity.Nickname : null, entity.IsShiny,
                 entity.Species == 0 || entity.Valid, entity.Form, entity.IsEgg, entity.HeldItem, EntitySprite.Traits(entity)));
         }
-        for (var i = 0; i < _save.PartyCount && i < 6; i++)
+        for (var i = 0; i < SaveParser.PartySlots(_save); i++)
         {
             var partyMon = _save.GetPartySlotAtIndex(i);
             slots.Add(new SlotSummary(-1, i, partyMon.Species == 0 ? null : partyMon.Species,

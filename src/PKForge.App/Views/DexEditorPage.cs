@@ -14,7 +14,7 @@ namespace PKForge.App.Views;
 /// moves with the pad; A cycles unseen → seen → caught. Touch taps the cell directly.
 /// Edits are staged and saved through the safe write path on exit.
 /// </summary>
-public sealed class DexEditorPage : IPadHandler
+public sealed class DexEditorPage : IPadPagingHandler
 {
     private const int Columns = BoxGridRenderer.Columns;
     private const int Rows = BoxGridRenderer.Rows;

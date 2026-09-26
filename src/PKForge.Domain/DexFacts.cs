@@ -12,9 +12,12 @@ public enum MoveCategory : byte { Status, Physical, Special }
 /// </summary>
 public sealed record MoveFact(int Id, int Type, MoveCategory Category, int Power, int Accuracy, string Effect);
 
+/// <summary>One Pokédex entry and the game that first printed it.</summary>
+public sealed record DexEntry(string Version, string Text);
+
 /// <summary>
 /// The offline reference table behind every info-rich picker: move numbers and effects,
-/// ability and item short descriptions (English). Built deterministically by
+/// ability and item short descriptions, species categories and Pokédex entries (English). Built deterministically by
 /// tools/DexFacts/build.py from PokeAPI's data (github.com/PokeAPI/pokeapi, BSD-3-Clause,
 /// © 2014 Paul Hallett and PokeAPI contributors) and embedded in this assembly.
 /// Items are keyed by normalised English name because item ids differ per generation.
@@ -24,12 +27,17 @@ public sealed class DexFactsTable
     private readonly Dictionary<int, MoveFact> _moves;
     private readonly Dictionary<int, string> _abilities;
     private readonly Dictionary<string, string> _items;
+    private readonly Dictionary<int, string> _genera;
+    private readonly Dictionary<int, List<DexEntry>> _entries;
 
-    private DexFactsTable(Dictionary<int, MoveFact> moves, Dictionary<int, string> abilities, Dictionary<string, string> items)
+    private DexFactsTable(Dictionary<int, MoveFact> moves, Dictionary<int, string> abilities, Dictionary<string, string> items,
+        Dictionary<int, string> genera, Dictionary<int, List<DexEntry>> entries)
     {
         _moves = moves;
         _abilities = abilities;
         _items = items;
+        _genera = genera;
+        _entries = entries;
     }
 
     public int MoveCount => _moves.Count;
@@ -44,12 +52,20 @@ public sealed class DexFactsTable
     public string? Item(string? name) =>
         string.IsNullOrWhiteSpace(name) ? null : _items.GetValueOrDefault(DexFacts.NormalizeName(name));
 
+    /// <summary>The species' category, e.g. "Seed Pokémon".</summary>
+    public string? Genus(int species) => _genera.GetValueOrDefault(species);
+
+    /// <summary>Every distinct Pokédex entry of the species, oldest game first.</summary>
+    public IReadOnlyList<DexEntry> Entries(int species) => _entries.TryGetValue(species, out var list) ? list : [];
+
     /// <summary>Reads the gzip'd TSV the build script writes (malformed rows are skipped).</summary>
     public static DexFactsTable Parse(Stream gzip)
     {
         var moves = new Dictionary<int, MoveFact>();
         var abilities = new Dictionary<int, string>();
         var items = new Dictionary<string, string>(StringComparer.Ordinal);
+        var genera = new Dictionary<int, string>();
+        var entries = new Dictionary<int, List<DexEntry>>();
         using var inflate = new GZipStream(gzip, CompressionMode.Decompress);
         using var reader = new StreamReader(inflate, Encoding.UTF8);
         while (reader.ReadLine() is { } line)
@@ -68,9 +84,16 @@ public sealed class DexFactsTable
                 case "I" when f.Length >= 3 && f[1].Length > 0:
                     items[f[1]] = f[2];
                     break;
+                case "S" when f.Length >= 3 && int.TryParse(f[1], out var genusOf):
+                    genera[genusOf] = f[2];
+                    break;
+                case "F" when f.Length >= 4 && int.TryParse(f[1], out var entryOf) && f[3].Length > 0:
+                    if (!entries.TryGetValue(entryOf, out var list)) entries[entryOf] = list = [];
+                    list.Add(new DexEntry(f[2], f[3]));
+                    break;
             }
         }
-        return new DexFactsTable(moves, abilities, items);
+        return new DexFactsTable(moves, abilities, items, genera, entries);
     }
 }
 

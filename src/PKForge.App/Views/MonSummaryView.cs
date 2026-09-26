@@ -1060,6 +1060,8 @@ public sealed class MonSummaryView : ContentView
         }
         var home = animated is null ? _sprites.GetHome(look) : null;
         if (animated is null && home is null) _sprites.WarmHome(look, Redraw);
+        // While a HOME render is on its way, a pixel stand-in would only flash before it.
+        if (animated is null && home is null && !_sprites.HomeUnavailable(look)) return;
         var bitmap = animated?.FrameAt(_elapsedMs) ?? home ?? _sprites.GetSprite(look);
         if (bitmap is null)
         {

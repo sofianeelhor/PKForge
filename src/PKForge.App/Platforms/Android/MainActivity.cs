@@ -83,16 +83,18 @@ public sealed class MainActivity : MauiAppCompatActivity
     {
         if (e?.Action == KeyEventActions.Down && ResolveButton(e.KeyCode) is { } button)
         {
-            // Direction repeats are owned by the app's own timers (the hat timer for
-            // stick-style input, the key timer for clean digital pads); framework
+            // Direction and L/R repeats are owned by the app's own timers (the hat timer
+            // for stick-style input, the key timer for clean digital pads); framework
             // repeats would stack on top and double the navigation speed.
             if (e.RepeatCount > 0)
-                return IsDirectional(button);
+                return IsRepeatable(button);
             var router = IPlatformApplication.Current?.Services.GetService<Services.GamepadRouter>();
+            // Asked before dispatching: the press itself may open another screen.
+            var repeats = IsDirectional(button) || (IsRepeatable(button) && router?.TopPagesWithShoulders == true);
             if (router?.Dispatch(button) == true)
             {
                 Haptic();
-                if (IsDirectional(button))
+                if (repeats)
                     StartKeyRepeat(button);
                 return true;
             }
@@ -113,8 +115,9 @@ public sealed class MainActivity : MauiAppCompatActivity
     private Services.PadButton? _keyRepeatButton;
     private Java.Lang.Runnable? _keyRepeatRunnable;
 
-    /// <summary>Hold-repeat for dpad directions that arrive as key events: some pads
-    /// report clean digital keys with no framework repeats at all.</summary>
+    /// <summary>Hold-repeat for dpad directions that arrive as key events (some pads report
+    /// clean digital keys with no framework repeats at all), and for L/R: holding a shoulder
+    /// flips through boxes and pages without tapping it again and again.</summary>
     private void StartKeyRepeat(Services.PadButton button)
     {
         StopKeyRepeat();
@@ -123,10 +126,11 @@ public sealed class MainActivity : MauiAppCompatActivity
         {
             if (_keyRepeatButton != button) return;
             var router = IPlatformApplication.Current?.Services.GetService<Services.GamepadRouter>();
+            if (!IsDirectional(button) && router?.TopPagesWithShoulders != true) { StopKeyRepeat(); return; }
             if (router?.Dispatch(button) != true) { StopKeyRepeat(); return; }
-            _hatRepeatHandler.PostDelayed(_keyRepeatRunnable!, HatRepeatMs);
+            _hatRepeatHandler.PostDelayed(_keyRepeatRunnable!, IsDirectional(button) ? HatRepeatMs : ShoulderRepeatMs);
         });
-        _hatRepeatHandler.PostDelayed(_keyRepeatRunnable, HatHoldDelayMs);
+        _hatRepeatHandler.PostDelayed(_keyRepeatRunnable, IsDirectional(button) ? HatHoldDelayMs : ShoulderHoldDelayMs);
     }
 
     private void StopKeyRepeat()
@@ -142,6 +146,9 @@ public sealed class MainActivity : MauiAppCompatActivity
     private Java.Lang.Runnable? _hatRepeatRunnable;
     private const long HatHoldDelayMs = 320;
     private const long HatRepeatMs = 80;
+    // A whole box or page changes per step: a slower cadence keeps each one readable.
+    private const long ShoulderHoldDelayMs = 380;
+    private const long ShoulderRepeatMs = 140;
 
     public override bool OnGenericMotionEvent(MotionEvent? e)
     {
@@ -196,6 +203,9 @@ public sealed class MainActivity : MauiAppCompatActivity
 
     private static bool IsDirectional(Services.PadButton button) =>
         button is Services.PadButton.Up or Services.PadButton.Down or Services.PadButton.Left or Services.PadButton.Right;
+
+    private static bool IsRepeatable(Services.PadButton button) =>
+        IsDirectional(button) || button is Services.PadButton.L or Services.PadButton.R;
 
     private static Services.PadButton? HatDirection(MotionEvent e)
     {

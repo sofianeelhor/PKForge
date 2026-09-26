@@ -60,6 +60,13 @@ public sealed class LoadingOverlay
         _bar.Progress = total == 0 ? 0 : (double)done / total;
     });
 
+    /// <summary>Free-form progress ("Downloading 12 / 240 MB") with a 0-1 bar.</summary>
+    public void Report(string text, double fraction) => MainThread.BeginInvokeOnMainThread(() =>
+    {
+        _progress.Text = text;
+        _bar.Progress = Math.Clamp(fraction, 0, 1);
+    });
+
     public void Close() => MainThread.BeginInvokeOnMainThread(() =>
     {
         _host.Remove(_overlay);

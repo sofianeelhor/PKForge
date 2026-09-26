@@ -68,7 +68,11 @@ internal static class SaveParser
             "Sapphire" when save is SAV3RS => GameVersion.S,
             _ => null,
         };
-        if ((chosen ?? EditionFromOwnPokemon(save)) is { } edition)
+        // The edition is only a hint: whatever the Pokémon data holds, it never stops a save opening.
+        GameVersion? owned = null;
+        try { owned = chosen is null ? EditionFromOwnPokemon(save) : null; }
+        catch (Exception error) when (error is ArgumentException or InvalidOperationException or IndexOutOfRangeException) { }
+        if ((chosen ?? owned) is { } edition)
             save.Version = edition;
     }
 
@@ -99,10 +103,16 @@ internal static class SaveParser
         return seen.Count == 1 ? seen.First() : null;
     }
 
+    /// <summary>
+    /// Party slots to read: the stored count is a raw byte an early or damaged save can set
+    /// past the 6 slots that exist, and reading slot 7 runs off the party block.
+    /// </summary>
+    internal static int PartySlots(SaveFile save) => Math.Clamp(save.PartyCount, 0, 6);
+
     private static IEnumerable<PKM> OwnedEntities(SaveFile save)
     {
         if (save.HasParty)
-            for (var i = 0; i < save.PartyCount; i++)
+            for (var i = 0; i < PartySlots(save); i++)
                 yield return save.GetPartySlotAtIndex(i);
         if (save.HasBox)
             for (var box = 0; box < save.BoxCount; box++)

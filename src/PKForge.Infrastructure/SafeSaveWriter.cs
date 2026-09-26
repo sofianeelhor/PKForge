@@ -64,7 +64,7 @@ public sealed class SafeSaveWriter(
             { Kind: LayoutRiskKind.CorruptingLayout } risk => new UnsafeSaveWriteException(
                 $"Write refused: {risk.Reason} This save is read-only in PKForge; the original was not touched."),
             { Kind: LayoutRiskKind.SuspectedHack } risk when !Accepted(documentId) => new UnsafeSaveWriteException(
-                $"Read-only: {risk.Reason} To edit anyway, long-press this save on Home and choose \"Edit at my own risk\". " +
+                $"Read-only: {risk.Reason} To edit anyway, choose \"Edit at my own risk\" when PKForge asks, or long-press this save on Home. " +
                 "The original was not touched.", requiresConfirmation: true),
             _ => null,
         };

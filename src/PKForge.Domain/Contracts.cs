@@ -208,6 +208,12 @@ public interface IBankService
     void Replace(Guid id, byte[] data, BankEntryInfo info);
     /// <summary>Adds one more empty box.</summary>
     void AddBox();
+    /// <summary>
+    /// Rearranges whole boxes (swap, move, insert, delete) in one index write: every entry
+    /// follows its box, bytes untouched. Throws when a deleted box still holds anything, so
+    /// no entry can ever be lost this way.
+    /// </summary>
+    void RemapBoxes(BankBoxRemap remap);
     /// <summary>Rewrites the facts of several entries in one index write, bytes untouched
     /// (index migrations). Unknown ids are ignored; returns how many entries changed.</summary>
     int UpdateInfo(IReadOnlyList<(Guid Id, BankEntryInfo Info)> updates);

@@ -19,6 +19,21 @@ public sealed class MonInfoTests
     // ---------- Dataset ----------
 
     [Fact]
+    public void DatasetCarriesEverySpeciesCategoryAndItsPokedexEntries()
+    {
+        var table = DexFacts.Default;
+        Assert.Equal("Seed Pokémon", table.Genus(1));
+        Assert.Equal("Mouse Pokémon", table.Genus(25));
+        Assert.All(Enumerable.Range(1, 1025), species => Assert.NotNull(table.Genus(species)));
+        var pikachu = table.Entries(25);
+        Assert.True(pikachu.Count >= 10, $"entries: {pikachu.Count}");
+        Assert.Equal("Red", pikachu[0].Version);
+        Assert.Equal(pikachu.Count, pikachu.Select(e => DexFacts.NormalizeName(e.Text)).Distinct().Count());
+        Assert.DoesNotContain(pikachu, e => e.Text.Contains("POKéMON", StringComparison.Ordinal));
+        Assert.Empty(table.Entries(0));
+    }
+
+    [Fact]
     public void DatasetCarriesKnownMoveNumbersAndProse()
     {
         var table = DexFacts.Default;

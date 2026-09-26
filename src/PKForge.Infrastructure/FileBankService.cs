@@ -275,6 +275,27 @@ public sealed class FileBankService : IBankService
         }
     }
 
+    public void RemapBoxes(BankBoxRemap remap)
+    {
+        ArgumentNullException.ThrowIfNull(remap);
+        lock (_gate)
+        {
+            EnsureWritable();
+            remap.Validate(_boxCount);
+            if (_entries.FirstOrDefault(e => remap.Map(e.Box) is null) is { } stranded)
+                throw new InvalidOperationException($"Box {stranded.Box + 1} is not empty.");
+            if (remap.IsIdentity) return;
+            Commit(() =>
+            {
+                for (var i = 0; i < _entries.Count; i++)
+                    _entries[i] = _entries[i] with { Box = remap.Map(_entries[i].Box)!.Value };
+                _boxCount = remap.NewCount;
+                SaveIndex();
+                return 0;
+            });
+        }
+    }
+
     private (int Box, int Slot) FirstEmpty()
     {
         var occupied = _entries.Select(e => (e.Box, e.Slot)).ToHashSet();

@@ -68,7 +68,7 @@ public sealed record LivingDexHolding(
 /// <param name="MaxSpeciesId">Highest species id the save can store.</param>
 /// <param name="FreeSlots">Empty box slots in placement order (saves as destination only).</param>
 /// <param name="Storable">Species/form the destination game contains; null = everything up to <paramref name="MaxSpeciesId"/>.</param>
-/// <param name="BoxCount">The Bank's box count (the living dex boxes start after it on a first run).</param>
+/// <param name="BoxCount">The Bank's box count.</param>
 /// <param name="Fingerprint">Hash of the bytes the plan was made from; the executor refuses a file that changed since.</param>
 /// <param name="Caution">A non-blocking caution shown in the dry run (recently written: close the emulator).</param>
 public sealed record LivingDexSource(
@@ -110,7 +110,7 @@ public sealed record LivingDexCatalog(
 /// <param name="AllowLastCopies">Allow a save's only copy of a species to leave it.</param>
 /// <param name="IncludeParty">Allow party Pokémon to move.</param>
 /// <param name="AllowDowngrades">Allow moves into an older generation (sanitized, with warnings).</param>
-/// <param name="BankStartBox">First Bank box of the living dex region; null starts it after the last box.</param>
+/// <param name="BankStartBox">First Bank box of the living dex region; null picks the first empty stretch that fits it.</param>
 public sealed record LivingDexOptions(
     string DestinationId,
     bool Shiny = false,
@@ -224,6 +224,26 @@ public static class LivingDexPlanner
     public const string BankId = "pkforge:bank";
 
     public const int BankSlotsPerBox = 30;
+
+    /// <summary>Bank boxes a living dex of <paramref name="targetCount"/> slots spans.</summary>
+    public static int BoxesFor(int targetCount) => Math.Max(1, (targetCount + BankSlotsPerBox - 1) / BankSlotsPerBox);
+
+    /// <summary>
+    /// First box starting <paramref name="boxes"/> consecutive empty Bank boxes, so a first run
+    /// never lands on anything the player keeps. Boxes past the last one count as empty.
+    /// </summary>
+    public static int FirstEmptyStretch(LivingDexSource bank, int boxes)
+    {
+        ArgumentNullException.ThrowIfNull(bank);
+        var used = bank.Holdings.Where(h => !h.IsParty).Select(h => h.Box).ToHashSet();
+        var run = 0;
+        for (var box = 0; box < bank.BoxCount; box++)
+        {
+            run = used.Contains(box) ? 0 : run + 1;
+            if (run == boxes) return box - boxes + 1;
+        }
+        return bank.BoxCount - run;
+    }
 
     public static LivingDexPlan Plan(LivingDexCatalog catalog, IReadOnlyList<LivingDexSource> sources, LivingDexOptions options)
     {
@@ -403,7 +423,7 @@ public static class LivingDexPlanner
         {
             // The Bank's living dex boxes: every target has a fixed slot by dex order, so the
             // boxes read like the Pokédex and a later catch has its gap waiting for it.
-            bankStart = Math.Max(0, options.BankStartBox ?? destination.BoxCount);
+            bankStart = Math.Max(0, options.BankStartBox ?? FirstEmptyStretch(destination, BoxesFor(targets.Count)));
             SlotRef SlotOf(int index) => new(bankStart + index / BankSlotsPerBox, index % BankSlotsPerBox);
             var occupied = new Dictionary<SlotRef, LivingDexHolding>();
             foreach (var holding in destination.Holdings) occupied[new SlotRef(holding.Box, holding.Slot)] = holding;

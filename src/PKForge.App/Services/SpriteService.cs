@@ -38,6 +38,13 @@ public interface ISpriteService
     void WarmHome(SpriteLook look, Action onLoaded);
 
     /// <summary>
+    /// True when no HOME render will come for this look (no art for the form, or the last load
+    /// failed): callers show the pixel sprite. While false and <see cref="GetHome"/> is still
+    /// null the render is on its way, and drawing a stand-in would only flash.
+    /// </summary>
+    bool HomeUnavailable(SpriteLook look);
+
+    /// <summary>
     /// Animated Showdown sprite lookup with three-state semantics: returns false while the
     /// answer is unknown (still loading - draw NOTHING, no fallback flash); true with a sprite
     /// when available; true with null when this exact form has no animation (fall back now).
@@ -46,6 +53,12 @@ public interface ISpriteService
 
     /// <summary>Warms the animated-sprite cache and invokes <paramref name="onLoaded"/> when ready.</summary>
     void WarmShowdown(SpriteLook look, Action onLoaded);
+
+    /// <summary>
+    /// Downloads one sprite pack file straight to its disk cache without decoding it, so bulk
+    /// downloads hold no bitmaps. False when the download failed.
+    /// </summary>
+    Task<bool> DownloadPackFileAsync(SpritePack.Entry entry, CancellationToken cancellationToken);
 }
 
 /// <summary>Decoded animation: frames plus per-frame durations in milliseconds.</summary>
@@ -69,9 +82,12 @@ public sealed record AnimatedSprite(IReadOnlyList<SKBitmap> Frames, IReadOnlyLis
 public sealed class SpriteService : ISpriteService
 {
     private const int MaxCacheEntries = 1024;
+    // Animations keep every frame decoded, so far fewer of them fit in memory.
+    private const int MaxAnimatedEntries = 160;
     private readonly Dictionary<string, SKBitmap?> _cache = new(StringComparer.Ordinal);
     private readonly HashSet<string> _loading = new(StringComparer.Ordinal);
     private readonly Queue<string> _eviction = new();
+    private readonly Queue<string> _animatedEviction = new();
     private readonly Lock _gate = new();
 
     // Bounded concurrency: a burst of warm() calls (opening a full box, filling a
@@ -135,6 +151,15 @@ public sealed class SpriteService : ISpriteService
             return _cache.GetValueOrDefault("home-" + remote.CacheName);
     }
 
+    public bool HomeUnavailable(SpriteLook look)
+    {
+        if (SpriteCatalog.Home(look) is not { } remote) return true;
+        var key = "home-" + remote.CacheName;
+        lock (_gate)
+            return _homeRetryAfter.TryGetValue(key, out var after) && DateTime.UtcNow < after
+                   || _cache.TryGetValue(key, out var bitmap) && bitmap is null;
+    }
+
     public void WarmHome(SpriteLook look, Action onLoaded)
     {
         // No HOME art for this exact form: nothing will ever load, and calling back would
@@ -156,12 +181,7 @@ public sealed class SpriteService : ISpriteService
             await NetworkGate.WaitAsync().ConfigureAwait(false);
             try
             {
-                if (!File.Exists(diskPath))
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(diskPath)!);
-                    var bytes = await Http.GetByteArrayAsync(RemoteBase + "home/" + remote.Path).ConfigureAwait(false);
-                    await File.WriteAllBytesAsync(diskPath, bytes).ConfigureAwait(false);
-                }
+                await DownloadToDiskAsync(RemoteBase + "home/" + remote.Path, diskPath, CancellationToken.None).ConfigureAwait(false);
                 bitmap = SKBitmap.Decode(diskPath);
             }
             catch
@@ -182,6 +202,7 @@ public sealed class SpriteService : ISpriteService
                 _loading.Remove(key);
                 _cache[key] = bitmap;
                 _eviction.Enqueue(key);
+                TrimCache();
             }
             onLoaded();
         });
@@ -219,17 +240,19 @@ public sealed class SpriteService : ISpriteService
             await NetworkGate.WaitAsync().ConfigureAwait(false);
             try
             {
-                if (!File.Exists(diskPath))
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(diskPath)!);
-                    var bytes = await Http.GetByteArrayAsync(RemoteBase + "showdown/" + remote.Path).ConfigureAwait(false);
-                    await File.WriteAllBytesAsync(diskPath, bytes).ConfigureAwait(false);
-                }
+                await DownloadToDiskAsync(RemoteBase + "showdown/" + remote.Path, diskPath, CancellationToken.None).ConfigureAwait(false);
                 sprite = DecodeGif(diskPath);
                 lock (_gate)
                 {
                     _loading.Remove(key);
                     _animatedCache[key] = sprite;
+                    _animatedEviction.Enqueue(key);
+                    while (_animatedCache.Count > MaxAnimatedEntries && _animatedEviction.TryDequeue(out var oldest))
+                    {
+                        if (_animatedCache.Remove(oldest, out var evicted) && evicted is not null)
+                            foreach (var frame in evicted.Frames)
+                                DisposeAfterPaint(frame);
+                    }
                 }
             }
             catch
@@ -299,14 +322,72 @@ public sealed class SpriteService : ISpriteService
                 _loading.Remove(key);
                 _cache[key] = bitmap;
                 _eviction.Enqueue(key);
-                while (_cache.Count > MaxCacheEntries && _eviction.TryDequeue(out var oldest))
-                {
-                    if (_cache.Remove(oldest, out var evicted))
-                        evicted?.Dispose();
-                }
+                TrimCache();
             }
             onLoaded();
         });
+    }
+
+    /// <summary>Drops the oldest bitmaps past the cap. Caller holds <see cref="_gate"/>.</summary>
+    private void TrimCache()
+    {
+        while (_cache.Count > MaxCacheEntries && _eviction.TryDequeue(out var oldest))
+        {
+            if (_cache.Remove(oldest, out var evicted) && evicted is not null)
+                DisposeAfterPaint(evicted);
+        }
+    }
+
+    /// <summary>
+    /// Views fetch bitmaps afresh on every paint and never keep them, and every paint runs on
+    /// the UI thread: disposing there, between paints, can never pull pixels out from under a
+    /// draw in progress (disposing on this background thread could).
+    /// </summary>
+    private static void DisposeAfterPaint(SKBitmap bitmap) => MainThread.BeginInvokeOnMainThread(bitmap.Dispose);
+
+    public async Task<bool> DownloadPackFileAsync(SpritePack.Entry entry, CancellationToken cancellationToken)
+    {
+        var diskPath = Path.Combine(FileSystem.AppDataDirectory, entry.CachePath);
+        var url = entry.Url;
+        // The caller bounds its own concurrency; NetworkGate stays free for on-screen loads.
+        if (File.Exists(diskPath)) return true;
+        try
+        {
+            await DownloadToDiskAsync(url, diskPath, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception error) when (error is HttpRequestException or IOException or TaskCanceledException
+                                      && !cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Streams <paramref name="url"/> to a temporary file and renames it into place, so an
+    /// interrupted download never leaves a truncated file the cache would trust forever.
+    /// </summary>
+    private static async Task DownloadToDiskAsync(string url, string diskPath, CancellationToken cancellationToken)
+    {
+        if (File.Exists(diskPath)) return;
+        Directory.CreateDirectory(Path.GetDirectoryName(diskPath)!);
+        var temporary = diskPath + ".part";
+        try
+        {
+            using (var response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+            {
+                response.EnsureSuccessStatusCode();
+                await using var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                await using var target = File.Create(temporary);
+                await source.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
+            }
+            File.Move(temporary, diskPath, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(temporary); } catch (IOException) { }
+            throw;
+        }
     }
 
     private static async Task<SKBitmap?> LoadWithFallbackAsync(SpriteLook look)

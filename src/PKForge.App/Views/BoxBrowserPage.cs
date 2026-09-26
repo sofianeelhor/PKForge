@@ -15,7 +15,7 @@ namespace PKForge.App.Views;
 /// square box grid left, info/editor panel right, button-hint bar at the bottom.
 /// Landscape-only - this app is designed for the AYN Thor, not a phone.
 /// </summary>
-public sealed partial class BoxBrowserPage : ContentPage, IPadHandler, IPadReleaseHandler
+public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPadReleaseHandler
 {
     private readonly BoxBrowserViewModel _viewModel;
     private readonly ISpriteService _sprites;
@@ -68,6 +68,14 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadHandler, IPadRelea
     public BoxBrowserPage(BoxBrowserViewModel viewModel, ISpriteService sprites, ThemeService theme)
     {
         _viewModel = viewModel;
+        _viewModel.ConfirmHackRisk = async _ =>
+        {
+            var choice = await PadMenu.ShowAsync(_hostGrid, RomHackNotice.Title, RomHackNotice.Warning,
+                new PadOption(RomHackNotice.EditOption, Glyph: "!", Accent: UiTokens.Bad,
+                    Detail: "Your edit is saved now. A restore point is made first. Change this later from Home."),
+                new PadOption("Cancel", IconPath: "back", Detail: "Nothing is written."));
+            return choice == RomHackNotice.EditOption;
+        };
         _sprites = sprites;
         _theme = theme;
         BindingContext = viewModel;
@@ -453,7 +461,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadHandler, IPadRelea
     /// <summary>The NDS12 face (the chrome's PixelUI voice), cached once for Skia text.</summary>
     private static SKTypeface _pixelTypeface = null!;
 
-    private static SKTypeface PixelTypeface()
+    internal static SKTypeface PixelTypeface()
     {
         if (_pixelTypeface is not null) return _pixelTypeface;
         try
@@ -836,6 +844,11 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadHandler, IPadRelea
         RepaintStorage();
     }
 
+    private readonly CarryHand _hand = new();
+
+    // A held box moves by writing the save: one press, one swap.
+    bool IPadPagingHandler.ShouldersRepeat => !_boxHeld;
+
     private async Task ShiftHeldBoxAsync(int delta)
     {
         if (_boxManageBusy) return;
@@ -1160,11 +1173,13 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadHandler, IPadRelea
                 break;
             case "Move to box…":
             {
-                var boxes = Enumerable.Range(1, _viewModel.BoxCount).Select(n => $"Box {n:00}").ToArray();
-                var target = await PadMenu.ShowAsync(_hostGrid, "Move to which box?", null, boxes);
-                if (target is null) return;
                 if (_viewModel.MarksEmptyTheParty()) { _viewModel.Status = PartyNeedsOne; return; }
-                await _viewModel.BulkMoveAsync(Array.IndexOf(boxes, target));
+                var slots = _viewModel.AllSlots;
+                var placement = await StartSlotPicker.PickAsync(_hostGrid, "Move to which box?", slots, count, offerFirstFree: false);
+                if (placement?.Start is not { } start) return;
+                if (!await PadMenu.ConfirmAsync(_hostGrid, $"Move {count} Pokémon?", StartSlotPicker.Describe(slots, start, count) + ".", "Move"))
+                    return;
+                await _viewModel.BulkMoveAsync(start);
                 break;
             }
             case "Move to another game…":
@@ -1239,10 +1254,23 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadHandler, IPadRelea
             return;
         }
 
+        // Where they land in the other game: its first free spaces, or a box and slot the player picks.
+        IReadOnlyList<SlotSummary> targetSlots;
+        try { targetSlots = await transfer.ReadSlotsAsync(target); }
+        catch (Exception error) when (error is InvalidDataException or IOException or InvalidOperationException)
+        {
+            _viewModel.Status = $"Could not read {target.GameLabel}: {error.Message}";
+            return;
+        }
+        var placement = await StartSlotPicker.PickAsync(_hostGrid, $"Where in {target.GameLabel}?", targetSlots, count);
+        if (placement is null) return;
+        var startAt = placement.Start;
+
         var confirm = await PadMenu.ConfirmAsync(_hostGrid, $"{verb} selection?",
-            copy
+            (copy
                 ? $"Copies of {count} Pokémon join {target.GameLabel}; the originals stay here. Mons that cannot enter that format are skipped."
-                : $"{count} Pokémon will leave this save and join {target.GameLabel}. Mons that cannot enter that format stay here.",
+                : $"{count} Pokémon will leave this save and join {target.GameLabel}. Mons that cannot enter that format stay here.")
+            + $" They land in {StartSlotPicker.Describe(targetSlots, startAt, count)}.",
             copy ? "Copy all" : "Move all");
         if (!confirm) return;
 
@@ -1250,7 +1278,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadHandler, IPadRelea
         // batch (per-mon prompts over N mons would be a questionnaire).
         var marked = _viewModel.MarkedSlots.ToArray();
         var firstExport = session.ExportSlot(marked[0].Box, marked[0].Slot);
-        var firstPreview = await transfer.PreviewAsync(firstExport.Data, firstExport.FileName, target);
+        var firstPreview = await transfer.PreviewAsync(firstExport.Data, firstExport.FileName, target, startAt: startAt);
         if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, firstPreview,
                 $"1 of {count} Pokémon", target.GameLabel)) return;
 
@@ -1259,7 +1287,8 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadHandler, IPadRelea
         foreach (var (box, markedSlot) in marked)
         {
             var export = session.ExportSlot(box, markedSlot);
-            var outcome = await transfer.SendToGameAsync(export.Data, export.FileName, target);
+            // Each lands in the first free slot from the chosen start: the ones before it are taken by now.
+            var outcome = await transfer.SendToGameAsync(export.Data, export.FileName, target, startAt: startAt);
             if (outcome.Success) sentSlots.Add((box, markedSlot));
             else skipped++;
         }
@@ -5331,7 +5360,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadHandler, IPadRelea
             return;
         }
         StopPartyPulse();
-        BoxGridRenderer.Paint(args.Surface.Canvas, args.Info, _viewModel, _sprites, _theme, _frame.Request, _lockedSlots);
+        BoxGridRenderer.Paint(args.Surface.Canvas, args.Info, _viewModel, _sprites, _theme, _frame.Request, _lockedSlots, _hand);
     }
 
     /// <summary>Locked-mon badges for the current box; refreshed on box/mutation changes, never per frame.</summary>
