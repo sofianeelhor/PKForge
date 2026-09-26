@@ -1,3 +1,4 @@
+using System.Globalization;
 using PKForge.App.Services;
 using PKForge.App.Theme;
 using PKForge.App.ViewModels;
@@ -624,11 +625,50 @@ public sealed class LivingDexAutopilotPage : IPadHandler
         _rows.Add(OptionRow("opt:older", "Send to older games", _options.AllowDowngrades,
             _options.AllowDowngrades ? "Pokémon may go back to an older game; moves, Ability or Ball may change to fit."
                                      : "Pokémon only move to the same or a newer game.", ToggleDowngrades));
+        if (plan.DestinationKind == LivingDexSourceKind.Bank)
+        {
+            var first = plan.BankStartBox + 1;
+            var last = plan.BankStartBox + LivingDexPlanner.BoxesFor(plan.TargetCount);
+            _rows.Add(new Row(RowKind.Option, "opt:boxes", "Living dex boxes", $"Bank boxes {first}–{last}, in Pokédex order.")
+            {
+                Icon = "box",
+                Right = $"Box {first}",
+                RightColor = Pksm.Indigo,
+                Detail = $"The living dex fills Bank boxes {first} to {last}. Press A to choose where it starts.",
+                Activate = PickBankStartAsync,
+            });
+        }
         _rows.Add(new Row(RowKind.Info, "how", "How it works", "What the Autopilot does, and what it never does.")
         {
             Icon = "info",
             Activate = () => { ShowIntro(); return Task.CompletedTask; },
         });
+    }
+
+    /// <summary>Lets the player put the Bank living dex region on boxes they already made for it.</summary>
+    private async Task PickBankStartAsync()
+    {
+        if (_plan is not { } plan || plan.Sources.FirstOrDefault(s => s.Id == LivingDexPlanner.BankId) is not { } bank) return;
+        var span = LivingDexPlanner.BoxesFor(plan.TargetCount);
+        var perBox = bank.Holdings.Where(h => !h.IsParty).GroupBy(h => h.Box).ToDictionary(g => g.Key, g => g.Count());
+        const string automatic = "First empty boxes";
+        var choices = new List<PadOption>
+        {
+            new(automatic, Detail: $"Box {LivingDexPlanner.FirstEmptyStretch(bank, span) + 1}: nothing you keep is in the way."),
+        };
+        for (var box = 0; box <= bank.BoxCount; box++)
+        {
+            var inside = Enumerable.Range(box, span).Sum(b => perBox.GetValueOrDefault(b));
+            var where = $"Boxes {box + 1}–{box + span}";
+            choices.Add(new PadOption($"Box {box + 1}", Detail: inside == 0 ? $"{where} are empty." : $"{where} hold {inside} Pokémon."));
+        }
+
+        var choice = await PadMenu.ShowAsync(_host, "Start the living dex at…",
+            "Pokémon already in those boxes that belong to the dex are sorted into their space. Any other Pokémon stays put and keeps its space blocked.",
+            [.. choices]);
+        if (choice is null) return;
+        LivingDexAutopilot.BankStartBox = choice == automatic ? null : int.Parse(choice.AsSpan(4), CultureInfo.InvariantCulture) - 1;
+        await ReplanAsync();
     }
 
     private static Row OptionRow(string key, string title, bool on, string consequence, Func<Task> toggle) =>

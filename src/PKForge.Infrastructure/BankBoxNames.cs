@@ -1,4 +1,4 @@
-using System.Text.Json;
+using PKForge.Domain;
 
 namespace PKForge.Infrastructure;
 
@@ -7,52 +7,16 @@ namespace PKForge.Infrastructure;
 /// (box index → name). Boxes without a name show their number. Written atomically; a
 /// missing or unreadable file simply means "no names" - names are decoration, never data.
 /// </summary>
-public sealed class BankBoxNames
+public sealed class BankBoxNames(string bankRootDirectory)
 {
-    private readonly string _path;
-    private readonly Lock _gate = new();
-    private Dictionary<int, string> _names;
-
-    public BankBoxNames(string bankRootDirectory)
-    {
-        Directory.CreateDirectory(bankRootDirectory);
-        _path = Path.Combine(bankRootDirectory, "box-names.json");
-        _names = Load(_path);
-    }
+    private readonly BoxKeyedFile _file = new(bankRootDirectory, "box-names.json");
 
     /// <summary>The name given to <paramref name="box"/>, or null when it has none.</summary>
-    public string? Get(int box)
-    {
-        lock (_gate) return _names.TryGetValue(box, out var name) ? name : null;
-    }
+    public string? Get(int box) => _file.Get(box);
 
     /// <summary>Sets several names in one write; a blank name clears that box's name.</summary>
-    public void SetMany(IEnumerable<(int Box, string? Name)> names)
-    {
-        lock (_gate)
-        {
-            foreach (var (box, name) in names)
-            {
-                if (string.IsNullOrWhiteSpace(name)) _names.Remove(box);
-                else _names[box] = name.Trim();
-            }
-            var tmp = _path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(_names));
-            File.Move(tmp, _path, overwrite: true);
-        }
-    }
+    public void SetMany(IEnumerable<(int Box, string? Name)> names) => _file.SetMany(names);
 
-    private static Dictionary<int, string> Load(string path)
-    {
-        try
-        {
-            if (File.Exists(path))
-                return JsonSerializer.Deserialize<Dictionary<int, string>>(File.ReadAllText(path)) ?? [];
-        }
-        catch
-        {
-            // Names are decoration: an unreadable file means no names, not a broken bank.
-        }
-        return [];
-    }
+    /// <summary>Names follow their boxes through <see cref="IBankService.RemapBoxes"/>.</summary>
+    public void Remap(BankBoxRemap remap) => _file.Remap(remap);
 }

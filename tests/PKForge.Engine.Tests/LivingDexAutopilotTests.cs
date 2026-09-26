@@ -245,9 +245,10 @@ public sealed class LivingDexAutopilotTests : IDisposable
     public async Task TheBankAsDestinationGetsDexOrderedBoxesAndTheSourceLetsGoAfter()
     {
         var world = Build();
-        var startBox = world.Bank.BoxCount;
         var plan = Plan(world, new LivingDexOptions(LivingDexPlanner.BankId));
-        Assert.Equal(startBox, plan.BankStartBox);
+        // Box 0 holds the Squirtle; the region takes the empty boxes right after it.
+        var startBox = plan.BankStartBox;
+        Assert.Equal(1, startBox);
 
         var result = await world.Executor.ApplyAsync(plan, world.Saves);
 

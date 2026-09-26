@@ -9,7 +9,7 @@ namespace PKForge.Domain.Tests;
 /// </summary>
 public sealed class LivingDexPlannerTests
 {
-    private const int Bulbasaur = 1, Charmander = 4, Squirtle = 7, Pikachu = 25, Vulpix = 37, Abra = 63, Kadabra = 64, Alakazam = 65, Eevee = 133;
+    private const int Bulbasaur = 1, Charmander = 4, Squirtle = 7, Pikachu = 25, Vulpix = 37, Abra = 63, Kadabra = 64, Alakazam = 65, Eevee = 133, Mewtwo = 150;
 
     private static readonly LivingDexCatalog Catalog = new(
         [Bulbasaur, Charmander, Squirtle, Pikachu, Vulpix, Abra, Kadabra, Alakazam, Eevee],
@@ -232,27 +232,45 @@ public sealed class LivingDexPlannerTests
     public void BankDestinationLaysOutDexOrderedBoxesAndArrangesWhatItHas()
     {
         var charmanderId = Guid.NewGuid();
-        var bank = Bank(4, Mon(Charmander, 1, 9, bankId: charmanderId));
+        var bank = Bank(4, Mon(Mewtwo, 0, 0, bankId: Guid.NewGuid()), Mon(Charmander, 1, 9, bankId: charmanderId));
         var b = Save("b", 4, Mon(Bulbasaur, 0, 0), Mon(Bulbasaur, 0, 1), Mon(Squirtle, 0, 2), Mon(Squirtle, 0, 3));
 
         var plan = Plan(new LivingDexOptions(LivingDexPlanner.BankId), bank, b);
-        Assert.Equal(4, plan.BankStartBox);
-        Assert.Equal(new SlotRef(4, 0), Fill(plan, Bulbasaur).Destination);
-        Assert.Equal(new SlotRef(4, 2), Fill(plan, Squirtle).Destination);
+        Assert.Equal(2, plan.BankStartBox);
+        Assert.Equal(new SlotRef(2, 0), Fill(plan, Bulbasaur).Destination);
+        Assert.Equal(new SlotRef(2, 2), Fill(plan, Squirtle).Destination);
         var arrange = Assert.Single(plan.Steps, s => s.Kind == LivingDexStepKind.Arrange);
         Assert.Equal(charmanderId, arrange.Holding!.BankId);
-        Assert.Equal(new SlotRef(4, 1), arrange.Destination);
+        Assert.Equal(new SlotRef(2, 1), arrange.Destination);
         Assert.Equal(1, plan.CoveredBefore);
         Assert.Equal(3, plan.CoveredAfter);
         Assert.DoesNotContain(LivingDexPlanner.BankId, plan.TouchedSaves);
         Assert.Equal(["b"], plan.TouchedSaves);
 
         // A second run keeps the same region and finds everything in place.
-        var settled = Bank(5,
-            Mon(Bulbasaur, 4, 0, bankId: Guid.NewGuid()), Mon(Charmander, 4, 1, bankId: charmanderId), Mon(Squirtle, 4, 2, bankId: Guid.NewGuid()));
-        var again = Plan(new LivingDexOptions(LivingDexPlanner.BankId, BankStartBox: 4), settled, Save("b", 4, Mon(Bulbasaur), Mon(Squirtle, 0, 1)));
+        var settled = Bank(4,
+            Mon(Bulbasaur, 2, 0, bankId: Guid.NewGuid()), Mon(Charmander, 2, 1, bankId: charmanderId), Mon(Squirtle, 2, 2, bankId: Guid.NewGuid()));
+        var again = Plan(new LivingDexOptions(LivingDexPlanner.BankId, BankStartBox: 2), settled, Save("b", 4, Mon(Bulbasaur), Mon(Squirtle, 0, 1)));
         Assert.False(again.HasWork);
         Assert.Equal(3, again.CoveredBefore);
+    }
+
+    [Fact]
+    public void AFirstRunTakesTheFirstEmptyStretchAndAnExplicitStartWins()
+    {
+        // Boxes 0 and 2 hold Pokémon outside the dex; box 1 is a one-box gap, box 3 the first empty stretch.
+        var bank = Bank(4, Mon(Mewtwo, 0, 0, bankId: Guid.NewGuid()), Mon(Mewtwo, 2, 5, bankId: Guid.NewGuid()));
+        Assert.Equal(1, LivingDexPlanner.FirstEmptyStretch(bank, 1));
+        Assert.Equal(3, LivingDexPlanner.FirstEmptyStretch(bank, 2));
+        Assert.Equal(4, LivingDexPlanner.FirstEmptyStretch(Bank(4, Mon(Mewtwo, 1, 0, bankId: Guid.NewGuid()), Mon(Mewtwo, 3, 0, bankId: Guid.NewGuid())), 2));
+        Assert.Equal(0, LivingDexPlanner.FirstEmptyStretch(Bank(0), 35));
+        Assert.Equal(35, LivingDexPlanner.BoxesFor(1025));
+
+        var b = Save("b", 4, Mon(Bulbasaur, 0, 0), Mon(Bulbasaur, 0, 1));
+        Assert.Equal(1, Plan(new LivingDexOptions(LivingDexPlanner.BankId), bank, b).BankStartBox);
+        var chosen = Plan(new LivingDexOptions(LivingDexPlanner.BankId, BankStartBox: 3), bank, b);
+        Assert.Equal(3, chosen.BankStartBox);
+        Assert.Equal(new SlotRef(3, 0), Fill(chosen, Bulbasaur).Destination);
     }
 
     [Fact]

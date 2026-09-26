@@ -13,11 +13,8 @@ namespace PKForge.App.Views;
 /// </summary>
 public static class PksmTransferFlow
 {
-    private static readonly Lazy<BankBoxNames> Names =
-        new(() => new BankBoxNames(Path.Combine(FileSystem.AppDataDirectory, "bank")));
-
     /// <summary>Box names imported from PKSM (or set later); shown beside the box number.</summary>
-    public static BankBoxNames BoxNames => Names.Value;
+    public static BankBoxNames BoxNames => BankBoxDecor.Names;
 
     /// <summary>Engine decode, mapped from PKSM tags to chronological generations.</summary>
     public static PksmDecoded Decode(PksmGeneration? generation, byte[] bytes, string source)
