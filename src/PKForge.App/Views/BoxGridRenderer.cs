@@ -81,7 +81,8 @@ public static class BoxGridRenderer
         ISpriteService sprites,
         ThemeService theme,
         Action invalidate,
-        IReadOnlySet<int>? lockedSlots = null)
+        IReadOnlySet<int>? lockedSlots = null,
+        CarryHand? hand = null)
     {
         var wallpaper = WallpaperAt(viewModel.BoxIndex);
         var cell = GridMetrics(info).Cell;
@@ -106,7 +107,8 @@ public static class BoxGridRenderer
             // Soft white slot on the wallpaper; a faint waiting ball when empty.
             PksmPaint.Slot(canvas, rect, wallpaper, empty: !occupied);
 
-            if (occupied)
+            var settling = hand is not null && hand.IsLandingOn(index);
+            if (occupied && !settling)
             {
                 if (isCarryOrigin)
                 {
@@ -129,7 +131,7 @@ public static class BoxGridRenderer
             {
                 // The games' two hands: red moves one Pokémon, green marks many.
                 PksmPaint.Selection(canvas, rect, viewModel.SelectMode ? Pksm.CursorGreen : null);
-                if (viewModel.CarriedSummary is { } carried && viewModel.CarrySource is not null)
+                if (hand is null && viewModel.CarriedSummary is { } carried && viewModel.CarrySource is not null)
                 {
                     var lift = cell * 0.18f;
                     DrawSprite(canvas, new SKRect(rect.Left, rect.Top - lift, rect.Right, rect.Bottom - lift),
@@ -153,6 +155,27 @@ public static class BoxGridRenderer
 
             if (viewModel.SelectMode && occupied && viewModel.IsMarked(viewModel.BoxIndex, index))
                 PksmPaint.MarkBadge(canvas, rect);
+        }
+
+        // The Pokémon in hand glides from slot to slot under the move pointer.
+        if (hand is not null && (uint)viewModel.SelectedSlot < (uint)(Columns * Rows))
+        {
+            var cursor = SlotRect(info, viewModel.SelectedSlot);
+            var carrying = viewModel.CarriedSummary is not null && viewModel.CarrySource is not null;
+            var origin = viewModel.CarrySource is { } from && from.Box == viewModel.BoxIndex && (uint)from.Slot < (uint)(Columns * Rows)
+                ? SlotRect(info, from.Slot)
+                : cursor;
+            var cursorSlot = viewModel.SelectedSlot;
+            var underCursor = cursorSlot < slots.Count && slots[cursorSlot].Species is not null ? slots[cursorSlot] : null;
+            hand.Sync(carrying, origin, cursor, cursorSlot, (c, r) =>
+            {
+                if (underCursor is not null) DrawSprite(c, r, underCursor, sprites, invalidate, font, shadow);
+            });
+            if (hand.Draw(canvas, cell, (c, r) =>
+                {
+                    if (viewModel.CarriedSummary is { } held) DrawSprite(c, r, held, sprites, invalidate, font, shadow);
+                }))
+                invalidate();
         }
     }
 

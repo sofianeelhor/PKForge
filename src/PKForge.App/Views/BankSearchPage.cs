@@ -18,7 +18,7 @@ namespace PKForge.App.Views;
 /// the same vault logic the organizer sorts with. A/tap jumps the bank view to the mon's box
 /// and slot.
 /// </summary>
-public sealed class BankSearchPage : IPadHandler
+public sealed class BankSearchPage : IPadPagingHandler
 {
     private const int Columns = BoxGridRenderer.Columns;
     private const int Rows = BoxGridRenderer.Rows;

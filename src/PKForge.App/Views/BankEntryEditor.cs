@@ -279,32 +279,18 @@ public static class BankEntryEditor
             };
             _scroll.Content = surface;
 
-            var actions = new HorizontalStackLayout
-            {
-                Spacing = 8,
-                HorizontalOptions = LayoutOptions.Center,
-                Children =
-                {
-                    ActionButton("Moves", EditMovesAsync, icon: "moves"),
-                    ActionButton("Met / origin", EditMetAsync, icon: "map"),
-                    ActionButton("Potential", EditPotentialAsync, icon: "stats"),
-                    ActionButton("Awards", EditAwardsAsync, icon: "ribbons"),
-                    ActionButton("Legalize", LegalizeAsync, icon: "fix"),
-                    ActionButton("Save", SaveAsync, UiTokens.Green, "confirm"),
-                },
-            };
-            // Per-format fields ride a second row so the window keeps its width on phones.
-            var fieldActions = new HorizontalStackLayout
-            {
-                Spacing = 8,
-                HorizontalOptions = LayoutOptions.Center,
-                Children =
-                {
-                    ActionButton("Form & shiny", () => SubEditorAsync(MonFieldsEditor.FormAndShinyAsync), icon: "shiny"),
-                    ActionButton("Trainers", () => SubEditorAsync(MonFieldsEditor.TrainersAsync), icon: "trainer"),
-                    ActionButton("Tech records", () => SubEditorAsync(MonFieldsEditor.TechRecordsAsync), icon: "moves"),
-                },
-            };
+            // Rows wrap instead of running off the window's edge: every button stays visible
+            // and tappable at any width. Save lives in the hint bar (X), always in view.
+            var actions = ActionRow(
+                ActionButton("Moves", EditMovesAsync, icon: "moves"),
+                ActionButton("Met / origin", EditMetAsync, icon: "map"),
+                ActionButton("Potential", EditPotentialAsync, icon: "stats"),
+                ActionButton("Awards", EditAwardsAsync, icon: "ribbons"),
+                ActionButton("Legalize", LegalizeAsync, icon: "fix"));
+            var fieldActions = ActionRow(
+                ActionButton("Form & shiny", () => SubEditorAsync(MonFieldsEditor.FormAndShinyAsync), icon: "shiny"),
+                ActionButton("Trainers", () => SubEditorAsync(MonFieldsEditor.TrainersAsync), icon: "trainer"),
+                ActionButton("Tech records", () => SubEditorAsync(MonFieldsEditor.TechRecordsAsync), icon: "moves"));
 
             var content = new Grid
             {
@@ -318,7 +304,7 @@ public static class BankEntryEditor
             Grid.SetRow(actions, 2);
             content.Add(fieldActions);
             Grid.SetRow(fieldActions, 3);
-            var hints = Kit.WindowHints(("A", "OPEN", null), ("B", "Close", RequestClose));
+            var hints = Kit.WindowHints(("A", "Open", null), ("X", "Save", () => Run(SaveAsync)), ("B", "Close", RequestClose));
             content.Add(hints);
             Grid.SetRow(hints, 4);
 
@@ -382,6 +368,22 @@ public static class BankEntryEditor
             button.Clicked += (_, _) => RunFrom(frame, activate);
             _slots.Add((frame, frame, false, activate));
             return frame;
+        }
+
+        private static FlexLayout ActionRow(params View[] buttons)
+        {
+            var row = new FlexLayout
+            {
+                Wrap = Microsoft.Maui.Layouts.FlexWrap.Wrap,
+                JustifyContent = Microsoft.Maui.Layouts.FlexJustify.Center,
+                AlignItems = Microsoft.Maui.Layouts.FlexAlignItems.Center,
+            };
+            foreach (var button in buttons)
+            {
+                button.Margin = new Thickness(4, 3);
+                row.Children.Add(button);
+            }
+            return row;
         }
 
         private View ActionButton(string label, Func<Task> activate, Color? accent = null, string? icon = null)
@@ -497,9 +499,11 @@ public static class BankEntryEditor
                 Close(false);
                 return;
             }
-            var discard = await EditorMenu.ConfirmAsync(_host, "Discard changes?",
-                "Leave without saving your edits back to the bank?", "Discard");
-            if (discard) Close(false);
+            const string save = "Save", discard = "Discard", keep = "Keep editing";
+            var choice = await EditorMenu.ShowAsync(_host, "Save your changes?",
+                "This Pokémon has edits that are not in the bank yet.", save, discard, keep);
+            if (choice == save) Run(SaveAsync);
+            else if (choice == discard) Close(false);
         }
 
         public bool OnPadButton(PadButton button)
@@ -516,6 +520,9 @@ public static class BankEntryEditor
                     return true;
                 case PadButton.A:
                     Run(_slots[_focus].Activate);
+                    return true;
+                case PadButton.X:
+                    Run(SaveAsync);
                     return true;
                 case PadButton.B:
                     RequestClose();

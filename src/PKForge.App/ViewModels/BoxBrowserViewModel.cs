@@ -380,6 +380,12 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         return await Task.Run(() => _writer.LayoutRiskOf(session.Document.DocumentId, session.Snapshot));
     }
 
+    /// <summary>
+    /// Asks the player whether to edit a suspected ROM hack at their own risk when a write is
+    /// refused for it (set by the page that can show the question). True = go ahead.
+    /// </summary>
+    public Func<string, Task<bool>>? ConfirmHackRisk { get; set; }
+
     /// <summary>"Edit at my own risk" for a suspected ROM hack: persisted per document by the writer.</summary>
     public void AcceptHackRisk()
     {
@@ -439,8 +445,21 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             }
 
             var candidate = engineSession.Serialize();
-            var receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate,
-                changeDescription ?? outcome.Message);
+            SaveWriteReceipt receipt;
+            try
+            {
+                receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate,
+                    changeDescription ?? outcome.Message);
+            }
+            catch (UnsafeSaveWriteException refused) when (refused.RequiresConfirmation && ConfirmHackRisk is { } confirm)
+            {
+                // A suspected ROM hack: ask right here, at the edit, and keep the edit if the
+                // player takes the risk. The restore point is still made before writing.
+                if (!await confirm(refused.Message)) throw;
+                AcceptHackRisk();
+                receipt = await _writer.WriteAsync(session.Document.DocumentId, session.Snapshot, candidate,
+                    changeDescription ?? outcome.Message);
+            }
             if (receipt.Changed)
             {
                 _sessions.MarkWritten(session.Document.DocumentId, candidate);
@@ -651,25 +670,26 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         OnPropertyChanged(nameof(MarkedCount));
     }
 
-    /// <summary>Moves every marked mon into the target box's empty slots. One backup, one write.</summary>
-    public Task<bool> BulkMoveAsync(int targetBox) => RunMutationAsync(session =>
+    /// <summary>
+    /// Moves every marked mon into the empty box slots from <paramref name="start"/> on (the
+    /// following boxes too when that box fills up). Taken slots are skipped, never replaced.
+    /// One backup, one write.
+    /// </summary>
+    public Task<bool> BulkMoveAsync(SlotRef start) => RunMutationAsync(session =>
     {
-        var targets = new Queue<int>();
-        foreach (var summary in _slots.Where(x => x.Box == targetBox && x.Species is null).OrderBy(x => x.Slot))
-            targets.Enqueue(summary.Slot);
-
+        var targets = new Queue<SlotRef>(SlotPlanning.FreeSlotsFrom(_slots, start));
         var marked = _marks.Ordered;
         var moved = 0;
         foreach (var (box, slot) in marked)
         {
-            if (box == targetBox) continue; // already home
-            if (targets.Count == 0) break;
-            session.MoveSlot(box, slot, targetBox, targets.Dequeue());
+            if (!targets.TryDequeue(out var target)) break;
+            session.MoveSlot(box, slot, target.Box, target.Slot);
             moved++;
         }
-        var leftBehind = marked.Count(m => m.Box != targetBox) - moved;
+        var leftBehind = marked.Count - moved;
         return new GenerationOutcome(moved > 0,
-            moved == 0 ? "No room in that box." : $"Moved {moved} Pokémon to box {targetBox + 1}." + (leftBehind > 0 ? $" {leftBehind} left (box full)." : ""));
+            moved == 0 ? $"No free slot from box {start.Box + 1} slot {start.Slot + 1} onward."
+                : $"Moved {moved} Pokémon from box {start.Box + 1} slot {start.Slot + 1} on." + (leftBehind > 0 ? $" {leftBehind} stayed (no room)." : ""));
     }, Math.Max(0, SelectedSlot), action: SaveAction.Move).ContinueWith(t =>
     {
         RefreshAllSlots();

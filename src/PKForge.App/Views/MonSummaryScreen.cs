@@ -31,7 +31,7 @@ public sealed record SummaryResult(int Slot, bool EditRequested);
 /// editor where the host allows it; B closes. Read-only, so it is always available -
 /// Hardcore mode included.
 /// </summary>
-public sealed class MonSummaryScreen : IPadHandler
+public sealed class MonSummaryScreen : IPadPagingHandler
 {
     /// <summary>How long the host's cursor waits before following a burst of L/R presses.</summary>
     private const int HostFollowDelayMs = 300;

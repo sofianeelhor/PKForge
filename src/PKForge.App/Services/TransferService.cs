@@ -33,16 +33,15 @@ public sealed class TransferService(
     /// </summary>
     public async Task<TransferPreviewOutcome> PreviewAsync(
         ReadOnlyMemory<byte> entityBytes, string nickname, DetectedSave target, CancellationToken cancellationToken = default,
-        string? format = null)
+        string? format = null, SlotRef? startAt = null)
     {
         ArgumentNullException.ThrowIfNull(target);
 
         using var session = await OpenTargetAsync(target, cancellationToken).ConfigureAwait(false);
         var snapshot = session.Snapshot;
 
-        var landing = snapshot.Slots.FirstOrDefault(s => s.Species is null);
-        if (landing is null)
-            return new TransferPreviewOutcome(false, $"{target.GameLabel} has no empty slot in any box.");
+        if (Landing(snapshot, startAt) is not { } landing)
+            return new TransferPreviewOutcome(false, NoRoom(target, startAt));
 
         var preview = new TransferPreviewService(legality).Preview(session, landing.Box, landing.Slot, entityBytes.ToArray(), format);
         if (preview is null)
@@ -51,19 +50,21 @@ public sealed class TransferService(
             landing.Box, landing.Slot, preview);
     }
 
-    /// <summary>Places the entity into the first empty slot of the target save, across every box.</summary>
+    /// <summary>
+    /// Places the entity into the first empty box slot of the target save, across every box,
+    /// or the first one at or after <paramref name="startAt"/> when the player chose where.
+    /// </summary>
     public async Task<TransferOutcome> SendToGameAsync(
         ReadOnlyMemory<byte> entityBytes, string nickname, DetectedSave target, CancellationToken cancellationToken = default,
-        string? format = null)
+        string? format = null, SlotRef? startAt = null)
     {
         ArgumentNullException.ThrowIfNull(target);
 
         using var session = await OpenTargetAsync(target, cancellationToken).ConfigureAwait(false);
         var snapshot = session.Snapshot;
 
-        var landing = snapshot.Slots.FirstOrDefault(s => s.Species is null);
-        if (landing is null)
-            return new TransferOutcome(false, $"{target.GameLabel} has no empty slot in any box.");
+        if (Landing(snapshot, startAt) is not { } landing)
+            return new TransferOutcome(false, NoRoom(target, startAt));
 
         if (!TryImport(session, landing.Box, landing.Slot, entityBytes.ToArray(), out var refusal, format))
             return new TransferOutcome(false, refusal is null
@@ -112,6 +113,20 @@ public sealed class TransferService(
     internal static string Refusal(ReadOnlyMemory<byte> entityBytes, string nickname, SaveSnapshot snapshot, string targetLabel, string? format = null) =>
         TransferCompatibility.ExplainRefusal(entityBytes.ToArray(), nickname, snapshot.Format, snapshot.Generation, targetLabel, format)
             ?? $"{nickname} cannot enter {targetLabel}.";
+
+    /// <summary>The target save's slots, read fresh, so the player can choose where a batch starts.</summary>
+    public async Task<IReadOnlyList<SlotSummary>> ReadSlotsAsync(DetectedSave target, CancellationToken cancellationToken = default)
+    {
+        using var session = await OpenTargetAsync(target, cancellationToken).ConfigureAwait(false);
+        return session.Snapshot.Slots;
+    }
+
+    private static SlotRef? Landing(SaveSnapshot snapshot, SlotRef? startAt) =>
+        SlotPlanning.FreeSlotsFrom(snapshot.Slots, startAt).Select(s => (SlotRef?)s).FirstOrDefault();
+
+    private static string NoRoom(DetectedSave target, SlotRef? startAt) => startAt is { } from
+        ? $"{target.GameLabel} has no empty slot from box {from.Box + 1} slot {from.Slot + 1} onward."
+        : $"{target.GameLabel} has no empty slot in any box.";
 
     /// <summary>Re-reads the target save and opens it as a throwaway session; the caller disposes it.</summary>
     private async Task<ISaveEngineSession> OpenTargetAsync(DetectedSave target, CancellationToken cancellationToken)

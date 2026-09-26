@@ -26,7 +26,7 @@ public static class RomHackNotice
     public const string Marker = "ROM HACK · UNSUPPORTED";
 
     /// <summary>The marker plus how to lift read-only, for a save the user has not accepted.</summary>
-    public const string ReadOnlyStatus = Marker + " · READ-ONLY - long-press it on Home to allow editing";
+    public const string ReadOnlyStatus = Marker + " · READ-ONLY until you edit at your own risk";
 
     /// <summary>A corrupting layout is never editable; this explains why nothing is offered.</summary>
     public const string CorruptingTitle = "SAVE IS READ-ONLY";
