@@ -165,15 +165,11 @@ public static class BoxGridRenderer
             var origin = viewModel.CarrySource is { } from && from.Box == viewModel.BoxIndex && (uint)from.Slot < (uint)(Columns * Rows)
                 ? SlotRect(info, from.Slot)
                 : cursor;
-            var cursorSlot = viewModel.SelectedSlot;
-            var underCursor = cursorSlot < slots.Count && slots[cursorSlot].Species is not null ? slots[cursorSlot] : null;
-            hand.Sync(carrying, origin, cursor, cursorSlot, (c, r) =>
-            {
-                if (underCursor is not null) DrawSprite(c, r, underCursor, sprites, invalidate, font, shadow);
-            });
+            hand.Sync(carrying, origin, cursor, viewModel.SelectedSlot, viewModel.BoxIndex);
+            var held = viewModel.CarriedSummary;
             if (hand.Draw(canvas, cell, (c, r) =>
                 {
-                    if (viewModel.CarriedSummary is { } held) DrawSprite(c, r, held, sprites, invalidate, font, shadow);
+                    if (held is not null) DrawSprite(c, r, held, sprites, invalidate, font, shadow);
                 }))
                 invalidate();
         }

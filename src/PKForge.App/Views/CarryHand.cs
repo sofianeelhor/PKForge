@@ -20,16 +20,25 @@ public sealed class CarryHand
     private long _last;
     private bool _holding;
     private Action<SKCanvas, SKRect>? _landing;
+    private Action<SKCanvas, SKRect>? _lastHeld;
     private int _landingSlot = -1;
+    private int _landingBox;
 
     /// <summary>
     /// Follows the page's carry state: starts a pick-up from <paramref name="origin"/> when a
-    /// carry begins; when it ends, lands the Pokémon on slot <paramref name="cursorSlot"/>
-    /// (<paramref name="cursor"/>), drawn by <paramref name="drawDropped"/>. The landing spot
-    /// and the Pokémon are fixed at that moment: moving the cursor afterwards changes neither.
+    /// carry begins; when it ends, lands the Pokémon it was holding on slot
+    /// <paramref name="cursorSlot"/> (<paramref name="cursor"/>). The landing spot and the
+    /// Pokémon are fixed at that moment: moving the cursor, or the save write that follows the
+    /// drop refreshing the grid a moment later, changes neither. Turning to another
+    /// <paramref name="box"/> mid-landing ends it, so no slot of that box is hidden.
     /// </summary>
-    public void Sync(bool carrying, SKRect origin, SKRect cursor, int cursorSlot, Action<SKCanvas, SKRect> drawDropped)
+    public void Sync(bool carrying, SKRect origin, SKRect cursor, int cursorSlot, int box)
     {
+        if (!_holding && _landingSlot >= 0 && box != _landingBox)
+        {
+            _landing = null;
+            _landingSlot = -1;
+        }
         if (carrying && !_holding)
         {
             _holding = true;
@@ -43,8 +52,9 @@ public sealed class CarryHand
         else if (!carrying && _holding)
         {
             _holding = false;
-            _landing = drawDropped;
+            _landing = _lastHeld;
             _landingSlot = cursorSlot;
+            _landingBox = box;
             _x.Target = cursor.MidX;
             _y.Target = cursor.MidY;
             _last = _clock.ElapsedTicks;
@@ -58,17 +68,19 @@ public sealed class CarryHand
     }
 
     /// <summary>True while the hand is drawn: holding, or still settling a dropped Pokémon.</summary>
-    public bool Visible => _holding || _landing is not null;
+    public bool Visible => _holding || _landingSlot >= 0;
 
     /// <summary>True while a dropped Pokémon is still settling onto <paramref name="slot"/>: that slot skips its own sprite meanwhile.</summary>
-    public bool IsLandingOn(int slot) => !_holding && _landing is not null && slot == _landingSlot;
+    public bool IsLandingOn(int slot) => !_holding && _landingSlot >= 0 && slot == _landingSlot;
 
     /// <summary>
-    /// Advances and draws the hand over the slot grid. Returns true while it still moves, so
-    /// the caller asks for another frame.
+    /// Advances and draws the hand over the slot grid. Returns true while another frame is
+    /// needed (still moving, or the landing just ended), so the caller asks for one.
     /// </summary>
+    /// <param name="drawHeld">Draws the Pokémon in hand; it must capture that Pokémon, since it also draws the landing after the drop.</param>
     public bool Draw(SKCanvas canvas, float cell, Action<SKCanvas, SKRect> drawHeld)
     {
+        if (_holding) _lastHeld = drawHeld;
         if (!Visible) return false;
         var now = _clock.ElapsedTicks;
         var dt = Math.Clamp((float)((now - _last) / (double)Stopwatch.Frequency), 0, 0.05f);
@@ -91,7 +103,7 @@ public sealed class CarryHand
         }
 
         var held = new SKRect(slot.Left, slot.Top - raise, slot.Right, slot.Bottom - raise);
-        (_holding ? drawHeld : _landing!)(canvas, held);
+        (_holding ? drawHeld : _landing)?.Invoke(canvas, held);
 
         if (_holding && AutopilotArt.Icon("ui:pointer_arrow.png") is { } pointer)
         {
@@ -107,8 +119,11 @@ public sealed class CarryHand
         var moving = !_x.Settled || !_y.Settled || !_lift.Settled;
         if (!_holding && !moving)
         {
+            // This frame skipped the landing slot's own sprite: ask for one more frame so the
+            // slot draws it, or the Pokémon would stay invisible until something else repaints.
             _landing = null;
             _landingSlot = -1;
+            return true;
         }
         return moving;
     }
