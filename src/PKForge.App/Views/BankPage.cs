@@ -1182,6 +1182,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         if (name.Length > 24) name = name[..24];
         BankBoxDecor.Names.SetMany([(box, name)]);
         UpdatePageLabel();
+        _canvas.InvalidateSurface(); // the side panel shows the box name on empty slots
         _boxViewModel.Status = name.Length == 0 ? $"Box {box + 1:00} shows its number again." : $"Box {box + 1:00} is now \"{name}\".";
         return true;
     }
@@ -1365,6 +1366,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             var info = engine.TryDescribeEntity(export.Data, entry.Info.SourceName, export.Format) ?? entry.Info;
             _bank.Replace(entry.Id, export.Data, info);
             RefreshBoxEntries();
+            ForgetPanelSummary(); // same id, new Pokémon: the panel must read it again
             UpdatePreview();
             _canvas.InvalidateSurface();
         }
@@ -1379,6 +1381,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         if (saved)
         {
             RefreshBoxEntries();
+            ForgetPanelSummary(); // same id, edited bytes: the panel must read it again
             UpdatePreview();
             _boxViewModel.Status = $"{EntryAt(_selectedSlot)?.Info.Nickname ?? "Pokémon"} updated in the bank.";
             _canvas.InvalidateSurface();
@@ -1626,12 +1629,13 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         var origin = _boxEntries.Values.FirstOrDefault(e => e.Id == _carryId) is { } source
             ? BoxGridRenderer.SlotRect(boxSize, source.Slot)
             : cursorRect;
-        var underCursor = EntryAt(_selectedSlot);
-        _hand.Sync(CarriedEntry() is not null, origin, cursorRect, _selectedSlot, (c, r) =>
-        {
-            if (underCursor is not null) DrawEntrySprite(c, r, underCursor);
-        });
-        if (_hand.Draw(canvas, cell, DrawCarriedSprite)) _frame.Request();
+        var carried = CarriedEntry();
+        _hand.Sync(carried is not null, origin, cursorRect, _selectedSlot, _boxIndex);
+        if (_hand.Draw(canvas, cell, (c, r) =>
+            {
+                if (carried is not null) DrawEntrySprite(c, r, carried);
+            }))
+            _frame.Request();
         canvas.Restore();
     }
 
@@ -1645,11 +1649,6 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         if (_carryId is not { } id) return null;
         if (_carriedEntry?.Id != id) _carriedEntry = _bank.GetAll().FirstOrDefault(e => e.Id == id);
         return _carriedEntry;
-    }
-
-    private void DrawCarriedSprite(SKCanvas canvas, SKRect rect)
-    {
-        if (CarriedEntry() is { } carried) DrawEntrySprite(canvas, rect, carried);
     }
 
     private void DrawEntrySprite(SKCanvas canvas, SKRect rect, BankEntry entry)
@@ -1702,6 +1701,15 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
     private MonSummary? _panelSummary;
     private Guid? _panelFor;
     private CancellationTokenSource? _panelCancel;
+
+    /// <summary>Drops the panel's summary so the next preview decodes the entry again (after an in-place edit).</summary>
+    private void ForgetPanelSummary()
+    {
+        _panelCancel?.Cancel();
+        _panelFor = null;
+        _panelSummary = null;
+        _carriedEntry = null;
+    }
 
     /// <summary>Decodes the selected entry's summary for the side panel (debounced, latest wins).</summary>
     private void RequestPanelSummary()

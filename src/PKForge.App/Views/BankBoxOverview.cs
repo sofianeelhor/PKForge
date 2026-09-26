@@ -320,21 +320,20 @@ public sealed class BankBoxOverview : IPadPagingHandler
                 Retarget();
                 return;
             case "Delete this box…":
-                var before = _boxes.Length;
-                if (await RunAsync(() => _page.DeleteBoxAsync(box)))
-                    Reload(BankBoxRemap.Remove(before, box));
+                // One reload, mapped from the layout before the delete, so the rest close ranks.
+                await RunAsync(() => _page.DeleteBoxAsync(box), BankBoxRemap.Remove(_boxes.Length, box));
                 Retarget();
                 return;
         }
     }
 
-    private async Task<bool> RunAsync(Func<Task<bool>> action)
+    private async Task<bool> RunAsync(Func<Task<bool>> action, BankBoxRemap? remap = null)
     {
         _busy = true;
         try
         {
             var changed = await action();
-            if (changed) Reload();
+            if (changed) Reload(remap);
             _frame.Request();
             return changed;
         }
