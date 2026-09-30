@@ -46,6 +46,7 @@ public static class ParkDialogueGenerator
         S(54, "float", "{name} sits at the water's edge, watching its reflection with profound concentration.", env: ParkEnvironmentId.WaterfallLake),
         S(94, "shadow", "{name}'s grin appears from the shadow a heartbeat before the rest of it does.", personality: ParkPersonality.Playful),
         S(94, "joke", "{name} makes a ridiculous face behind {nearby}, then vanishes before it can be blamed.", action: "play"),
+        S(131, "ferrying", "{name} is happily floating across the water, ferrying a dozing {nearby} on its back", env: ParkEnvironmentId.WaterfallLake),
         S(133, "choice", "{name} studies every path with bright eyes, as if each one might lead to a different adventure.", personality: ParkPersonality.Curious),
         S(133, "fur", "A breeze ruffles {name}'s collar. It gives itself a dignified shake and sits beside you.", env: ParkEnvironmentId.SkySummit),
         S(134, "dive", "{name} dives into the water and swims around happily, its body wobbling like it might melt into the water.", env: ParkEnvironmentId.WaterfallLake),
