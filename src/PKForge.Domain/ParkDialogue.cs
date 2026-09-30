@@ -61,6 +61,7 @@ public static class ParkDialogueGenerator
         S(282, "courtesy", "{name} gives you a graceful bow, then quietly checks that {nearby} is comfortable too.", personality: ParkPersonality.Gentle),
         S(448, "aura", "{name} closes its eyes. For a moment, it seems to be listening to every heartbeat in the park.", action: "talk"),
         S(448, "training", "{name} practices one precise step, then another, careful not to disturb anyone nearby.", activity: "stroll"),
+        S(461, "carving", "{name} appears to be carving something into a nearby tree. You wonder what it could be writing."),
         S(700, "ribbons", "{name}'s feelers curl gently around your wrist; a warm, reassuring feeling follows.", action: "talk"),
         S(778, "costume", "{name} adjusts its crooked disguise and waits very still for your approval.", action: "talk"),
         S(778, "lonely", "{name} lingers near {nearby}, pretending it only happened to choose the same spot.", mood: "lonely"),
