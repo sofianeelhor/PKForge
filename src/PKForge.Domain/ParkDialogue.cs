@@ -58,6 +58,7 @@ public static class ParkDialogueGenerator
         S(172, "spark", "{name} sneezes a tiny spark, freezes in surprise, then acts as though it was intentional."),
         S(196, "sun", "{name} sits perfectly still in a beam of sunlight, its forked tail swaying like a pendulum.", action: "relax"),
         S(197, "moon", "{name} chooses the deepest patch of shade and watches the park with calm, gleaming eyes.", action: "relax"),
+        S(232, "devices", "{name} lightly taps your electronic device out of curiosity. You wonder whether it wants to play with it or go inside it.", personality: ParkPersonality.Curious),
         S(282, "courtesy", "{name} gives you a graceful bow, then quietly checks that {nearby} is comfortable too.", personality: ParkPersonality.Gentle),
         S(448, "aura", "{name} closes its eyes. For a moment, it seems to be listening to every heartbeat in the park.", action: "talk"),
         S(448, "training", "{name} practices one precise step, then another, careful not to disturb anyone nearby.", activity: "stroll"),
