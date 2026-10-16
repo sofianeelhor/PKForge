@@ -49,7 +49,11 @@ public sealed class LoadingOverlay
             },
         };
 
-        var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 440, padding: 18);
+        // Fixed, short content: no ScrollView. OverlayWindow's ScrollView claims the full
+        // host height (see PadMenu), stretching this window top to bottom, and on some
+        // screens (the Odin 3) the stretched content rounds a pixel past the viewport, so
+        // Android draws its scrollbar as a dark line down the window's right edge.
+        var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 440, padding: 18, scroll: false);
         _overlay = Kit.AttachOverlay(host, window, () => Cancellation.Cancel());
         _pad = new PadOverlay(() => Cancellation.Cancel(), () => Cancellation.Cancel());
     }

@@ -47,7 +47,9 @@ public static class TextPopup
                 new HorizontalStackLayout { Spacing = 8, HorizontalOptions = LayoutOptions.End, Children = { cancel, save } },
             },
         };
-        overlay = Kit.AttachOverlay(host, Kit.OverlayWindow(host, content, preferredMaxWidth: 420), () => Close(null));
+        // One line and two buttons never scroll; a ScrollView here stretched the window to
+        // the full host height and could show its scrollbar (see LoadingOverlay).
+        overlay = Kit.AttachOverlay(host, Kit.OverlayWindow(host, content, preferredMaxWidth: 420, scroll: false), () => Close(null));
         pad = new PadOverlay(() => Close(null), Save);
         return result.Task;
     }
