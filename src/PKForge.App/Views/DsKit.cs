@@ -146,26 +146,36 @@ public sealed class DsFolderButton : Grid
 
     private async void Glide(Label line, int generation)
     {
-        // A line narrower than the button fits: leave it alone (measuring it outside the
-        // layout pass can shift it out of place).
-        if (line.Width < _labelViewport.Width - 4) return;
-        var measured = line.Measure(double.PositiveInfinity, HeightRequest).Width;
-        var overflow = measured - _labelViewport.Width;
-        if (overflow <= 4) return;
-        // At rest a detail line ends in "…"; while it scrolls it shows in full.
-        line.LineBreakMode = LineBreakMode.NoWrap;
-        line.WidthRequest = measured;
-        _gliding.Add(line);
-
-        while (_selected && generation == _marqueeGeneration)
+        try
         {
-            var duration = (uint)Math.Clamp(overflow * 45, 1800, 6500);
-            await line.TranslateToAsync(-overflow, 0, duration, Easing.Linear);
-            if (!_selected || generation != _marqueeGeneration) return;
-            await Task.Delay(900);
-            if (!_selected || generation != _marqueeGeneration) return;
-            line.TranslationX = 0;
-            await Task.Delay(700);
+            // A line narrower than the button fits: leave it alone (measuring it outside the
+            // layout pass can shift it out of place).
+            if (line.Width < _labelViewport.Width - 4) return;
+            var measured = line.Measure(double.PositiveInfinity, HeightRequest).Width;
+            var overflow = measured - _labelViewport.Width;
+            if (overflow <= 4) return;
+            // At rest a detail line ends in "…"; while it scrolls it shows in full.
+            line.LineBreakMode = LineBreakMode.NoWrap;
+            line.WidthRequest = measured;
+            _gliding.Add(line);
+
+            // The loop ends with the button: deselected, taken off screen (a menu closed) or gone
+            // with its window (the app was left), so it never animates a view nothing shows.
+            while (_selected && generation == _marqueeGeneration && line.Handler is not null)
+            {
+                var duration = (uint)Math.Clamp(overflow * 45, 1800, 6500);
+                await line.TranslateToAsync(-overflow, 0, duration, Easing.Linear);
+                if (!_selected || generation != _marqueeGeneration) return;
+                await Task.Delay(900);
+                if (!_selected || generation != _marqueeGeneration) return;
+                line.TranslationX = 0;
+                await Task.Delay(700);
+            }
+        }
+        catch (Exception error) when (error is ObjectDisposedException or InvalidOperationException)
+        {
+            // The window closed between two steps (its services are disposed): nothing is left to
+            // animate. Escaping an async void would take the whole app down instead.
         }
     }
 
