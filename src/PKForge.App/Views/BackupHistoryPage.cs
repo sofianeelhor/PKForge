@@ -191,6 +191,16 @@ public sealed class BackupHistoryPage : ContentPage, IPadHandler
 
     private async Task ConfirmRestoreAsync(BackupInfo backup)
     {
+        if (BankRestorePoints.IsBank(backup))
+        {
+            var message = $"Put the Bank back as it was at {backup.CreatedUtc:yyyy-MM-dd HH:mm} UTC? The Bank as it is now is kept as a restore point first.";
+            if (_viewModel.RestoreStopsSync(backup))
+                message += " Bank Sync is turned off first, so the old Bank isn't sent to your other devices. Turn it back on to choose whether to keep both Banks or use the server's.";
+            if (await PadMenu.ConfirmAsync(_hostGrid, "Restore the Bank?", message, "Restore"))
+                await _viewModel.RestoreAsync(backup);
+            return;
+        }
+
         if (!_viewModel.CanRestore)
         {
             await PadMenu.ShowAsync(_hostGrid, "Restore", "Connect to a save first - restoring writes into the connected save.", "OK");

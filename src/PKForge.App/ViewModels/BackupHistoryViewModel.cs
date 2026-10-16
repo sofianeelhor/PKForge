@@ -14,10 +14,12 @@ public partial class BackupHistoryViewModel : ObservableObject
     private readonly BoxBrowserViewModel _boxBrowser;
     private readonly ISaveEngine _engine;
     private readonly IBankService _bank;
+    private readonly BankRestorePoints _bankPoints;
 
     public BackupHistoryViewModel(IBackupService backups, ISaveSessionService sessions, ISafeSaveWriter writer, BoxBrowserViewModel boxBrowser,
-        ISaveEngine engine, IBankService bank)
+        ISaveEngine engine, IBankService bank, BankRestorePoints bankPoints)
     {
+        _bankPoints = bankPoints;
         _engine = engine;
         _bank = bank;
         _backups = backups;
@@ -39,9 +41,10 @@ public partial class BackupHistoryViewModel : ObservableObject
         Backups.Clear();
         // With a save open, only its own restore points are listed: restoring writes into it.
         var open = _sessions.Current;
-        foreach (var info in await _backups.ListAsync())
-            if (open is null || info.BelongsTo(open.Document.DocumentId, open.Snapshot))
-                Backups.Add(info);
+        var saves = (await _backups.ListAsync()).Where(info => open is null || info.BelongsTo(open.Document.DocumentId, open.Snapshot));
+        // The Bank's own restore points are listed whatever save is open: they restore the Bank, not a save.
+        foreach (var info in saves.Concat(_bankPoints.List()).OrderByDescending(info => info.CreatedUtc))
+            Backups.Add(info);
         Status = Backups.Count == 0
             ? "No backups yet. One is created automatically before every write."
             : CanRestore
@@ -71,9 +74,18 @@ public partial class BackupHistoryViewModel : ObservableObject
         }
     }
 
+    /// <summary>Whether restoring <paramref name="backup"/> would stop Bank Sync first.</summary>
+    public bool RestoreStopsSync(BackupInfo backup) => BankRestorePoints.IsBank(backup) && _bankPoints.SyncIsOn;
+
     /// <summary>Writes the backup's bytes into the open document; the current state is itself backed up first.</summary>
     public async Task RestoreAsync(BackupInfo backup)
     {
+        if (BankRestorePoints.IsBank(backup))
+        {
+            await RestoreBankAsync(backup);
+            return;
+        }
+
         var session = _sessions.Current;
         if (session is null)
         {
@@ -105,6 +117,27 @@ public partial class BackupHistoryViewModel : ObservableObject
                 ? $"Restored. Previous state kept as restore point {receipt.BackupId[..13]}…"
                 : "This restore point matches the current state - nothing was written.";
             await LoadAsync();
+        }
+        catch (Exception error)
+        {
+            Status = $"Restore aborted: {error.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    private async Task RestoreBankAsync(BackupInfo backup)
+    {
+        if (IsBusy) return;
+        try
+        {
+            IsBusy = true;
+            Status = "Restoring the Bank…";
+            await _bankPoints.RestoreAsync(backup);
+            await LoadAsync();
+            Status = "Bank restored. The Bank as it was just before is kept as a restore point.";
         }
         catch (Exception error)
         {

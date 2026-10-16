@@ -6,7 +6,7 @@ namespace PKForge.App.Views;
 public static class TextPopup
 {
     /// <summary>Single-line input (profile names and other short values).</summary>
-    public static Task<string?> ShowLineAsync(Grid host, string title, string hint, string current = "")
+    public static Task<string?> ShowLineAsync(Grid host, string title, string hint, string current = "", bool password = false, Keyboard? keyboard = null)
     {
         var result = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var entry = new Entry
@@ -20,6 +20,8 @@ public static class TextPopup
             PlaceholderColor = UiTokens.Ink1,
             IsSpellCheckEnabled = false,
             IsTextPredictionEnabled = false,
+            IsPassword = password,
+            Keyboard = keyboard ?? Keyboard.Default,
             ReturnType = ReturnType.Done,
         };
 

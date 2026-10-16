@@ -139,6 +139,9 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             ("-", HasSecondScreen ? "Page" : "Summary", () => OnPadButton(PadButton.Select)),
             ("+", "Menu", () => _ = OpenCursorMenuAsync()));
 
+        // The strip's word follows Bank Sync ("Open" while this Bank is local).
+        var strip = DsChrome.StatusStrip("Bank", out var flags, SyncFlag(Sync?.Status));
+        _syncFlag = flags[0];
         var root = new Grid
         {
             RowDefinitions =
@@ -146,7 +149,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 new(GridLength.Auto), new(GridLength.Auto),
                 new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto),
             ],
-            Children = { DsChrome.TitleBar(), DsChrome.StatusStrip("Bank", "Open"), bodyHost, statusHost, footer },
+            Children = { DsChrome.TitleBar(), strip, bodyHost, statusHost, footer },
         };
         Grid.SetRow((View)root.Children[1], 1);
         Grid.SetRow(bodyHost, 2);
@@ -172,11 +175,19 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         UpdatePreview();
         UpdateStatus();
         StartFactRotation();
+        if (Sync is { } sync)
+        {
+            sync.StatusChanged += OnSyncStatus;
+            _syncFlag.Text = SyncFlag(sync.Status);
+        }
+        if (Synced is { } synced) synced.RemoteChangesApplied += OnRemoteChanges;
     }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
+        if (Sync is { } sync) sync.StatusChanged -= OnSyncStatus;
+        if (Synced is { } synced) synced.RemoteChangesApplied -= OnRemoteChanges;
         _factTimer?.Stop();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
         _inspectCancel?.Cancel();
@@ -188,6 +199,34 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         var facts = _facts;
         _ = Task.Run(facts.FlushHeldItemBackfill);
     }
+
+    private Label _syncFlag = null!;
+
+    private static PKForge.Sync.SyncCoordinator? Sync =>
+        IPlatformApplication.Current?.Services.GetService<PKForge.Sync.SyncCoordinator>();
+
+    private static PKForge.Sync.SyncedBankService? Synced =>
+        IPlatformApplication.Current?.Services.GetService<PKForge.Sync.SyncedBankService>();
+
+    /// <summary>The Bank's word in the status strip: "Open" while local, the sync state while connected.</summary>
+    private static string SyncFlag(PKForge.Sync.SyncStatus? status) => status?.Phase switch
+    {
+        null or PKForge.Sync.SyncPhase.NotConnected => "Open",
+        PKForge.Sync.SyncPhase.Syncing => "Syncing",
+        PKForge.Sync.SyncPhase.Offline => "Offline",
+        PKForge.Sync.SyncPhase.Idle when status.WritesDisabled => "Read-only",
+        PKForge.Sync.SyncPhase.Idle when status.Conflicts > 0 => status.Conflicts == 1 ? "1 conflict" : $"{status.Conflicts} conflicts",
+        PKForge.Sync.SyncPhase.Idle when status.PendingChanges => "Sync pending",
+        PKForge.Sync.SyncPhase.Idle => "Synced",
+        PKForge.Sync.SyncPhase.NeedsJoin => "Sync setup",
+        _ => "Sync paused",
+    };
+
+    private void OnSyncStatus(object? sender, PKForge.Sync.SyncStatus status) =>
+        MainThread.BeginInvokeOnMainThread(() => _syncFlag.Text = SyncFlag(status));
+
+    /// <summary>Another device changed the Bank: show it without leaving the page.</summary>
+    private void OnRemoteChanges(object? sender, EventArgs args) => MainThread.BeginInvokeOnMainThread(() => ChangeBox(0));
 
     private SecondScreenClaim? _secondClaim;
 
@@ -1115,10 +1154,8 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             _boxViewModel.Status = error.Message;
             return false;
         }
-        BankBoxDecor.Names.Remap(remap);
-        BankBoxDecor.Wallpapers.Remap(remap);
-        if (LivingDexAutopilot.BankStartBox is { } start)
-            LivingDexAutopilot.BankStartBox = remap.Map(start);
+        // Names, wallpapers and the living dex region follow their boxes together.
+        BankBoxDecor.Decor.Remap(remap);
         var marks = _marked.Where(m => remap.Map(m.Box) is not null).Select(m => (remap.Map(m.Box)!.Value, m.Slot)).ToList();
         _marked.Clear();
         _marked.UnionWith(marks);

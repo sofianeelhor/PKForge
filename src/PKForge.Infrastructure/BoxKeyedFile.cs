@@ -52,6 +52,28 @@ internal sealed class BoxKeyedFile
         }
     }
 
+    /// <summary>Reads the file again, after it was put back from a copy.</summary>
+    public void Reload()
+    {
+        lock (_gate) _values = Load(_path);
+    }
+
+    /// <summary>Every value, by box.</summary>
+    public IReadOnlyDictionary<int, string> All()
+    {
+        lock (_gate) return new Dictionary<int, string>(_values);
+    }
+
+    /// <summary>Replaces every value in one write (sync applying another device's decoration); blank values are dropped.</summary>
+    public void ReplaceAll(IReadOnlyDictionary<int, string> values)
+    {
+        lock (_gate)
+        {
+            _values = values.Where(v => !string.IsNullOrWhiteSpace(v.Value)).ToDictionary(v => v.Key, v => v.Value.Trim());
+            Write();
+        }
+    }
+
     private void Write()
     {
         var tmp = _path + ".tmp";

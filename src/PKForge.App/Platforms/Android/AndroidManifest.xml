@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" android:installLocation="auto">
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-  <application android:label="PKForge" android:icon="@mipmap/pkforge" android:roundIcon="@mipmap/pkforge_round" android:allowBackup="true" android:supportsRtl="true" />
+  <!-- Bank Sync: photograph another device's pairing QR code. -->
+  <uses-permission android:name="android.permission.CAMERA" />
+  <queries>
+    <intent>
+      <action android:name="android.media.action.IMAGE_CAPTURE" />
+    </intent>
+  </queries>
+  <!-- usesCleartextTraffic: a self-hosted Bank Sync server on the home network is often plain http.
+       PKForge.Sync's ServerAddress refuses http:// for anything that is not a home-network host. -->
+  <application android:label="PKForge" android:icon="@mipmap/pkforge" android:roundIcon="@mipmap/pkforge_round" android:allowBackup="true" android:supportsRtl="true" android:usesCleartextTraffic="true" />
 </manifest>

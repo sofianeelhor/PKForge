@@ -6,6 +6,7 @@ using PKForge.App.Views;
 using PKForge.Domain;
 using PKForge.Engine;
 using PKForge.Infrastructure;
+using PKForge.Sync;
 using SkiaSharp.Views.Maui.Controls.Hosting;
 
 namespace PKForge.App;
@@ -40,9 +41,28 @@ public static class MauiProgram
         builder.Services.AddSingleton<IEncounterLookup, EncounterLookupService>();
         builder.Services.AddSingleton<IBackupService>(_ =>
             new FileBackupService(Path.Combine(FileSystem.AppDataDirectory, "backups")));
+        var bankRoot = Path.Combine(FileSystem.AppDataDirectory, "bank");
+        builder.Services.AddSingleton(_ => new FileBankService(bankRoot));
+        builder.Services.AddSingleton(_ => BankBoxDecor.Decor);
+        builder.Services.AddSingleton(_ => new SyncStateStore(Path.Combine(FileSystem.AppDataDirectory, "sync")));
+        builder.Services.AddSingleton<ISyncSecrets, SecureSyncSecrets>();
+        builder.Services.AddSingleton<SyncHttp>();
+        builder.Services.AddSingleton(sp => new SyncConnection(
+            sp.GetRequiredService<SyncStateStore>(), sp.GetRequiredService<ISyncSecrets>(), sp.GetRequiredService<SyncHttp>().For));
+        builder.Services.AddSingleton(sp => new SyncedBankService(
+            sp.GetRequiredService<FileBankService>(), sp.GetRequiredService<BankDecor>(), sp.GetRequiredService<SyncStateStore>()));
+        builder.Services.AddSingleton(_ => new FileBankSnapshots(bankRoot, Path.Combine(FileSystem.AppDataDirectory, "bank-snapshots")));
+        builder.Services.AddSingleton(sp => new SyncCoordinator(
+            sp.GetRequiredService<SyncConnection>(), sp.GetRequiredService<SyncedBankService>(), sp.GetRequiredService<SyncStateStore>(),
+            sp.GetRequiredService<FileBankSnapshots>())
+        {
+            Trace = message => Services.AppLog.Info("sync", message),
+        });
+        builder.Services.AddSingleton<BankRestorePoints>();
         builder.Services.AddSingleton<IBankService>(sp =>
         {
-            var bank = new FileBankService(Path.Combine(FileSystem.AppDataDirectory, "bank"));
+            var bank = new BankServiceSwitch(
+                sp.GetRequiredService<FileBankService>(), sp.GetRequiredService<SyncedBankService>(), sp.GetRequiredService<SyncConnection>());
             // One-time index migration, off the UI thread: legacy entries get their exact format
             // (only when provable) and sprite traits recorded, then the index is marked so no
             // entry is read again on later launches. Concurrent bank edits are never undone.
@@ -103,6 +123,7 @@ public static class MauiProgram
         builder.Services.AddTransient<HomePage>();
         builder.Services.AddTransient<SecondScreenBoxPage>();
         builder.Services.AddTransient<BankPage>();
+        builder.Services.AddTransient<BankSyncPage>();
         App.Trace("builder.Build()");
         return builder.Build();
     }

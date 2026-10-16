@@ -4,3 +4,6 @@
 [submodule "external/PKHeX-Plugins"]
 	path = external/PKHeX-Plugins
 	url = https://github.com/santacrab2/PKHeX-Plugins.git
+[submodule "external/pkforge-sync-server"]
+	path = external/pkforge-sync-server
+	url = https://github.com/YoruDev-Ryland/pkforge-sync-server.git

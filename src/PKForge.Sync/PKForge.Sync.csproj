@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../PKForge.Domain/PKForge.Domain.csproj" />
+    <ProjectReference Include="../PKForge.Infrastructure/PKForge.Infrastructure.csproj" />
+    <!-- Wire format shared with the sync server (git submodule). -->
+    <ProjectReference Include="../../external/pkforge-sync-server/src/PKForge.Sync.Protocol/PKForge.Sync.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>

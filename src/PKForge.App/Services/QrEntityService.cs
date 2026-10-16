@@ -98,7 +98,11 @@ public static class QrEntityService
     }
 
     /// <summary>Reads one QR's raw bytes out of an image; null when it holds no QR.</summary>
-    private static byte[]? TryDecodeQr(byte[] imageBytes)
+    private static byte[]? TryDecodeQr(byte[] imageBytes) =>
+        TryDecodeText(imageBytes) is { } text ? Encoding.Latin1.GetBytes(text) : null;
+
+    /// <summary>Reads one QR code's text out of an image; null when it holds no QR.</summary>
+    public static string? TryDecodeText(byte[] imageBytes)
     {
         try
         {
@@ -121,7 +125,7 @@ public static class QrEntityService
             };
             var result = reader.Decode(new RGBLuminanceSource(
                 rgba, scaled.Width, scaled.Height, RGBLuminanceSource.BitmapFormat.RGBA32));
-            return result is null ? null : Encoding.Latin1.GetBytes(result.Text);
+            return result?.Text;
         }
         catch (Exception)
         {

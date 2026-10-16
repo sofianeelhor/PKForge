@@ -48,15 +48,35 @@ public static class LivingDexAutopilot
 {
     private const string BankStartKey = "livingdex_bank_start_box";
 
-    /// <summary>The Bank's living dex region, once a run created it (kept so later runs fill the same boxes).</summary>
+    /// <summary>
+    /// The Bank's living dex region, once a run created it (kept so later runs fill the same boxes).
+    /// Stored in the Bank's settings so it follows the Bank to every synced device.
+    /// </summary>
     public static int? BankStartBox
     {
-        get => Preferences.Default.Get(BankStartKey, -1) is var box and >= 0 ? box : null;
+        get
+        {
+            MoveLegacyStartBox();
+            return BankBoxDecor.Decor.Settings.LivingDexStartBox;
+        }
         set
         {
-            if (value is { } box) Preferences.Default.Set(BankStartKey, box);
-            else Preferences.Default.Remove(BankStartKey);
+            MoveLegacyStartBox();
+            BankBoxDecor.Decor.Settings.LivingDexStartBox = value;
         }
+    }
+
+    /// <summary>
+    /// Older versions kept the start box in device preferences: moved once, value kept. Runs at app start,
+    /// before anything can rearrange boxes; the new copy is written before the old one is removed.
+    /// </summary>
+    public static void MoveLegacyStartBox()
+    {
+        if (!Preferences.Default.ContainsKey(BankStartKey)) return;
+        var legacy = Preferences.Default.Get(BankStartKey, -1);
+        if (legacy >= 0 && BankBoxDecor.Decor.Settings.LivingDexStartBox is null)
+            BankBoxDecor.Decor.Settings.LivingDexStartBox = legacy;
+        Preferences.Default.Remove(BankStartKey);
     }
 
     public static async Task<LivingDexShelf> ReadShelfAsync(IProgress<string>? progress, CancellationToken cancellationToken)

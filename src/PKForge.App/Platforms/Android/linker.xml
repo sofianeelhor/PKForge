@@ -6,4 +6,7 @@
        Preserve both engine assemblies completely. -->
   <assembly fullname="PKHeX.Core" preserve="all" />
   <assembly fullname="PKHeX.Core.AutoMod" preserve="all" />
+  <!-- Bank Sync messages and state are (de)serialized by reflection: keep their types whole. -->
+  <assembly fullname="PKForge.Sync" preserve="all" />
+  <assembly fullname="PKForge.Sync.Protocol" preserve="all" />
 </linker>

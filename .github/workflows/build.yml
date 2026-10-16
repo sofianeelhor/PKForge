@@ -26,6 +26,7 @@ jobs:
         run: |
           dotnet test tests/PKForge.Domain.Tests/PKForge.Domain.Tests.csproj --no-restore --configuration Release
           dotnet test tests/PKForge.Engine.Tests/PKForge.Engine.Tests.csproj --no-restore --configuration Release
+          dotnet test tests/PKForge.Sync.Tests/PKForge.Sync.Tests.csproj --no-restore --configuration Release
       - name: Decode permanent release signing key
         if: github.ref_type == 'tag'
         env:

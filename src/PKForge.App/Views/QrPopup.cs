@@ -10,10 +10,11 @@ namespace PKForge.App.Views;
 /// <summary>Renders text or binary payloads as QR codes in a themed window (Showdown sets, .pk transfers).</summary>
 public static class QrPopup
 {
-    public static Task ShowAsync(Grid host, string title, string payload)
+    /// <summary>Caption is an optional line under the code, such as the server and pairing code to type instead.</summary>
+    public static Task ShowAsync(Grid host, string title, string payload, string? caption = null)
     {
         var matrix = new QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, 512, 512);
-        return ShowAsync(host, title, matrix);
+        return ShowAsync(host, title, matrix, caption);
     }
 
     /// <summary>
@@ -35,7 +36,7 @@ public static class QrPopup
         return ShowAsync(host, title, matrix);
     }
 
-    private static Task ShowAsync(Grid host, string title, BitMatrix matrix)
+    private static Task ShowAsync(Grid host, string title, BitMatrix matrix, string? caption = null)
     {
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -77,9 +78,21 @@ public static class QrPopup
                     HeightRequest = 240,
                     HorizontalOptions = LayoutOptions.Center,
                 }, padding: 8),
-                close,
             },
         };
+        if (!string.IsNullOrWhiteSpace(caption))
+        {
+            content.Children.Add(new Label
+            {
+                Text = caption,
+                TextColor = UiTokens.Ink0,
+                FontFamily = DsChrome.PixelFont,
+                FontSize = UiTokens.TextBody,
+                HorizontalTextAlignment = TextAlignment.Center,
+                LineBreakMode = LineBreakMode.WordWrap,
+            });
+        }
+        content.Children.Add(close);
 
         var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 300, padding: 16);
         overlay = Kit.AttachOverlay(host, window, Close);

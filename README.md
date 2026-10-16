@@ -43,6 +43,10 @@ Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
 - **A Bank like Pokémon Home.** Store your whole collection in a cross-game Bank with
   as many themed boxes as you need. Organize with the gamepad, keep living dexes, and pull
   anything back out into any save whenever you need it.
+- **Bank Sync (optional).** Keep one Bank on all your devices through a
+  [PKForge Sync server](https://github.com/YoruDev-Ryland/pkforge-sync-server) you run with Docker.
+  Every device keeps working offline, and changes made on two devices are shown to you, never
+  silently lost.
 - **Track your collection.** The Living Dex tracker follows all 1025 Pokémon across
   every generation, including shiny variants, so you always know what you still need.
 - **Living Dex Autopilot.** Builds a living dex from the Pokémon you already own across
@@ -185,6 +189,7 @@ Join for updates, support, bug reports, feature requests, or just to chat about 
 git submodule update --init --recursive
 dotnet test tests/PKForge.Domain.Tests/PKForge.Domain.Tests.csproj
 dotnet test tests/PKForge.Engine.Tests/PKForge.Engine.Tests.csproj
+dotnet test tests/PKForge.Sync.Tests/PKForge.Sync.Tests.csproj
 dotnet build src/PKForge.App/PKForge.App.csproj -f net10.0-android
 ```
 
@@ -197,6 +202,7 @@ src/PKForge.Domain          contracts and DTOs, no engine or Android dependencie
 src/PKForge.Engine          adapters over pinned PKHeX.Core
 src/PKForge.AutoMod         compiles the Auto Legality Mod against our Core
 src/PKForge.Infrastructure  bank, backups, atomic save writer
+src/PKForge.Sync            Bank sync with a PKForge Sync server (offline-first, conflict-aware)
 src/PKForge.App             MAUI app, SkiaSharp UI, gamepad and second screen
 src/PKForge.Chrome          the design system: tokens and painters, pure Skia
 tools/ChromePreview         renders the design system off-device

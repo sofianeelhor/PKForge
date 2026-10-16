@@ -230,6 +230,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             _ = OfferCrashReportAsync();
         }
         _ = IPlatformApplication.Current?.Services.GetService<SpritePackDownloader>()?.FetchAddOnsQuietlyAsync();
+        IPlatformApplication.Current?.Services.GetService<PKForge.Sync.SyncCoordinator>()?.RequestSync();
         // The lower screen shows the shelf's highlighted game while Home is in front.
         _secondClaim ??= IPlatformApplication.Current?.Services.GetService<SecondScreenState>()?.Routes.CreateClaim(SecondScreenOwner.Home);
         _secondClaim?.Activate();
@@ -605,6 +606,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             new PadOption(scheme, IconPath: "palette", Detail: "The app's colors: the default blues or a theme for each type."),
             new PadOption(background, IconPath: "box", Detail: "How each PC box shows the wallpaper the game gives it."),
             new PadOption("Restore points", IconPath: "history", Detail: "The backups made before each write, to put a save back as it was."),
+            new PadOption("Bank Sync", IconPath: "refresh", Detail: "Keep the same Bank on every device, through a PKForge Sync server."),
             new PadOption("About PKForge", IconPath: "info"),
             new PadOption("Check for update", IconPath: "update"),
             new PadOption("Music", IconPath: "music", Detail: "Play your own audio files in the background."),
@@ -621,6 +623,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             case "Manage linked storage": await ShowManageLinkedStorageAsync(); break;
             case "Open a save file": await LinkFileAsync(); break;
             case "Restore points": await PushAsync<BackupHistoryPage>(); break;
+            case "Bank Sync": await PushAsync<BankSyncPage>(); break;
             case "About PKForge": await AboutPopup.ShowAsync(_hostGrid); break;
             case "Check for update": await CheckForUpdateAsync(automatic: false); break;
             case "Music": await ShowMusicAsync(); break;

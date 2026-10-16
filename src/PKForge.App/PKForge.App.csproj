@@ -90,5 +90,7 @@
     <ProjectReference Include="../PKForge.Chrome/PKForge.Chrome.csproj" />
     <ProjectReference Include="../PKForge.Engine/PKForge.Engine.csproj" />
     <ProjectReference Include="../PKForge.Infrastructure/PKForge.Infrastructure.csproj" />
+    <ProjectReference Include="../PKForge.Sync/PKForge.Sync.csproj" />
   </ItemGroup>
+
 </Project>

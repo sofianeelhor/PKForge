@@ -19,7 +19,7 @@ public sealed class FileBankService : IBankService
     private int _migrationVersion;
     // Set when an index exists on disk but neither it nor its backup could be read: the bank
     // then stays read-only rather than overwrite the real index with an empty fallback.
-    private readonly bool _indexUnreadable;
+    private bool _indexUnreadable;
 
     public FileBankService(string rootDirectory)
     {
@@ -32,6 +32,15 @@ public sealed class FileBankService : IBankService
     {
         lock (_gate) return _entries.ToList();
     }
+
+    /// <summary>Reads the index from disk again, after its files were put back from a copy.</summary>
+    public void Reload()
+    {
+        lock (_gate) (_entries, _boxCount, _migrationVersion, _indexUnreadable) = LoadIndex();
+    }
+
+    /// <summary>The index could not be read, so the bank refuses every write and lists nothing.</summary>
+    public bool IsReadOnly => _indexUnreadable;
 
     public int BoxCount
     {
@@ -351,6 +360,77 @@ public sealed class FileBankService : IBankService
                 SaveIndex();
                 return 0;
             });
+        }
+    }
+
+    /// <summary>
+    /// Applies changes that arrived from a sync server in one index write. Entries keep the server's ids,
+    /// boxes and slots. The whole batch is checked first (bytes for every new entry, slots in range, one
+    /// entry per slot afterwards), so a refused batch changes nothing. Bytes are written before the index,
+    /// as <see cref="Replace"/> does; removed entries' bytes are deleted after it. The box count follows
+    /// <paramref name="boxCount"/> but always fits every entry.
+    /// </summary>
+    public void ApplyRemote(IReadOnlyList<RemoteEntry> upserts, IReadOnlyList<Guid> removals, int? boxCount = null)
+    {
+        lock (_gate)
+        {
+            if (upserts.Count == 0 && removals.Count == 0 && (boxCount is null || boxCount == _boxCount)) return;
+            EnsureWritable();
+
+            var removing = removals.ToHashSet();
+            var known = _entries.Select(e => e.Id).ToHashSet();
+            var incoming = new Dictionary<Guid, RemoteEntry>(upserts.Count);
+            foreach (var upsert in upserts)
+            {
+                var entry = upsert.Entry;
+                if (removing.Contains(entry.Id) || !incoming.TryAdd(entry.Id, upsert))
+                    throw new InvalidOperationException("A remote batch names an entry twice.");
+                if (entry.Box < 0 || entry.Slot < 0 || entry.Slot >= SlotsPerBox)
+                    throw new ArgumentOutOfRangeException(nameof(upserts), "Box or slot out of range.");
+                if (upsert.Data is null && !known.Contains(entry.Id))
+                    throw new InvalidOperationException("A new remote entry arrived without its bytes.");
+            }
+
+            var result = _entries
+                .Where(e => !removing.Contains(e.Id) && !incoming.ContainsKey(e.Id))
+                .Concat(incoming.Values.Select(u => u.Entry))
+                .ToList();
+            var slots = new HashSet<(int, int)>();
+            if (result.Any(e => !slots.Add((e.Box, e.Slot))))
+                throw new InvalidOperationException("Two entries would share one slot.");
+
+            var created = new List<Guid>();
+            try
+            {
+                foreach (var upsert in incoming.Values.Where(u => u.Data is not null))
+                {
+                    if (!known.Contains(upsert.Entry.Id)) created.Add(upsert.Entry.Id);
+                    File.WriteAllBytes(DataPath(upsert.Entry.Id), upsert.Data!);
+                }
+                Commit(() =>
+                {
+                    _entries = result;
+                    var needed = result.Count == 0 ? 1 : result.Max(e => e.Box) + 1;
+                    _boxCount = Math.Max(Math.Max(1, boxCount ?? _boxCount), needed);
+                    SaveIndex();
+                    return 0;
+                });
+            }
+            catch
+            {
+                foreach (var id in created)
+                {
+                    try { File.Delete(DataPath(id)); }
+                    catch { /* an orphan .bin is harmless: the index never lists it */ }
+                }
+                throw;
+            }
+
+            foreach (var id in removing.Where(known.Contains))
+            {
+                try { File.Delete(DataPath(id)); }
+                catch { /* a leftover .bin is harmless: the index no longer lists it */ }
+            }
         }
     }
 

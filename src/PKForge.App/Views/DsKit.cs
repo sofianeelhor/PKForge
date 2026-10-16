@@ -416,15 +416,22 @@ public static class DsChrome
     }
 
     /// <summary>Dark status strip: a title on the left, status words + a battery on the right.</summary>
-    public static View StatusStrip(string left, params string[] flags)
+    public static View StatusStrip(string left, params string[] flags) => StatusStrip(left, out _, flags);
+
+    /// <summary>The same strip, handing back its flag labels so a page can keep them current.</summary>
+    public static View StatusStrip(string left, out IReadOnlyList<Label> flagLabels, params string[] flags)
     {
+        var labels = new List<Label>();
         var row = new HorizontalStackLayout { Spacing = 15, VerticalOptions = LayoutOptions.Center };
         row.Children.Add(new Label { Text = left, FontFamily = PixelFont, FontSize = 14, TextColor = UiTokens.Ink0, VerticalTextAlignment = TextAlignment.Center });
         foreach (var f in flags)
         {
             row.Children.Add(new BoxView { WidthRequest = 6, HeightRequest = 6, CornerRadius = 1, Color = UiTokens.InkSoft, VerticalOptions = LayoutOptions.Center });
-            row.Children.Add(new Label { Text = f, FontFamily = PixelFont, FontSize = UiTokens.TextBody, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center });
+            var label = new Label { Text = f, FontFamily = PixelFont, FontSize = UiTokens.TextBody, TextColor = UiTokens.InkSoft, VerticalTextAlignment = TextAlignment.Center };
+            labels.Add(label);
+            row.Children.Add(label);
         }
+        flagLabels = labels;
 
         var batt = new Border
         {
