@@ -479,8 +479,8 @@ public sealed class HomePage : ContentPage, IPadHandler
 
     /// <summary>
     /// First open of a save whose editions share one format (FireRed/LeafGreen, Ruby/Sapphire,
-    /// Diamond/Pearl): the bytes cannot say which cartridge it is, so the player picks once and
-    /// the choice sticks (it stays editable from the save's menu). False when they backed out.
+    /// Diamond/Pearl, Red/Blue/Green): the bytes cannot say which cartridge it is, so the player
+    /// picks once and the choice sticks (it stays editable from the save's menu). False when they backed out.
     /// </summary>
     private async Task<bool> ChooseEditionOnceAsync(DetectedSave save)
     {
@@ -495,7 +495,7 @@ public sealed class HomePage : ContentPage, IPadHandler
         var options = editions.Select(c => new PadOption(c.Label, IconPath: "game"))
             .Append(new PadOption(later, IconPath: "close")).ToArray();
         var choice = await PadMenu.ShowAsync(_hostGrid, "Which version is this?",
-            "Both versions write the same save file, so PKForge cannot tell them apart. " +
+            "These versions write the same save file, so PKForge cannot tell them apart. " +
             "Pick yours once; you can change it later from the save's menu (long-press).", options);
         if (choice is null) return false;
         if (choice == later)

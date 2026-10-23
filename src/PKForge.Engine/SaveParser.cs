@@ -51,13 +51,22 @@ internal static class SaveParser
     // Ruby and Sapphire have identical save layouts and no reliable version flag.
     // Only resolve an ambiguous RS save, and require a standalone name token.
     /// <summary>
-    /// FR/LG, R/S and D/P share one save layout, so the file itself never names the edition.
-    /// The game the player picked for this save wins; without a pick, the edition the
-    /// player's own Pokémon were caught in decides (see <see cref="EditionFromOwnPokemon"/>).
-    /// File names are never read.
+    /// FR/LG, R/S, D/P and Red/Blue/Green share one save layout, so the file itself never
+    /// names the edition. The game the player picked for this save wins; without a pick,
+    /// the edition the player's own Pokémon were caught in decides for the Gen 3/4 pairs
+    /// (see <see cref="EditionFromOwnPokemon"/>). Gen 1 has nothing to read, so it stays
+    /// the shared group until the player picks. File names are never read.
     /// </summary>
     internal static void ApplyVersionHint(SaveFile save, string? chosenGame)
     {
+        // Gen 1 has no version byte and no per-Pokémon origin. The cartridge is applied
+        // in memory for this open; the file itself is not rewritten.
+        if (save is SAV1)
+        {
+            if (Gen1Edition(chosenGame) is { } gen1)
+                save.Version = gen1;
+            return;
+        }
         if (save is not (SAV3FRLG or SAV3RS)) return;
         var game = chosenGame?.Replace("Pokémon ", "", StringComparison.Ordinal).Trim();
         GameVersion? chosen = game switch
@@ -74,6 +83,24 @@ internal static class SaveParser
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or IndexOutOfRangeException) { }
         if ((chosen ?? owned) is { } edition)
             save.Version = edition;
+    }
+
+    /// <summary>
+    /// The Gen 1 cartridge the player picked. International Blue and Japanese Green share
+    /// PKHeX's GN id, so a transfer records the same origin for both; the shelf still
+    /// shows the cartridge they chose. File names are not accepted.
+    /// </summary>
+    private static GameVersion? Gen1Edition(string? chosenGame)
+    {
+        var game = chosenGame?.Replace("Pokémon ", "", StringComparison.Ordinal).Trim();
+        return game switch
+        {
+            "Red" => GameVersion.RD,
+            "Blue (INT)" => GameVersion.GN,
+            "Green (JP)" => GameVersion.GN,
+            "Blue (JP)" => GameVersion.BU,
+            _ => null,
+        };
     }
 
     /// <summary>

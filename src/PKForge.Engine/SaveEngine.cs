@@ -232,6 +232,12 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
             return new SaveDescription(editionName ?? pair, save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
         }
 
+        // Red, international Blue, Japanese Green and Japanese Blue are one save.
+        // Yellow is a different file and is named from the version list below.
+        // The bytes cannot pick a cartridge; the player does, once, from this label.
+        if (save is SAV1 { Version: GameVersion.RB })
+            return new SaveDescription("Red / Blue", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
+
         var strings = GameInfo.GetStrings("en");
         var versionIndex = (int)save.Version;
         var gameName = versionIndex > 0 && versionIndex < strings.gamelist.Length && strings.gamelist[versionIndex].Length > 0

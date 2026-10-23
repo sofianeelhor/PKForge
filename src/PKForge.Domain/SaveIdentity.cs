@@ -41,6 +41,8 @@ public enum SaveLayoutFamily
     GsChroniclesCfru = 6,
     /// <summary>Diamond and Pearl: one save format, the edition is not in the bytes.</summary>
     DiamondPearl = 7,
+    /// <summary>Red, Blue, Green and Japanese Blue: one save format. Yellow is a different save.</summary>
+    RedBlue = 8,
 }
 
 /// <summary>
@@ -156,7 +158,11 @@ public static class SaveIdentityRules
             "GS Chronicles" => SaveFormat.GsChronicles,
             _ => SaveFormat.Standard,
         };
-        return new SaveIdentityGuess(label, FamilyOf(engineGame), format, suggested, label);
+        var family = FamilyOf(engineGame);
+        // Red/Blue/Green share one layout and one lumped box-art file. Leave the sticker
+        // blank until the player picks a cartridge, so every unchosen save is not Green.
+        var art = family == SaveLayoutFamily.RedBlue ? null : label;
+        return new SaveIdentityGuess(label, family, format, suggested, art);
     }
 
     public static SaveLayoutFamily FamilyOf(string engineGame) => engineGame switch
@@ -165,6 +171,7 @@ public static class SaveIdentityRules
         "Ruby" or "Sapphire" or "Ruby / Sapphire" => SaveLayoutFamily.RubySapphire,
         "FireRed" or "LeafGreen" or "FireRed / LeafGreen" => SaveLayoutFamily.FireRedLeafGreen,
         "Diamond" or "Pearl" or "Diamond / Pearl" => SaveLayoutFamily.DiamondPearl,
+        "Red / Blue" => SaveLayoutFamily.RedBlue,
         "Unbound" => SaveLayoutFamily.UnboundCfru,
         "Radical Red" => SaveLayoutFamily.Cfru,
         "GS Chronicles" => SaveLayoutFamily.GsChroniclesCfru,
@@ -200,6 +207,17 @@ public static class SaveIdentityRules
             new("pearl", "Pokémon Pearl", SaveFormat.Standard, "Pokémon Pearl", false),
             new("hack-dp", "Diamond/Pearl-based ROM hack", SaveFormat.Standard, null, true),
         ],
+        // International Blue and Japanese Green are one version id (GN). The shelf can
+        // still tell the cartridges apart; a transfer records the shared origin either way.
+        // Art labels are the bundled asset names, not the menu text.
+        SaveLayoutFamily.RedBlue =>
+        [
+            new("red", "Pokémon Red", SaveFormat.Standard, "Pokémon Red", false),
+            new("blue-int", "Pokémon Blue (INT)", SaveFormat.Standard, "Pokémon Blue", false),
+            new("green-jp", "Pokémon Green (JP)", SaveFormat.Standard, "Pokémon Blue [INT]/Green [JP]", false),
+            new("blue-jp", "Pokémon Blue (JP)", SaveFormat.Standard, "Pokémon Blue [JP]", false),
+            new("hack-rb", "Red/Blue-based ROM hack", SaveFormat.Standard, null, true),
+        ],
         SaveLayoutFamily.UnboundCfru =>
         [
             new("unbound", "Pokémon Unbound", SaveFormat.Unbound, "Pokémon Unbound", true),
@@ -224,13 +242,14 @@ public static class SaveIdentityRules
     };
 
     /// <summary>
-    /// True for a save of a shared-format pair (Ruby/Sapphire, FireRed/LeafGreen, Diamond/Pearl)
-    /// that its own Pokémon could not place (the guess is still the pair) and the player has
-    /// not said which edition it is yet.
+    /// True for a save of a shared format (Ruby/Sapphire, FireRed/LeafGreen, Diamond/Pearl,
+    /// Red/Blue/Green) that the bytes could not place and the player has not said which
+    /// edition it is yet.
     /// </summary>
     public static bool NeedsEditionChoice(SaveIdentityGuess guess, string? gameChoiceId) =>
         gameChoiceId is null && guess.Label.Contains(" / ", StringComparison.Ordinal)
-        && guess.Family is SaveLayoutFamily.RubySapphire or SaveLayoutFamily.FireRedLeafGreen or SaveLayoutFamily.DiamondPearl;
+        && guess.Family is SaveLayoutFamily.RubySapphire or SaveLayoutFamily.FireRedLeafGreen
+            or SaveLayoutFamily.DiamondPearl or SaveLayoutFamily.RedBlue;
 
     /// <summary>Every choice across families, for resolving a persisted id.</summary>
     public static SaveGameChoice? FindChoice(string? id, SaveLayoutFamily family, string detectedLabel) =>
@@ -243,7 +262,8 @@ public static class SaveIdentityRules
         "radicalred" or "hack-cfru" => SaveFormat.RadicalRed,
         "gschronicles" => SaveFormat.GsChronicles,
         "emerald" or "hack-emerald" or "ruby" or "sapphire" or "hack-rs" or "firered" or "leafgreen" or "hack-frlg"
-            or "diamond" or "pearl" or "hack-dp" => SaveFormat.Standard,
+            or "diamond" or "pearl" or "hack-dp"
+            or "red" or "blue-int" or "green-jp" or "blue-jp" or "hack-rb" => SaveFormat.Standard,
         _ => SaveFormat.Auto,
     };
 

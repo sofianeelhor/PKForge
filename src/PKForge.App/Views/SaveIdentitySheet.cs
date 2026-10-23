@@ -123,6 +123,8 @@ public static class SaveIdentitySheet
         {
             SaveLayoutFamily.Cfru or SaveLayoutFamily.UnboundCfru or SaveLayoutFamily.GsChroniclesCfru =>
                 "This save uses a CFRU layout. Only games that write it are listed, so PKForge never opens it with the wrong engine.",
+            SaveLayoutFamily.RedBlue =>
+                "Red, Blue, Green and Japanese Blue write the same save. Pick the cartridge: the shelf uses its art, and a transfer uses that origin game.",
             SaveLayoutFamily.Other => "Pick the retail game, or mark it as a ROM hack built on it.",
             _ => "Only games that share this save's layout are listed. A ROM hack built on it keeps the retail engine.",
         };

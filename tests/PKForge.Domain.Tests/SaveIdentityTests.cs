@@ -282,6 +282,7 @@ public sealed class EmulatorSaveHintTests
     [InlineData("FireRed / LeafGreen", SaveLayoutFamily.FireRedLeafGreen)]
     [InlineData("Ruby / Sapphire", SaveLayoutFamily.RubySapphire)]
     [InlineData("Diamond / Pearl", SaveLayoutFamily.DiamondPearl)]
+    [InlineData("Red / Blue", SaveLayoutFamily.RedBlue)]
     public void AnUnplacedPairAsksOnceUntilChosen(string engineGame, SaveLayoutFamily family)
     {
         var guess = SaveIdentityRules.Guess(engineGame, 3, "main.sav", null, "main.sav");
@@ -292,11 +293,32 @@ public sealed class EmulatorSaveHintTests
         Assert.Equal(SaveFormat.Standard, SaveIdentityRules.FormatOfChoice(edition.Id));
     }
 
+    [Fact]
+    public void RedBlueOffersEachCartridgeAndKeepsTheArtBlankUntilChosen()
+    {
+        var guess = SaveIdentityRules.Guess("Red / Blue", 1, "Pokemon Red.sav", null, "Pokemon Red.sav");
+        Assert.Equal("Pokémon Red / Blue", guess.Label);
+        Assert.Null(guess.ArtLabel);
+        Assert.Equal("Red", guess.SuggestedName);
+
+        var choices = SaveIdentityRules.ChoicesFor(guess.Family, guess.Label).Where(c => !c.IsHack).ToList();
+        Assert.Equal(["Pokémon Red", "Pokémon Blue (INT)", "Pokémon Green (JP)", "Pokémon Blue (JP)"], choices.Select(c => c.Label));
+        Assert.Equal(["Pokémon Red", "Pokémon Blue", "Pokémon Blue [INT]/Green [JP]", "Pokémon Blue [JP]"], choices.Select(c => c.ArtLabel));
+
+        var blue = choices.Single(c => c.Id == "blue-int");
+        var resolved = SaveIdentityResolver.Resolve(guess, new SaveIdentity("doc", GameChoiceId: blue.Id));
+        Assert.Equal("Pokémon Blue (INT)", resolved.DisplayName);
+        Assert.Equal("Pokémon Blue (INT)", resolved.GameLabel);
+        Assert.Equal("Pokémon Blue", resolved.ArtLabel);
+        Assert.False(SaveIdentityRules.NeedsEditionChoice(guess, blue.Id));
+    }
+
     [Theory]
     [InlineData("LeafGreen")]
     [InlineData("Sapphire")]
     [InlineData("Pearl")]
     [InlineData("Emerald")]
+    [InlineData("Yellow")]
     public void AnIdentifiedEditionNeverAsks(string engineGame)
     {
         var guess = SaveIdentityRules.Guess(engineGame, 3, "main.sav", null, "main.sav");

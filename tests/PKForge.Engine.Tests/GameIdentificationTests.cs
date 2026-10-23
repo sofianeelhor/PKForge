@@ -6,6 +6,82 @@ namespace PKForge.Engine.Tests;
 public sealed class GameIdentificationTests
 {
     [Theory]
+    [InlineData("Pokémon Red", GameVersion.RD)]
+    [InlineData("Pokémon Blue (INT)", GameVersion.GN)]
+    [InlineData("Pokémon Green (JP)", GameVersion.GN)]
+    [InlineData("Pokémon Blue (JP)", GameVersion.BU)]
+    public void TheChosenGameResolvesTheRedBlueEdition(string chosenGame, GameVersion expected)
+    {
+        var save = new SAV1();
+
+        SaveParser.ApplyVersionHint(save, chosenGame);
+
+        Assert.Equal(expected, save.Version);
+    }
+
+    [Theory]
+    [InlineData("Pokemon - Red Version (USA, Europe).sav")]
+    [InlineData("Pokémon Red / Blue")]
+    [InlineData("Pokémon Blue")]
+    public void FileNamesAndTheGroupLabelNeverPickTheRedBlueEdition(string name)
+    {
+        var save = new SAV1();
+
+        SaveParser.ApplyVersionHint(save, name);
+
+        Assert.Equal(GameVersion.RB, save.Version);
+    }
+
+    [Fact]
+    public void ARedBlueSaveIsDescribedAsTheSharedGroup()
+    {
+        var description = new SaveEngine().TryDescribe(RecognizableRedBlue());
+
+        Assert.NotNull(description);
+        Assert.Equal("Red / Blue", description!.GameName);
+        Assert.Equal(1, description.Generation);
+    }
+
+    [Fact]
+    public void OpeningTheChosenCartridgeStampsThatOriginOnATransfer()
+    {
+        var previous = EntityConverter.VirtualConsoleSourceGen1;
+        try
+        {
+            using var session = new SaveEngineSession(RecognizableRedBlue(), "Pokémon Blue (JP)");
+            Assert.Equal(GameVersion.BU, Assert.IsType<SAV1>(session.SaveFile).Version);
+
+            session.MakeActive();
+
+            Assert.Equal(GameVersion.BU, EntityConverter.VirtualConsoleSourceGen1);
+            var transferred = new PK1(jp: true) { Species = (ushort)Species.Pikachu, CurrentLevel = 5 }.ConvertToPK7();
+            Assert.Equal(GameVersion.BU, transferred.Version);
+        }
+        finally
+        {
+            EntityConverter.VirtualConsoleSourceGen1 = previous;
+        }
+    }
+
+    [Fact]
+    public void OpeningYellowStampsYellowAsTheTransferOrigin()
+    {
+        var previous = EntityConverter.VirtualConsoleSourceGen1;
+        try
+        {
+            using var session = new SaveEngineSession(new SAV1(LanguageID.English, GameVersion.YW), "Pokémon Yellow");
+
+            session.MakeActive();
+
+            Assert.Equal(GameVersion.YW, EntityConverter.VirtualConsoleSourceGen1);
+        }
+        finally
+        {
+            EntityConverter.VirtualConsoleSourceGen1 = previous;
+        }
+    }
+
+    [Theory]
     [InlineData("Pokémon LeafGreen", GameVersion.LG)]
     [InlineData("Pokémon FireRed", GameVersion.FR)]
     public void TheChosenGameResolvesTheFireRedLeafGreenEdition(string chosenGame, GameVersion expected)
@@ -56,6 +132,20 @@ public sealed class GameIdentificationTests
     public void SingleVersionsAreNotPairs()
     {
         Assert.Null(SaveEngine.EditionPair(GameVersion.Pt, GameInfo.GetStrings("en")));
+    }
+
+    /// <summary>
+    /// A blank <see cref="SAV1"/> does not write the party and box list terminators the
+    /// recognizer requires. An empty international list at each offset is enough.
+    /// </summary>
+    private static byte[] RecognizableRedBlue()
+    {
+        var data = new byte[0x8000];
+        data[0x2F2C] = 0;
+        data[0x2F2D] = 0xFF;
+        data[0x30C0] = 0;
+        data[0x30C1] = 0xFF;
+        return data;
     }
 
     private static PK3 OwnMon(SaveFile save, GameVersion caughtIn, string ot)

@@ -40,6 +40,11 @@ public sealed class SaveEngineSession : ISaveEngineSession
         ThrowIfDisposed();
         ParseSettings.InitFromSaveFileData(_save);
         ParseSettings.ClearActiveTrainer();
+        // A Gen 1 Pokémon does not store its game. PKHeX writes the origin when the mon
+        // leaves the cartridge, from this process-wide value, and only the save the player
+        // opened may set it. RB (not chosen yet) falls back to Red inside the setter.
+        if (_save is SAV1)
+            EntityConverter.VirtualConsoleSourceGen1 = _save.Version;
     }
 
     /// <summary>
