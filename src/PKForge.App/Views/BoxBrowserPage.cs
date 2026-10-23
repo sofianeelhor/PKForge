@@ -233,23 +233,25 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 PksmPaint.CenterText(canvas, "LOCK", rect.Right - 22, rect.Bottom - 8, label,
                     SKColors.White, Pksm.Illegal, SKTextAlign.Center);
 
-            var slots = Enumerable.Range(0, BoxGridRenderer.Columns * BoxGridRenderer.Rows)
-                .Select(slot => session.ReadEntity(box, slot)).ToArray();
+            // The 6×5 grid is the paint size. Gen 1/2 international boxes hold 20 slots
+            // and Let's Go holds 25; reading a slot past that throws and kills the page.
+            var capacity = BoxCapacity(session, box);
             var dotW = (rect.Width - 12) / BoxGridRenderer.Columns;
             var dotH = (rect.Height - 24) / BoxGridRenderer.Rows;
             using var occupied = new SKPaint { Color = SKColors.White.WithAlpha(220), IsAntialias = true };
             using var shiny = new SKPaint { Color = Pksm.ShinyGold, IsAntialias = true };
-            for (var slot = 0; slot < slots.Length; slot++)
+            for (var slot = 0; slot < capacity; slot++)
             {
-                if (slots[slot].IsEmpty) continue;
+                var mon = session.ReadEntity(box, slot);
+                if (mon.IsEmpty) continue;
                 var x = rect.Left + 6 + (slot % BoxGridRenderer.Columns + 0.5f) * dotW;
                 var y = rect.Top + 21 + (slot / BoxGridRenderer.Columns + 0.5f) * dotH;
                 var radius = Math.Min(dotW, dotH) * 0.42f;
-                var sprite = _sprites.GetSprite(slots[slot].Look);
+                var sprite = _sprites.GetSprite(mon.Look);
                 if (sprite is null)
                 {
-                    _sprites.Warm(slots[slot].Look, _boxNeighbors.InvalidateSurface);
-                    canvas.DrawCircle(x, y, radius * 0.65f, slots[slot].IsShiny ? shiny : occupied);
+                    _sprites.Warm(mon.Look, _boxNeighbors.InvalidateSurface);
+                    canvas.DrawCircle(x, y, radius * 0.65f, mon.IsShiny ? shiny : occupied);
                     continue;
                 }
                 using var image = SKImage.FromBitmap(sprite);
@@ -259,6 +261,16 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 canvas.DrawImage(image, new SKRect(x - width / 2, y - height / 2, x + width / 2, y + height / 2), BoxGridRenderer.SpriteSampling);
             }
         }
+    }
+
+    /// <summary>Slots this save stores in the box. The snapshot lists every slot, empty
+    /// ones included, so the highest index plus one is the box size.</summary>
+    private static int BoxCapacity(ISaveEngineSession session, int box)
+    {
+        var capacity = 0;
+        foreach (var slot in session.Snapshot.Slots)
+            if (slot.Box == box && slot.Slot >= capacity) capacity = slot.Slot + 1;
+        return Math.Min(capacity, BoxGridRenderer.Columns * BoxGridRenderer.Rows);
     }
 
     // ── Cursor modes ──────────────────────────────────────────────────────────
@@ -990,7 +1002,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             if (!confirmed) return;
             await _viewModel.RunMutationAsync(session =>
             {
-                var copies = selected.Select(source => Enumerable.Range(0, BoxGridRenderer.Columns * BoxGridRenderer.Rows)
+                var copies = selected.Select(source => Enumerable.Range(0, BoxCapacity(session, source))
                     .Where(slot => !session.ReadEntity(source, slot).IsEmpty)
                     .Select(slot => (Slot: slot, Export: session.ExportSlot(source, slot))).ToArray()).ToArray();
                 for (var i = 0; i < copies.Length; i++)
@@ -2333,7 +2345,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         {
             foreach (var box in boxes!)
             {
-                var slotCount = box == -1 ? 6 : BoxGridRenderer.Columns * BoxGridRenderer.Rows;
+                var slotCount = box == -1 ? 6 : BoxCapacity(session, box);
                 for (var slot = 0; slot < slotCount; slot++)
                     if (!session.ReadEntity(box, slot).IsEmpty) mons++;
             }
