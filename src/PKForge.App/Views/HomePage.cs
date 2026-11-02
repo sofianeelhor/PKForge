@@ -519,7 +519,7 @@ public sealed class HomePage : ContentPage, IPadHandler
                 new PadOption("Game Boy / Game Boy Color", IconPath: "platform-gb"),
                 new PadOption("Game Boy Advance", IconPath: "platform-gba"),
                 new PadOption("Nintendo DS", IconPath: "platform-ds"),
-                new PadOption("GameCube", IconPath: "platform-gc"),
+                new PadOption("GameCube / Wii", IconPath: "platform-gc"),
                 new PadOption("Nintendo 3DS", IconPath: "azahar"),
                 new PadOption("Nintendo Switch", IconPath: "eden"),
                 new PadOption("Single save file", IconPath: "file"));
@@ -545,7 +545,7 @@ public sealed class HomePage : ContentPage, IPadHandler
                     new PadOption("DraStic", IconPath: "drastic"),
                     new PadOption("RetroArch", IconPath: "retroarch"),
                 },
-                "GameCube" => new[] { new PadOption("Dolphin", IconPath: "dolphin") },
+                "GameCube / Wii" => new[] { new PadOption("Dolphin", IconPath: "dolphin") },
                 "Nintendo 3DS" => new[]
                 {
                     new PadOption("Azahar / Lime3DS", IconPath: "azahar"),
@@ -557,7 +557,7 @@ public sealed class HomePage : ContentPage, IPadHandler
             if (choice is null) continue;
             var guidance = choice switch
             {
-                "Dolphin" => "Save in game and stop emulation before editing Colosseum or XD. Select Dolphin's GC folder, a region folder, or Card A / Card B containing .gci saves. For .raw memory cards, export the game as GCI with Dolphin's Memory Card Manager, or configure that card slot as GCI Folder. After editing, start the game normally; loading an old save state can undo your edits.",
+                "Dolphin" => "Save in game and stop emulation before editing. For Colosseum or XD, select GC, a region folder, or Card A / Card B containing .gci saves. Export .raw cards as GCI with Dolphin's Memory Card Manager. For Battle Revolution, select the Wii save folder containing GeniusPbr/PbrSaveData, or open PbrSaveData as a single file. Wii data.bin archives must be extracted first. Storage tools lets you choose the save profile. Start the game normally after editing; an old save state can undo your edits.",
                 "DraStic" => "Save in game and close DraStic. Select its backup folder containing .dsv battery saves, or the DraStic data folder. Save states are not supported. Restart the game normally after editing.",
                 "Pizza Boy A (GBA)" or "Pizza Boy C (GB/GBC)" => "Save in game and close Pizza Boy. Select the folder containing its battery saves (.sav), not save states. If Android hides the folder, export the battery save in Pizza Boy and link that export. Import the edited export back into Pizza Boy, then restart the game normally.",
                 "Azahar / Lime3DS" => "Save in game and close the emulator. Select the user folder you chose in its setup (the one containing sdmc); sdmc, Nintendo 3DS or a folder above the user folder also work. Restart the game normally after editing.",

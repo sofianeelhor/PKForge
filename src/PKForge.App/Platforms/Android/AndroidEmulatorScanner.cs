@@ -154,12 +154,14 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         var rootChildren = ListChildren(treeUri, rootDocId);
         string[] preferredFolders = kind switch
         {
-            EmulatorKind.Dolphin => ["GC"],
+            EmulatorKind.Dolphin => ["GC", "Wii"],
             EmulatorKind.DraStic => ["backup"],
             EmulatorKind.PizzaBoyGba or EmulatorKind.PizzaBoyGbc => ["save", "saves"],
             _ => ["saves"],
         };
-        var savesDirs = rootChildren.Where(x => x.IsDirectory && preferredFolders.Contains(x.Name, StringComparer.OrdinalIgnoreCase)).ToArray();
+        var savesDirs = rootChildren.Where(x => x.IsDirectory && (kind == EmulatorKind.Dolphin
+            ? EmulatorSaveHeuristics.IsDolphinSaveFolder(x.Name)
+            : preferredFolders.Contains(x.Name, StringComparer.OrdinalIgnoreCase))).ToArray();
         if (savesDirs.Length > 0)
         {
             state.Siblings = rootChildren.Where(x => !x.IsDirectory).Select(x => x.Name).ToArray();

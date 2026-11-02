@@ -4,7 +4,7 @@ using PKHeX.Core;
 namespace PKForge.Engine;
 
 /// <summary>One slot's raw bytes plus its readability, the unit of the write-safety diff.</summary>
-internal readonly record struct SlotImage(SlotRef Slot, byte[] Bytes, bool Empty, bool Valid);
+internal readonly record struct SlotImage(SlotRef Slot, byte[] Bytes, bool Empty, bool Valid, int Profile = 0);
 
 /// <summary>
 /// The structural safety net behind <see cref="ISaveEngine.CheckWriteSafety"/> and
@@ -51,6 +51,23 @@ internal static class WriteSafety
 
     private static List<SlotImage> StockImages(SaveFile save)
     {
+        if (save is not SAV4BR pbr) return ProfileImages(save);
+        var selected = pbr.CurrentSlot;
+        var images = new List<SlotImage>();
+        try
+        {
+            for (var profile = 0; profile < pbr.SaveNames.Count; profile++)
+            {
+                pbr.CurrentSlot = profile;
+                images.AddRange(ProfileImages(pbr).Select(image => image with { Profile = profile }));
+            }
+        }
+        finally { pbr.CurrentSlot = selected; }
+        return images;
+    }
+
+    private static List<SlotImage> ProfileImages(SaveFile save)
+    {
         var images = new List<SlotImage>();
         if (save.HasParty)
         {
@@ -78,7 +95,8 @@ internal static class WriteSafety
             // structural diff wave through an overwrite of it.
             var species = pk is G3PKM g3 ? g3.SpeciesInternal : pk.Species;
             var empty = data.All(b => b == 0) || species == 0 && pk.ChecksumValid;
-            return new SlotImage(where, data, empty, empty || pk.ChecksumValid);
+            // BK4 sanity flags can establish validity even without a stored checksum.
+            return new SlotImage(where, data, empty, empty || (pk is BK4 ? pk.Valid : pk.ChecksumValid));
         }
     }
 
@@ -186,6 +204,22 @@ internal static class WriteSafety
         if (before.Route != after.Route)
             return $"the write would turn a {before.Route} save into a {after.Route} one.";
 
+        var profile = scope?.ProfileIndex ?? (before.Stock is SAV4BR pbr ? pbr.CurrentSlot : 0);
+        if (before.Stock is SAV4BR oldPbr && after.Stock is SAV4BR newPbr)
+        {
+            if ((uint)profile >= (uint)oldPbr.SaveNames.Count)
+                return "the targeted save profile does not exist.";
+            // Slot diffs alone miss another profile's trainer, passes and unknown
+            // bytes. Compare its entire native buffer, using the core's profile API.
+            for (var index = 0; index < oldPbr.SaveNames.Count; index++)
+            {
+                if (index == profile) continue;
+                oldPbr.CurrentSlot = newPbr.CurrentSlot = index;
+                if (!oldPbr.Buffer.Span.SequenceEqual(newPbr.Buffer.Span))
+                    return $"save profile {index + 1} changed although this edit did not target it.";
+            }
+        }
+
         IReadOnlyList<SlotImage> a, b;
         try
         {
@@ -204,16 +238,18 @@ internal static class WriteSafety
         {
             var old = a[i];
             var now = b[i];
+            var location = Label(old.Slot) + (before.Stock is SAV4BR ? $" in profile {old.Profile + 1}" : "");
             if (old.Valid && !old.Empty && !now.Valid)
-                return $"{Label(old.Slot)} held a readable Pokémon that the new bytes corrupt.";
+                return $"{location} held a readable Pokémon that the new bytes corrupt.";
             if (scope is null)
                 continue;
             var changed = old.Empty != now.Empty || (!(old.Empty && now.Empty) && !old.Bytes.AsSpan().SequenceEqual(now.Bytes));
             if (!changed)
                 continue;
-            var allowed = scope.Slots.Contains(old.Slot) || (old.Slot.Box == -1 && partyInScope);
+            var allowed = old.Profile == profile &&
+                (scope.Slots.Contains(old.Slot) || (old.Slot.Box == -1 && partyInScope));
             if (!allowed)
-                return $"{Label(old.Slot)} changed although this edit did not target it.";
+                return $"{location} changed although this edit did not target it.";
         }
         return null;
     }

@@ -194,6 +194,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 : $"Box {_viewModel.BoxIndex + 1:00}";
         if (_boxManageMode) boxName = _boxHeld ? $"Holding · {boxName}" : $"Manage · {boxName}";
         else if (_viewModel.SelectMode) boxName = $"{boxName} · marked {_viewModel.MarkedInCurrentBox}/{_viewModel.MarkedCount}";
+        if (_viewModel.Save?.ProfileIndex is { } profile) boxName = $"P{profile + 1} · {boxName}";
         StoragePaint.BoxHeader(canvas, bounds, boxName, font,
             canPrev: _viewModel.BoxIndex > 0,
             canNext: _viewModel.BoxIndex < _viewModel.BoxCount - 1, unit);
@@ -625,6 +626,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
 
     private async Task ShowToolsAsync()
     {
+        if (_viewModel.IsBusy) return;
         if (_viewModel.SelectMode)
         {
             await ShowOrganizerMenuAsync();
@@ -638,6 +640,9 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             new("Multi-select (- button)", IconPath: "select", Detail: "Mark several Pokémon to move, copy or edit them together."),
             new("Box manager…", IconPath: "box", Detail: "Reorder, copy, lock or empty whole boxes."),
         };
+        if (_viewModel.SaveProfiles.Count > 1)
+            options.Insert(0, new("Save profile…", IconPath: "profile",
+                Detail: $"Profile {_viewModel.CurrentProfile + 1}: {_viewModel.SaveProfiles[_viewModel.CurrentProfile].Name}"));
         options.AddRange(Menu(
             Allowed(SaveAction.CreateMon, new("Import .pk files", IconPath: "import", Detail: "Pick Pokémon files to fill this box's empty slots.")),
             Allowed(SaveAction.CreateMon, new("Import Showdown team", IconPath: "script", Detail: "Paste Showdown sets, see their legality, then place them in empty slots.")),
@@ -670,6 +675,21 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var choice = await PadMenu.ShowAsync(_hostGrid, "Storage tools", Note(null), options.ToArray());
         switch (choice)
         {
+            case "Save profile…":
+            {
+                var profiles = _viewModel.SaveProfiles;
+                var labels = profiles.Select(p => $"{p.Index + 1}: {p.Name}").ToArray();
+                var selected = await PadMenu.ShowAsync(_hostGrid, "Save profile", "Choose the profile to browse and edit.",
+                    labels.Select(label => new PadOption(label, IconPath: "profile")).ToArray());
+                var index = Array.IndexOf(labels, selected);
+                if (index >= 0 && await _viewModel.SelectSaveProfileAsync(profiles[index].Index))
+                {
+                    _lockedSlots.Clear();
+                    _markedBoxes.Clear();
+                    RepaintStorage();
+                }
+                return;
+            }
             case "Multi-select (- button)":
                 EnterSelectMode();
                 return;

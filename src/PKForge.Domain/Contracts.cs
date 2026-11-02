@@ -119,6 +119,9 @@ public interface ISaveSessionService
     /// </summary>
     void MarkWritten(string documentId, ReadOnlyMemory<byte> written);
 
+    /// <summary>Changes the viewed profile without changing the whole-file backup baseline.</summary>
+    void SelectProfile(int index) => throw new NotSupportedException("This session has no profiles.");
+
     /// <summary>
     /// Discards whatever the live engine session holds beyond the tracked baseline (the bytes
     /// last read or written), reopening it from that baseline. Used when a mutation failed
@@ -176,6 +179,8 @@ public readonly record struct SlotRef(int Box, int Slot);
 /// </summary>
 public sealed record WriteScope(IReadOnlyCollection<SlotRef> Slots, bool Unrestricted = false)
 {
+    /// <summary>The profile these slot coordinates address; null uses the session's profile.</summary>
+    public int? ProfileIndex { get; init; }
     public static WriteScope Everything { get; } = new([], Unrestricted: true);
     public static WriteScope Only(params SlotRef[] slots) => new(slots);
 }
@@ -277,7 +282,11 @@ public sealed record SaveSnapshot(
     int Generation,
     ReadOnlyMemory<byte> OriginalBytes,
     IReadOnlyList<SlotSummary> Slots,
-    string? DisplayName);
+    string? DisplayName)
+{
+    /// <summary>Selected profile in a multi-profile file; null for a single-profile save.</summary>
+    public int? ProfileIndex { get; init; }
+}
 
 /// <param name="HeldItem">The held item's national (PKHeX) item id, 0 when empty. ROM-hack
 /// sessions bridge their own ids to national ones; unknown bridges still read non-zero.</param>

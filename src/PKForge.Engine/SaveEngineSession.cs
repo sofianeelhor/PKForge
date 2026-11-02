@@ -6,7 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 namespace PKForge.Engine;
 
 /// <summary>Holds a pinned PKHeX <see cref="SaveFile"/> and exposes entity access without leaking engine types.</summary>
-public sealed class SaveEngineSession : ISaveEngineSession
+public sealed class SaveEngineSession : ISaveEngineSession, IProfiledSaveSession
 {
     private readonly SaveFile _save;
     static SaveEngineSession() => LegalityRules.Apply();
@@ -58,6 +58,40 @@ public sealed class SaveEngineSession : ISaveEngineSession
     /// <summary>Built on demand: every read must reflect writes made through this
     /// session (generate, import, move), not the state of the file at open time.</summary>
     public SaveSnapshot Snapshot => BuildSnapshot(_displayName);
+
+    public IReadOnlyList<SaveProfile> Profiles
+    {
+        get
+        {
+            ThrowIfDisposed();
+            if (_save is not SAV4BR pbr) return [];
+            var selected = pbr.CurrentSlot;
+            try
+            {
+                return Enumerable.Range(0, pbr.SaveNames.Count).Select(index =>
+                {
+                    pbr.CurrentSlot = index;
+                    var name = pbr.CurrentOT;
+                    var empty = string.IsNullOrWhiteSpace(name);
+                    return new SaveProfile(index, empty ? $"Empty {index + 1}" : name, empty);
+                }).ToArray();
+            }
+            finally { pbr.CurrentSlot = selected; }
+        }
+    }
+
+    public int CurrentProfile => _save is SAV4BR pbr ? pbr.CurrentSlot : 0;
+
+    public void SelectProfile(int index)
+    {
+        ThrowIfDisposed();
+        if (_save is not SAV4BR pbr)
+            throw new NotSupportedException("This save has no profiles.");
+        // The core setter saves the old profile before loading the next. Validate
+        // first so an invalid selection cannot leave that buffer half-switched.
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)index, (uint)pbr.SaveNames.Count);
+        pbr.CurrentSlot = index;
+    }
 
     internal PKM GetEntity(int box, int slot)
     {
@@ -1530,7 +1564,8 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public TrainerInfo GetTrainer()
     {
         ThrowIfDisposed();
-        return new TrainerInfo(_save.OT, _save.TID16, _save.SID16, ReadMoneySafe(), _save.Gender);
+        return new TrainerInfo(_save is SAV4BR pbr ? pbr.CurrentOT : _save.OT,
+            _save.TID16, _save.SID16, ReadMoneySafe(), _save.Gender);
     }
 
     public void SetTrainer(TrainerInfo trainer)
@@ -1538,8 +1573,21 @@ public sealed class SaveEngineSession : ISaveEngineSession
         ThrowIfDisposed();
         if (_save is SAV3 sav3 && !string.Equals(_save.OT, trainer.Name, StringComparison.Ordinal))
             PrefillTrainerName3(sav3.SmallBlock.OriginalTrainerTrash, sav3.Japanese);
-        _save.OT = trainer.Name;
-        if (!string.Equals(_save.OT, trainer.Name, StringComparison.Ordinal))
+        if (_save is SAV4BR pbr)
+        {
+            if (!string.Equals(pbr.CurrentOT, trainer.Name, StringComparison.Ordinal))
+            {
+                // The pinned core limits BR string writes in bytes. Test its encoder
+                // before touching the profile so an unrepresentable name fails safely.
+                Span<byte> name = stackalloc byte[(pbr.MaxStringLengthTrainer + 1) * 2];
+                pbr.SetString(name, trainer.Name, pbr.MaxStringLengthTrainer, StringConverterOption.ClearZero);
+                if (!string.Equals(pbr.GetString(name), trainer.Name, StringComparison.Ordinal))
+                    throw new InvalidOperationException("This Battle Revolution profile name cannot be stored exactly. Try a shorter name.");
+                pbr.CurrentOT = trainer.Name;
+            }
+        }
+        else _save.OT = trainer.Name;
+        if (!string.Equals(_save is SAV4BR br ? br.CurrentOT : _save.OT, trainer.Name, StringComparison.Ordinal))
             throw new InvalidOperationException("This save's character set cannot store that trainer name.");
         _save.TID16 = (ushort)Math.Clamp(trainer.TID, 0, ushort.MaxValue);
         _save.SID16 = (ushort)Math.Clamp(trainer.SID, 0, ushort.MaxValue);
@@ -2765,7 +2813,8 @@ public sealed class SaveEngineSession : ISaveEngineSession
             slots.Add(new SlotSummary(-1, i, partyMon.Species == 0 ? null : partyMon.Species,
                 partyMon.Species == 0 ? null : partyMon.Nickname, partyMon.IsShiny, true, partyMon.Form, partyMon.IsEgg, partyMon.HeldItem, EntitySprite.Traits(partyMon)));
         }
-        return new SaveSnapshot(_save.Context.ToString(), _save.Generation, _originalBytes, slots, displayName);
+        return new SaveSnapshot(_save.Context.ToString(), _save.Generation, _originalBytes, slots, displayName)
+        { ProfileIndex = _save is SAV4BR pbr ? pbr.CurrentSlot : null };
     }
 
     private void ValidateCoordinates(int box, int slot)

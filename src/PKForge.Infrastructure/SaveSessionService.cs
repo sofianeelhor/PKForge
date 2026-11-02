@@ -36,12 +36,28 @@ public sealed class SaveSessionService(ISaveFileAccess access, ISaveEngine engin
         Current = current with { Snapshot = current.Snapshot with { OriginalBytes = written.ToArray() } };
     }
 
+    public void SelectProfile(int index)
+    {
+        if (Current is not { } current || CurrentSession is not IProfiledSaveSession profiles)
+            throw new NotSupportedException("This session has no profiles.");
+        profiles.SelectProfile(index);
+        Current = current with
+        {
+            Snapshot = CurrentSession.Snapshot with { OriginalBytes = current.Snapshot.OriginalBytes },
+        };
+    }
+
     public void RevertToBaseline()
     {
         if (Current is not { } current) return;
         var format = SaveIdentityRules.FormatOfChoice(identities?.Get(current.Document.DocumentId)?.GameChoiceId);
         ISaveEngineSession reopened;
-        try { reopened = engine.OpenSession(current.Snapshot.OriginalBytes, current.Document.DisplayName, format); }
+        try
+        {
+            reopened = engine.OpenSession(current.Snapshot.OriginalBytes, current.Document.DisplayName, format);
+            if (current.Snapshot.ProfileIndex is { } profile && reopened is IProfiledSaveSession profiles)
+                profiles.SelectProfile(profile);
+        }
         catch
         {
             // The baseline no longer opens: a session that cannot be trusted is not kept.

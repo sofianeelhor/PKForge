@@ -63,7 +63,8 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
             }
         }
 
-        return new SaveSnapshot(save.Context.ToString(), save.Generation, bytes.ToArray(), slots, displayName);
+        return new SaveSnapshot(save.Context.ToString(), save.Generation, bytes.ToArray(), slots, displayName)
+        { ProfileIndex = save is SAV4BR pbr ? pbr.CurrentSlot : null };
     }
 
     public ISaveEngineSession OpenSession(ReadOnlyMemory<byte> bytes, string? displayName = null)
@@ -189,6 +190,9 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
         var raw = RetroArchSaveContainer.Decode(bytes.Span);
         if (!SaveParser.TryGetSaveFile(raw, out var save) || save is null)
             return null;
+
+        if (save is SAV4BR pbr)
+            return new SaveDescription("Battle Revolution", save.Generation, pbr.CurrentOT, save.PlayTimeString, LanguageTag(save));
 
         if (SaveParser.IsLuminescentPlatinum(raw))
             return new SaveDescription("Luminescent Platinum", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));

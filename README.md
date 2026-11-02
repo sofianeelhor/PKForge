@@ -146,6 +146,22 @@ games and popular romhacks:
 - **Generation IX:** Scarlet, Violet
 - **Romhacks:** Pokémon Unbound, Radical Red, GS Chronicles, Luminescent Platinum, Pokémon Compass
 
+Battle Revolution: open the raw `GeniusPbr/PbrSaveData` file, then choose
+**Tools > Save profile** in Storage to browse its four profiles. Every edit uses
+the existing whole-file restore points; switching profiles alone writes nothing.
+Wii `data.bin` archives must first be imported with Dolphin's **Import Wii Save**;
+`banner.bin` is not a save. When linking Dolphin, choose its entry in Android's
+file picker to grant access to its user files. Stop emulation before editing.
+
+Native no-op exports, profile isolation, Unicode text and nickname edits were
+verified on seven distinct saves covering English, German, Spanish, French,
+Italian and Japanese. Dolphin discovery, all four profiles and party edits were
+tested on an AYN Thor; the English USA save also passed in-game save/reload in
+Dolphin 2609a. Other regional game builds and dedicated battle-pass editing have
+not been verified. The pinned core cannot encode every profile name: names it
+cannot round-trip are refused before changing the profile; existing names are
+preserved.
+
 ## Supported emulators
 
 Link a storage unit and PKForge finds your saves automatically:
@@ -153,7 +169,7 @@ Link a storage unit and PKForge finds your saves automatically:
 - **Game Boy / Game Boy Color:** RetroArch, Linkboy, Pizza Boy C
 - **Game Boy Advance:** RetroArch, Linkboy, Pizza Boy A
 - **Nintendo DS:** melonDS, DraStic, RetroArch
-- **GameCube:** Dolphin
+- **GameCube / Wii:** Dolphin (Battle Revolution uses raw `PbrSaveData`)
 - **Nintendo 3DS:** Azahar, Lime3DS, Citra MMJ
 - **Nintendo Switch:** Eden
 

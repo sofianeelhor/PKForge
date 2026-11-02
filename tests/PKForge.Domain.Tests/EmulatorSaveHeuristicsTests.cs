@@ -23,8 +23,23 @@ public sealed class EmulatorSaveHeuristicsTests
     [InlineData("MemoryCardA.USA.raw", false)]
     [InlineData("game.sav", false)]
     [InlineData("game.s01", false)]
-    public void DolphinLinksOnlyIndividualGciSaves(string name, bool expected) =>
+    [InlineData("PbrSaveData", true)]
+    [InlineData("pbrsavedata", true)]
+    [InlineData("PbrSaveData.bak", false)]
+    [InlineData("data.bin", false)]
+    [InlineData("banner.bin", false)]
+    [InlineData("main", false)]
+    public void DolphinLinksIndividualGameCubeAndBattleRevolutionSaves(string name, bool expected) =>
         Assert.Equal(expected, EmulatorSaveHeuristics.IsCandidateFileName(name, EmulatorKind.Dolphin));
+
+    [Theory]
+    [InlineData("GC", true)]
+    [InlineData("Wii", true)]
+    [InlineData("wii", true)]
+    [InlineData("Cache", false)]
+    [InlineData("Load", false)]
+    public void DolphinSearchesBothConsoleSaveTrees(string name, bool expected) =>
+        Assert.Equal(expected, EmulatorSaveHeuristics.IsDolphinSaveFolder(name));
 
     [Theory]
     [InlineData("MemoryCardA.USA.raw", true)]
