@@ -33,11 +33,16 @@ public static class EmulatorSaveHeuristics
         return CandidateExtensions.Contains(extension);
     }
 
-    /// <summary>Dolphin links individual GCI saves, never whole multi-game memory cards.</summary>
+    /// <summary>Dolphin links GameCube GCI saves and the raw Wii Battle Revolution save.</summary>
     public static bool IsCandidateFileName(string fileName, EmulatorKind kind) =>
         kind == EmulatorKind.Dolphin
             ? fileName.EndsWith(".gci", StringComparison.OrdinalIgnoreCase)
+                || fileName.Equals("PbrSaveData", StringComparison.OrdinalIgnoreCase)
             : IsCandidateFileName(fileName);
+
+    /// <summary>Both console save trees are searched when Dolphin's whole user folder is granted.</summary>
+    public static bool IsDolphinSaveFolder(string folderName) =>
+        folderName.Equals("GC", StringComparison.OrdinalIgnoreCase) || folderName.Equals("Wii", StringComparison.OrdinalIgnoreCase);
 
     public static bool IsDolphinMemoryCard(string fileName) =>
         Path.GetExtension(fileName).Equals(".raw", StringComparison.OrdinalIgnoreCase) ||

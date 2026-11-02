@@ -135,6 +135,15 @@ public sealed class SafeSaveWriter(
         {
             if (Refusal(documentId, original) is { } refusal)
                 throw refusal;
+            if (original.ProfileIndex is { } profile)
+            {
+                if (scope?.ProfileIndex is { } requested && requested != profile)
+                    throw new UnsafeSaveWriteException("Write refused: the selected save profile changed.");
+                // Whole-profile operations still may not change another profile.
+                scope = (scope ?? new WriteScope(original.Slots.Select(s => new SlotRef(s.Box, s.Slot))
+                    .Concat(Enumerable.Range(0, 6).Select(slot => new SlotRef(-1, slot))).ToArray()))
+                    with { ProfileIndex = profile };
+            }
             if (engine.CheckWriteSafety(original.OriginalBytes, candidate, scope) is { } unsafeDiff)
                 throw new UnsafeSaveWriteException($"Write refused: {unsafeDiff} The original was not touched.");
         }

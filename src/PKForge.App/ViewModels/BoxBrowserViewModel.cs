@@ -319,6 +319,36 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         Status = "READY";
     }
 
+    public IReadOnlyList<SaveProfile> SaveProfiles =>
+        _sessions.CurrentSession is IProfiledSaveSession profiles ? profiles.Profiles : [];
+
+    public int CurrentProfile =>
+        _sessions.CurrentSession is IProfiledSaveSession profiles ? profiles.CurrentProfile : 0;
+
+    public async Task<bool> SelectSaveProfileAsync(int index)
+    {
+        if (IsBusy || _movesInFlight > 0 || _dropWaiting) return false;
+        try
+        {
+            IsBusy = true;
+            // Selecting a profile also decodes its storage snapshot; keep that work
+            // off the UI thread, just like an ordinary storage mutation.
+            await Task.Run(() => _sessions.SelectProfile(index));
+            CancelCarry();
+            ClearMarksQuietly();
+            RefreshFromCurrentSession();
+            Status = $"PROFILE {index + 1} · {_sessions.CurrentSession?.GetTrainer().Name}";
+            return true;
+        }
+        catch (Exception error)
+        {
+            DiscardPartialEdits();
+            Status = $"Could not select profile: {error.Message}";
+            return false;
+        }
+        finally { IsBusy = false; }
+    }
+
     // ── Legality sweep: cached verdicts for the whole save ──
 
     /// <summary>The last sweep's verdicts while they still match the save's write

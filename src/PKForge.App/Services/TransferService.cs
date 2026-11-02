@@ -87,6 +87,8 @@ public sealed class TransferService(
             return new TransferPreviewOutcome(false, "No game is connected.");
         const string label = "the connected game";
         using var scratch = engine.OpenSession(live.Serialize().ToArray(), sessions.Current?.Document.DisplayName);
+        if (live.Snapshot.ProfileIndex is { } profile && scratch is IProfiledSaveSession profiles)
+            profiles.SelectProfile(profile);
         var preview = new TransferPreviewService(legality).Preview(scratch, box, slot, entityBytes.ToArray(), format);
         if (preview is null)
             return new TransferPreviewOutcome(false, Refusal(entityBytes, nickname, scratch.Snapshot, label, format));
