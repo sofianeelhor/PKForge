@@ -158,7 +158,7 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
         // Surgical: seeding the editor must not dex-mark or rewrite handler data on
         // the loose entity being edited.
         blank.SetBoxSlotAtIndex(converted, 0, 0, EntityImportSettings.None);
-        return new SaveEngineSession(blank, displayName);
+        return new SaveEngineSession(blank, displayName, entity is RK4 ? entity.Data.ToArray() : null);
     }
 
     /// <summary>One representative game per generation for blank generation contexts.</summary>

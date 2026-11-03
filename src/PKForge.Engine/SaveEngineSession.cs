@@ -13,6 +13,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     private readonly byte[] _originalBytes;
     private readonly string? _displayName;
+    private readonly byte[]? _ranchRecord;
     private bool _disposed;
 
     public SaveEngineSession(ReadOnlyMemory<byte> bytes, string? displayName = null)
@@ -48,11 +49,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
     /// be written out (SAV3.WriteSectors throws), and a standalone entity session is never
     /// written back to a save file - only its single mon is exported via ExportSlot.
     /// </summary>
-    internal SaveEngineSession(SaveFile save, string? displayName)
+    internal SaveEngineSession(SaveFile save, string? displayName, byte[]? ranchRecord = null)
     {
         _save = save;
         _originalBytes = [];
         _displayName = displayName;
+        _ranchRecord = ranchRecord;
     }
 
     /// <summary>Built on demand: every read must reflect writes made through this
@@ -997,6 +999,15 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         ThrowIfDisposed();
         var entity = GetEntityCore(box, slot);
+        if (_ranchRecord is not null && box == 0 && slot == 0)
+        {
+            // The Bank edits a PK4 view; keep the original Ranch-only ownership tail
+            // instead of silently replacing the native entry with that portable view.
+            var native = new RK4(_ranchRecord.ToArray());
+            entity.WriteDecryptedDataStored(native.Data[..entity.SIZE_STORED]);
+            native.RefreshChecksum();
+            entity = native;
+        }
         var data = new byte[entity.SIZE_PARTY];
         entity.WriteDecryptedDataParty(data);
         var safeName = string.Concat(entity.FileName.Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_' or ' ' ? c : '_'));
