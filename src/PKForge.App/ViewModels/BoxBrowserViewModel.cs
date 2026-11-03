@@ -445,6 +445,12 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             return false;
         }
 
+        if (engineSession.ReadOnlyReason is { } readOnlyReason)
+        {
+            Status = readOnlyReason;
+            return false;
+        }
+
         try
         {
             IsBusy = true;
@@ -932,6 +938,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     public void JumpTo(int box, int slot)
     {
         if (Save is null || box < -1 || box >= BoxCount) return;
+        if (box == -1 && _sessions.CurrentSession?.HasParty == false) return;
         PendingRectangle = null;
         BoxIndex = box;
         SelectedSlot = -1;
@@ -945,9 +952,10 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     {
         if (Save is null || BoxCount == 0) return;
         // The party wraps around the boxes: last box, then PARTY, then box 1 again.
+        var first = _sessions.CurrentSession?.HasParty == false ? 0 : -1;
         var next = BoxIndex + delta;
-        if (next > BoxCount - 1) next = -1;
-        else if (next < -1) next = BoxCount - 1;
+        if (next > BoxCount - 1) next = first;
+        else if (next < first) next = BoxCount - 1;
         PendingRectangle = null; // a rectangle belongs to one page
         BoxIndex = next;
         SelectedSlot = -1;

@@ -6,6 +6,9 @@ namespace PKForge.Engine;
 /// <summary>Adapts the pinned PKHeX.Core save parser without leaking engine types.</summary>
 public sealed class SaveEngine : IFormatAwareSaveEngine
 {
+    public string? GetWriteRestriction(ReadOnlyMemory<byte> bytes) =>
+        RanchFormat.WriteRestriction(bytes.Span);
+
     static SaveEngine() => LegalityRules.Apply();
 
     /// <summary>
@@ -56,6 +59,7 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
         {
             for (var slot = 0; slot < save.BoxSlotCount; slot++)
             {
+                if (save is SAV4Ranch && box * save.BoxSlotCount + slot >= save.SlotCount) break;
                 var entity = save.GetBoxSlotAtIndex(box, slot);
                 slots.Add(new SlotSummary(box, slot, entity.Species == 0 ? null : entity.Species,
                     entity.IsNicknamed ? entity.Nickname : null, entity.IsShiny,
@@ -187,8 +191,12 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
     public SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes, string? displayName = null)
     {
         var raw = RetroArchSaveContainer.Decode(bytes.Span);
-        if (!SaveParser.TryGetSaveFile(raw, out var save) || save is null)
-            return null;
+        SaveFile? save;
+        try
+        {
+            if (!SaveParser.TryGetSaveFile(raw, out save) || save is null) return null;
+        }
+        catch (InvalidDataException) { return null; }
 
         if (SaveParser.IsLuminescentPlatinum(raw))
             return new SaveDescription("Luminescent Platinum", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
@@ -211,16 +219,17 @@ public sealed class SaveEngine : IFormatAwareSaveEngine
         if (SaveParser.IsPokemonRadicalRed(raw))
             return new SaveDescription("Radical Red", save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
 
-        // GameCube-only versions sit outside the handheld game-name table.
+        // Console storage games sit outside the handheld game-name table.
         var sideGameName = save switch
         {
+            SAV4Ranch => "My Pokémon Ranch",
             SAV3Colosseum => "Colosseum",
             SAV3XD => "XD: Gale of Darkness",
             SAV3RSBox => "Box: Ruby & Sapphire",
             _ => null,
         };
         if (sideGameName is not null)
-            return new SaveDescription(sideGameName, save.Generation, save.OT, save.PlayTimeString, LanguageTag(save));
+            return new SaveDescription(sideGameName, save.Generation, save.OT.TrimEnd('\0'), save.PlayTimeString, LanguageTag(save));
 
         // These editions share one layout: the player's own Pokémon name the cartridge when
         // they agree, otherwise the pair is shown and the player picks once.

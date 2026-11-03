@@ -32,7 +32,7 @@ public sealed class LegalizerService : ILegalizerService
             return unbound.GenerateInto(box, slot, request);
         if (session is RadicalRed.CfruEngineSession radicalRed)
             return radicalRed.GenerateInto(box, slot, request);
-        var text = BuildShowdownText(request, ((SaveEngineSession)session).SaveFile.Context);
+        var text = BuildShowdownText(request, ((SaveEngineSession)session).WritableSaveFile.Context);
         return GenerateFromShowdown(session, box, slot, text, request.AllowUnsupportedSpecies);
     }
 
@@ -45,7 +45,7 @@ public sealed class LegalizerService : ILegalizerService
             return radicalRed.GenerateFromShowdownText(box, slot, showdownText);
         if (session is not SaveEngineSession engineSession)
             return new GenerationOutcome(false, "Unsupported session type.");
-        var save = engineSession.SaveFile;
+        var save = engineSession.WritableSaveFile;
 
         var set = new ShowdownSet(showdownText);
         if (set.Species == 0)
@@ -132,7 +132,7 @@ public sealed class LegalizerService : ILegalizerService
     {
         if (session is not SaveEngineSession engineSession)
             return new GenerationOutcome(false, "Unsupported session type.");
-        var save = engineSession.SaveFile;
+        var save = engineSession.WritableSaveFile;
 
         // Box -1 is the party: it has its own accessors, and the box path would go out
         // of range and abort the whole mutation behind the loading overlay.
@@ -293,7 +293,7 @@ public sealed class LegalizerService : ILegalizerService
     {
         if (session is not SaveEngineSession engineSession)
             return new GenerationOutcome(false, "Unsupported session type.");
-        var save = engineSession.SaveFile;
+        var save = engineSession.WritableSaveFile;
 
         var repaired = 0;
         var stuck = 0;
@@ -334,14 +334,14 @@ public sealed class LegalizerService : ILegalizerService
     }
 
     public GeneratedEntity? GenerateData(ISaveEngineSession session, GenerationRequest request) =>
-        GenerateDataFromShowdown(session, BuildShowdownText(request, ((SaveEngineSession)session).SaveFile.Context),
+        GenerateDataFromShowdown(session, BuildShowdownText(request, ((SaveEngineSession)session).WritableSaveFile.Context),
             request.AllowUnsupportedSpecies);
 
     public GeneratedEntity? GenerateDataFromShowdown(ISaveEngineSession session, string showdownText,
         bool allowUnsupportedSpecies = false)
     {
         if (session is not SaveEngineSession engineSession) return null;
-        var save = engineSession.SaveFile;
+        var save = engineSession.WritableSaveFile;
 
         var set = new ShowdownSet(showdownText);
         if (set.Species == 0) return null;
@@ -372,7 +372,7 @@ public sealed class LegalizerService : ILegalizerService
     {
         if (session is not SaveEngineSession engineSession)
             return new GenerationOutcome(false, "Unsupported session type.");
-        var save = engineSession.SaveFile;
+        var save = engineSession.WritableSaveFile;
 
         var placed = 0;
         foreach (var id in species)
@@ -401,7 +401,7 @@ public sealed class LegalizerService : ILegalizerService
     {
         if (session is not SaveEngineSession engineSession)
             return new GenerationOutcome(false, "Unsupported session type.");
-        var save = engineSession.SaveFile;
+        var save = engineSession.WritableSaveFile;
         if (save.Generation is < 3)
             return new GenerationOutcome(false, "Eggs are only supported from Gen 3 onward here.");
 
@@ -461,7 +461,7 @@ public sealed class LegalizerService : ILegalizerService
     {
         lock (TrainerGenerationLock)
         {
-            var save = session.SaveFile;
+            var save = session.WritableSaveFile;
             // Auto-Legality has no encounter/evolution tables for Luminescent's
             // distinct context yet. Its save layout and trainer identity are BDSP,
             // so generate through an isolated retail-BDSP view and place the result
@@ -567,7 +567,7 @@ public sealed class LegalizerService : ILegalizerService
         if (compressedBundle is not { Length: > 0 })
             return new GenerationOutcome(false, "No living dex bundle for this game - nothing written.");
 
-        var save = engineSession.SaveFile;
+        var save = engineSession.WritableSaveFile;
         var capacity = save.BoxCount * save.BoxSlotCount;
         var placed = engineSession.PlaceLivingDex(compressedBundle);
         onProgress?.Invoke(placed, capacity);

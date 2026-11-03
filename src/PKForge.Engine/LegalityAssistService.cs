@@ -150,7 +150,7 @@ public sealed class LegalityAssistService : ILegalityAssistService
         var updated = current.Clone();
         preview.Candidate.Span.CopyTo(updated.Data);
         updated.RefreshChecksum();
-        Place(engine.SaveFile, preview.Box, preview.Slot, updated);
+        Place(engine.WritableSaveFile, preview.Box, preview.Slot, updated);
         return new GenerationOutcome(true, $"{preview.Title}: {preview.Changes.Count} field(s) updated.");
     }
 

@@ -125,7 +125,7 @@ public static class ShowdownTeamService
             if (session is SaveEngineSession engine && !set.Candidate.IsEmpty)
             {
                 var pk = Materialize(engine.SaveFile, set.Candidate.ToArray());
-                ok = pk is not null && PlaceEntity(engine.SaveFile, slot, pk);
+                ok = pk is not null && PlaceEntity(engine.WritableSaveFile, slot, pk);
             }
             else if (session is not SaveEngineSession)
             {

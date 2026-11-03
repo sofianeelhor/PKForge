@@ -166,6 +166,8 @@ internal static class WriteSafety
 
     public static string? CheckWriteSafety(ReadOnlyMemory<byte> original, ReadOnlyMemory<byte> candidate, WriteScope? scope)
     {
+        if (RanchFormat.WriteRestriction(original.Span) is not null && !original.Span.SequenceEqual(candidate.Span))
+            return RanchFormat.ReadOnlyReason;
         if (scope is { Unrestricted: true })
             return null;
 

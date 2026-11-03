@@ -135,7 +135,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var root = new Grid
         {
             RowDefinitions = [new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto)],
-            Children = { DsChrome.TitleBar(), DsChrome.StatusStrip(title, "Connected"), bodyHost, _footerHost },
+            Children = { DsChrome.TitleBar(), DsChrome.StatusStrip(title, _sessionsFor()?.ReadOnlyReason is null ? "Connected" : "Read-only"), bodyHost, _footerHost },
         };
         Grid.SetRow((View)root.Children[1], 1);
         Grid.SetRow(bodyHost, 2);
@@ -359,8 +359,9 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
     private static SaveGuard Guard => HardcoreMode.Guard;
 
     /// <summary>A menu entry that exists only while Hardcore mode allows its action; null hides it.</summary>
-    private static PadOption? Allowed(SaveAction action, PadOption option) =>
-        Guard.Allows(action) ? option : null;
+    private PadOption? Allowed(SaveAction action, PadOption option, bool changesSource = true) =>
+        Guard.Allows(action) && (_sessionsFor()?.ReadOnlyReason is null ||
+            !changesSource || action is SaveAction.ExportFile or SaveAction.Backup) ? option : null;
 
     /// <summary>The menu's options without the entries Hardcore mode refuses.</summary>
     private static PadOption[] Menu(params PadOption?[] options) =>
@@ -389,7 +390,9 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
     }
 
     /// <summary>The idle status line, carrying the marker so the mode is visible on the screen it gates.</summary>
-    private void ShowReady() => _viewModel.Status = HardcoreMode.IsOn
+    private void ShowReady() => _viewModel.Status = _sessionsFor()?.ReadOnlyReason is not null
+        ? "Read-only · export available"
+        : HardcoreMode.IsOn
         ? $"Ready · {HardcoreMode.StatusLine}"
         : LayoutMarker ?? "Ready";
 
@@ -495,7 +498,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             {
                 PksmIcons.Icon("storage", 44),
                 new Label { Text = "Select a Pokémon", TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = 15 },
-                new Label { Text = "Tap an empty slot to add one", TextColor = UiTokens.Ink1, FontSize = UiTokens.TextSmall, HorizontalTextAlignment = TextAlignment.Center },
+                new Label { Text = _sessionsFor()?.ReadOnlyReason is null ? "Tap an empty slot to add one" : "Inspect, copy or export Pokémon", TextColor = UiTokens.Ink1, FontSize = UiTokens.TextSmall, HorizontalTextAlignment = TextAlignment.Center },
             },
         };
 
@@ -1178,14 +1181,14 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         {
             options.Add(new("Clear marks", IconPath: "deselect"));
             options.AddRange(Menu(
-                new PadOption("Move to box…", IconPath: "move"),
-                new PadOption("Move to Bank", IconPath: "bank", Detail: "They leave this save and are stored in the Bank."),
-                Allowed(SaveAction.Duplicate, new("Copy to Bank", IconPath: "bank", Detail: "Copies go to the Bank; the originals stay here.")),
-                new PadOption("Move to another game…", IconPath: "send", Detail: "They leave this save and join another linked game."),
-                Allowed(SaveAction.Duplicate, new("Copy to another game…", IconPath: "copy", Detail: "Copies join another linked game; the originals stay here.")),
+                Allowed(SaveAction.Move, new("Move to box…", IconPath: "move")),
+                Allowed(SaveAction.Move, new("Move to Bank", IconPath: "bank", Detail: "They leave this save and are stored in the Bank.")),
+                Allowed(SaveAction.Duplicate, new("Copy to Bank", IconPath: "bank", Detail: "Copies go to the Bank; the originals stay here."), changesSource: false),
+                Allowed(SaveAction.Move, new("Move to another game…", IconPath: "send", Detail: "They leave this save and join another linked game.")),
+                Allowed(SaveAction.Duplicate, new("Copy to another game…", IconPath: "copy", Detail: "Copies join another linked game; the originals stay here."), changesSource: false),
                 Allowed(SaveAction.Duplicate, new("Duplicate", IconPath: "copy", Detail: "Clone the marked Pokémon into the first free box slots.")),
                 new PadOption("Export (.pk files)", IconPath: "export", Detail: "Share each marked Pokémon as its own file."),
-                new PadOption("Release", IconPath: "release")));
+                Allowed(SaveAction.Release, new("Release", IconPath: "release"))));
             options.AddRange(BulkOptions());
         }
         options.Add(new("Mark Pokémon holding…", IconPath: "item", Detail: "Find Pokémon holding an item, then mark them or go to one."));
@@ -3807,22 +3810,22 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         }
         options.AddRange(Menu(
             new PadOption("Summary", IconPath: "info"),
-            new PadOption("Edit", IconPath: "editor"),
+            _sessionsFor()?.ReadOnlyReason is null ? new PadOption("Edit", IconPath: "editor") : null,
             Allowed(SaveAction.EditMon, new("Evolve…", IconPath: "evolve")),
             new PadOption("Send to Poképark", IconPath: "park", Detail: "Adds it to the Poképark visitors. The save is not changed."),
-            new PadOption("Move", IconPath: "move", Detail: "Pick it up and carry it to another slot."),
+            Allowed(SaveAction.Move, new("Move", IconPath: "move", Detail: "Pick it up and carry it to another slot.")),
             Allowed(SaveAction.Duplicate, new("Duplicate", IconPath: "copy", Detail: "Clone it into the next empty slot here.")),
-            new PadOption("Send to Bank", IconPath: "bank", Detail: "It leaves this save and is stored in the Bank."),
-            Allowed(SaveAction.Duplicate, new("Copy to Bank", IconPath: "copy", Detail: "A copy goes to the Bank; the original stays here.")),
-            new PadOption("Send to another game…", IconPath: "send", Detail: "It leaves this save and joins another linked game."),
-            Allowed(SaveAction.Duplicate, new("Copy to another game…", IconPath: "copy", Detail: "A copy joins another linked game; the original stays here.")),
+            Allowed(SaveAction.Move, new("Send to Bank", IconPath: "bank", Detail: "It leaves this save and is stored in the Bank.")),
+            Allowed(SaveAction.Duplicate, new("Copy to Bank", IconPath: "copy", Detail: "A copy goes to the Bank; the original stays here."), changesSource: false),
+            Allowed(SaveAction.Move, new("Send to another game…", IconPath: "send", Detail: "It leaves this save and joins another linked game.")),
+            Allowed(SaveAction.Duplicate, new("Copy to another game…", IconPath: "copy", Detail: "A copy joins another linked game; the original stays here."), changesSource: false),
             new PadOption("Export .pk file", IconPath: "export", Detail: "Share this Pokémon as a file."),
             new PadOption("Show as Showdown set", IconPath: "script", Detail: "Its set as Showdown text you can copy."),
             new PadOption("Show as QR code", IconPath: "qr", Detail: "Its Showdown set as a QR code."),
             new PadOption("Show as .pk QR", IconPath: "qr", Detail: "The whole Pokémon as a QR code that PKForge can scan into the Bank."),
             new PadOption("RNG / IVs", IconPath: "dice", Detail: "See its PID and IVs, and change its nature without losing shininess."),
             new PadOption("Lock / Unlock release", IconPath: "padlock", Detail: "A locked Pokémon cannot be released."),
-            new PadOption("Release", IconPath: "release")));
+            Allowed(SaveAction.Release, new("Release", IconPath: "release"))));
         var choice = await PadMenu.ShowAsync(_hostGrid, nickname,
             Note(verdict is { Valid: false } ? verdict.Problem : null), options.ToArray());
         switch (choice)
@@ -4190,9 +4193,9 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var export = session.ExportSlot(_viewModel.BoxIndex, slot);
         // Cross-generation conversions change things; the diff preview is the trust
         // step before the write. Same-generation sends show an empty diff.
-        var preview = await transfer.PreviewAsync(export.Data, nickname, target);
+        var preview = await transfer.PreviewAsync(export.Data, nickname, target, format: export.Format);
         if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, preview, nickname, target.GameLabel)) return;
-        var outcome = await transfer.SendToGameAsync(export.Data, nickname, target);
+        var outcome = await transfer.SendToGameAsync(export.Data, nickname, target, format: export.Format);
         _viewModel.Status = outcome.Message;
         if (!outcome.Success || copyInsteadOfMove) return;
 

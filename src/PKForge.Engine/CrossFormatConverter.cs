@@ -52,10 +52,15 @@ public static class CrossFormatConverter
         // An official route wins whenever one exists; PKHeX already sanitizes those.
         var forward = EntityConverter.ConvertToType(source, destType, out var result);
         if (forward is not null && result is EntityConverterResult.Success or EntityConverterResult.None)
-            return new TransferConversion(forward, false, []);
+            return new TransferConversion(forward, false, RanchWarnings(source));
 
-        return Downgrade(source, target);
+        var downgrade = Downgrade(source, target);
+        return downgrade is null ? null : downgrade with { Warnings = [.. RanchWarnings(source), .. downgrade.Warnings] };
     }
+
+    private static string[] RanchWarnings(PKM source) => source is RK4
+        ? ["Ranch ownership and handling-trainer metadata have no counterpart in this game and are not transferred. Keep the native RK4 export to retain them."]
+        : [];
 
     /// <summary>
     /// Why <paramref name="source"/> cannot exist in <paramref name="target"/> at all, or null

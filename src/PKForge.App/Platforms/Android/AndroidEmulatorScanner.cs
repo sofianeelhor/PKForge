@@ -141,7 +141,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
                 state.Trace($"RAW MEMORY CARD {child.Name}: individual GCI export required");
                 return;
             }
-            if (!EmulatorSaveHeuristics.IsCandidateFileName(child.Name, kind)) return;
+            if (!EmulatorSaveHeuristics.IsCandidateFileName(child.Name, kind, child.ScanPath ?? child.DocId)) return;
             if (TryDetect(treeUri, child, kind, gameLabel: child.Name, state: state) is { } save)
             {
                 results.Add(save);
@@ -152,9 +152,12 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         }
 
         var rootChildren = ListChildren(treeUri, rootDocId);
+        // SAF providers may use opaque ids (e.g. msd:123). Walk display names for
+        // the Ranch title filter rather than assuming every document id is a path.
+        var rootPath = kind == EmulatorKind.Dolphin ? rootDocId + "/" + DocumentName(treeUri, rootDocId) : null;
         string[] preferredFolders = kind switch
         {
-            EmulatorKind.Dolphin => ["GC"],
+            EmulatorKind.Dolphin => ["GC", "Wii"],
             EmulatorKind.DraStic => ["backup"],
             EmulatorKind.PizzaBoyGba or EmulatorKind.PizzaBoyGbc => ["save", "saves"],
             _ => ["saves"],
@@ -164,13 +167,14 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         {
             state.Siblings = rootChildren.Where(x => !x.IsDirectory).Select(x => x.Name).ToArray();
             foreach (var file in rootChildren.Where(x => !x.IsDirectory))
-                OnFile(file);
+                OnFile(rootPath is null ? file : file with { ScanPath = rootPath + "/" + file.Name });
             foreach (var savesDir in savesDirs)
-                FindFilesRecursive(treeUri, savesDir.DocId, maxDepth, cancellationToken, OnFile, state);
+                FindFilesRecursive(treeUri, savesDir.DocId, maxDepth, cancellationToken, OnFile, state,
+                    scanPath: rootPath is null ? null : rootPath + "/" + savesDir.Name);
         }
         else
         {
-            FindFilesRecursive(treeUri, rootDocId, maxDepth, cancellationToken, OnFile, state);
+            FindFilesRecursive(treeUri, rootDocId, maxDepth, cancellationToken, OnFile, state, scanPath: rootPath);
         }
         return results;
     }
@@ -346,7 +350,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         }
     }
 
-    private sealed record ChildDocument(string DocId, string Name, bool IsDirectory, DateTimeOffset? LastModified);
+    private sealed record ChildDocument(string DocId, string Name, bool IsDirectory, DateTimeOffset? LastModified, string? ScanPath = null);
 
     /// <summary>Android's last package update time: zero-once per install, stable after.</summary>
     private static long _installEpoch = -1;
@@ -442,7 +446,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
 
     private void FindFilesRecursive(AndroidUri treeUri, string parentDocId, int maxDepth,
         CancellationToken cancellationToken, Action<ChildDocument> onFile, ScanState state,
-        bool diagnostic = false)
+        bool diagnostic = false, string? scanPath = null)
     {
         if (maxDepth <= 0)
         {
@@ -463,14 +467,28 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
                     if (diagnostic) state.Trace($"PRUNED directory {child.Name}");
                     continue;
                 }
-                FindFilesRecursive(treeUri, child.DocId, maxDepth - 1, cancellationToken, onFile, state, diagnostic);
+                FindFilesRecursive(treeUri, child.DocId, maxDepth - 1, cancellationToken, onFile, state, diagnostic,
+                    scanPath is null ? null : scanPath + "/" + child.Name);
             }
             else
             {
                 state.Siblings = siblings;
-                onFile(child);
+                onFile(scanPath is null ? child : child with { ScanPath = scanPath + "/" + child.Name });
             }
         }
+    }
+
+    private static string? DocumentName(AndroidUri treeUri, string documentId)
+    {
+        try
+        {
+            var uri = DocumentsContract.BuildDocumentUriUsingTree(treeUri, documentId);
+            if (uri is null) return null;
+            using var cursor = Android.App.Application.Context.ContentResolver?.Query(uri,
+                [DocumentsContract.Document.ColumnDisplayName], null, null, null);
+            return cursor is not null && cursor.MoveToFirst() ? cursor.GetString(0) : null;
+        }
+        catch (Java.Lang.RuntimeException) { return null; } // optional hint; retain the document id
     }
 
     private static string? NavigatePath(AndroidUri treeUri, string fromDocId, string[] segments, Action<string>? trace = null)

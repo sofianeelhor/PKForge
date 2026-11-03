@@ -231,7 +231,7 @@ public sealed class EventDatabaseService : IEventDatabaseService
     {
         if (session is not SaveEngineSession engineSession)
             return new GenerationOutcome(false, "Unsupported session type.");
-        var save = engineSession.SaveFile;
+        var save = engineSession.WritableSaveFile;
 
         var gifts = GetRawGifts(save);
         if (giftId < 0 || giftId >= gifts.Count)
@@ -250,7 +250,7 @@ public sealed class EventDatabaseService : IEventDatabaseService
     {
         if (session is not SaveEngineSession engineSession)
             return new GenerationOutcome(false, "Unsupported session type.");
-        var save = engineSession.SaveFile;
+        var save = engineSession.WritableSaveFile;
         var gifts = GetRawGifts(save);
         if (giftId < 0 || giftId >= gifts.Count || gifts[giftId] is not { IsItem: true } gift)
             return new GenerationOutcome(false, "Unknown item gift.");

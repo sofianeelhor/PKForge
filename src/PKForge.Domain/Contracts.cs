@@ -2,6 +2,9 @@ namespace PKForge.Domain;
 
 public interface ISaveEngine
 {
+    /// <summary>A format-level restriction that applies even to restores and confirmed layout risks.</summary>
+    string? GetWriteRestriction(ReadOnlyMemory<byte> bytes) => null;
+
     SaveSnapshot Open(ReadOnlyMemory<byte> bytes, string? displayName = null);
     ISaveEngineSession OpenSession(ReadOnlyMemory<byte> bytes, string? displayName = null);
     ReadOnlyMemory<byte> Serialize(SaveSnapshot snapshot);

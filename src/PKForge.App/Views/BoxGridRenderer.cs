@@ -183,6 +183,14 @@ public static class BoxGridRenderer
         for (var index = 0; index < Columns * Rows; index++)
         {
             var cell = layout.Cell(index);
+            // A capacity-limited storage save can end partway through a grid page.
+            if (index >= slots.Count)
+            {
+                using var unavailable = new SKPaint { Color = SKColors.Gray.WithAlpha(45), Style = SKPaintStyle.Stroke, StrokeWidth = 1 };
+                canvas.DrawLine(cell.Left, cell.Top, cell.Right, cell.Bottom, unavailable);
+                canvas.DrawLine(cell.Right, cell.Top, cell.Left, cell.Bottom, unavailable);
+                continue;
+            }
             // Badges keep the square tile they were designed for, centered in the wide cell.
             var tile = SKRect.Create(cell.MidX - layout.CellHeight / 2, cell.Top, layout.CellHeight, layout.CellHeight);
 

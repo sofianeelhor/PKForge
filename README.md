@@ -138,6 +138,7 @@ games and popular romhacks:
 - **Generation I:** Red, Blue, Green (JP), Yellow
 - **Generation II:** Gold, Silver, Crystal
 - **Generation III:** Ruby, Sapphire, Emerald, FireRed, LeafGreen, Pokémon Box: Ruby & Sapphire, Colosseum, XD: Gale of Darkness
+- **My Pokémon Ranch:** read-only extraction from the original Diamond/Pearl format (verified with USA saves). Copy to Bank or export native RK4 files; conversion to another game's format explains the loss of Ranch ownership metadata. Deposits, edits and withdrawals are disabled. The Platinum revision is not yet verified.
 - **Generation IV:** Diamond, Pearl, Platinum, HeartGold, SoulSilver
 - **Generation V:** Black, White, Black 2, White 2
 - **Generation VI:** X, Y, Omega Ruby, Alpha Sapphire
@@ -154,6 +155,7 @@ Link a storage unit and PKForge finds your saves automatically:
 - **Game Boy Advance:** RetroArch, Linkboy, Pizza Boy A
 - **Nintendo DS:** melonDS, DraStic, RetroArch
 - **GameCube:** Dolphin
+- **Wii storage:** Dolphin discovery of the USA My Pokémon Ranch main save (`savedata.bin`); automatic backups are excluded from discovery and can be opened explicitly.
 - **Nintendo 3DS:** Azahar, Lime3DS, Citra MMJ
 - **Nintendo Switch:** Eden
 
