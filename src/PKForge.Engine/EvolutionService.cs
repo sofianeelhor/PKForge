@@ -55,7 +55,7 @@ public sealed class EvolutionService : IEvolutionService
         ArgumentNullException.ThrowIfNull(request);
         if (session is not SaveEngineSession engine)
             return new GenerationOutcome(false, "Evolving is not available for this game yet.");
-        var sav = engine.SaveFile;
+        var sav = engine.WritableSaveFile;
         var original = engine.GetEntity(box, slot);
         if (original.Species == 0 || original.IsEgg) return new GenerationOutcome(false, "Nothing here can evolve.");
 

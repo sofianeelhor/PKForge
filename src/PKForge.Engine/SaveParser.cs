@@ -18,6 +18,12 @@ internal static class SaveParser
     internal static bool TryGetSaveFile(byte[] data, out SaveFile? save)
     {
         data = RetroArchSaveContainer.Decode(data);
+        if (RanchFormat.IsCandidate(data.Length))
+        {
+            RanchFormat.Validate(data);
+            save = new SAV4Ranch(data);
+            return true;
+        }
         if (SaveUtil.TryGetSaveFile(data, out save))
             return true;
 

@@ -3,6 +3,12 @@ namespace PKForge.Domain;
 /// <summary>An engine-owned mutable save document. All access goes through this session; callers never see engine types.</summary>
 public interface ISaveEngineSession : IDisposable
 {
+    /// <summary>Why this source supports browsing and extraction but cannot be changed.</summary>
+    string? ReadOnlyReason => null;
+
+    /// <summary>Whether storage includes a party page.</summary>
+    bool HasParty => true;
+
     /// <summary>Called when this save becomes the one the player has open (legality era).</summary>
     void MakeActive() { }
 

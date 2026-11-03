@@ -747,7 +747,7 @@ public static class MonFieldService
     private static void Write(SaveEngineSession engine, int box, int slot, PKM pk)
     {
         pk.RefreshChecksum();
-        var save = engine.SaveFile;
+        var save = engine.WritableSaveFile;
         if (box == -1) save.SetPartySlotAtIndex(pk, slot, EntityImportSettings.None);
         else save.SetBoxSlotAtIndex(pk, box, slot, EntityImportSettings.None);
     }

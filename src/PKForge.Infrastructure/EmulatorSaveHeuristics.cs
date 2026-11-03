@@ -34,10 +34,25 @@ public static class EmulatorSaveHeuristics
     }
 
     /// <summary>Dolphin links individual GCI saves, never whole multi-game memory cards.</summary>
-    public static bool IsCandidateFileName(string fileName, EmulatorKind kind) =>
+    public static bool IsCandidateFileName(string fileName, EmulatorKind kind, string? documentPath = null) =>
         kind == EmulatorKind.Dolphin
-            ? fileName.EndsWith(".gci", StringComparison.OrdinalIgnoreCase)
+            ? fileName.EndsWith(".gci", StringComparison.OrdinalIgnoreCase) || IsDolphinRanchSave(fileName, documentPath)
             : IsCandidateFileName(fileName);
+
+    /// <summary>Only the main save of the verified USA Ranch title, not its automatic backup or other Wii files.</summary>
+    public static bool IsDolphinRanchSave(string fileName, string? documentPath)
+    {
+        if (!fileName.Equals("savedata.bin", StringComparison.OrdinalIgnoreCase) || documentPath is null) return false;
+        var parts = documentPath.Replace('\\', '/').Split('/');
+        if (parts.Any(p => p.Equals("backup", StringComparison.OrdinalIgnoreCase))) return false;
+        for (int i = 0; i < parts.Length - 1; i++)
+        {
+            if (parts[i].Equals("0001000157424d45", StringComparison.OrdinalIgnoreCase)) return true;
+            if (parts[i].Equals("00010001", StringComparison.OrdinalIgnoreCase) &&
+                parts[i + 1].Equals("57424d45", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
 
     public static bool IsDolphinMemoryCard(string fileName) =>
         Path.GetExtension(fileName).Equals(".raw", StringComparison.OrdinalIgnoreCase) ||

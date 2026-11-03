@@ -162,6 +162,6 @@ public static class BulkBoxActions
         ArgumentNullException.ThrowIfNull(session);
         if (session is not SaveEngineSession engine)
             throw new NotSupportedException("Bulk edits need a stock game session; this ROM hack keeps its own format.");
-        return (engine, engine.SaveFile);
+        return (engine, engine.WritableSaveFile);
     }
 }

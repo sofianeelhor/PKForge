@@ -49,6 +49,8 @@ public sealed class SafeSaveWriter(
     /// slot is compared, or null when the save accepts writes.</summary>
     private UnsafeSaveWriteException? Refusal(string documentId, SaveSnapshot original)
     {
+        if (engine.GetWriteRestriction(original.OriginalBytes) is { } restriction)
+            return new UnsafeSaveWriteException(restriction);
         // "Other CFRU hack" borrows the Radical Red / Unbound engine to READ the shared
         // CFRU layout, but species, growth-rate, base-stat, item and bag tables are
         // per-hack: a level edit would compute EXP and stats from the wrong game's
@@ -126,6 +128,11 @@ public sealed class SafeSaveWriter(
 
         if (!engine.Validate(candidate))
             throw new InvalidDataException("The candidate save failed engine validation; the original was not touched.");
+
+        // Extraction-only formats must also refuse unrestricted restores. Confirming a
+        // layout risk cannot turn an unimplemented native writer into a safe one.
+        if (engine.GetWriteRestriction(original.OriginalBytes) is { } restriction)
+            throw new UnsafeSaveWriteException(restriction);
 
         // Structural safety net. A whole-file restore (Unrestricted) is the recovery path
         // and must stay open; every other write is refused when the engine is not sure of

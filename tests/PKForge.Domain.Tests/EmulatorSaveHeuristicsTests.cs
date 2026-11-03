@@ -7,6 +7,18 @@ namespace PKForge.Domain.Tests;
 public sealed class EmulatorSaveHeuristicsTests
 {
     [Theory]
+    [InlineData("savedata.bin", "primary:Download/Wii/0001000157424d45/savedata.bin", true)]
+    [InlineData("savedata.bin", "msd:123/Wii/0001000157424d45/savedata.bin", true)]
+    [InlineData("SAVEDATA.BIN", "primary:Wii/title/00010001/57424D45/data/SAVEDATA.BIN", true)]
+    [InlineData("savedata.bin", "primary:Wii/0001000157424d45/backup/savedata.bin", false)]
+    [InlineData("savedata.bin", "primary:Wii/0001000157424d50/savedata.bin", false)]
+    [InlineData("savedata.bin", "primary:Wii/0001000157424d45-other/savedata.bin", false)]
+    [InlineData("banner.bin", "primary:Wii/0001000157424d45/banner.bin", false)]
+    [InlineData("savedata.bin", null, false)]
+    public void DolphinFindsOnlyTheVerifiedRanchMainSave(string name, string? path, bool expected) =>
+        Assert.Equal(expected, EmulatorSaveHeuristics.IsCandidateFileName(name, EmulatorKind.Dolphin, path));
+
+    [Theory]
     [InlineData("pokemon.srm", true)]
     [InlineData("Pokemon Platinum.sav", true)]
     [InlineData("main", true)]

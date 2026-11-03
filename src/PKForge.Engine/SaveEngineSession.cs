@@ -59,6 +59,16 @@ public sealed class SaveEngineSession : ISaveEngineSession
     /// session (generate, import, move), not the state of the file at open time.</summary>
     public SaveSnapshot Snapshot => BuildSnapshot(_displayName);
 
+    public string? ReadOnlyReason => _save is SAV4Ranch ? RanchFormat.ReadOnlyReason : null;
+
+    public bool HasParty => _save.HasParty;
+
+    private void EnsureWritable()
+    {
+        ThrowIfDisposed();
+        if (ReadOnlyReason is { } reason) throw new NotSupportedException(reason);
+    }
+
     internal PKM GetEntity(int box, int slot)
     {
         ThrowIfDisposed();
@@ -68,10 +78,15 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     /// <summary>Box -1 addresses the party (0-5, compact like the games).</summary>
     private PKM GetEntityCore(int box, int slot)
-        => box == -1 ? _save.GetPartySlotAtIndex(slot) : _save.GetBoxSlotAtIndex(box, slot);
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        return box == -1 ? _save.GetPartySlotAtIndex(slot) : _save.GetBoxSlotAtIndex(box, slot);
+    }
 
     private void SetEntityCore(int box, int slot, PKM pk)
     {
+        EnsureWritable();
         if (box == -1) _save.SetPartySlotAtIndex(pk, slot, ImportNone);
         else _save.SetBoxSlotAtIndex(pk, box, slot, ImportNone);
     }
@@ -149,7 +164,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void ApplyEdit(int box, int slot, EntityEdit edit)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ArgumentNullException.ThrowIfNull(edit);
         ValidateCoordinates(box, slot);
         var entity = GetEntityCore(box, slot);
@@ -318,7 +333,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void SetPokerus(int box, int slot, PokerusStatus status)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ValidateCoordinates(box, slot);
         var entity = GetEntityCore(box, slot);
         if (entity.Species == 0)
@@ -390,7 +405,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         Justification = "PKHeX.Core is preserve=all in the Android linker descriptor; ribbon properties are retained.")]
     public void SetRibbon(int box, int slot, string id, int value)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
         ValidateCoordinates(box, slot);
         var entity = GetEntityCore(box, slot);
@@ -439,7 +454,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         Justification = "PKHeX.Core is preserve=all in the Android linker descriptor; ribbon properties are retained.")]
     public int AwardAllObtainableRibbons(int box, int slot)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ValidateCoordinates(box, slot);
         var entity = GetEntityCore(box, slot);
         if (entity.Species == 0)
@@ -489,7 +504,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void SetAffixedRibbon(int box, int slot, int ribbonIndex)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ValidateCoordinates(box, slot);
         var entity = GetEntityCore(box, slot);
         if (entity.Species == 0)
@@ -519,6 +534,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     private void StoreEntity(int box, int slot, PKM entity)
     {
+        EnsureWritable();
         entity.RefreshChecksum();
         if (box == -1)
             _save.SetPartySlotAtIndex(entity, slot, ImportNone);
@@ -540,9 +556,15 @@ public sealed class SaveEngineSession : ISaveEngineSession
         }
     }
 
+    /// <summary>Mutable engine access must respect extraction-only source formats.</summary>
+    internal SaveFile WritableSaveFile
+    {
+        get { EnsureWritable(); return _save; }
+    }
+
     public bool DuplicateSlot(int fromBox, int fromSlot, int toBox, int toSlot)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ValidateCoordinates(fromBox, fromSlot);
         ValidateCoordinates(toBox, toSlot);
         var source = GetEntityCore(fromBox, fromSlot);
@@ -564,7 +586,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void MoveSlot(int fromBox, int fromSlot, int toBox, int toSlot)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         if (fromBox == toBox && fromSlot == toSlot) return;
 
         var source = GetEntityCore(fromBox, fromSlot);
@@ -659,11 +681,11 @@ public sealed class SaveEngineSession : ISaveEngineSession
     /// name of their own (a Diamond/Pearl file reports DP), so the name comes from the
     /// concrete games behind it.</summary>
     public IReadOnlyList<string> GameNames =>
-        [.. EncounterDatabase.ConcreteVersions(_save.Version).Select(GameInfo.GetVersionName)];
+        _save is SAV4Ranch ? ["My Pokémon Ranch"] : [.. EncounterDatabase.ConcreteVersions(_save.Version).Select(GameInfo.GetVersionName)];
 
     public int PlaceLivingDex(byte[] compressedBundle)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         using var input = new MemoryStream(compressedBundle);
         using var inflate = new System.IO.Compression.GZipStream(input, System.IO.Compression.CompressionMode.Decompress);
         using var raw = new MemoryStream();
@@ -692,7 +714,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         var targetBoxes = boxes ?? Enumerable.Range(0, _save.BoxCount).ToList();
         var slotsPerBox = _save.BoxSlotCount;
 
@@ -741,14 +763,14 @@ public sealed class SaveEngineSession : ISaveEngineSession
         return mons.Count;
     }
 
-    public bool SupportsBoxTools => true;
+    public bool SupportsBoxTools => ReadOnlyReason is null;
     // Stock legality data describes retail games: on Luminescent Platinum (its own encounters,
     // often randomized) every Pokémon would read illegal, so the checks are off, as in PKLumiHex.
-    public bool SupportsLegalityAnalysis => !Luminescent.LumiData.IsLumi(_save);
+    public bool SupportsLegalityAnalysis => _save is not SAV4Ranch && !Luminescent.LumiData.IsLumi(_save);
 
     public int BatchApply(IReadOnlyList<string> instructions, IReadOnlyList<int>? boxes = null)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         var targetBoxes = boxes ?? Enumerable.Range(0, _save.BoxCount).ToList();
         var touched = 0;
         foreach (var box in targetBoxes)
@@ -765,7 +787,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public int BatchApplySlots(IReadOnlyList<(int Box, int Slot)> slots, IReadOnlyList<string> instructions)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         var touched = 0;
         foreach (var (box, slot) in slots)
         {
@@ -920,7 +942,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void SwapBoxes(int a, int b)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         if (a == b) return;
         if (!_save.SwapBox(a, b))
             throw new InvalidOperationException("This save does not allow one of those boxes to move.");
@@ -928,7 +950,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void DeleteBox(int box)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         if ((uint)box >= (uint)_save.BoxCount) return;
         // Merge into the first box with room; anything that fits nowhere is released.
         for (var slot = 0; slot < _save.BoxSlotCount; slot++)
@@ -965,7 +987,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void ClearBox(int box)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         if ((uint)box >= (uint)_save.BoxCount) return;
         for (var slot = 0; slot < _save.BoxSlotCount; slot++)
             SetEntityCore(box, slot, _save.BlankPKM);
@@ -1016,6 +1038,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         var sets = new List<string>();
         for (var slot = 0; slot < _save.BoxSlotCount; slot++)
         {
+            if (_save is SAV4Ranch && box * _save.BoxSlotCount + slot >= _save.SlotCount) break;
             var entity = GetEntityCore(box, slot);
             if (entity.Species != 0)
                 sets.Add(ShowdownParsing.GetShowdownText(entity));
@@ -1080,7 +1103,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public bool RerollNatureKeepShiny(int box, int slot, int nature)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ValidateCoordinates(box, slot);
         var wanted = (Nature)Math.Clamp(nature, 0, 24);
         var entity = GetEntityCore(box, slot);
@@ -1198,6 +1221,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         for (var box = 0; box < _save.BoxCount; box++)
         for (var slot = 0; slot < _save.BoxSlotCount; slot++)
         {
+            if (_save is SAV4Ranch && box * _save.BoxSlotCount + slot >= _save.SlotCount) break;
             var species = GetEntityCore(box, slot).Species;
             if (species != 0) owned.Add(species);
         }
@@ -1218,7 +1242,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void SetDexEntry(int species, bool seen, bool caught)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ArgumentOutOfRangeException.ThrowIfLessThan(species, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(species, _save.MaxSpeciesID);
         var id = (ushort)species;
@@ -1364,6 +1388,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         for (var box = 0; box < _save.BoxCount; box++)
         for (var slot = 0; slot < _save.BoxSlotCount; slot++)
         {
+            if (_save is SAV4Ranch && box * _save.BoxSlotCount + slot >= _save.SlotCount) break;
             var entity = GetEntityCore(box, slot);
             if (entity.Species != 0 && !entity.IsEgg && entity.MetLocation != 0)
                 catches.Add((entity.Clone(), box, slot));
@@ -1429,7 +1454,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public GenerationOutcome PlaceEncounter(int species, int form, int cardIndex, int targetBox, int targetSlot)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ValidateCoordinates(targetBox, targetSlot);
         if (targetBox != -1 && GetEntityCore(targetBox, targetSlot).Species != 0)
             return new GenerationOutcome(false, "The destination slot is occupied.");
@@ -1470,7 +1495,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void ReleaseSlot(int box, int slot)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ValidateCoordinates(box, slot);
         DeleteEntityCore(box, slot);
     }
@@ -1494,7 +1519,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     private TransferConversion? ImportCore(int box, int slot, byte[] fileBytes, string? format, bool allowBackwards, out string? refusal)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ArgumentNullException.ThrowIfNull(fileBytes);
         refusal = null;
         // Same-size formats (PK6/PK7, PK8/PB8, PK9/PA9) are ambiguous from bytes alone. A
@@ -1535,7 +1560,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void SetTrainer(TrainerInfo trainer)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         if (_save is SAV3 sav3 && !string.Equals(_save.OT, trainer.Name, StringComparison.Ordinal))
             PrefillTrainerName3(sav3.SmallBlock.OriginalTrainerTrash, sav3.Japanese);
         _save.OT = trainer.Name;
@@ -1561,7 +1586,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public GenerationOutcome MakeMine(int box, int slot, TrainerProfile? profile = null)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ValidateCoordinates(box, slot);
         var source = GetEntity(box, slot);
         if (source.Species == 0)
@@ -1687,7 +1712,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void CompleteDex()
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         for (ushort species = 1; species <= _save.MaxSpeciesID; species++)
             SetDexFlagsCore(species, seen: true, caught: true);
     }
@@ -1723,7 +1748,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public int SetItemCount(string pouchName, int itemId, int count)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         var bag = _save.Inventory;
         var pouch = bag.Pouches.FirstOrDefault(p => p.Type.ToString() == pouchName)
             ?? throw new InvalidOperationException($"No pouch named {pouchName}.");
@@ -1764,7 +1789,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public int SetPokeBeanCount(int index, int count)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         if (_save is not SAV7 sav)
             throw new NotSupportedException("This game has no Poké Pelago Bean storage.");
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)index, (uint)ResortSave7.BEANS_MAX);
@@ -1796,7 +1821,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public int SetGrandUndergroundItemCount(int itemId, int count)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         if (_save is not SAV8BS sav)
             throw new NotSupportedException("This game has no Grand Underground inventory.");
 
@@ -1852,7 +1877,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public DaycareWithdrawal WithdrawDaycareToFirstEmptyBox(int facilityIndex, int slot)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         var facilities = GetDaycareFacilities();
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual((uint)facilityIndex, (uint)facilities.Count);
         var facility = facilities[facilityIndex];
@@ -1906,7 +1931,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void UnlockAllLegalFashion()
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         switch (_save)
         {
             case SAV8SWSH swsh: swsh.Fashion.UnlockAllLegal(); break;
@@ -1930,7 +1955,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void SetStylePoints(int value)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         if (_save is not SAV6XY xy)
             throw new NotSupportedException("Style points exist in Pokémon X and Y only.");
         xy.Situation.Style = Math.Clamp(value, 0, MaxStylePoints);
@@ -2007,7 +2032,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void SetTrainerStats(TrainerStatsEdit edit)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ArgumentNullException.ThrowIfNull(edit);
         // Hours are clamped before PKHeX sees them: Gen 1's raw setter wipes the
         // minute/second counters when an over-range value reaches it unclamped.
@@ -2081,7 +2106,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void RepairRTC()
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         switch (_save)
         {
             // Gen 2: the cartridge clock lives outside save data; arming the
@@ -2165,7 +2190,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void ApplyMetEdit(int box, int slot, MetEdit edit)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ArgumentNullException.ThrowIfNull(edit);
         ValidateCoordinates(box, slot);
         var e = GetEntityCore(box, slot);
@@ -2310,7 +2335,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void ApplyPotentialEdit(int box, int slot, PotentialEdit edit)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ArgumentNullException.ThrowIfNull(edit);
         ValidateCoordinates(box, slot);
         var e = GetEntityCore(box, slot);
@@ -2412,7 +2437,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void ApplyMoveDetails(int box, int slot, MoveDetailsEdit edit)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ArgumentNullException.ThrowIfNull(edit);
         ValidateCoordinates(box, slot);
         var e = GetEntityCore(box, slot);
@@ -2505,7 +2530,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void ApplyMoveShopEdit(int box, int slot, MoveShopEdit edit)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ArgumentNullException.ThrowIfNull(edit);
         ValidateCoordinates(box, slot);
         var e = GetEntityCore(box, slot);
@@ -2576,7 +2601,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public void ApplyCosmeticEdit(int box, int slot, CosmeticEdit edit)
     {
-        ThrowIfDisposed();
+        EnsureWritable();
         ArgumentNullException.ThrowIfNull(edit);
         ValidateCoordinates(box, slot);
         var e = GetEntityCore(box, slot);
@@ -2683,6 +2708,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public ReadOnlyMemory<byte> Serialize()
     {
         ThrowIfDisposed();
+        if (ReadOnlyReason is not null) return _originalBytes.ToArray();
         return SramPadding.Restore(_save.Write().Span, _originalBytes);
     }
 
@@ -2736,6 +2762,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     public bool SetCompassSetting(string id, int choiceIndex)
     {
+        EnsureWritable();
         if (_save is not SAV9SV sv)
             return false;
         var definition = Array.Find(CompassDefinitions, d => d.Id == id);
@@ -2754,12 +2781,13 @@ public sealed class SaveEngineSession : ISaveEngineSession
         for (var box = 0; box < _save.BoxCount; box++)
         for (var slot = 0; slot < _save.BoxSlotCount; slot++)
         {
+            if (_save is SAV4Ranch && box * _save.BoxSlotCount + slot >= _save.SlotCount) break;
             var entity = _save.GetBoxSlotAtIndex(box, slot);
             slots.Add(new SlotSummary(box, slot, entity.Species == 0 ? null : entity.Species,
                 entity.IsNicknamed ? entity.Nickname : null, entity.IsShiny,
                 entity.Species == 0 || entity.Valid, entity.Form, entity.IsEgg, entity.HeldItem, EntitySprite.Traits(entity)));
         }
-        for (var i = 0; i < SaveParser.PartySlots(_save); i++)
+        for (var i = 0; _save.HasParty && i < SaveParser.PartySlots(_save); i++)
         {
             var partyMon = _save.GetPartySlotAtIndex(i);
             slots.Add(new SlotSummary(-1, i, partyMon.Species == 0 ? null : partyMon.Species,
@@ -2772,11 +2800,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         if (box == -1)
         {
-            if ((uint)slot >= 6u)
+            if (!_save.HasParty || (uint)slot >= 6u)
                 throw new ArgumentOutOfRangeException($"Party slot {slot} is outside this save's storage.");
             return;
         }
-        if ((uint)box >= (uint)_save.BoxCount || (uint)slot >= (uint)_save.BoxSlotCount)
+        if ((uint)box >= (uint)_save.BoxCount || (uint)slot >= (uint)_save.BoxSlotCount ||
+            _save is SAV4Ranch && box * _save.BoxSlotCount + slot >= _save.SlotCount)
             throw new ArgumentOutOfRangeException($"Box/slot {box}/{slot} is outside this save's storage.");
     }
 
