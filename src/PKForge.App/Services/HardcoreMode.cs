@@ -15,7 +15,7 @@ public static class HardcoreMode
     private const string Key = "hardcore_mode";
 
     /// <summary>The one line every blocked surface shows instead of writing.</summary>
-    public const string StatusLine = "HARDCORE MODE - data editing is off";
+    public const string StatusLine = "Hardcore mode: editing is off";
 
     /// <summary>Short marker for footers and headers while the mode is on.</summary>
     public const string Marker = "HARDCORE";
@@ -34,8 +34,8 @@ public static class HardcoreMode
     /// <summary>The decision table for the current setting.</summary>
     public static SaveGuard Guard => SaveGuard.For(IsOn);
 
-    /// <summary>The status a blocked action shows, e.g. "HARDCORE MODE - data editing is off (duplication blocked)".</summary>
-    public static string StatusFor(SaveAction action) => $"{StatusLine} ({Describe(action)} blocked)";
+    /// <summary>The status a blocked action shows, e.g. "Hardcore mode blocks duplication."</summary>
+    public static string StatusFor(SaveAction action) => $"Hardcore mode blocks {Describe(action)}.";
 
     /// <summary>
     /// True when Hardcore mode forbids <paramref name="action"/>; <paramref name="status"/>

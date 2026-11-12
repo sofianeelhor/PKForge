@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The living Poképark: 2x2, 4x2 (default) and 4x4 cells, a film repainted for each size. Cocoon and iiSU
+     start from the smallest size, so 2x2 stands on its own. No configure activity. updatePeriodMillis is
+     the 30-minute floor and never wakes a sleeping device; the park also pushes a new film when it changes. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="110dp"
+    android:maxResizeWidth="530dp"
+    android:maxResizeHeight="530dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/live_park_widget_initial"
+    android:previewLayout="@layout/live_park_widget_preview"
+    android:previewImage="@drawable/live_park_widget_preview_image"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/live_park_widget_description" />

@@ -1,6 +1,8 @@
-using Microsoft.Maui.Controls.Shapes;
+using PKForge.Chrome;
+using SkiaSharp;
+using SkiaSharp.Views.Maui;
+using SkiaSharp.Views.Maui.Controls;
 using PKForge.App.Services;
-using PKForge.App.Theme;
 using PKForge.Domain;
 
 namespace PKForge.App.Views;
@@ -30,42 +32,60 @@ public sealed record PickerFilter(string OnLabel, string OffLabel, Func<PickItem
 /// <summary>
 /// A live panel under a picker's list that follows the highlighted row (the nature
 /// picker's stat preview). With a panel, a tap highlights instead of picking so touch
-/// users see the preview too; tapping the highlighted row again (or A) picks it.
+/// users see the preview too (every picker now works that way: a tap aims, a second tap picks).
 /// </summary>
 public sealed record PickerPreview(View Panel, Action<PickItem?> OnHighlight);
 
 /// <summary>
-/// The searchable choice window for big lists (species, moves, items…).
-/// Touch: type in the search box, tap a row. Pad: d-pad moves the gold highlight,
-/// A chooses, B cancels. Owns the gamepad while open.
+/// The searchable choice window for big lists (held items, moves, abilities, balls…), painted
+/// in the DA by <see cref="PickerPaint"/>. Touch: tap the search plate to type (the list
+/// follows each key), tap a row to aim it and tap it again to pick, drag to scroll. Pad: the
+/// d-pad moves the chip, L/R page, A picks, Y flips the filter, X cuts to a type, Select
+/// searches, B cancels. Owns the gamepad while open.
 /// </summary>
 public sealed class PickerMenu : IPadHandler
 {
-    // Show enough that a gamepad user (no touch keyboard) can d-pad to any entry; the
-    // CollectionView virtualizes, so a larger cap is cheap.
-    private const int MaxVisible = 1200;
-    private const double PreviewWidth = 280; // the preview card's column beside the list
-    private const double SideBySideWidth = 700; // the narrowest host that fits both columns
+    // Decoded row art by file path, shared by every picker: a list of 2000 items decodes each
+    // sprite once, and only when its row first scrolls into view.
+    private static readonly Dictionary<string, SKImage?> Icons = [];
+
+    // Icons are tinted with the theme's colours: a new colour scheme starts a fresh cache.
+    // The old images are not disposed here: a menu still on screen may be drawing them; once
+    // nothing holds them, their finalizer frees them.
+    static PickerMenu() => ColorTheme.Changed += () => { lock (Icons) Icons.Clear(); };
 
     private readonly TaskCompletionSource<PickItem?> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly IReadOnlyList<PickItem> _all;
+    private readonly string _title;
     private readonly Grid _host;
     private readonly Grid _overlay;
     private readonly GamepadRouter? _router;
-    private readonly CollectionView _list;
-    private readonly Label _preview;
+    private readonly SKCanvasView _canvas = new() { EnableTouchEvents = true };
     private readonly PickerPreview? _livePreview;
     private readonly PickerFilter? _filter;
-    private readonly Label? _filterLabel;
+    private readonly bool _detailRows;
+    private readonly Dictionary<PickItem, PickerLine> _lines = [];
     private bool _filterOn;
     // Lists of moves can be cut to one type (X): every type present in the list is offered.
     private readonly bool _hasTypes;
     private int? _typeFilter;
-    private Label? _typeLabel;
-    private Border? _typeChip;
     private string _query = "";
     private List<PickItem> _filtered;
     private int _index;
+    private float _offset; // the list's scroll, design pixels
+    private bool _centerPending = true; // the first paint centres the current value
+    private bool _keepPending; // the next paint brings the chip into view
+    private bool _armed; // the highlighted row was aimed by a tap: a second tap picks it
+    private bool _busy; // a search prompt or the type menu is open over the picker
+    private bool _closed;
+    private PickerHits? _hits;
+    private SKPoint? _pressedAt;
+    private float _pressedOffset;
+    private bool _dragged;
+    private float _velocity; // design pixels per millisecond, for the fling
+    private long _lastMove;
+    private float _lastY;
+    private VsyncLoop? _fling;
 
     public static Task<PickItem?> ShowAsync(Grid host, string title, IReadOnlyList<PickItem> items, int? currentId = null,
         PickerPreview? preview = null, PickerFilter? filter = null) =>
@@ -76,234 +96,36 @@ public sealed class PickerMenu : IPadHandler
     {
         _host = host;
         _all = items;
+        _title = Kit.Tidy(title);
         _livePreview = livePreview;
         _filter = filter;
         // The current value always stays reachable: a filter that would hide it starts off.
         _filterOn = filter is not null && filter.StartOn
             && (currentId is not { } cur || items.FirstOrDefault(x => x.Id == cur) is not { } held || filter.Keep(held));
         _hasTypes = items.Count(x => x.TypeId is not null) > 1;
+        _detailRows = items.Any(x => x.Detail is not null);
         _filtered = Filter("");
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
-
-        var search = Kit.TextField();
-        search.Placeholder = "Search…";
-        search.TextChanged += (_, args) =>
-        {
-            _query = args.NewTextValue ?? "";
-            Refilter(keepId: null);
-        };
-
-        // The filter chip rides beside the search box; Y toggles it on the pad.
-        View searchRow = search;
-        if (filter is not null)
-        {
-            _filterLabel = new Label
-            {
-                FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextLabel,
-                VerticalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.NoWrap,
-            };
-            // A toggle in the menu-button language (resting / active), not an outline pill.
-            var chip = Kit.Tab("");
-            chip.Content = _filterLabel;
-            chip.Padding = new Thickness(12, 0);
-            var tap = new TapGestureRecognizer();
-            tap.Tapped += (_, _) => ToggleFilter();
-            chip.GestureRecognizers.Add(tap);
-            _filterChip = chip;
-            var row = new Grid { ColumnSpacing = 8, ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto)], Children = { search, chip } };
-            Grid.SetColumn(chip, 1);
-            searchRow = row;
-            PaintFilterChip();
-        }
-        if (_hasTypes)
-        {
-            _typeLabel = new Label
-            {
-                FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextLabel,
-                VerticalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.NoWrap,
-            };
-            var chip = Kit.Tab("");
-            chip.Content = _typeLabel;
-            chip.Padding = new Thickness(12, 0);
-            var tap = new TapGestureRecognizer();
-            tap.Tapped += (_, _) => _ = ChooseTypeAsync();
-            chip.GestureRecognizers.Add(tap);
-            _typeChip = chip;
-            var row = new Grid { ColumnSpacing = 8, ColumnDefinitions = [new(GridLength.Star), new(GridLength.Auto)], Children = { searchRow, chip } };
-            Grid.SetColumn(chip, 1);
-            searchRow = row;
-            PaintTypeChip();
-        }
-
-        _list = new CollectionView
-        {
-            SelectionMode = SelectionMode.Single,
-            ItemsSource = _filtered,
-            ItemTemplate = new DataTemplate(() => BuildRow(this)),
-        };
-        _list.SelectionChanged += (_, args) =>
-        {
-            // The pad only moves the highlight; taps are the rows' own (OnRowTapped), since the
-            // list reports nothing for a tap on the row that is already selected.
-            if (_padSelecting) { _padSelecting = false; UpdatePreview(); }
-        };
-
-        // The list is the Star row so it fills the host-capped window and scrolls itself -
-        // never a fixed 340 that pushed the title and hint bar off a 360dp screen.
-        _preview = new Label
-        {
-            TextColor = UiTokens.Ink0,
-            FontFamily = DsChrome.PixelFont,
-            FontSize = UiTokens.TextLabel,
-            HorizontalTextAlignment = TextAlignment.Center,
-            VerticalTextAlignment = TextAlignment.Center,
-            LineBreakMode = LineBreakMode.TailTruncation,
-        };
-        var hintList = new List<(string, string, Action?)> { ("A", "PICK", livePreview is null ? null : PickHighlighted) };
-        if (_hasTypes) hintList.Add(("X", "Type", () => _ = ChooseTypeAsync()));
-        if (filter is not null) hintList.Add(("Y", "Filter", ToggleFilter));
-        hintList.Add(("B", "Cancel", () => Close(null)));
-        var hints = Kit.WindowHints([.. hintList]);
-        var previewBar = Kit.Well(_preview, padding: 4);
-        previewBar.Padding = new Thickness(10, 4);
-        // The selected-item preview used to be layered over the controller hints in a
-        // single grid cell. Keep both useful pad affordances, but give each its own row.
-        var hintRow = new VerticalStackLayout
-        {
-            Spacing = 4,
-            Padding = new Thickness(0, 3, 0, 0),
-            Children = { previewBar, hints },
-        };
-        // On a wide screen the preview card sits beside the list so the list keeps the full
-        // height; on a narrow one it goes under the list, above the hints.
-        var side = livePreview is not null && host.Width >= SideBySideWidth;
-        View body = _list;
-        if (livePreview is not null && side)
-        {
-            livePreview.Panel.VerticalOptions = LayoutOptions.Start;
-            var columns = new Grid
-            {
-                ColumnSpacing = 12,
-                ColumnDefinitions = [new(GridLength.Star), new(new GridLength(PreviewWidth))],
-                Children = { _list, livePreview.Panel },
-            };
-            Grid.SetColumn(livePreview.Panel, 1);
-            body = columns;
-        }
-        else if (livePreview is not null)
-            hintRow.Children.Insert(0, livePreview.Panel);
-
-        var content = new Grid
-        {
-            RowSpacing = 10,
-            VerticalOptions = LayoutOptions.Fill,
-            RowDefinitions = [new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto)],
-            Children =
-            {
-                Kit.HeaderBar(Kit.Tidy(title)),
-                searchRow,
-                body,
-                hintRow,
-            },
-        };
-        Grid.SetRow(searchRow, 1);
-        Grid.SetRow(body, 2);
-        Grid.SetRow(hintRow, 3);
-
-        var window = Kit.OverlayWindow(host, content, preferredMaxWidth: side ? 520 + PreviewWidth + 12 : 520, scroll: false);
-        _overlay = Kit.AttachOverlay(host, window, () => Close(null));
-        search.Unfocus(); // the pad drives first; touch users tap the box to type
 
         if (currentId is { } id)
         {
             var current = _filtered.FindIndex(x => x.Id == id);
             if (current >= 0) _index = current;
         }
-        HighlightCurrent();
+
+        _canvas.PaintSurface += PaintGuard.Wrap("PickerMenu.OnPaint", OnPaint);
+        _canvas.Touch += OnTouch;
+        _overlay = Kit.AttachOverlay(host, _canvas);
+        if (livePreview is not null)
+        {
+            // The live card rides over the frame the painter leaves for it (placed on paint).
+            livePreview.Panel.HorizontalOptions = LayoutOptions.Start;
+            livePreview.Panel.VerticalOptions = LayoutOptions.Start;
+            livePreview.Panel.IsVisible = false;
+            _overlay.Add(livePreview.Panel);
+        }
+        UpdatePreview();
         _router?.Push(this);
-    }
-
-    private static View BuildRow(PickerMenu tapOwner)
-    {
-        var icon = new Image { WidthRequest = 26, HeightRequest = 26, IsVisible = false, VerticalOptions = LayoutOptions.Center };
-        icon.SetBinding(Image.SourceProperty, new Binding(nameof(PickItem.IconPath)));
-        icon.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(PickItem.IconPath), converter: NotNull));
-
-        var name = new Label { TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = 15, VerticalTextAlignment = TextAlignment.Center, LineBreakMode = LineBreakMode.TailTruncation };
-        name.SetBinding(Label.TextProperty, nameof(PickItem.Name));
-        // Two lines at most: enough for an item or ability effect, still a scannable list.
-        var detail = new Label
-        {
-            TextColor = UiTokens.InkSoft, FontSize = UiTokens.TextSmall, IsVisible = false, MaxLines = 2,
-            LineBreakMode = LineBreakMode.TailTruncation, VerticalTextAlignment = TextAlignment.Center,
-        };
-        detail.SetBinding(Label.TextProperty, nameof(PickItem.Detail));
-        detail.SetBinding(VisualElement.IsVisibleProperty, new Binding(nameof(PickItem.Detail), converter: NotNull));
-        var text = new VerticalStackLayout { Spacing = 0, VerticalOptions = LayoutOptions.Center, Children = { name, detail } };
-
-        // Badge column: the type pill over the category icon, both hidden when unused.
-        var badge = InfoKit.TypeBadge(null, 58);
-        var category = new InfoKit.CategoryIcon { HorizontalOptions = LayoutOptions.Center };
-        var badges = new VerticalStackLayout { Spacing = 2, VerticalOptions = LayoutOptions.Center, Children = { badge, category } };
-        var tag = InfoKit.Tag();
-
-        var row = new Grid
-        {
-            ColumnSpacing = 10,
-            Padding = new Thickness(10, 7),
-            ColumnDefinitions = [new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto)],
-            Children = { icon, badges, text, tag },
-        };
-        Grid.SetColumn(badges, 1);
-        Grid.SetColumn(text, 2);
-        Grid.SetColumn(tag, 3);
-        row.BindingContextChanged += (_, _) =>
-        {
-            var item = row.BindingContext as PickItem;
-            InfoKit.SetType(badge, item?.TypeId);
-            category.Category = item?.Category;
-            badges.IsVisible = badge.IsVisible || category.IsVisible;
-            InfoKit.SetTag(tag, item?.Tag, item?.TagColor);
-            name.TextColor = item?.Muted == true ? UiTokens.InkSoft : UiTokens.Ink0;
-            row.Opacity = item?.Muted == true ? 0.72 : 1;
-        };
-
-        // A flat list row: soft stripe resting, the selected-button look when highlighted.
-        var cell = new Border
-        {
-            BackgroundColor = UiTokens.RowStripe,
-            StrokeThickness = 1.2,
-            Stroke = Colors.Transparent,
-            StrokeShape = new RoundRectangle { CornerRadius = UiTokens.ControlRadius },
-            Margin = new Thickness(0, 0, 0, 3),
-            Content = row,
-        };
-        var tap = new TapGestureRecognizer();
-        tap.Tapped += (_, _) => { if (cell.BindingContext is PickItem item) tapOwner.OnRowTapped(item); };
-        cell.GestureRecognizers.Add(tap);
-        VisualStateManager.SetVisualStateGroups(cell, new VisualStateGroupList
-        {
-            new VisualStateGroup
-            {
-                Name = "CommonStates",
-                States =
-                {
-                    new VisualState { Name = "Normal", Setters = { new Setter { Property = Border.StrokeProperty, Value = Colors.Transparent } } },
-                    new VisualState { Name = "Selected", Setters = {
-                        new Setter { Property = Border.StrokeProperty, Value = UiTokens.Rim },
-                        new Setter { Property = Border.BackgroundColorProperty, Value = UiTokens.SelectFill } } },
-                },
-            },
-        });
-        return cell;
-    }
-
-    private static readonly IValueConverter NotNull = new NotNullConverter();
-
-    private sealed class NotNullConverter : IValueConverter
-    {
-        public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) => value is not null;
-        public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) => throw new NotSupportedException();
     }
 
     private List<PickItem> Filter(string query)
@@ -312,52 +134,313 @@ public sealed class PickerMenu : IPadHandler
         if (_filterOn && _filter is not null) source = source.Where(_filter.Keep);
         if (_typeFilter is { } type) source = source.Where(x => x.Id == 0 || x.TypeId == type);
         if (!string.IsNullOrWhiteSpace(query))
-            source = source.Where(x => x.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
-                                       || (x.Keywords?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
-        return source.Take(MaxVisible).ToList();
+        {
+            var q = query.Trim();
+            source = source.Where(x => x.Name.Contains(q, StringComparison.OrdinalIgnoreCase)
+                                       || (x.Keywords?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+        return source.ToList();
     }
 
-    private Border? _filterChip;
+    // ---------- Painting ----------
+
+    private PickerLine LineOf(int index)
+    {
+        var item = _filtered[index];
+        if (_lines.TryGetValue(item, out var line)) return line;
+        line = new PickerLine(item.Name, item.Detail, IconOf(item.IconPath),
+            item.TypeId is { } t ? TypeFacts.Name(t) : null,
+            item.TypeId is { } tc ? InfoKit.TypeColor(tc).ToSKColor() : null,
+            item.Category is { } k ? (int)k : null,
+            item.Tag, item.TagColor?.ToSKColor(), item.Muted, item.TypeId);
+        _lines[item] = line;
+        return line;
+    }
+
+    private static SKImage? IconOf(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+        lock (Icons)
+        {
+            if (Icons.TryGetValue(path, out var cached)) return cached;
+            SKImage? image = null;
+            try
+            {
+                using var bitmap = File.Exists(path) ? SKBitmap.Decode(path) : null;
+                if (bitmap is not null)
+                {
+                    // Cropped to the opaque pixels so the art fills its box in whole steps.
+                    var all = new SKRectI(0, 0, bitmap.Width, bitmap.Height);
+                    var bounds = StoragePaint.OpaqueBounds(bitmap, all);
+                    using var whole = SKImage.FromBitmap(bitmap);
+                    image = Kit.SubsetOf(whole, bounds.IsEmpty ? all : bounds);
+                }
+            }
+            catch (Exception) { image = null; }
+            Icons[path] = image;
+            return image;
+        }
+    }
+
+    private PickerScene Scene()
+    {
+        var chips = new List<PickerChip>();
+        if (_hasTypes)
+            chips.Add(new PickerChip(_typeFilter is { } t ? $"✓ {TypeFacts.Name(t)}" : "Type: All", _typeFilter is not null,
+                _typeFilter is { } tc ? InfoKit.TypeColor(tc).ToSKColor() : null));
+        if (_filter is not null)
+            chips.Add(new PickerChip(_filterOn ? $"✓ {_filter.OnLabel}" : _filter.OffLabel, _filterOn));
+        var keys = new List<(string, string)> { ("A", "Pick") };
+        if (_hasTypes) keys.Add(("X", "Type"));
+        if (_filter is not null) keys.Add(("Y", "Filter"));
+        keys.Add(("L/R", "Page"));
+        keys.Add(("B", "Cancel"));
+        return new PickerScene(_title, _query, _filtered.Count, LineOf, _index, _offset, chips, StatusText(), keys,
+            _detailRows, _livePreview is not null, (c, r, k) => InfoKit.CategoryIcon.DrawCategory(c, r, (MoveCategory)k),
+            TypePlates.Paint);
+    }
+
+    private string StatusText()
+    {
+        var current = Current;
+        if (current is null) return _filtered.Count == 0 ? "A picks: (nothing matches)" : "";
+        return _armed ? $"A or tap again picks: {current.Name}" : $"A picks: {current.Name}";
+    }
+
+    private PickItem? Current => _index >= 0 && _index < _filtered.Count ? _filtered[_index] : null;
+
+    private void OnPaint(object? sender, SKPaintSurfaceEventArgs args)
+    {
+        args.Surface.Canvas.Clear(SKColors.Transparent);
+        var face = BoxBrowserPage.PixelTypeface();
+        _hits = PickerPaint.Paint(args.Surface.Canvas, args.Info, Scene(), face);
+        // The first paint learns the list's height: centre the current value, keep the chip in view.
+        var before = _offset;
+        if (_centerPending)
+        {
+            _centerPending = false;
+            _offset = _index * _hits.RowHeight - (_hits.ListHeight - _hits.RowHeight) / 2f;
+        }
+        else if (_keepPending) KeepInView();
+        _keepPending = false;
+        _offset = Math.Clamp(_offset, 0f, _hits.MaxOffset);
+        if (MathF.Abs(before - _offset) > 0.01f) _hits = PickerPaint.Paint(ClearAndGet(args), args.Info, Scene(), face);
+        PlacePreview(args.Info);
+    }
+
+    private static SKCanvas ClearAndGet(SKPaintSurfaceEventArgs args)
+    {
+        args.Surface.Canvas.Clear(SKColors.Transparent);
+        return args.Surface.Canvas;
+    }
+
+    private void KeepInView()
+    {
+        if (_hits is not { } hits) return;
+        var top = _index * hits.RowHeight;
+        if (top < _offset) _offset = top;
+        else if (top + hits.RowHeight > _offset + hits.ListHeight) _offset = top + hits.RowHeight - hits.ListHeight;
+    }
+
+    /// <summary>Lays the live card over the frame the painter left for it, in device-independent units.</summary>
+    private void PlacePreview(SKImageInfo info)
+    {
+        if (_livePreview is null || _hits is not { } hits || hits.Side.IsEmpty || _canvas.Width <= 0) return;
+        var scale = (float)(info.Width / _canvas.Width);
+        var side = hits.Side;
+        var panel = _livePreview.Panel;
+        const double inset = 10;
+        var margin = new Thickness(side.Left / scale + inset, side.Top / scale + inset, 0, 0);
+        var width = side.Width / scale - 2 * inset;
+        var height = side.Height / scale - 2 * inset;
+        if (panel.Margin != margin) panel.Margin = margin;
+        if (Math.Abs(panel.WidthRequest - width) > 0.5) panel.WidthRequest = width;
+        if (Math.Abs(panel.MaximumHeightRequest - height) > 0.5) panel.MaximumHeightRequest = height;
+        panel.IsVisible = true;
+    }
+
+    private void Invalidate() => _canvas.InvalidateSurface();
+
+    // ---------- Touch ----------
+
+    private void OnTouch(object? sender, SKTouchEventArgs args)
+    {
+        args.Handled = true;
+        if (_hits is not { } hits || _busy) return;
+        var at = args.Location;
+        switch (args.ActionType)
+        {
+            case SKTouchAction.Pressed:
+                StopFling();
+                _pressedAt = at;
+                _pressedOffset = _offset;
+                _dragged = false;
+                _velocity = 0;
+                _lastY = at.Y;
+                _lastMove = Environment.TickCount64;
+                return;
+            case SKTouchAction.Moved when _pressedAt is { } start && hits.List.Contains(start):
+            {
+                var dy = (start.Y - at.Y) / hits.Unit;
+                if (!_dragged && MathF.Abs(dy) < hits.RowHeight / 4f) return;
+                _dragged = true;
+                _offset = Math.Clamp(_pressedOffset + dy, 0f, hits.MaxOffset);
+                var now = Environment.TickCount64;
+                var dt = Math.Max(1, now - _lastMove);
+                _velocity = 0.6f * _velocity + 0.4f * ((_lastY - at.Y) / hits.Unit / dt);
+                _lastY = at.Y;
+                _lastMove = now;
+                Invalidate();
+                return;
+            }
+            case SKTouchAction.Released:
+                var tapped = !_dragged;
+                _pressedAt = null;
+                if (tapped) OnTap(hits, at);
+                else if (Environment.TickCount64 - _lastMove < 80 && MathF.Abs(_velocity) > 0.3f) StartFling();
+                return;
+            case SKTouchAction.Cancelled:
+                _pressedAt = null;
+                return;
+        }
+    }
+
+    private void StartFling()
+    {
+        // Stepped on each screen refresh by the time that really passed (see VsyncLoop).
+        _fling ??= new VsyncLoop(OnFling);
+        _fling.Start();
+    }
+
+    private bool OnFling(float elapsed)
+    {
+        if (_hits is not { } hits || _closed) return false;
+        _offset = Math.Clamp(_offset + _velocity * elapsed, 0f, hits.MaxOffset);
+        _velocity *= MathF.Pow(0.94f, elapsed / 16f);
+        Invalidate();
+        return !(MathF.Abs(_velocity) < 0.05f || _offset <= 0f || _offset >= hits.MaxOffset);
+    }
+
+    private void StopFling() => _fling?.Stop();
+
+    private void OnTap(PickerHits hits, SKPoint at)
+    {
+        foreach (var (key, rect) in hits.Keys)
+        {
+            if (!rect.Contains(at)) continue;
+            switch (key)
+            {
+                case "A": PickHighlighted(); break;
+                case "X": _ = ChooseTypeAsync(); break;
+                case "Y": ToggleFilter(); break;
+                case "L/R": Page(1); break;
+                default: Close(null); break;
+            }
+            return;
+        }
+        if (!hits.Panel.Contains(at)) { Close(null); return; }
+        if (hits.Search.Contains(at)) { _ = SearchAsync(); return; }
+        for (var i = 0; i < hits.Chips.Count; i++)
+        {
+            if (!hits.Chips[i].Contains(at)) continue;
+            // The chips are laid type first, then the filter, as Scene() lists them.
+            if (_hasTypes && i == 0) _ = ChooseTypeAsync();
+            else ToggleFilter();
+            return;
+        }
+        foreach (var (index, rect) in hits.Rows)
+        {
+            if (!rect.Contains(at) || !hits.List.Contains(at)) continue;
+            // A tap aims the row (the status line and live card follow); a second tap on it picks.
+            if (index == _index && _armed) { PickHighlighted(); return; }
+            _index = index;
+            _armed = true;
+            _keepPending = true;
+            UpdatePreview();
+            return;
+        }
+    }
+
+    // ---------- Pad ----------
+
+    public bool OnPadButton(PadButton button)
+    {
+        if (_busy) return true;
+        switch (button)
+        {
+            case PadButton.Up: Move(-1); return true;
+            case PadButton.Down: Move(1); return true;
+            case PadButton.L: case PadButton.Left: Page(-1); return true;
+            case PadButton.R: case PadButton.Right: Page(1); return true;
+            case PadButton.A: PickHighlighted(); return true;
+            case PadButton.B: Close(null); return true;
+            case PadButton.Y: ToggleFilter(); return true;
+            case PadButton.X: _ = ChooseTypeAsync(); return true;
+            case PadButton.Select: case PadButton.Start: _ = SearchAsync(); return true;
+            default: return true; // the picker owns the pad while open
+        }
+    }
+
+    private int PageRows => _hits is { } hits ? Math.Max(1, (int)(hits.ListHeight / hits.RowHeight) - 1) : 8;
+
+    private void Page(int direction) => Move(direction * PageRows);
+
+    private void Move(int delta)
+    {
+        if (_filtered.Count == 0) return;
+        StopFling();
+        _index = Math.Clamp(_index + delta, 0, _filtered.Count - 1);
+        _armed = false;
+        _keepPending = true;
+        UpdatePreview();
+    }
+
+    // ---------- Search and filters ----------
+
+    /// <summary>The search prompt: the list filters behind it on every key; Cancel puts the old search back.</summary>
+    private async Task SearchAsync()
+    {
+        if (_busy || _closed) return;
+        _busy = true;
+        StopFling();
+        var before = _query;
+        var keep = Current?.Id;
+        try
+        {
+            var typed = await TextPopup.ShowLineAsync(_host, "Search", "Part of the name", _query, confirm: "Search",
+                changed: text => { _query = text; Refilter(null); });
+            _query = typed ?? before;
+            Refilter(typed is null ? keep : null);
+        }
+        finally { _busy = false; }
+    }
 
     private void ToggleFilter()
     {
         if (_filter is null) return;
-        var keep = _index >= 0 && _index < _filtered.Count ? _filtered[_index].Id : (int?)null;
+        var keep = Current?.Id;
         _filterOn = !_filterOn;
-        PaintFilterChip();
         Refilter(keep);
     }
 
     /// <summary>Cuts the list to one type, picked from the types the list holds.</summary>
     private async Task ChooseTypeAsync()
     {
-        if (!_hasTypes) return;
-        const string All = "All types";
-        var types = _all.Where(x => x.TypeId is not null).Select(x => x.TypeId!.Value).Distinct().Order().ToList();
-        var options = new List<PadOption> { new(All, IconPath: "all") };
-        options.AddRange(types.Select(t => new PadOption(TypeFacts.Name(t), Glyph: "●", Accent: InfoKit.TypeColor(t))));
-        var choice = await PadMenu.ShowAsync(_host, "Move type", null, [.. options]);
-        if (choice is null) return;
-        var keep = _index >= 0 && _index < _filtered.Count ? _filtered[_index].Id : (int?)null;
-        _typeFilter = choice == All ? null : types.FirstOrDefault(t => TypeFacts.Name(t) == choice, -1) is var found and >= 0 ? found : null;
-        PaintTypeChip();
-        Refilter(keep);
-    }
-
-    private void PaintTypeChip()
-    {
-        if (_typeChip is null || _typeLabel is null) return;
-        _typeLabel.Text = _typeFilter is { } t ? $"✓ {TypeFacts.Name(t)}" : "Type: All";
-        Kit.SetTab(_typeChip, _typeFilter is not null, _typeFilter is { } type ? InfoKit.TypeColor(type) : null);
-        _typeLabel.TextColor = _typeFilter is not null ? UiTokens.SelectInk : UiTokens.Ink0;
-    }
-
-    private void PaintFilterChip()
-    {
-        if (_filter is null || _filterChip is null || _filterLabel is null) return;
-        _filterLabel.Text = _filterOn ? $"✓ {_filter.OnLabel}" : _filter.OffLabel;
-        Kit.SetTab(_filterChip, _filterOn);
-        _filterLabel.TextColor = _filterOn ? UiTokens.SelectInk : UiTokens.Ink0;
+        if (!_hasTypes || _busy || _closed) return;
+        _busy = true;
+        try
+        {
+            const string All = "All types";
+            var types = _all.Where(x => x.TypeId is not null).Select(x => x.TypeId!.Value).Distinct().Order().ToList();
+            var options = new List<PadOption> { new(All, IconPath: "all") };
+            options.AddRange(types.Select(t => new PadOption(TypeFacts.Name(t), Glyph: "●", Accent: InfoKit.TypeColor(t))));
+            var choice = await PadMenu.ShowAsync(_host, "Move type", null, [.. options]);
+            if (choice is null) return;
+            var keep = Current?.Id;
+            _typeFilter = choice == All ? null : types.FirstOrDefault(t => TypeFacts.Name(t) == choice, -1) is var found and >= 0 ? found : null;
+            Refilter(keep);
+        }
+        finally { _busy = false; }
     }
 
     /// <summary>Rebuilds the visible list, keeping the highlight on <paramref name="keepId"/> when it survives.</summary>
@@ -365,82 +448,29 @@ public sealed class PickerMenu : IPadHandler
     {
         _filtered = Filter(_query);
         _index = keepId is { } id ? Math.Max(0, _filtered.FindIndex(x => x.Id == id)) : 0;
-        _list.ItemsSource = _filtered;
-        HighlightCurrent();
-    }
-
-    public bool OnPadButton(PadButton button)
-    {
-        switch (button)
-        {
-            case PadButton.Up: Move(-1); return true;
-            case PadButton.Down: Move(1); return true;
-            case PadButton.A: PickHighlighted(); return true;
-            case PadButton.B: Close(null); return true;
-            case PadButton.Y: ToggleFilter(); return true;
-            case PadButton.X: _ = ChooseTypeAsync(); return true;
-            default: return true; // the picker owns the pad while open
-        }
-    }
-
-    private void Move(int delta)
-    {
-        if (_filtered.Count == 0) return;
-        _index = Math.Clamp(_index + delta, 0, _filtered.Count - 1);
-        HighlightCurrent();
-    }
-
-    private bool _padSelecting;
-    private bool _armed; // preview mode: the highlighted row was aimed by a tap
-
-    /// <summary>
-    /// A tap picks the row at once; in preview mode the first tap aims (the panel follows) and
-    /// a second tap on the same row picks.
-    /// </summary>
-    private void OnRowTapped(PickItem item)
-    {
-        var tapped = _filtered.IndexOf(item);
-        if (tapped < 0) return;
-        if (_livePreview is null) { Close(item); return; }
-        if (tapped == _index && _armed) { Close(item); return; }
-        _index = tapped;
-        HighlightCurrent(scroll: false);
-        _armed = true;
+        _armed = false;
+        if (keepId is null) _offset = 0;
+        else _centerPending = true;
+        UpdatePreview();
     }
 
     private void PickHighlighted()
     {
-        if (_index >= 0 && _index < _filtered.Count) Close(_filtered[_index]);
+        if (Current is { } item) Close(item);
     }
 
-    private void HighlightCurrent(bool scroll = true)
-    {
-        if (_filtered.Count == 0) return;
-        _index = Math.Clamp(_index, 0, _filtered.Count - 1);
-        _armed = false;
-        // Only a real change raises SelectionChanged; a flag set for no event would swallow the next tap.
-        var target = _filtered[_index];
-        if (!Equals(_list.SelectedItem, target))
-        {
-            _padSelecting = true;
-            _list.SelectedItem = target;
-        }
-        if (scroll) _list.ScrollTo(_index, position: ScrollToPosition.Center, animate: false);
-        UpdatePreview();
-    }
-
-    /// <summary>The hint line always says what A will pick, so pad aim can be misread but never mispurchased.</summary>
     private void UpdatePreview()
     {
-        var current = _index >= 0 && _index < _filtered.Count ? _filtered[_index] : null;
-        if (current is not null)
-            _preview.Text = _livePreview is null ? $"A picks: {current.Name}" : $"A or tap again picks: {current.Name}";
-        _livePreview?.OnHighlight(current);
+        _livePreview?.OnHighlight(Current);
+        Invalidate();
     }
 
     private void Close(PickItem? result)
     {
-        if (_router is not null) _router.Remove(this);
+        if (_closed) return;
+        _closed = true;
+        StopFling();
+        _router?.Remove(this);
         _host.Remove(_overlay);
         _result.TrySetResult(result);
     }

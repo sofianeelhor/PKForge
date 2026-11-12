@@ -19,7 +19,6 @@ public static class StoragePaint
     public static SKColor FrameEdge => T.FrameEdge;
     public static SKColor BannerTop => T.BannerTop;
     public static SKColor BannerBottom => T.BannerBottom;
-    public static SKColor PoolLight => T.PoolLight;
 
     /// <summary>A mockup cell: 160×134 design pixels.</summary>
     public const float DesignCellWidth = 160f;
@@ -209,7 +208,7 @@ public static class StoragePaint
     /// The box header: a rounded frame holding the slanted banner with the box name, and a
     /// double chevron at each end, dimmed when there is no box that way.
     /// </summary>
-    public static void BoxHeader(SKCanvas c, SKRect r, string label, SKFont font, bool canPrev, bool canNext, float unit)
+    public static void BoxHeader(SKCanvas c, SKRect r, string label, SKFont font, bool canPrev, bool canNext, float unit, bool chevrons = true)
     {
         var edge = 3f * unit;
         var radius = 18f * unit;
@@ -235,6 +234,7 @@ public static class StoragePaint
 
         PksmPaint.CenterText(c, label, banner.MidX, banner.MidY, font, Pksm.Ink, Frame, SKTextAlign.Center);
 
+        if (!chevrons) return;
         Chevron(c, r.Left + 68f * unit, r.MidY, -1, unit, canPrev);
         Chevron(c, r.Right - 68f * unit, r.MidY, 1, unit, canNext);
     }
@@ -266,18 +266,42 @@ public static class StoragePaint
         c.DrawPath(path, ink);
     }
 
-    /// <summary>The soft light pool on the ground under the selected Pokémon.</summary>
-    public static void CursorPool(SKCanvas c, SKRect cell, float unit, SKColor? tint = null)
+    // ---------- Multi-select: the sweep and the carried group ----------
+
+    /// <summary>
+    /// The area being swept with A held: one frame around all of it, its dashes walking
+    /// (<paramref name="timeMs"/>), green to mark and red to unmark. Each cell used to get its
+    /// own flat wash, which read as a stain rather than as a selection being drawn.
+    /// </summary>
+    public static void SweepFrame(SKCanvas c, SKRect area, float unit, bool mark, long timeMs)
     {
-        var top = cell.Bottom - 46f * unit;
-        var oval = new SKRect(cell.Left + 20f * unit, top + 8f * unit, cell.Right - 20f * unit, top + 52f * unit);
-        using var paint = new SKPaint
-        {
-            IsAntialias = true,
-            Color = (tint ?? PoolLight).WithAlpha(85),
-            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 8f * unit),
-        };
-        c.DrawOval(oval, paint);
+        var color = mark ? Pksm.CursorGreen : Pksm.CursorRed;
+        var frame = SKRect.Inflate(area, -3f * unit, -3f * unit);
+        var radius = 10f * unit;
+        using var fill = Fill(color.WithAlpha(44));
+        c.DrawRoundRect(frame, radius, radius, fill);
+        using var edge = Stroke(color, 4f * unit);
+        var dash = 16f * unit;
+        var gap = 10f * unit;
+        edge.StrokeCap = SKStrokeCap.Round;
+        edge.PathEffect = SKPathEffect.CreateDash([dash, gap], -(timeMs % 900) / 900f * (dash + gap));
+        c.DrawRoundRect(frame, radius, radius, edge);
+    }
+
+    /// <summary>How many Pokémon the hand carries, on a pill beside the pointer.</summary>
+    public static void CarryCount(SKCanvas c, SKRect cell, float unit, int count, SKTypeface face)
+    {
+        using var font = new SKFont(face, 30f * unit);
+        var text = $"x{count}";
+        var width = Math.Max(64f * unit, font.MeasureFallback(text) + 30f * unit);
+        var pill = SKRect.Create(cell.MidX + 30f * unit, cell.Top - 16f * unit, width, 44f * unit);
+        using var shadow = Fill(SKColors.Black.WithAlpha(90));
+        c.DrawRoundRect(SKRect.Create(pill.Left + 4f * unit, pill.Top + 6f * unit, pill.Width, pill.Height), 22f * unit, 22f * unit, shadow);
+        using var fill = Fill(Pksm.CursorGreen);
+        c.DrawRoundRect(pill, 22f * unit, 22f * unit, fill);
+        using var rim = Stroke(Pksm.LogoVoid, 3f * unit);
+        c.DrawRoundRect(pill, 22f * unit, 22f * unit, rim);
+        PksmPaint.CenterText(c, text, pill.MidX, pill.MidY, font, Pksm.LogoVoid, SKColors.Transparent, SKTextAlign.Center);
     }
 
     /// <summary>How far the selected Pokémon is lifted off the ground.</summary>
@@ -337,7 +361,7 @@ public static class StoragePaint
         var x = cell.Right - 22f * unit;
         var y = cell.Top + 18f * unit;
         var metrics = font.Metrics;
-        c.DrawText("★", x, y - (metrics.Ascent + metrics.Descent) / 2, SKTextAlign.Center, font, paint);
+        c.DrawTextFallback("★", x, y - (metrics.Ascent + metrics.Descent) / 2, SKTextAlign.Center, font, paint);
     }
 
     /// <summary>

@@ -119,7 +119,7 @@ public sealed class RadicalRedDetectionTests
     [Fact]
     public void RealRadicalRedSaveIsLabeledAndOpensInTheRadicalRedSession()
     {
-        var path = LocalArtifact("radicalred-champ.sav");
+        var path = LocalArtifact("thor/retroarch/mGBA/Radical-red-champ.sav");
         if (path is null) return; // ground truth lives gitignored on the dev machine
 
         var bytes = File.ReadAllBytes(path);

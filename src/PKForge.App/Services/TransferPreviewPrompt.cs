@@ -26,7 +26,7 @@ public static class TransferPreviewPrompt
     {
         if (!preview.Success || preview.Preview is null)
         {
-            await PadMenu.ShowAsync(host, "Transfer", preview.Message, "OK");
+            await PadMenu.ShowAsync(host, "Not sent", preview.Message, "OK");
             return false;
         }
 

@@ -29,8 +29,9 @@ internal static class CfruPk3
         int HeldItem, int NationalItem, string ItemName,
         bool HiddenAbility, int NationalAbility, int Ball);
 
-    /// <summary>The ids a PK3 lands with in a CFRU game, every one in the hack's numbering.</summary>
-    internal readonly record struct Inbound(int Species, int[] Moves, int HeldItem, int Ball, bool HiddenAbility);
+    /// <summary>The ids a Pokémon lands with in a CFRU game, every one in the hack's numbering.</summary>
+    /// <param name="AbilitySlot">The PID parity its ability needs there, null when its own PID already picks it.</param>
+    internal readonly record struct Inbound(int Species, int[] Moves, int HeldItem, int Ball, bool HiddenAbility, int? AbilitySlot);
 
     /// <summary>A PK3 carrying the mon's national ids, or null with the reason one of them has
     /// no Generation 3 counterpart. The caller fills every non-id field.</summary>
@@ -110,27 +111,46 @@ internal static class CfruPk3
     }
 
     /// <summary>
-    /// The hack ids a PK3 lands with in <paramref name="game"/>, or null with the reason one of
-    /// its species, moves, held item, ability or ball has no counterpart there.
+    /// What a CFRU game reads an incoming Pokémon from: any Generation 3+ entity as it is (all
+    /// of them store national species, move and ability ids), a Generation 1 or 2 one through
+    /// its Virtual Console transfer. Converting to a PK3 first refused every Generation 4+
+    /// Pokémon, since PKHeX never converts down. Null when there is no such reading.
+    /// </summary>
+    public static PKM? Source(PKM entity) =>
+        entity.Format >= 3 ? entity : EntityConverter.ConvertToType(entity, typeof(PK7), out _);
+
+    /// <summary>
+    /// The hack ids <paramref name="pkm"/> (a <see cref="Source"/> reading) lands with in
+    /// <paramref name="game"/>, or null with the reason one of its species, form, moves, held
+    /// item, ability or ball has no counterpart there.
     /// </summary>
     /// <param name="abilities">The national ability ids a hack species' two slots and hidden slot hold.</param>
     /// <param name="storeBall">The hack's ball id for a PKHeX ball, -1 when it has none.</param>
-    public static Inbound? FromPk3(PK3 pk3, string game,
+    /// <param name="adjustments">Receives what changed to fit the hack (an ability it lacks).</param>
+    public static Inbound? FromPkm(PKM pkm, string game,
         Func<int, int> speciesFromNational, Func<int, int> moveFromNational, Func<int, int> itemFromNational,
-        Func<int, (int A1, int A2, int Hidden)> abilities, Func<int, int> storeBall, out string? refusal)
+        Func<int, (int A1, int A2, int Hidden)> abilities, Func<int, int> storeBall, out string? refusal,
+        List<string>? adjustments = null)
     {
         var strings = GameInfo.GetStrings("en");
-        var name = pk3.Species < strings.specieslist.Length ? strings.specieslist[pk3.Species] : $"#{pk3.Species}";
+        var name = pkm.Species < strings.specieslist.Length ? strings.specieslist[pkm.Species] : $"#{pkm.Species}";
         refusal = null;
 
-        var species = speciesFromNational(pk3.Species);
+        var species = speciesFromNational(pkm.Species);
         if (species <= 0)
         {
             refusal = $"{name} does not exist in {game}.";
             return null;
         }
+        // A CFRU record stores no form (Unown's letter comes from its PID): a later form would
+        // land as the base species, so it is refused rather than silently changed.
+        if (pkm.Format > 3 && pkm.Form != 0 && pkm.Species != (ushort)Species.Unown)
+        {
+            refusal = $"{name} is in a form {game} cannot store.";
+            return null;
+        }
 
-        var stored = new[] { pk3.Move1, pk3.Move2, pk3.Move3, pk3.Move4 };
+        var stored = new[] { pkm.Move1, pkm.Move2, pkm.Move3, pkm.Move4 };
         var moves = new int[4];
         for (var i = 0; i < 4; i++)
         {
@@ -144,40 +164,59 @@ internal static class CfruPk3
         }
 
         var item = 0;
-        if (pk3.HeldItem != 0)
+        if (pkm.HeldItem != 0)
         {
-            var national = ItemConverter.GetItemFuture3((ushort)pk3.HeldItem);
-            item = ItemConverter.IsItemTransferable34(national) ? itemFromNational(national) : 0;
+            // Generation 3 numbers its items apart; later formats already store the modern id.
+            var gen3 = pkm.Format == 3;
+            var national = gen3 ? ItemConverter.GetItemFuture3((ushort)pkm.HeldItem) : (ushort)pkm.HeldItem;
+            var known = (!gen3 || ItemConverter.IsItemTransferable34(national)) && national < strings.itemlist.Length;
+            item = known ? itemFromNational(national) : 0;
             if (item <= 0)
             {
-                refusal = $"{name} holds {(ItemConverter.IsItemTransferable34(national) ? strings.itemlist[national] : "an item")}, which {game} does not have.";
+                refusal = $"{name} holds {(known ? strings.itemlist[national] : "an item")}, which {game} does not have.";
                 return null;
             }
         }
 
-        // A CFRU mon stores no ability id: the PID's parity picks slot one or two, a flag the hidden slot.
+        // A CFRU mon stores no ability id: the PID's parity picks slot one or two, a flag the
+        // hidden slot. An ability the hack puts in the other slot is kept by asking the caller
+        // for a PID of that parity: hacks reorder slots, and Generation 5+ PIDs pick nothing.
         var (a1, a2, hidden) = abilities(species);
-        var ability = pk3.Ability;
-        var picked = (pk3.PID & 1) == 1 && a2 != 0 ? a2 : a1;
+        var ability = pkm.Ability;
+        if (ability == 0 || (ability != a1 && ability != a2 && ability != hidden))
+        {
+            // The hack gave the species other abilities (Radical Red uses the modern ones, so a
+            // FireRed Gengar's Levitate is gone): it takes the hack's ability in the same slot,
+            // as a Pokémon leaving the hack does the other way, and the change is reported.
+            var index = pkm.PersonalInfo.GetIndexOfAbility(ability);
+            var landed = index == 2 && hidden != 0 ? hidden : index == 1 && a2 != 0 ? a2 : a1;
+            if (landed == 0)
+            {
+                refusal = $"{name} has no ability in {game}'s data.";
+                return null;
+            }
+            adjustments?.Add($"Its ability {AbilityName(strings, ability)} becomes {AbilityName(strings, landed)}: {name} cannot have it in {game}.");
+            ability = landed;
+        }
+        var picked = (pkm.PID & 1) == 1 && a2 != 0 ? a2 : a1;
         var hiddenAbility = false;
+        int? abilitySlot = null;
         if (ability != picked)
         {
-            if (ability == 0 || ability != hidden)
-            {
-                refusal = ability != 0 && (ability == a1 || ability == a2)
-                    ? $"{name} would have {strings.abilitylist[picked]} instead of {strings.abilitylist[ability]} in {game}: its personality value picks the other ability slot there."
-                    : $"{name}'s ability {strings.abilitylist[ability]} is not one it has in {game}.";
-                return null;
-            }
-            hiddenAbility = true;
+            if (ability == a1) abilitySlot = 0;
+            else if (ability == a2) abilitySlot = 1;
+            else hiddenAbility = true;
         }
 
-        var ball = storeBall(pk3.Ball);
+        var ball = storeBall(pkm.Ball);
         if (ball < 0)
         {
-            refusal = $"{name}'s {strings.balllist[pk3.Ball]} does not exist in {game}.";
+            refusal = $"{name}'s {(pkm.Ball < strings.balllist.Length ? strings.balllist[pkm.Ball] : "ball")} does not exist in {game}.";
             return null;
         }
-        return new Inbound(species, moves, item, ball, hiddenAbility);
+        return new Inbound(species, moves, item, ball, hiddenAbility, abilitySlot);
     }
+
+    private static string AbilityName(GameStrings strings, int ability) =>
+        (uint)ability < strings.abilitylist.Length ? strings.abilitylist[ability] : $"#{ability}";
 }

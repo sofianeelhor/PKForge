@@ -115,9 +115,9 @@ public static class PksmPaint
             c.DrawRoundRect(new SKRect(inner.Left + 1, inner.Top + 1, inner.Right - 1, inner.MidY), 2, 2, light);
         var baseline = r.MidY + font.Size * 0.35f;
         using (var sh = new SKPaint { Color = Pksm.LogoVoid.WithAlpha(0x90) })
-            c.DrawText(label, r.Left + 10 + 1, baseline + 1, SKTextAlign.Left, font, sh);
+            c.DrawTextFallback(label, r.Left + 10 + 1, baseline + 1, SKTextAlign.Left, font, sh);
         using var ink = new SKPaint { Color = ColorTheme.Current.Bright };
-        c.DrawText(label, r.Left + 10, baseline, SKTextAlign.Left, font, ink);
+        c.DrawTextFallback(label, r.Left + 10, baseline, SKTextAlign.Left, font, ink);
     }
 
     /// <summary>List row inside a panel: soft alternating stripe idle; the selected button look chosen.</summary>
@@ -227,9 +227,9 @@ public static class PksmPaint
             c.DrawRoundRect(new SKRect(inner.Left + 1, inner.Top + 1, inner.Right - 1, inner.MidY), 2, 2, light);
         var baseline = inner.MidY + font.Size * 0.35f;
         using (var sh = new SKPaint { Color = Pksm.LogoVoid.WithAlpha(0x90) })
-            c.DrawText(label, inner.MidX + 1, baseline + 1, SKTextAlign.Center, font, sh);
+            c.DrawTextFallback(label, inner.MidX + 1, baseline + 1, SKTextAlign.Center, font, sh);
         using (var ink = new SKPaint { Color = ColorTheme.Current.Bright })
-            c.DrawText(label, inner.MidX, baseline, SKTextAlign.Center, font, ink);
+            c.DrawTextFallback(label, inner.MidX, baseline, SKTextAlign.Center, font, ink);
 
         var capWidth = inner.Height * 1.15f;
         void Cap(SKRect cap, bool left, bool enabled)
@@ -327,16 +327,16 @@ public static class PksmPaint
     /// <summary>Pixel-font text helper.</summary>
     public static void DrawText(SKCanvas c, string text, float x, float y, SKFont font, SKPaint paint, SKTextAlign align)
     {
-        c.DrawText(text, x, y, align, font, paint);
+        c.DrawTextFallback(text, x, y, align, font, paint);
     }
 
     /// <summary>Text with the classic 2px offset game shadow. y is the baseline.</summary>
     public static void ShadowText(SKCanvas c, string text, float x, float y, SKFont font, SKColor color, SKColor shadow, SKTextAlign align = SKTextAlign.Left)
     {
         using (var sp = new SKPaint { Color = shadow })
-            c.DrawText(text, x + 2, y + 2, align, font, sp);
+            c.DrawTextFallback(text, x + 2, y + 2, align, font, sp);
         using (var fp = new SKPaint { Color = color })
-            c.DrawText(text, x, y, align, font, fp);
+            c.DrawTextFallback(text, x, y, align, font, fp);
     }
 
     /// <summary>Vertical-center variant: centers on the given y.</summary>
@@ -367,13 +367,13 @@ public static class PksmPaint
     {
         var total = 0f;
         foreach (var (key, label) in prompts)
-            total += Math.Max(font.Size * 1.3f, font.MeasureText(key) + font.Size * 0.9f) + 8 + font.MeasureText(label) + font.Size * 1.4f;
+            total += Math.Max(font.Size * 1.3f, font.MeasureFallback(key) + font.Size * 0.9f) + 8 + font.MeasureFallback(label) + font.Size * 1.4f;
         var x = bar.MidX - (total - font.Size * 1.4f) / 2;
         var rects = new List<SKRect>(prompts.Count);
         foreach (var (key, label) in prompts)
         {
-            var kw = Math.Max(font.Size * 1.3f, font.MeasureText(key) + font.Size * 0.9f);
-            var width = kw + 8 + font.MeasureText(label);
+            var kw = Math.Max(font.Size * 1.3f, font.MeasureFallback(key) + font.Size * 0.9f);
+            var width = kw + 8 + font.MeasureFallback(label);
             // Half the gap on each side belongs to the prompt: no dead strip between two targets.
             rects.Add(new SKRect(x - font.Size * 0.7f, bar.Top, x + width + font.Size * 0.7f, bar.Bottom));
             x += width + font.Size * 1.4f;
@@ -386,17 +386,17 @@ public static class PksmPaint
         Panel(c, SKRect.Inflate(bar, -3, -3));
         var total = 0f;
         foreach (var (key, label) in prompts)
-            total += Math.Max(font.Size * 1.3f, font.MeasureText(key) + font.Size * 0.9f) + 8 + font.MeasureText(label) + font.Size * 1.4f;
+            total += Math.Max(font.Size * 1.3f, font.MeasureFallback(key) + font.Size * 0.9f) + 8 + font.MeasureFallback(label) + font.Size * 1.4f;
         var x = bar.MidX - (total - font.Size * 1.4f) / 2;
         using var disc = Paint(Pksm.LogoCyan);
         foreach (var (key, label) in prompts)
         {
-            var kw = Math.Max(font.Size * 1.3f, font.MeasureText(key) + font.Size * 0.9f);
+            var kw = Math.Max(font.Size * 1.3f, font.MeasureFallback(key) + font.Size * 0.9f);
             var pill = new SKRect(x, bar.MidY - font.Size * 0.62f, x + kw, bar.MidY + font.Size * 0.62f);
             c.DrawRoundRect(pill, pill.Height / 2, pill.Height / 2, disc);
             CenterText(c, key, pill.MidX - 1, bar.MidY, font, Pksm.LogoVoid, SKColors.Transparent, SKTextAlign.Center);
             CenterText(c, label, pill.Right + 8 - 2, bar.MidY, font, Pksm.Ink, SKColors.Transparent);
-            x += kw + 8 + font.MeasureText(label) + font.Size * 1.4f;
+            x += kw + 8 + font.MeasureFallback(label) + font.Size * 1.4f;
         }
     }
 }

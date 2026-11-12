@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using PKForge.App.Services;
 using PKForge.Chrome;
 using PKForge.Domain;
@@ -7,23 +8,26 @@ using SkiaSharp.Views.Maui.Controls;
 
 namespace PKForge.App.Views;
 
+/// <summary>What the overview closed on: the box to open, and the group the player was
+/// looking at (null for all boxes), which L/R then stay within.</summary>
+public sealed record BankOverviewResult(int Box, string? Group);
+
 /// <summary>
-/// Every Bank box at a glance: a grid of live box cards (wallpaper, name, every Pokémon).
-/// Pick a box up and carry it (Y, or a long press), and the others slide aside to show where
-/// it lands; switch to swap to trade two boxes instead. Rename, wallpaper, insert and delete
-/// from the box menu (X). Every change is one Bank write through
-/// <see cref="BankPage.ApplyBoxRemap"/>, so names, wallpapers, marks and the living dex region
-/// always follow their box.
+/// Every Bank box at a glance, painted by <see cref="BankOverviewPaint"/>: mini boxes of
+/// icons under their names, gathered under their groups. The d-pad walks the cards, L/R jump
+/// between groups, SELECT (or the banner's chevrons) shows one group alone. Pick a box up and
+/// carry it (Y, or a long press); X switches to swap. Dropping a box among another group's
+/// boxes puts it in that group. Rename, wallpaper, lock, group, insert and delete from the box
+/// menu (X). Every whole-box change is one Bank write through <see cref="BankPage.ApplyBoxRemap"/>,
+/// so names, wallpapers, locks, groups, marks and the living dex region follow their box.
 /// </summary>
 public sealed class BankBoxOverview : IPadPagingHandler
 {
-    private const int Slots = 30;
-    private const float CardAspect = 5f / 6f; // a box is 6 × 5 slots
-    private const float HintHeight = 40f;
+    private const int Slots = IBankService.SlotsPerBox;
 
     private enum Carry { None, Move, Swap }
 
-    private readonly TaskCompletionSource<int?> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<BankOverviewResult?> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly BankPage _page;
     private readonly Grid _host;
     private readonly Grid _overlay;
@@ -32,37 +36,42 @@ public sealed class BankBoxOverview : IPadPagingHandler
     private readonly GamepadRouter? _router;
     private readonly SKCanvasView _canvas;
     private readonly FrameInvalidator _frame;
-    private readonly FramePacer _pacer;
     private readonly SKTypeface _face = BoxBrowserPage.PixelTypeface();
-
-    // Per box (by current index): where its card is drawn, in grid cells, and how "present" it is.
-    private readonly List<(Spring X, Spring Y, Spring Appear)> _cards = [];
-    private readonly Spring _scroll = new(0);
-    private readonly Spring _lift = new(0);
-    private readonly Spring _cursorX = new(0);
-    private readonly Spring _cursorY = new(0);
+    private readonly SKImage? _padlock;
 
     private BankEntry?[][] _boxes = [];
+    private IReadOnlyList<BankBoxGroup> _groups = [];
+    private BankOverviewCard?[] _cards = [];
     private int _cursor;
     private int? _held;
     private Carry _carry;
     private bool _busy;
-    private int _columns = 6;
-    private int _visibleRows = 2;
-    private float _density = 1;
+    private string? _view; // null: all boxes; else one group alone
+    private string _status = "";
 
-    // Touch: a long press lifts the card under the finger, which then follows it.
+    // The scroll, in design pixels. With full motion it eases to its target in a few frames
+    // (no spring, no overshoot); otherwise it jumps there.
+    private float _scroll;
+    private float _scrollFrom;
+    private float _scrollTo;
+    private readonly Stopwatch _scrollClock = new();
+    private const float ScrollMs = 110f;
+
+    private BankOverviewLayout? _layout;
+    private BankOverviewHits? _hits;
+    private IReadOnlyList<(string Key, string Label, PadButton Button)> _prompts = [];
+
+    // Touch: a long press lifts the card under the finger; dragging then moves the cursor.
     private SKPoint? _pressAt;
-    private SKPoint _finger;
     private bool _dragging;
     private bool _scrolling;
     private float _scrollStart;
     private IDispatcherTimer? _longPress;
 
-    public static Task<int?> ShowAsync(BankPage page, Grid host, IBankService bank, ISpriteService sprites, int currentBox) =>
-        new BankBoxOverview(page, host, bank, sprites, currentBox)._result.Task;
+    public static Task<BankOverviewResult?> ShowAsync(BankPage page, Grid host, IBankService bank, ISpriteService sprites, int currentBox, string? group) =>
+        new BankBoxOverview(page, host, bank, sprites, currentBox, group)._result.Task;
 
-    private BankBoxOverview(BankPage page, Grid host, IBankService bank, ISpriteService sprites, int currentBox)
+    private BankBoxOverview(BankPage page, Grid host, IBankService bank, ISpriteService sprites, int currentBox, string? group)
     {
         _page = page;
         _host = host;
@@ -70,10 +79,11 @@ public sealed class BankBoxOverview : IPadPagingHandler
         _sprites = sprites;
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
         _canvas = new SKCanvasView { EnableTouchEvents = true };
-        _canvas.PaintSurface += Paint;
+        _canvas.PaintSurface += PaintGuard.Wrap("BankBoxOverview.Paint", Paint);
         _canvas.Touch += Touch;
         _frame = new FrameInvalidator(_canvas);
-        _pacer = new FramePacer(_frame);
+        using (var padlock = SKBitmap.Decode(PksmIcons.GetPng("padlock", PksmIcons.White)))
+            if (padlock is not null) _padlock = SKImage.FromBitmap(padlock);
 
         var window = new Border
         {
@@ -92,110 +102,87 @@ public sealed class BankBoxOverview : IPadPagingHandler
         });
 
         Reload();
+        _view = group is not null && BankBoxGroups.Exists(_groups, group) ? group : null;
         _cursor = Math.Clamp(currentBox, 0, _boxes.Length - 1);
-        for (var box = 0; box < _cards.Count; box++) _cards[box].Appear.Snap(1);
-        SnapLayout();
+        if (_view is not null && !Shown().Contains(_cursor)) _cursor = Shown().FirstOrDefault(_cursor);
+        _snapNext = true;
         _router?.Push(this);
     }
 
     // ── Model ──────────────────────────────────────────────────────────────
 
-    /// <summary>Re-reads the Bank; card springs follow <paramref name="remap"/> so moved boxes glide from where they were.</summary>
-    private void Reload(BankBoxRemap? remap = null)
+    private void Reload()
     {
         var count = _bank.BoxCount;
         var boxes = new BankEntry?[count][];
         for (var box = 0; box < count; box++) boxes[box] = new BankEntry?[Slots];
         foreach (var entry in _bank.GetAll())
-        {
             if ((uint)entry.Box < (uint)count && (uint)entry.Slot < Slots) boxes[entry.Box][entry.Slot] = entry;
-        }
         _boxes = boxes;
-        ClearCardCache();
-
-        var cards = new (Spring, Spring, Spring)?[count];
-        for (var old = 0; old < _cards.Count; old++)
-        {
-            var now = remap is null ? old : remap.Map(old);
-            if (now is { } index && index < count) cards[index] = _cards[old];
-        }
-        _cards.Clear();
-        for (var box = 0; box < count; box++)
-        {
-            if (cards[box] is { } kept) { _cards.Add(kept); continue; }
-            var (column, row) = Cell(box);
-            _cards.Add((new Spring(column), new Spring(row), new Spring(0) { Target = 1 }));
-        }
+        _groups = _bank.BoxGroups;
+        if (_view is not null && !BankBoxGroups.Exists(_groups, _view)) _view = null;
+        _cards = new BankOverviewCard?[count];
+        _layout = null;
         _cursor = Math.Clamp(_cursor, 0, count - 1);
     }
 
     private int Occupied(int box) => _boxes[box].Count(e => e is not null);
 
-    private (int Column, int Row) Cell(int position) => (position % _columns, position / _columns);
-
-    /// <summary>
-    /// The position each box's card heads for. Carrying in move mode, the held box sits at the
-    /// cursor and the rest close ranks around it: exactly the order a drop would write.
-    /// </summary>
-    private int PositionOf(int box)
+    /// <summary>The runs on screen: one group alone, or every group then the rest.</summary>
+    private List<BankOverviewRun> Runs()
     {
-        if (_held is not { } held || _carry != Carry.Move) return box;
-        if (box == held) return _cursor;
-        var withoutHeld = box > held ? box - 1 : box;
-        return withoutHeld >= _cursor ? withoutHeld + 1 : withoutHeld;
+        if (_view is not null) return [new BankOverviewRun(_view, BankBoxGroups.Members(_groups, _view), Heading: false)];
+        if (_groups.Count == 0) return [new BankOverviewRun(null, [.. Enumerable.Range(0, _boxes.Length)], Heading: false)];
+        return [.. BankBoxGroups.Sections(_groups, _boxes.Length).Select(s => new BankOverviewRun(s.Name, s.Boxes))];
     }
 
-    private void Retarget()
+    /// <summary>The boxes on screen, in reading order.</summary>
+    private List<int> Shown() => [.. Runs().SelectMany(r => r.Boxes)];
+
+    /// <summary>The group of the run <paramref name="box"/> shows in (null: no group).</summary>
+    private string? GroupOf(int box) => BankBoxGroups.GroupOf(_groups, box);
+
+    private BankOverviewCard Card(int box)
     {
-        for (var box = 0; box < _cards.Count; box++)
+        if (_cards[box] is { } cached) return cached;
+        var complete = true;
+        var icons = new SKImage?[Slots];
+        for (var slot = 0; slot < Slots; slot++)
         {
-            var position = _carry == Carry.Swap && _held is { } held
-                ? box == held ? _cursor : box == _cursor ? held : box
-                : PositionOf(box);
-            var (column, row) = Cell(position);
-            _cards[box].X.Target = column;
-            _cards[box].Y.Target = row;
+            if (_boxes[box][slot] is not { } entry) continue;
+            // The storage screen's box icons (Showdown's sheet, 40×30), so a mini box reads like the real one.
+            if (!_sprites.TryGetShowdownIcon(entry.Info.Look, InvalidateCards, out var sheet, out var cell)) complete = false;
+            else if (sheet is not null) icons[slot] = IconOf(sheet, cell);
+            else if (_sprites.GetSprite(entry.Info.Look) is { } sprite) icons[slot] = SpriteImages.Of(sprite);
+            else
+            {
+                complete = false;
+                _sprites.Warm(entry.Info.Look, InvalidateCards);
+            }
         }
-        var (cursorColumn, cursorRow) = Cell(_cursor);
-        _cursorX.Target = cursorColumn;
-        _cursorY.Target = cursorRow;
-        _lift.Target = _held is null ? 0 : 1;
-
-        // Keep the cursor's row on screen with a row of context when there is one.
-        var top = _scroll.Target;
-        if (cursorRow < top + 0.2f) top = Math.Max(0, cursorRow - 0.35f);
-        else if (cursorRow > top + _visibleRows - 1.2f) top = cursorRow - _visibleRows + 1.35f;
-        var lastRow = (_boxes.Length - 1) / _columns;
-        _scroll.Target = Math.Clamp(top, 0, Math.Max(0, lastRow - _visibleRows + 1.2f));
-        _pacer.Kick();
+        var art = BankBoxArt.Art(box, InvalidateCards);
+        complete &= BankBoxArt.IsReady(box);
+        var card = new BankOverviewCard(box, BankBoxDecor.Label(box), Occupied(box), _bank.LockedBoxes.Contains(box),
+            LivingDexAutopilot.BankStartBox == box, icons, art is { } a ? SpriteImages.Of(a.Art) : null,
+            art?.Average ?? default, BankBoxArt.Tone(box));
+        if (complete) _cards[box] = card;
+        return card;
     }
 
-    private void SnapLayout()
-    {
-        Retarget();
-        foreach (var (x, y, _) in _cards) { x.Snap(x.Target); y.Snap(y.Target); }
-        _cursorX.Snap(_cursorX.Target);
-        _cursorY.Snap(_cursorY.Target);
-        _scroll.Snap(_scroll.Target);
-        _frame.Request();
-    }
+    private void InvalidateCards() => _frame.Request();
 
-    private bool Step(float dt)
+    // One image per icon cell of the sheet, cut once for the app's lifetime (a few hundred at most).
+    private static readonly Dictionary<(SKBitmap, SKRectI), SKImage> Icons = [];
+
+    private static SKImage? IconOf(SKBitmap sheet, SKRectI cell)
     {
-        var moving = false;
-        foreach (var (x, y, appear) in _cards)
+        lock (Icons)
         {
-            x.Step(dt, 340f, 36.9f);
-            y.Step(dt, 340f, 36.9f);
-            appear.Step(dt, 300f, 26f); // a touch of bounce as a new box pops in
-            moving |= !x.Settled || !y.Settled || !appear.Settled;
+            if (Icons.TryGetValue((sheet, cell), out var icon)) return icon;
+            icon = SpriteImages.Of(sheet).Subset(cell);
+            if (icon is not null) Icons[(sheet, cell)] = icon;
+            return icon;
         }
-        _cursorX.Step(dt, 900f, 60f);
-        _cursorY.Step(dt, 900f, 60f);
-        _scroll.Step(dt, 260f, 32.2f);
-        _lift.Step(dt, 520f, 34f); // the lifted box overshoots a hair, like a picked-up card
-        moving |= !_cursorX.Settled || !_cursorY.Settled || !_scroll.Settled || !_lift.Settled;
-        return moving || _held is not null; // a held box keeps bobbing
     }
 
     // ── Input ──────────────────────────────────────────────────────────────
@@ -205,26 +192,30 @@ public sealed class BankBoxOverview : IPadPagingHandler
         if (_busy) return true;
         switch (button)
         {
-            case PadButton.Left: MoveCursor(-1); return true;
-            case PadButton.Right: MoveCursor(1); return true;
-            case PadButton.Up: MoveCursor(-_columns); return true;
-            case PadButton.Down: MoveCursor(_columns); return true;
-            case PadButton.L: MoveCursor(-_columns * Math.Max(1, _visibleRows - 1)); return true;
-            case PadButton.R: MoveCursor(_columns * Math.Max(1, _visibleRows - 1)); return true;
+            case PadButton.Left: Walk(-1); return true;
+            case PadButton.Right: Walk(1); return true;
+            case PadButton.Up: Climb(-1); return true;
+            case PadButton.Down: Climb(1); return true;
+            case PadButton.L: Jump(-1); return true;
+            case PadButton.R: Jump(1); return true;
+            case PadButton.Select:
+                if (_held is null) CycleView(1);
+                return true;
             case PadButton.A:
                 if (_held is not null) Drop();
-                else Close(_cursor);
+                else if (Shown().Contains(_cursor)) Close(_cursor);
                 return true;
             case PadButton.Y:
-                if (_held is null) PickUp(_cursor);
+                if (_held is null) { if (Shown().Contains(_cursor)) PickUp(_cursor); }
                 else Drop();
                 return true;
             case PadButton.X:
                 if (_held is not null) ToggleCarryMode();
-                else _ = BoxMenuAsync();
+                else if (Shown().Contains(_cursor)) _ = BoxMenuAsync();
+                else if (_view is not null) _ = GroupMenuAsync(null);
                 return true;
             case PadButton.Start:
-                if (_held is null) _ = AddBoxAsync(_boxes.Length);
+                if (_held is null) _ = AddBoxAsync(_boxes.Length, _view);
                 return true;
             case PadButton.B:
                 if (_held is not null) CancelCarry();
@@ -235,26 +226,86 @@ public sealed class BankBoxOverview : IPadPagingHandler
         }
     }
 
-    private void MoveCursor(int delta)
+    /// <summary>Left/right: the previous or next card in reading order, wrapping.</summary>
+    private void Walk(int delta)
     {
-        var target = _cursor + delta;
-        if (Math.Abs(delta) == 1)
-            target = (target + _boxes.Length) % _boxes.Length; // left/right wrap through the whole bank
-        _cursor = Math.Clamp(target, 0, _boxes.Length - 1);
-        Retarget();
+        var shown = Shown();
+        if (shown.Count == 0) return;
+        var at = shown.IndexOf(_cursor);
+        _cursor = shown[((at < 0 ? 0 : at + delta) % shown.Count + shown.Count) % shown.Count];
+        Moved();
+    }
+
+    /// <summary>Up/down: the card in the row above or below, the nearest column.</summary>
+    private void Climb(int delta)
+    {
+        if (_layout is not { } layout || layout.Cards.Count == 0) return;
+        var here = layout.Cards.FirstOrDefault(c => c.Box == _cursor);
+        if (here.Rect.Height <= 0) { _cursor = layout.Cards[0].Box; Moved(); return; }
+        var row = layout.Cards.Where(c => c.Row == here.Row + delta).ToList();
+        if (row.Count == 0) return;
+        _cursor = row.MinBy(c => Math.Abs(c.Column - here.Column)).Box;
+        Moved();
+    }
+
+    /// <summary>L/R: the first box of the previous or next group. With one run, a page of rows.</summary>
+    private void Jump(int delta)
+    {
+        var runs = Runs().Where(r => r.Boxes.Count > 0).ToList();
+        if (runs.Count == 0) return;
+        if (runs.Count == 1)
+        {
+            var shown = runs[0].Boxes;
+            var rows = _layout is { } layout ? Math.Max(1, (int)(layout.Viewport.Height / BankOverviewPaint.RowPitch)) : 2;
+            var at = Math.Max(0, shown.ToList().IndexOf(_cursor));
+            _cursor = shown[Math.Clamp(at + delta * BankOverviewPaint.Columns * rows, 0, shown.Count - 1)];
+            Moved();
+            return;
+        }
+        var current = runs.FindIndex(r => r.Boxes.Contains(_cursor));
+        var next = current < 0 ? 0 : ((current + delta) % runs.Count + runs.Count) % runs.Count;
+        _cursor = runs[next].Boxes[0];
+        Moved();
+    }
+
+    /// <summary>SELECT and the chevrons: all boxes, then each group alone, then all boxes again.</summary>
+    private void CycleView(int delta)
+    {
+        if (_groups.Count == 0)
+        {
+            _status = "No groups yet: make one from a box's menu (X).";
+            _frame.Request();
+            return;
+        }
+        var views = new List<string?> { null };
+        views.AddRange(_groups.Select(g => g.Name));
+        var at = views.FindIndex(v => string.Equals(v, _view, StringComparison.OrdinalIgnoreCase));
+        _view = views[((at + delta) % views.Count + views.Count) % views.Count];
+        _layout = null;
+        var shown = Shown();
+        if (shown.Count > 0 && !shown.Contains(_cursor)) _cursor = shown[0];
+        _status = _view is null ? "" : "L/R in the box stay within this group.";
+        _snapNext = true;
+        _frame.Request();
+    }
+
+    private void Moved()
+    {
+        _status = "";
+        _frame.Request();
     }
 
     private void PickUp(int box)
     {
         _held = box;
         _carry = Carry.Move;
-        Retarget();
+        _frame.Request();
     }
 
     private void ToggleCarryMode()
     {
         _carry = _carry == Carry.Move ? Carry.Swap : Carry.Move;
-        Retarget();
+        _frame.Request();
     }
 
     private void CancelCarry()
@@ -263,43 +314,69 @@ public sealed class BankBoxOverview : IPadPagingHandler
         _held = null;
         _carry = Carry.None;
         _dragging = false;
-        Retarget();
+        _frame.Request();
     }
 
     private void Drop()
     {
         if (_held is not { } held) return;
-        var remap = _carry == Carry.Swap
-            ? BankBoxRemap.Swap(_boxes.Length, held, _cursor)
-            : BankBoxRemap.Move(_boxes.Length, held, _cursor);
+        var target = _cursor;
+        var swap = _carry == Carry.Swap;
         _held = null;
         _carry = Carry.None;
         _dragging = false;
-        if (_page.ApplyBoxRemap(remap)) Reload(remap);
-        Retarget();
+        if (held == target) { _frame.Request(); return; }
+
+        var heldGroup = GroupOf(held);
+        var targetGroup = GroupOf(target);
+        var remap = swap ? BankBoxRemap.Swap(_boxes.Length, held, target) : BankBoxRemap.Move(_boxes.Length, held, target);
+        if (!_page.ApplyBoxRemap(remap)) { Reload(); _frame.Request(); return; }
+        var moved = remap.Map(held) ?? held;
+        // A box dropped among another group's boxes joins that group; swapped boxes trade groups,
+        // so each lands where it was shown.
+        if (!string.Equals(heldGroup, targetGroup, StringComparison.OrdinalIgnoreCase))
+        {
+            var other = remap.Map(target) ?? target;
+            _page.ChangeGroups(groups =>
+            {
+                groups = BankBoxGroups.Assign(groups, moved, targetGroup);
+                return swap ? BankBoxGroups.Assign(groups, other, heldGroup) : groups;
+            }, null);
+            _status = targetGroup is null ? $"{BankBoxDecor.Label(moved)} is in no group now." : $"{BankBoxDecor.Label(moved)} joined {targetGroup}.";
+        }
+        Reload();
+        _cursor = moved;
+        _frame.Request();
     }
 
     private async Task BoxMenuAsync()
     {
         var box = _cursor;
         var count = Occupied(box);
+        var locked = _bank.LockedBoxes.Contains(box);
+        var group = GroupOf(box);
         var options = new List<PadOption>
         {
             new("Open this box", IconPath: "box"),
             new("Pick it up to move it", IconPath: "move"),
             new("Rename…", IconPath: "rename"),
             new("Wallpaper…", IconPath: "fashion"),
+            new(locked ? "Unlock this box" : "Lock this box", IconPath: "padlock",
+                Detail: "A locked box is left out of sorts, moves, sends, releases and deposits. It can still be opened."),
+            new("Group…", IconPath: "blocks",
+                Detail: group is null ? "In no group. Groups gather boxes (Shiny, Living dex) without moving them." : $"In {group}."),
             new("Insert a new box before it", IconPath: "create"),
             new("Insert a new box after it", IconPath: "create"),
         };
-        if (_boxes.Length > 1) options.Add(new PadOption("Delete this box…", IconPath: "delete"));
+        if (_boxes.Length > 1 && !locked) options.Add(new PadOption("Delete this box…", IconPath: "delete"));
 
         _busy = true;
         string? choice;
         try
         {
+            var where = group is null ? "" : $" In {group}.";
             choice = await PadMenu.ShowAsync(_host, BankBoxDecor.Label(box),
-                count == 0 ? "Empty box." : $"{count} / {Slots} Pokémon.", [.. options]);
+                (count == 0 ? "Empty box." : $"{count} / {Slots} Pokémon.") + where, [.. options]);
         }
         finally { _busy = false; }
 
@@ -317,105 +394,220 @@ public sealed class BankBoxOverview : IPadPagingHandler
             case "Wallpaper…":
                 await RunAsync(() => _page.PickWallpaperAsync(box));
                 return;
+            case "Lock this box" or "Unlock this box":
+                _page.ToggleBoxLock(box);
+                Reload();
+                _frame.Request();
+                return;
+            case "Group…":
+                await GroupMenuAsync(box);
+                return;
             case "Insert a new box before it":
-                await AddBoxAsync(box);
+                await AddBoxAsync(box, group);
                 return;
             case "Insert a new box after it":
-                await AddBoxAsync(box + 1);
-                _cursor = box + 1;
-                Retarget();
+                await AddBoxAsync(box + 1, group);
                 return;
             case "Delete this box…":
-                // One reload, mapped from the layout before the delete, so the rest close ranks.
-                await RunAsync(() => _page.DeleteBoxAsync(box), BankBoxRemap.Remove(_boxes.Length, box));
-                Retarget();
+                await RunAsync(() => _page.DeleteBoxAsync(box));
                 return;
         }
     }
 
-    private async Task<bool> RunAsync(Func<Task<bool>> action, BankBoxRemap? remap = null)
+    /// <summary>
+    /// The group menu for <paramref name="box"/> (or for the group on screen when null): put
+    /// the box in a group, take it out, make a group, rename or delete one. A group is only a
+    /// label over boxes: deleting one never moves or deletes a box or a Pokémon.
+    /// </summary>
+    private async Task GroupMenuAsync(int? box)
+    {
+        var current = box is { } b ? GroupOf(b) : _view;
+        var options = new List<PadOption>();
+        var putIn = new Dictionary<string, string>();
+        if (box is not null)
+        {
+            foreach (var group in _groups.Where(g => !string.Equals(g.Name, current, StringComparison.OrdinalIgnoreCase)))
+            {
+                var label = $"Put it in {group.Name}";
+                if (putIn.TryAdd(label, group.Name))
+                    options.Add(new PadOption(label, IconPath: "move", Detail: $"{group.Boxes.Count} box{(group.Boxes.Count == 1 ? "" : "es")}."));
+            }
+            options.Add(new PadOption("New group with this box…", IconPath: "create"));
+            if (current is not null) options.Add(new PadOption($"Take it out of {current}", IconPath: "back"));
+        }
+        else options.Add(new PadOption("New group…", IconPath: "create"));
+        if (current is not null)
+        {
+            options.Add(new PadOption($"Rename {current}…", IconPath: "rename"));
+            options.Add(new PadOption($"Delete the group {current}…", IconPath: "delete",
+                Detail: "Its boxes and their Pokémon stay where they are, just in no group."));
+        }
+
+        _busy = true;
+        string? choice;
+        try
+        {
+            choice = await PadMenu.ShowAsync(_host, box is { } shown ? $"Group · {BankBoxDecor.Label(shown)}" : $"Group · {current}",
+                current is null ? "In no group yet." : $"In {current}.", [.. options]);
+        }
+        finally { _busy = false; }
+        if (choice is null) return;
+
+        if (putIn.TryGetValue(choice, out var into) && box is { } moving)
+        {
+            Apply(groups => BankBoxGroups.Assign(groups, moving, into), $"{BankBoxDecor.Label(moving)} is in {into} now.");
+            return;
+        }
+        if (choice.StartsWith("New group", StringComparison.Ordinal))
+        {
+            var name = await AskNameAsync("New group", "");
+            if (name is null) return;
+            Apply(groups => box is { } member ? BankBoxGroups.Create(groups, name, member) : BankBoxGroups.Create(groups, name),
+                box is null ? $"Group {name} made." : $"Group {name} made with {BankBoxDecor.Label(box.Value)}.");
+            return;
+        }
+        if (current is null) return;
+        if (choice.StartsWith("Take it out", StringComparison.Ordinal) && box is { } leaving)
+        {
+            Apply(groups => BankBoxGroups.Assign(groups, leaving, null), $"{BankBoxDecor.Label(leaving)} left {current}.");
+            return;
+        }
+        if (choice.StartsWith("Rename", StringComparison.Ordinal))
+        {
+            var name = await AskNameAsync($"Rename {current}", current);
+            if (name is null) return;
+            var renamed = BankBoxGroups.Clean(name);
+            if (Apply(groups => BankBoxGroups.Rename(groups, current, renamed), $"{current} is now {renamed}.")
+                && string.Equals(_view, current, StringComparison.OrdinalIgnoreCase))
+                _view = renamed;
+            return;
+        }
+        if (choice.StartsWith("Delete the group", StringComparison.Ordinal))
+        {
+            _busy = true;
+            bool sure;
+            try
+            {
+                sure = await PadMenu.ConfirmAsync(_host, $"Delete the group {current}?",
+                    "Only the group goes: its boxes and their Pokémon stay where they are, in no group.", "Delete group");
+            }
+            finally { _busy = false; }
+            if (!sure) return;
+            if (Apply(groups => BankBoxGroups.Delete(groups, current), $"Group {current} deleted; its boxes stay.")
+                && string.Equals(_view, current, StringComparison.OrdinalIgnoreCase))
+                _view = null;
+        }
+    }
+
+    private async Task<string?> AskNameAsync(string title, string current)
     {
         _busy = true;
         try
         {
-            var changed = await action();
-            if (changed) Reload(remap);
-            _frame.Request();
-            return changed;
+            var name = await TextPopup.ShowLineAsync(_host, title, $"Up to {BankBoxGroups.MaxNameLength} characters, like Shiny or Living dex", current);
+            name = name is null ? null : BankBoxGroups.Clean(name);
+            return string.IsNullOrEmpty(name) ? null : name;
         }
         finally { _busy = false; }
     }
 
-    private Task AddBoxAsync(int at)
+    private bool Apply(Func<IReadOnlyList<BankBoxGroup>, IReadOnlyList<BankBoxGroup>> change, string done)
+    {
+        var ok = _page.ChangeGroups(change, done);
+        _status = ok ? done : _page.StatusText;
+        Reload();
+        _snapNext = true;
+        _frame.Request();
+        return ok;
+    }
+
+    private async Task RunAsync(Func<Task<bool>> action)
+    {
+        _busy = true;
+        try
+        {
+            if (await action()) Reload();
+            _frame.Request();
+        }
+        finally { _busy = false; }
+    }
+
+    /// <summary>A new empty box at <paramref name="at"/>, joining <paramref name="group"/>: the
+    /// group on screen for "+", the neighbour's group when inserted beside a box.</summary>
+    private Task AddBoxAsync(int at, string? group)
     {
         var remap = BankBoxRemap.Insert(_boxes.Length, at);
         if (_page.ApplyBoxRemap(remap))
         {
-            Reload(remap);
+            if (group is not null) _page.ChangeGroups(groups => BankBoxGroups.Assign(groups, at, group), null);
+            Reload();
             _cursor = at;
+            _status = group is null ? $"{BankBoxDecor.Label(at)} added." : $"{BankBoxDecor.Label(at)} added to {group}.";
         }
-        Retarget();
+        _frame.Request();
         return Task.CompletedTask;
     }
 
     private void Close(int? box)
     {
         _longPress?.Stop();
-        ClearCardCache();
         _router?.Remove(this);
         _host.Remove(_overlay);
-        _result.TrySetResult(box);
+        _padlock?.Dispose();
+        _result.TrySetResult(box is { } b ? new BankOverviewResult(b, _view) : null);
     }
 
     // ── Touch ──────────────────────────────────────────────────────────────
 
+    private int? BoxAt(SKPoint point) =>
+        _hits is { } hits && hits.Viewport.Contains(point) ? hits.Cards.FirstOrDefault(c => c.Rect.Contains(point)) is { Rect.Width: > 0 } hit ? hit.Box : null : null;
+
     private void Touch(object? sender, SKTouchEventArgs args)
     {
         args.Handled = true;
-        if (_busy) return;
+        if (_busy || _hits is not { } hits) return;
         var point = args.Location;
         switch (args.ActionType)
         {
             case SKTouchAction.Pressed:
                 _pressAt = point;
-                _finger = point;
                 _scrolling = false;
-                _scrollStart = _scroll.Target;
+                _scrollStart = _scrollTo;
                 StartLongPress();
                 break;
             case SKTouchAction.Moved when _pressAt is { } start:
-                _finger = point;
                 if (_dragging)
                 {
-                    if (BoxAt(point) is { } over && over != _cursor) { _cursor = over; Retarget(); }
-                    _frame.Request();
+                    if (BoxAt(point) is { } over && over != _cursor) { _cursor = over; _frame.Request(); }
                 }
-                else if (_scrolling || Distance(start, point) > 18 * _density)
+                else if (_scrolling || Math.Abs(point.Y - start.Y) > 18 * hits.Unit)
                 {
                     _longPress?.Stop();
                     _scrolling = true;
-                    _scroll.Target = _scrollStart - (point.Y - start.Y) / RowHeight();
-                    _scroll.Snap(Math.Clamp(_scroll.Target, 0, Math.Max(0, (_boxes.Length - 1) / _columns - _visibleRows + 1.2f)));
-                    _frame.Request();
+                    SetScroll(_scrollStart - (point.Y - start.Y) / hits.Unit, snap: true);
                 }
-                break;
-            case SKTouchAction.Released when !_dragging && !_scrolling && _hintHits.FirstOrDefault(h => h.Rect.Contains(point)) is { Rect.Width: > 0 } hint:
-                _longPress?.Stop();
-                _pressAt = null;
-                OnPadButton(hint.Button);
                 break;
             case SKTouchAction.Released:
             case SKTouchAction.Cancelled:
                 _longPress?.Stop();
-                if (_dragging) Drop();
-                else if (!_scrolling && _pressAt is not null && args.ActionType == SKTouchAction.Released && BoxAt(point) is { } box)
+                var tapped = args.ActionType == SKTouchAction.Released && !_scrolling && _pressAt is not null;
+                _pressAt = null;
+                _scrolling = false;
+                if (_dragging) { Drop(); break; }
+                if (!tapped) break;
+                if (hits.Prompts.Select((r, i) => (r, i)).FirstOrDefault(p => p.r.Contains(point)) is { r.Width: > 0 } prompt && prompt.i < _prompts.Count)
+                {
+                    OnPadButton(_prompts[prompt.i].Button);
+                    break;
+                }
+                if (hits.Previous.Contains(point)) { if (_held is null) CycleView(-1); break; }
+                if (hits.Next.Contains(point)) { if (_held is null) CycleView(1); break; }
+                if (BoxAt(point) is { } box)
                 {
                     if (_held is not null) { _cursor = box; Drop(); }
                     else if (box == _cursor) Close(box); // a second tap opens it
-                    else { _cursor = box; Retarget(); }
+                    else { _cursor = box; Moved(); }
                 }
-                _pressAt = null;
-                _scrolling = false;
                 break;
         }
     }
@@ -440,247 +632,62 @@ public sealed class BankBoxOverview : IPadPagingHandler
         PickUp(box);
     }
 
-    private static float Distance(SKPoint a, SKPoint b) => MathF.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y));
+    // ── Paint ──────────────────────────────────────────────────────────────
 
-    // ── Layout & paint ─────────────────────────────────────────────────────
+    private bool _snapNext;
 
-    private SKRect _grid;
-    private (SKRect Rect, PadButton Button)[] _hintHits = [];
-    private float _cardWidth;
-    private float _cardHeight;
-    private float _gap;
-
-    private float RowHeight() => _cardHeight + _gap;
-
-    private void Measure(SKImageInfo info)
+    private void SetScroll(float target, bool snap)
     {
-        _density = _canvas.Width > 0 ? info.Width / (float)_canvas.Width : 1;
-        var hint = HintHeight * _density;
-        var header = 44 * _density;
-        _grid = new SKRect(0, header, info.Width, info.Height - hint);
-        var columns = info.Width / _density >= 900 ? 6 : info.Width / _density >= 560 ? 4 : 3;
-        if (columns != _columns)
-        {
-            _columns = columns;
-            SnapLayout();
-        }
-        _gap = 12 * _density;
-        _cardWidth = (_grid.Width - _gap * (_columns + 1)) / _columns;
-        _cardHeight = _cardWidth * CardAspect + 22 * _density;
-        _visibleRows = Math.Max(1, (int)(_grid.Height / (_cardHeight + _gap)));
-    }
-
-    private SKRect CardRect(float column, float row) =>
-        SKRect.Create(_grid.Left + _gap + column * (_cardWidth + _gap),
-            _grid.Top + _gap * 0.5f + (row - _scroll.Value) * (_cardHeight + _gap), _cardWidth, _cardHeight);
-
-    // Touch locations arrive in canvas pixels, the space the layout is measured in.
-    private int? BoxAt(SKPoint point)
-    {
-        if (!_grid.Contains(point)) return null;
-        var column = (int)((point.X - _grid.Left - _gap * 0.5f) / (_cardWidth + _gap));
-        var row = (int)MathF.Floor((point.Y - _grid.Top) / (_cardHeight + _gap) + _scroll.Value);
-        if (column < 0 || column >= _columns || row < 0) return null;
-        var position = row * _columns + column;
-        return position < _boxes.Length ? position : null;
+        var max = _layout is { } layout ? Math.Max(0, layout.ContentHeight - layout.Viewport.Height) : target;
+        target = Math.Clamp(target, 0, max);
+        if (Math.Abs(target - _scrollTo) < 0.5f && !snap) return;
+        _scrollFrom = _scroll;
+        _scrollTo = target;
+        if (snap || !MotionSetting.Decorative) _scroll = target;
+        else _scrollClock.Restart();
+        _frame.Request();
     }
 
     private void Paint(object? sender, SKPaintSurfaceEventArgs args)
     {
         var canvas = args.Surface.Canvas;
         var info = args.Info;
-        var moving = Step(_pacer.Advance());
-        _redrawsThisFrame = 0;
-        _staleCards = false;
-        Measure(info);
         canvas.Clear(SKColors.Transparent);
-        PksmPaint.Panel(canvas, new SKRect(0, 0, info.Width, info.Height), Pksm.Housing, 10 * _density);
-
-        using var title = new SKFont(_face, 22 * _density);
-        using var small = new SKFont(_face, 15 * _density);
-        var total = _boxes.Sum(b => b.Count(e => e is not null));
-        var heading = _held is { } h
-            ? $"{(_carry == Carry.Swap ? "Swapping" : "Moving")} {BankBoxDecor.Label(h)}"
-            : $"All boxes · {_boxes.Length} boxes · {total} Pokémon";
-        PksmPaint.CenterText(canvas, heading, 16 * _density, 24 * _density, title, ColorTheme.Current.Bright, Pksm.LogoVoid);
-
-        canvas.Save();
-        canvas.ClipRect(_grid);
-        for (var box = 0; box < _boxes.Length; box++)
+        var runs = Runs();
+        var layout = _layout = BankOverviewPaint.Layout(runs, info.Size);
+        SetScroll(BankOverviewPaint.ScrollFor(layout, _cursor, _scrollTo), _snapNext);
+        _snapNext = false;
+        if (_scroll != _scrollTo)
         {
-            if (box == _held) continue;
-            var (x, y, appear) = _cards[box];
-            var rect = CardRect(x.Value, y.Value);
-            if (rect.Bottom < _grid.Top || rect.Top > _grid.Bottom) continue;
-            DrawCard(canvas, rect, box, small, appear.Value);
+            var t = Math.Clamp(_scrollClock.ElapsedMilliseconds / ScrollMs, 0f, 1f);
+            var eased = 1 - (1 - t) * (1 - t);
+            _scroll = t >= 1f ? _scrollTo : _scrollFrom + (_scrollTo - _scrollFrom) * eased;
         }
 
-        var cursor = CardRect(_cursorX.Value, _cursorY.Value);
-        if (_held is null)
-            PksmPaint.Selection(canvas, SKRect.Inflate(cursor, 3 * _density, 3 * _density));
-        canvas.Restore();
+        PksmPaint.LogoGrid(canvas, new SKRect(0, 0, info.Width, info.Height), 32 * info.Width / BankOverviewPaint.DesignWidth);
+        var cards = new BankOverviewCard[_boxes.Length];
+        var shown = runs.SelectMany(r => r.Boxes).ToHashSet();
+        for (var box = 0; box < cards.Length; box++)
+            cards[box] = shown.Contains(box) ? Card(box) : new BankOverviewCard(box, "", 0, false, false, [], null, default, default);
 
-        if (_held is { } held)
-        {
-            // The carried card rides above everything: lifted, scaled up, bobbing gently,
-            // following the finger while dragged.
-            var lift = _lift.Value;
-            var bob = MathF.Sin(_pacer.Now * 5.2f) * 3f * _density * lift;
-            var target = _dragging
-                ? SKRect.Create(_finger.X - _cardWidth / 2, _finger.Y - _cardHeight / 2, _cardWidth, _cardHeight)
-                : cursor;
-            var grow = 1 + 0.08f * lift;
-            var rect = SKRect.Create(target.MidX - target.Width * grow / 2, target.MidY - target.Height * grow / 2 - 14 * _density * lift + bob,
-                target.Width * grow, target.Height * grow);
-            // A soft drop shadow from two stacked translucent plates: no blur filter to pay for.
-            using (var shadow = new SKPaint { Color = SKColors.Black.WithAlpha((byte)(50 * lift)), IsAntialias = true })
-            {
-                var drop = SKRect.Create(rect.Left + 3 * _density, rect.Top + 14 * _density * lift, rect.Width, rect.Height);
-                canvas.DrawRoundRect(SKRect.Inflate(drop, 3 * _density, 3 * _density), 12 * _density, 12 * _density, shadow);
-                canvas.DrawRoundRect(drop, 10 * _density, 10 * _density, shadow);
-            }
-            canvas.Save();
-            canvas.RotateDegrees(MathF.Sin(_pacer.Now * 3.1f) * 1.2f * lift, rect.MidX, rect.MidY);
-            DrawCard(canvas, rect, held, small, 1);
-            using (var rim = new SKPaint { Color = Pksm.ShinyGold, Style = SKPaintStyle.Stroke, StrokeWidth = 3 * _density, IsAntialias = true })
-                canvas.DrawRoundRect(rect, 9 * _density, 9 * _density, rim);
-            canvas.Restore();
-            if (_carry == Carry.Swap && held != _cursor)
-                PaintSwapBadge(canvas, CardRect(_cards[_cursor].X.Value, _cards[_cursor].Y.Value), small);
-        }
-
-        var hintBar = new SKRect(0, info.Height - HintHeight * _density, info.Width, info.Height);
-        (string Key, string Label, PadButton Button)[] hints = _held is null
-            ? [("A", "Open", PadButton.A), ("Y", "Pick up", PadButton.Y), ("X", "Box menu", PadButton.X),
-               ("+", "New box", PadButton.Start), ("R", "Page", PadButton.R), ("B", "Close", PadButton.B)]
+        _prompts = _held is null
+            ?
+            [
+                ("A", "Open", PadButton.A), ("Y", "Pick up", PadButton.Y), ("X", "Box menu", PadButton.X),
+                ("+", "New box", PadButton.Start), ("-", "View", PadButton.Select),
+                ("LR", runs.Count(r => r.Boxes.Count > 0) > 1 ? "Group" : "Page", PadButton.R), ("B", "Close", PadButton.B),
+            ]
             : [("A", "Drop here", PadButton.A), ("X", _carry == Carry.Swap ? "Move instead" : "Swap instead", PadButton.X), ("B", "Cancel", PadButton.B)];
-        var prompts = hints.Select(h => (h.Key, h.Label)).ToArray();
-        PksmPaint.HintBar(canvas, hintBar, prompts, small);
-        // Every prompt is a button for touch: the same action as its pad key.
-        var rects = PksmPaint.HintBarHitRects(hintBar, prompts, small);
-        _hintHits = [.. rects.Select((r, i) => (r, hints[i].Button))];
-        _pacer.Continue(moving || _staleCards);
-    }
 
-    // ── Card cache ─────────────────────────────────────────────────────────
-    // A card (wallpaper, name, 30 sprites) is drawn once into an image; each frame only moves
-    // images around, which keeps the slide and the lift smooth. A card drawn before all its
-    // sprites or its wallpaper arrived is redrawn, a couple per frame, until it is complete.
-
-    private readonly Dictionary<int, (SKImage Image, bool Complete)> _cardImages = [];
-    private bool _staleCards;
-    private int _redrawsThisFrame;
-
-    private void ClearCardCache()
-    {
-        foreach (var (image, _) in _cardImages.Values) image.Dispose();
-        _cardImages.Clear();
-    }
-
-    private void DrawCard(SKCanvas canvas, SKRect rect, int box, SKFont font, float appear)
-    {
-        if (appear < 0.01f) return;
-        var width = (int)MathF.Ceiling(_cardWidth);
-        var height = (int)MathF.Ceiling(_cardHeight);
-        if (!_cardImages.TryGetValue(box, out var cached) || cached.Image.Width != width || cached.Image.Height != height
-            || (!cached.Complete && _redrawsThisFrame < 2))
-        {
-            _redrawsThisFrame++;
-            using var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
-            if (surface is null) return;
-            surface.Canvas.Clear(SKColors.Transparent);
-            var complete = PaintCard(surface.Canvas, SKRect.Create(0, 0, _cardWidth, _cardHeight), box, font);
-            if (_cardImages.TryGetValue(box, out var old)) old.Image.Dispose();
-            cached = (surface.Snapshot(), complete);
-            _cardImages[box] = cached;
-        }
-        _staleCards |= !cached.Complete;
-        canvas.Save();
-        if (appear < 0.999f) canvas.Scale(appear, appear, rect.MidX, rect.MidY);
-        canvas.DrawImage(cached.Image, rect, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None));
-        canvas.Restore();
-    }
-
-    /// <summary>Draws one box card; false while a sprite or its wallpaper is still loading.</summary>
-    private bool PaintCard(SKCanvas canvas, SKRect rect, int box, SKFont font)
-    {
-        var complete = true;
-        var radius = 9 * _density;
-
-        var tone = BankBoxArt.Tone(box);
-        var shade = Pksm.WallpaperShade(tone);
-        using var clip = new SKRoundRect(rect, radius, radius);
-        canvas.Save();
-        canvas.ClipRoundRect(clip, antialias: true);
-        BankBoxArt.Paint(canvas, rect, box, _frame.Request);
-
-        var band = new SKRect(rect.Left, rect.Top, rect.Right, rect.Top + 22 * _density);
-        using (var bandPaint = new SKPaint { Color = SKColors.Black.WithAlpha(0x70) })
-            canvas.DrawRect(band, bandPaint);
-        var name = BankBoxDecor.Label(box);
-        PksmPaint.CenterText(canvas, Fit(name, font, rect.Width - 58 * _density), rect.Left + 8 * _density, band.MidY, font, SKColors.White, SKColors.Black);
-        var count = Occupied(box);
-        PksmPaint.CenterText(canvas, count == Slots ? "FULL" : $"{count}/{Slots}", rect.Right - 8 * _density, band.MidY, font,
-            count == Slots ? Pksm.ShinyGold : SKColors.White, SKColors.Black, SKTextAlign.Right);
-
-        // The 30 slots, every Pokémon drawn small: the box reads like the real one.
-        var area = new SKRect(rect.Left + 6 * _density, band.Bottom + 4 * _density, rect.Right - 6 * _density, rect.Bottom - 6 * _density);
-        var cellW = area.Width / 6f;
-        var cellH = area.Height / 5f;
-        using var dot = new SKPaint { Color = SKColors.White.WithAlpha(0x2E), IsAntialias = true };
-        var entries = _boxes[box];
-        for (var slot = 0; slot < Slots; slot++)
-        {
-            var cx = area.Left + (slot % 6 + 0.5f) * cellW;
-            var cy = area.Top + (slot / 6 + 0.5f) * cellH;
-            if (entries[slot] is not { } entry)
-            {
-                canvas.DrawCircle(cx, cy, Math.Min(cellW, cellH) * 0.1f, dot);
-                continue;
-            }
-            var sprite = _sprites.GetSprite(entry.Info.Look);
-            if (sprite is null)
-            {
-                complete = false;
-                _sprites.Warm(entry.Info.Look, _frame.Request);
-                continue;
-            }
-            var size = Math.Min(cellW, cellH) * 1.08f;
-            var scale = size / Math.Max(sprite.Width, sprite.Height);
-            var w = sprite.Width * scale;
-            var hgt = sprite.Height * scale;
-            using var image = SKImage.FromBitmap(sprite);
-            canvas.DrawImage(image, new SKRect(cx - w / 2, cy - hgt / 2, cx + w / 2, cy + hgt / 2), BoxGridRenderer.SpriteSampling);
-        }
-        canvas.Restore();
-
-        using (var border = new SKPaint
-        {
-            Color = shade,
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = 2 * _density,
-            IsAntialias = true,
-        })
-        {
-            canvas.DrawRoundRect(clip, border);
-        }
-        if (LivingDexAutopilot.BankStartBox == box)
-            PksmPaint.CenterText(canvas, "Living dex ▸", rect.Left + 8 * _density, rect.Bottom - 10 * _density, font, Pksm.ShinyGold, SKColors.Black);
-
-        return complete && BankBoxArt.IsReady(box);
-    }
-
-    private void PaintSwapBadge(SKCanvas canvas, SKRect rect, SKFont font)
-    {
-        using var veil = new SKPaint { Color = SKColors.Black.WithAlpha(0x55), IsAntialias = true };
-        canvas.DrawRoundRect(rect, 9 * _density, 9 * _density, veil);
-        PksmPaint.CenterText(canvas, "⇄ swap", rect.MidX, rect.MidY, font, SKColors.White, SKColors.Black, SKTextAlign.Center);
-    }
-
-    private static string Fit(string text, SKFont font, float width)
-    {
-        if (font.MeasureText(text) <= width) return text;
-        while (text.Length > 1 && font.MeasureText(text + "…") > width) text = text[..^1];
-        return text + "…";
+        var total = _boxes.Sum(b => b.Count(e => e is not null));
+        var status = _status.Length > 0 ? _status
+            : _held is { } held ? $"{(_carry == Carry.Swap ? "Swapping" : "Moving")} {BankBoxDecor.Label(held)}"
+            : $"{_boxes.Length} boxes · {total} Pokémon";
+        var title = _view ?? "All boxes";
+        var scene = new BankOverviewScene(cards, runs, title, _groups.Count > 0 && _held is null, _cursor, _scroll, _held,
+            _carry == Carry.Swap, status, [.. _prompts.Select(p => (p.Key, p.Label))], BoxBackground.Style, _padlock,
+            "Put boxes in it from a box's menu (X), or X here to rename it.");
+        _hits = BankOverviewPaint.Paint(canvas, info, scene, _face);
+        if (_scroll != _scrollTo) _frame.Request();
     }
 }

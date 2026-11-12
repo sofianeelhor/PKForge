@@ -24,6 +24,8 @@ public static class BankTransfers
     /// Imports every item into the given empty slots of <paramref name="session"/>, in order,
     /// or stops at the first one that cannot enter and returns its index (-1 when all landed).
     /// A refusal leaves the session partly written: the caller discards it rather than saving.
+    /// A room that turns out to hold a Pokémon is a refusal too: the caller's picture of the
+    /// save can be older than its last write, and an arrival must never replace what is stored.
     /// Downgrades are allowed, so only call this after the user confirmed the transfer preview.
     /// </summary>
     public static int ImportAll(ISaveEngineSession session, IReadOnlyList<TransferItem> items, IReadOnlyList<SlotRef> rooms, out string? refusal)
@@ -36,6 +38,11 @@ public static class BankTransfers
         }
         for (var i = 0; i < items.Count; i++)
         {
+            if (rooms[i].Box >= 0 && !session.ReadEntity(rooms[i].Box, rooms[i].Slot).IsEmpty)
+            {
+                refusal = $"box {rooms[i].Box + 1}, slot {rooms[i].Slot + 1} is no longer empty.";
+                return i;
+            }
             if (!TryImport(session, rooms[i].Box, rooms[i].Slot, items[i].Data, out refusal, items[i].Format))
                 return i;
         }

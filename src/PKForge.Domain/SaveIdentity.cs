@@ -20,6 +20,22 @@ public enum SaveFormat
     RadicalRed = 3,
     /// <summary>The GS Chronicles CFRU layout (sector footers stamped 0x66290096, 25 boxes).</summary>
     GsChronicles = 4,
+    /// <summary>The Recharged Yellow layout (retail Emerald envelope, repacked SaveBlock1).</summary>
+    RechargedYellow = 5,
+    /// <summary>The Pokémon Quetzal layout (16 sectors/slot, 104-byte party, packed PC).</summary>
+    Quetzal = 6,
+    /// <summary>A pokeemerald-expansion-family layout (Heart &amp; Soul 2.0, standard expansion and the hacks it names, Perfect Emerald, Team Rocket Edition).</summary>
+    Expansion = 7,
+    /// <summary>The Pokémon Soul Gold layout (96-byte party, BX storage generations).</summary>
+    SoulGold = 8,
+    /// <summary>The Pokémon Origin HeartGold layout (HGSS envelope, larger blocks, 24 boxes).</summary>
+    OriginHeartGold = 10,
+    /// <summary>The Pokémon Elite Redux layout (one rotating 20-sector slot, 52-byte packed Pokémon).</summary>
+    EliteRedux = 9,
+    /// <summary>Fire Red Extended: FireRed's blocks in 0xFF0 chunks, CFRU checksum windows, encrypted PK3.</summary>
+    FireRedExtended = 11,
+    /// <summary>Crystal Advance Redux: FireRed's blocks in 0xFF0 chunks, one 0xF80 window, plain PK3.</summary>
+    CrystalAdvanceRedux = 12,
 }
 
 /// <summary>
@@ -41,6 +57,24 @@ public enum SaveLayoutFamily
     GsChroniclesCfru = 6,
     /// <summary>Diamond and Pearl: one save format, the edition is not in the bytes.</summary>
     DiamondPearl = 7,
+    /// <summary>Red, Blue, Green and Japanese Blue: one save format. Yellow is a different save.</summary>
+    RedBlue = 8,
+    /// <summary>Pokémon Recharged Yellow: retail Emerald envelope, repacked SaveBlock1.</summary>
+    RechargedYellow = 9,
+    /// <summary>Pokémon Quetzal: 16 sectors/slot and its own party/PC codecs.</summary>
+    Quetzal = 10,
+    /// <summary>pokeemerald-expansion family: 14-sector envelope with the packed mon codec.</summary>
+    Expansion = 11,
+    /// <summary>Pokémon Soul Gold: expansion envelope, 96-byte party, BX storage.</summary>
+    SoulGold = 12,
+    /// <summary>Pokémon Origin HeartGold: HeartGold's envelope with its own block sizes and 24 boxes.</summary>
+    OriginHeartGold = 14,
+    /// <summary>Pokémon Elite Redux: one rotating 20-sector slot and its own Pokémon record.</summary>
+    EliteRedux = 13,
+    /// <summary>Pokémon Fire Red Extended (FireRed blocks, CFRU windows, encrypted PK3).</summary>
+    FireRedExtended = 15,
+    /// <summary>Pokémon Crystal Advance Redux (FireRed blocks, flat 0xF80 window, plain PK3).</summary>
+    CrystalAdvanceRedux = 16,
 }
 
 /// <summary>
@@ -80,10 +114,18 @@ public sealed record SaveIdentity(
     string? ColorKey = null,
     string? GameChoiceId = null,
     bool Hidden = false,
-    bool AcceptedHackRisk = false)
+    bool AcceptedHackRisk = false,
+    bool KeepShown = false,
+    string? ArtKey = null)
 {
+    // ArtKey: the player's own cartridge, logo and hero images (see CustomGameArt); it
+    // follows the save through renames and game choices.
+
+    // KeepShown: the player put a backup copy (DetectedSave.IsCopy) on the shelf; it stays
+    // there instead of starting in Hidden saves again at the next scan.
+
     /// <summary>True when the user has customised nothing.</summary>
-    public bool IsEmpty => DisplayName is null && ColorKey is null && GameChoiceId is null && !Hidden && !AcceptedHackRisk;
+    public bool IsEmpty => DisplayName is null && ColorKey is null && GameChoiceId is null && !Hidden && !AcceptedHackRisk && !KeepShown && ArtKey is null;
 }
 
 /// <summary>Persists <see cref="SaveIdentity"/> per document.</summary>
@@ -154,9 +196,22 @@ public static class SaveIdentityRules
             "Unbound" => SaveFormat.Unbound,
             "Radical Red" => SaveFormat.RadicalRed,
             "GS Chronicles" => SaveFormat.GsChronicles,
+            "Recharged Yellow" => SaveFormat.RechargedYellow,
+            "Quetzal" => SaveFormat.Quetzal,
+            "Heart and Soul 2.0" or "pokeemerald-expansion" or "Perfect Emerald" or "Team Rocket Edition" or "Emerald Exceeded"
+                or "Lazarus" or "Lucid" or "Emerald Enhanced" => SaveFormat.Expansion,
+            "Soul Gold" => SaveFormat.SoulGold,
+            "Origin HeartGold" => SaveFormat.OriginHeartGold,
+            "Elite Redux" => SaveFormat.EliteRedux,
+            "Fire Red Extended" => SaveFormat.FireRedExtended,
+            "Crystal Advance Redux" => SaveFormat.CrystalAdvanceRedux,
             _ => SaveFormat.Standard,
         };
-        return new SaveIdentityGuess(label, FamilyOf(engineGame), format, suggested, label);
+        var family = FamilyOf(engineGame);
+        // Red/Blue/Green share one layout and no art of their own: leave the sticker blank
+        // until the player picks a cartridge, so an unchosen save is never shown as Green.
+        var art = family == SaveLayoutFamily.RedBlue ? null : label;
+        return new SaveIdentityGuess(label, family, format, suggested, art);
     }
 
     public static SaveLayoutFamily FamilyOf(string engineGame) => engineGame switch
@@ -165,11 +220,51 @@ public static class SaveIdentityRules
         "Ruby" or "Sapphire" or "Ruby / Sapphire" => SaveLayoutFamily.RubySapphire,
         "FireRed" or "LeafGreen" or "FireRed / LeafGreen" => SaveLayoutFamily.FireRedLeafGreen,
         "Diamond" or "Pearl" or "Diamond / Pearl" => SaveLayoutFamily.DiamondPearl,
+        "Red / Blue" => SaveLayoutFamily.RedBlue,
         "Unbound" => SaveLayoutFamily.UnboundCfru,
         "Radical Red" => SaveLayoutFamily.Cfru,
         "GS Chronicles" => SaveLayoutFamily.GsChroniclesCfru,
+        "Recharged Yellow" => SaveLayoutFamily.RechargedYellow,
+        "Quetzal" => SaveLayoutFamily.Quetzal,
+        "Heart and Soul 2.0" or "pokeemerald-expansion" or "Perfect Emerald" or "Team Rocket Edition" or "Emerald Exceeded"
+            or "Lazarus" or "Lucid" or "Emerald Enhanced" => SaveLayoutFamily.Expansion,
+        "Soul Gold" => SaveLayoutFamily.SoulGold,
+        "Origin HeartGold" => SaveLayoutFamily.OriginHeartGold,
+        "Elite Redux" => SaveLayoutFamily.EliteRedux,
+        "Fire Red Extended" => SaveLayoutFamily.FireRedExtended,
+        "Crystal Advance Redux" => SaveLayoutFamily.CrystalAdvanceRedux,
         _ => SaveLayoutFamily.Other,
     };
+
+    /// <summary>
+    /// The edition a file's own name points at ("Pokemon - Blue Version (USA).sav" → Blue), as
+    /// an index into <paramref name="choices"/>, or -1. Only a whole word counts, so "FireRed"
+    /// never reads as Red. The edition picker starts on it; the player still confirms.
+    /// </summary>
+    public static int EditionFromFileName(IReadOnlyList<SaveGameChoice> choices, string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return -1;
+        var words = Regex.Split(Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant(), "[^a-z]+")
+            .Where(w => w.Length > 0).ToHashSet(StringComparer.Ordinal);
+        var matches = new List<int>();
+        for (var i = 0; i < choices.Count; i++)
+        {
+            if (choices[i].IsHack) continue;
+            // "Pokémon Blue (INT)" → "blue", "Pokémon FireRed" → "firered".
+            var name = Regex.Replace(choices[i].Label, @"\([^)]*\)", "").Trim();
+            var key = name.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.ToLowerInvariant();
+            if (key is { Length: > 0 } && words.Contains(key)) matches.Add(i);
+        }
+        if (matches.Count == 0) return -1;
+        // Blue is two cartridges: a Japanese file name picks the Japanese one.
+        var japanese = words.Overlaps(["japan", "jp", "jpn", "j"]);
+        return matches.FirstOrDefault(i => choices[i].Label.Contains("(JP)", StringComparison.Ordinal) == japanese, matches[0]);
+    }
+
+    /// <summary>True when the file's own name says Yellow (a Red/Blue-layout save whose bytes do not).</summary>
+    public static bool FileNameSaysYellow(string? fileName) =>
+        !string.IsNullOrWhiteSpace(fileName)
+        && Regex.IsMatch(Path.GetFileNameWithoutExtension(fileName), @"(?i)(^|[^a-z])yellow([^a-z]|$)");
 
     /// <summary>
     /// The "this game is…" answers a save can take. Only games whose engine reads this
@@ -200,6 +295,17 @@ public static class SaveIdentityRules
             new("pearl", "Pokémon Pearl", SaveFormat.Standard, "Pokémon Pearl", false),
             new("hack-dp", "Diamond/Pearl-based ROM hack", SaveFormat.Standard, null, true),
         ],
+        // Idea from community PR #60 by gui-camargo (issue #53). International Blue and
+        // Japanese Green share one PKHeX version id (GN); the shelf still tells them apart.
+        // Art labels are the bundled asset names, not the menu text.
+        SaveLayoutFamily.RedBlue =>
+        [
+            new("red", "Pokémon Red", SaveFormat.Standard, "Pokémon Red", false),
+            new("blue-int", "Pokémon Blue (INT)", SaveFormat.Standard, "Pokémon Blue", false),
+            new("green-jp", "Pokémon Green (JP)", SaveFormat.Standard, "Pokémon Blue [INT]/Green [JP]", false),
+            new("blue-jp", "Pokémon Blue (JP)", SaveFormat.Standard, "Pokémon Blue [JP]", false),
+            new("hack-rb", "Red/Blue-based ROM hack", SaveFormat.Standard, null, true),
+        ],
         SaveLayoutFamily.UnboundCfru =>
         [
             new("unbound", "Pokémon Unbound", SaveFormat.Unbound, "Pokémon Unbound", true),
@@ -216,6 +322,38 @@ public static class SaveIdentityRules
         [
             new("gschronicles", "Pokémon GS Chronicles", SaveFormat.GsChronicles, "Pokémon GS Chronicles", true),
         ],
+        SaveLayoutFamily.RechargedYellow =>
+        [
+            new("recharged-yellow", "Pokémon Recharged Yellow", SaveFormat.RechargedYellow, "Pokémon Recharged Yellow", true),
+        ],
+        SaveLayoutFamily.Quetzal =>
+        [
+            new("quetzal", "Pokémon Quetzal", SaveFormat.Quetzal, "Pokémon Quetzal", true),
+        ],
+        SaveLayoutFamily.Expansion =>
+        [
+            new("expansion", "pokeemerald-expansion hack", SaveFormat.Expansion, null, true),
+        ],
+        SaveLayoutFamily.SoulGold =>
+        [
+            new("soulgold", "Pokémon Soul Gold", SaveFormat.SoulGold, "Pokémon Soul Gold", true),
+        ],
+        SaveLayoutFamily.OriginHeartGold =>
+        [
+            new("originheartgold", "Pokémon Origin HeartGold", SaveFormat.OriginHeartGold, "Pokémon Origin HeartGold", true),
+        ],
+        SaveLayoutFamily.EliteRedux =>
+        [
+            new("eliteredux", "Pokémon Elite Redux", SaveFormat.EliteRedux, "Pokémon Elite Redux", true),
+        ],
+        SaveLayoutFamily.FireRedExtended =>
+        [
+            new("firered-extended", "Pokémon Fire Red Extended", SaveFormat.FireRedExtended, "Pokémon Fire Red Extended", true),
+        ],
+        SaveLayoutFamily.CrystalAdvanceRedux =>
+        [
+            new("crystal-advance-redux", "Pokémon Crystal Advance Redux", SaveFormat.CrystalAdvanceRedux, "Pokémon Crystal Advance Redux", true),
+        ],
         _ =>
         [
             new("retail", detectedLabel, SaveFormat.Auto, detectedLabel, false),
@@ -224,13 +362,15 @@ public static class SaveIdentityRules
     };
 
     /// <summary>
-    /// True for a save of a shared-format pair (Ruby/Sapphire, FireRed/LeafGreen, Diamond/Pearl)
+    /// True for a save of a shared-format pair (Ruby/Sapphire, FireRed/LeafGreen, Diamond/Pearl,
+    /// Red/Blue/Green)
     /// that its own Pokémon could not place (the guess is still the pair) and the player has
     /// not said which edition it is yet.
     /// </summary>
     public static bool NeedsEditionChoice(SaveIdentityGuess guess, string? gameChoiceId) =>
         gameChoiceId is null && guess.Label.Contains(" / ", StringComparison.Ordinal)
-        && guess.Family is SaveLayoutFamily.RubySapphire or SaveLayoutFamily.FireRedLeafGreen or SaveLayoutFamily.DiamondPearl;
+        && guess.Family is SaveLayoutFamily.RubySapphire or SaveLayoutFamily.FireRedLeafGreen
+            or SaveLayoutFamily.DiamondPearl or SaveLayoutFamily.RedBlue;
 
     /// <summary>Every choice across families, for resolving a persisted id.</summary>
     public static SaveGameChoice? FindChoice(string? id, SaveLayoutFamily family, string detectedLabel) =>
@@ -242,8 +382,17 @@ public static class SaveIdentityRules
         "unbound" or "hack-cfru-unbound" => SaveFormat.Unbound,
         "radicalred" or "hack-cfru" => SaveFormat.RadicalRed,
         "gschronicles" => SaveFormat.GsChronicles,
+        "recharged-yellow" => SaveFormat.RechargedYellow,
+        "quetzal" => SaveFormat.Quetzal,
+        "expansion" => SaveFormat.Expansion,
+        "soulgold" => SaveFormat.SoulGold,
+        "originheartgold" => SaveFormat.OriginHeartGold,
+        "eliteredux" => SaveFormat.EliteRedux,
+        "firered-extended" => SaveFormat.FireRedExtended,
+        "crystal-advance-redux" => SaveFormat.CrystalAdvanceRedux,
         "emerald" or "hack-emerald" or "ruby" or "sapphire" or "hack-rs" or "firered" or "leafgreen" or "hack-frlg"
-            or "diamond" or "pearl" or "hack-dp" => SaveFormat.Standard,
+            or "diamond" or "pearl" or "hack-dp"
+            or "red" or "blue-int" or "green-jp" or "blue-jp" or "hack-rb" => SaveFormat.Standard,
         _ => SaveFormat.Auto,
     };
 
@@ -273,12 +422,14 @@ public sealed record ResolvedSaveIdentity(
     bool IsCustomized,
     string? GameChoiceId = null,
     bool IsRenamed = false,
-    bool IsHidden = false);
+    bool IsHidden = false,
+    string? ArtKey = null);
 
 public static class SaveIdentityResolver
 {
-    /// <summary>Merges detection with the user's identity. The user always wins.</summary>
-    public static ResolvedSaveIdentity Resolve(SaveIdentityGuess guess, SaveIdentity? identity)
+    /// <summary>Merges detection with the user's identity. The user always wins: a backup
+    /// copy (<paramref name="isCopy"/>) is hidden only until they choose to show it.</summary>
+    public static ResolvedSaveIdentity Resolve(SaveIdentityGuess guess, SaveIdentity? identity, bool isCopy = false)
     {
         var choice = SaveIdentityRules.FindChoice(identity?.GameChoiceId, guess.Family, guess.Label);
         var gameLabel = choice?.Label ?? guess.Label;
@@ -292,7 +443,8 @@ public static class SaveIdentityResolver
             identity is { IsEmpty: false },
             choice?.Id,
             renamed,
-            identity?.Hidden == true);
+            identity?.Hidden == true || (isCopy && identity?.KeepShown != true),
+            CustomGameArt.IsValidKey(identity?.ArtKey) ? identity!.ArtKey : null);
     }
 }
 
@@ -318,12 +470,15 @@ public static class SaveShelf
             identity?.ColorKey ?? "",
             save.Generation.ToString(System.Globalization.CultureInfo.InvariantCulture),
             identity?.GameChoiceId ?? "",
-            identity?.IsRenamed == true ? "renamed" : "");
+            identity?.IsRenamed == true ? "renamed" : "",
+            identity?.ArtKey ?? "");
     }
 
-    /// <summary>Groups in first-seen order; each group's most recently played save comes first.</summary>
+    /// <summary>Groups in first-seen order; each group's live saves come first, most recently played
+    /// first, then any backup copy the player put back on Home (a copy written to more recently
+    /// must not become the tile's first pick).</summary>
     public static IReadOnlyList<IReadOnlyList<DetectedSave>> Group(IEnumerable<DetectedSave> saves) =>
         [.. saves
             .GroupBy(GroupKey, StringComparer.Ordinal)
-            .Select(g => (IReadOnlyList<DetectedSave>)[.. g.OrderByDescending(s => s.LastModified ?? DateTimeOffset.MinValue)])];
+            .Select(g => (IReadOnlyList<DetectedSave>)[.. g.OrderBy(s => s.IsCopy).ThenByDescending(s => s.LastModified ?? DateTimeOffset.MinValue)])];
 }

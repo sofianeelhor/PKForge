@@ -10,8 +10,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ApplicationId>org.pkforge.app</ApplicationId>
     <ApplicationTitle>PKForge</ApplicationTitle>
-    <ApplicationVersion>311</ApplicationVersion>
-    <ApplicationDisplayVersion>3.1.1</ApplicationDisplayVersion>
+    <ApplicationVersion>320</ApplicationVersion>
+    <ApplicationDisplayVersion>3.2.0</ApplicationDisplayVersion>
     <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
   </PropertyGroup>
   <PropertyGroup Condition="'$(DiagnosticBuild)' == 'true'">
@@ -45,6 +45,12 @@
     <MauiAsset Include="Resources/AppIcon/pkforge.png" LogicalName="ui/logo.png" />
     <!-- The logo in each color scheme's colors, named by scheme id. -->
     <MauiAsset Include="Resources/UI/logo/*.png" LogicalName="ui/logo/%(Filename)%(Extension)" />
+    <MauiAsset Include="Resources/UI/egg/*.png" LogicalName="ui/egg/%(Filename)%(Extension)" />
+    <MauiAsset Include="Resources/UI/art/*.png" LogicalName="ui/art/%(Filename)%(Extension)" />
+    <!-- The Pokéwalker device, drawn by the artist (sizes and anchors: PKForge.Chrome WalkerDevice). -->
+    <MauiAsset Include="Resources/UI/walker/*.png" LogicalName="ui/walker/%(Filename)%(Extension)" />
+    <!-- The transfer portal's ring and closing star, frames left to right (PKForge.Chrome PortalPaint). -->
+    <MauiAsset Include="Resources/UI/portal/*.png" LogicalName="ui/portal/%(Filename)%(Extension)" />
     <!-- The About screen's easter egg. -->
     <MauiAsset Include="Resources/BadApple/*" LogicalName="badapple/%(Filename)%(Extension)" />
     <MauiAsset Include="Resources/Events/*.bin.gz" LogicalName="events/%(Filename)%(Extension)" />
@@ -80,10 +86,15 @@
     <MauiAsset Include="Resources/GameLogo/*.png" LogicalName="gamelogo/%(Filename)%(Extension)" />
     <!-- PKSM-derived pixel chrome (GPL-3, see Resources/UI/ATTRIBUTION.md). -->
     <MauiAsset Include="Resources/UI/pksm/*.png" LogicalName="ui/pksm/%(Filename)%(Extension)" />
+    <!-- Phosphor duotone icons (MIT, see Resources/UI/ATTRIBUTION.md), white at 96 px. -->
+    <MauiAsset Include="Resources/UI/tools/*.png" LogicalName="ui/tools/%(Filename)%(Extension)" />
+    <!-- Item sprites (PokéAPI, see Resources/UI/ATTRIBUTION.md) standing for the Save data tools. -->
+    <MauiAsset Include="Resources/UI/items/*.png" LogicalName="ui/items/%(Filename)%(Extension)" />
     <!-- The designer's icons for the new art direction (summary tabs, footer buttons). -->
     <MauiAsset Include="Resources/UI/design/*.png" LogicalName="ui/design/%(Filename)%(Extension)" />
     <!-- The Poképark: the artist's map at native size, its ground, objects and their depth. -->
     <MauiAsset Include="Resources/Pokepark/park/*.png" LogicalName="pokepark/park/%(Filename)%(Extension)" />
+    <MauiAsset Include="Resources/Pokepark/widget/*.png" LogicalName="pokepark/widget/%(Filename)%(Extension)" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../PKForge.Domain/PKForge.Domain.csproj" />

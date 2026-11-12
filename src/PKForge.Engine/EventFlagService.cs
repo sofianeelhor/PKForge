@@ -105,9 +105,8 @@ public static class EventFlagService
     /// <summary>Every flag and work var, labeled where PKHeX has a label.</summary>
     public static EventCatalog Load(ISaveEngineSession session)
     {
-        if (UnsupportedReason(session) is { } reason)
-            throw new NotSupportedException(reason);
-        var engine = (SaveEngineSession)session;
+        if (UnsupportedReason(session) is not null || session is not SaveEngineSession engine)
+            throw new NotSupportedException(UnsupportedReason(session));
         var backend = Backend.For(engine.SaveFile);
         var baseline = Baselines.GetValue(engine, BuildBaseline);
         var original = baseline.Backend;

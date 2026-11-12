@@ -6,6 +6,24 @@ namespace PKForge.Domain.Tests;
 
 public sealed class EmulatorSaveHeuristicsTests
 {
+    [Fact]
+    public void Emulator_kinds_keep_their_persisted_numbers()
+    {
+        // Watched roots and scan caches store these numbers: new emulators only append.
+        Assert.Equal(10, (int)EmulatorKind.LinkedFile);
+        Assert.Equal(11, (int)EmulatorKind.MyBoy);
+        Assert.Equal(12, (int)EmulatorKind.MyOldBoy);
+        Assert.Equal(13, (int)EmulatorKind.PokeDaisy);
+    }
+
+    [Theory]
+    [InlineData("Pokemon - Emerald Version (USA, Europe).sav", EmulatorKind.MyBoy, true)]
+    [InlineData("Pokemon - Crystal Version (USA).sav", EmulatorKind.MyOldBoy, true)]
+    [InlineData("Pokemon - Emerald Version (USA, Europe).srm", EmulatorKind.PokeDaisy, true)]
+    [InlineData("Pokemon - Emerald Version (USA, Europe).gba", EmulatorKind.MyBoy, false)]
+    public void New_emulators_take_their_battery_saves(string name, EmulatorKind kind, bool expected) =>
+        Assert.Equal(expected, EmulatorSaveHeuristics.IsCandidateFileName(name, kind));
+
     [Theory]
     [InlineData("pokemon.srm", true)]
     [InlineData("Pokemon Platinum.sav", true)]

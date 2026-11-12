@@ -51,7 +51,7 @@ public static class SaveBlockEditor
             {
                 var next = block.Value != "true";
                 var confirmed = await PadMenu.ConfirmAsync(host, $"Block {block.Key:X8}",
-                    $"{block.Name ?? "Unnamed block"}\nSet {block.Value} → {(next ? "true" : "false")}? A restore point is created first.",
+                    $"{block.Name ?? "Unnamed block"}\nSet {block.Value} → {(next ? "true" : "false")}?",
                     next ? "Set true" : "Set false");
                 if (!confirmed) continue;
                 write = s => SaveBlockEditorService.SetBool(s, block.Key, next);

@@ -78,17 +78,6 @@ public static class BankEntryEditor
         }
     }
 
-    private static List<PickItem> NameItems(IReadOnlyList<string> names, bool includeZero, string? zeroLabel = null)
-    {
-        var items = new List<PickItem>(names.Count);
-        for (var id = includeZero ? 0 : 1; id < names.Count; id++)
-        {
-            var name = id == 0 && zeroLabel is not null ? zeroLabel : names[id];
-            if (name.Length > 0) items.Add(new PickItem(id, name));
-        }
-        return items;
-    }
-
     /// <summary>Held-item list with sprites for anything already cached (misses show name only).</summary>
     private static List<PickItem> ItemIcons(IReadOnlyList<string> names)
     {
@@ -195,7 +184,7 @@ public static class BankEntryEditor
 
             // ── The drawn header: name, level, shiny and gender, the species and where it came from.
             _header = new SKCanvasView { HeightRequest = EditorRows.Design(EditorPaint.DesignHeaderHeight), InputTransparent = true };
-            _header.PaintSurface += PaintHeader;
+            _header.PaintSurface += PaintGuard.Wrap("BankEntryEditor.PaintHeader", PaintHeader);
 
             // ── Info: the identity rows, then the quick tools.
             var identity = new VerticalStackLayout();
@@ -215,7 +204,7 @@ public static class BankEntryEditor
 
             // ── Stats: its own page, the table drawn, then the spread editors.
             _statsTable = new SKCanvasView { HeightRequest = EditorRows.Design(560), InputTransparent = true };
-            _statsTable.PaintSurface += PaintStatsTable;
+            _statsTable.PaintSurface += PaintGuard.Wrap("BankEntryEditor.PaintStatsTable", PaintStatsTable);
             // The table is drawn 1100 wide by 600 tall: its height follows its width.
             _statsTable.SizeChanged += (_, _) =>
             {
@@ -345,7 +334,7 @@ public static class BankEntryEditor
             var scale = Math.Min(box / bitmap.Width, box / bitmap.Height);
             var w = bitmap.Width * scale;
             var h = bitmap.Height * scale;
-            using var image = SKImage.FromBitmap(bitmap);
+            var image = Services.SpriteImages.Of(bitmap);
             canvas.DrawImage(image, new SKRect(args.Info.Width - w - 8, (args.Info.Height - h) / 2, args.Info.Width - 8, (args.Info.Height + h) / 2),
                 new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
         }
@@ -469,6 +458,11 @@ public static class BankEntryEditor
                 _detail = _session.ReadEntity(0, 0);
                 ApplyValues();
             }
+            catch (PKForge.Engine.NameNotStorableException refused)
+            {
+                // Refused before anything was written: say why and stay in the editor.
+                await PadMenu.ShowAsync(_host, "Name not changed", refused.Message, "OK");
+            }
             catch (Exception error)
             {
                 _failure = error;
@@ -495,10 +489,19 @@ public static class BankEntryEditor
                 return;
             }
             const string save = "Save", discard = "Discard", keep = "Keep editing";
-            var choice = await EditorMenu.ShowAsync(_host, "Save your changes?",
-                "This Pokémon has edits that are not in the bank yet.", save, discard, keep);
-            if (choice == save) Run(SaveAsync);
-            else if (choice == discard) Close(false);
+            try
+            {
+                var choice = await EditorMenu.ShowAsync(_host, "Save your changes?",
+                    "This Pokémon has edits that are not in the bank yet.", save, discard, keep);
+                if (choice == save) Run(SaveAsync);
+                else if (choice == discard) Close(false);
+            }
+            catch (Exception error)
+            {
+                // async void: reported the way Run reports a failed command, never a crash.
+                _failure = error;
+                Close(false);
+            }
         }
 
         public bool OnPadButton(PadButton button)
@@ -591,10 +594,10 @@ public static class BankEntryEditor
 
         private async Task EditAbilityAsync()
         {
-            var choices = (Services.HaXMode.IsOn
-                    ? Enumerable.Range(0, _data.AbilityNames.Count).ToList()
-                    : _session.GetAbilityChoices(_detail.Species, _detail.Form))
-                .Select(id => new PickItem(id, NameOf(_data.AbilityNames, id))).ToList();
+            // The same rows as the save editor: HaX widens the list only where the format
+            // stores the ability itself. Gen 3 and its hacks keep a slot, so an ability from
+            // outside the species (Insomnia on a Jynx) was offered here and could never stick.
+            var choices = InfoPickers.AbilityItems(_data, _session, _detail.Species, _detail.Form);
             var pick = await PickerMenu.ShowAsync(_host, "Ability", choices, _detail.Ability);
             if (pick is not null)
             {
@@ -602,9 +605,9 @@ public static class BankEntryEditor
                 var applied = _session.ReadEntity(0, 0).Ability;
                 _dirty = true;
                 if (applied != pick.Id)
-                    await EditorMenu.ShowAsync(_host, "Ability did not stick",
-                        $"Asked for {NameOf(_data.AbilityNames, pick.Id)}, the mon holds {NameOf(_data.AbilityNames, applied)}. " +
-                        "Tell the developer: this is the diagnostic he asked for.", "OK");
+                    await EditorMenu.ShowAsync(_host, "Ability not changed",
+                        $"This game can't store {NameOf(_data.AbilityNames, pick.Id)} on this Pokémon: " +
+                        $"it keeps {NameOf(_data.AbilityNames, applied)}.", "OK");
             }
         }
 
@@ -738,8 +741,9 @@ public static class BankEntryEditor
             var which = slot[5] - '1';
             if ((uint)which >= 4) return;
 
-            var pick = await PickerMenu.ShowAsync(_host, $"Move {which + 1}",
-                NameItems(_data.MoveNames, includeZero: true, zeroLabel: "(none)"), current[which]);
+            // The save editor's move list: only moves this Pokémon's game can hold (a FireRed
+            // mon stops at Psycho Boost, Unbound has its own table), with their learn marks.
+            var pick = await InfoPickers.ShowMovesAsync(_host, $"Move {which + 1}", _data, _session, 0, 0, current[which]);
             if (pick is null) return;
             _session.ApplyEdit(0, 0, which switch
             {
@@ -866,7 +870,7 @@ public static class BankEntryEditor
                 HeightRequest = EditorRows.Design(64);
                 ColumnDefinitions = [new(new GridLength(EditorRows.Design(34))), new(new GridLength(EditorRows.Design(220))), new(GridLength.Star), new(GridLength.Auto), new(new GridLength(EditorRows.Design(28)))];
                 _bg = new SKCanvasView { InputTransparent = true };
-                _bg.PaintSurface += (_, args) =>
+                _bg.PaintSurface += PaintGuard.Wrap("BankEntryEditor _bg", (_, args) =>
                 {
                     var c = args.Surface.Canvas;
                     c.Clear(SKColors.Transparent);
@@ -883,7 +887,7 @@ public static class BankEntryEditor
                         using var band = new SKPaint { Color = EditorPaint.RowBand(_dark) };
                         c.DrawRect(r, band);
                     }
-                };
+                });
                 _caption = new Label
                 {
                     Text = caption,
@@ -945,14 +949,14 @@ public static class BankEntryEditor
                 HeightRequest = EditorRows.Design(68);
                 ColumnDefinitions = [new(new GridLength(EditorRows.Design(24))), new(new GridLength(EditorRows.Design(56))), new(GridLength.Star)];
                 _bg = new SKCanvasView { InputTransparent = true };
-                _bg.PaintSurface += (_, args) =>
+                _bg.PaintSurface += PaintGuard.Wrap("BankEntryEditor _bg", (_, args) =>
                 {
                     DsFolderButton.DrawRow(args.Surface.Canvas, args.Info, _focused);
                     if (!_active) return;
                     using var bar = new SKPaint { Color = EditorPaint.Cyan, IsAntialias = true };
                     var w = Math.Max(4, args.Info.Width * 0.02f);
                     args.Surface.Canvas.DrawRoundRect(new SKRect(0, args.Info.Height * 0.18f, w, args.Info.Height * 0.82f), w / 2, w / 2, bar);
-                };
+                });
                 var image = new Image
                 {
                     Source = PksmIcons.Source(icon, PksmIcons.Cyan),

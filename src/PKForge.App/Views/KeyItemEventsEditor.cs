@@ -80,10 +80,10 @@ public static class KeyItemEventsEditor
         var confirmed = await PadMenu.ConfirmAsync(host, enabling ? "Enable event?" : "Disable event?",
             (enabling, status.NeedsItem) switch
             {
-                (true, true) => $"Adds the {status.ItemName} and sets the event flags. A restore point is created first.",
-                (true, false) => "Sets the event flags. A restore point is created first.",
-                (false, true) => $"Removes the {status.ItemName} and clears the event flags. Shown/caught history is kept. A restore point is created first.",
-                (false, false) => "Clears the event flags. Received/caught history is kept. A restore point is created first.",
+                (true, true) => $"Adds the {status.ItemName} and sets the event flags. Restore points can undo it.",
+                (true, false) => "Sets the event flags. Restore points can undo it.",
+                (false, true) => $"Removes the {status.ItemName} and clears the event flags. Shown/caught history is kept. Restore points can undo it.",
+                (false, false) => "Clears the event flags. Received/caught history is kept. Restore points can undo it.",
             },
             enabling ? "Enable" : "Disable");
         if (!confirmed) return true;

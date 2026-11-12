@@ -1,51 +1,65 @@
-using System.IO.Compression;
-using System.Text;
 using PKForge.Domain;
 using PKForge.Engine;
 using PKHeX.Core;
 
 // Build-time living-dex bundle generator. Runs ONCE per release on a desktop: for every
-// generation, legalize one of each species through the same GetLegalFromSet path the
+// game family, legalize one of each species through the same GetLegalFromSet path the
 // in-app creator uses, and pack the resulting mons into a compressed bundle the app
 // copies onto the save instantly - zero on-device computation.
+//
+// Families are named by entity context, never by generation alone: Sword/Shield (8),
+// Legends: Arceus (8a) and Brilliant Diamond/Shining Pearl (8b) are all generation 8 but
+// store PK8, PA8 and PB8. Usage: dexgen <output-directory> [1,2,...,7b,8a,8b,9a]
 
 if (args.Length < 1)
 {
-    Console.Error.WriteLine("usage: dexgen <output-directory> [generations]");
+    Console.Error.WriteLine("usage: dexgen <output-directory> [families, e.g. 1,8,8a,8b,7b,9a]");
     return 1;
 }
 
 var output = args[0];
-var generations = args.Length > 1
-    ? args[1].Split(',').Select(int.Parse).ToArray()
-    : [1, 2, 3, 4, 5, 6, 7, 8, 9];
+var requested = args.Length > 1
+    ? args[1].Split(',').Select(t => t.Trim().ToLowerInvariant()).ToHashSet()
+    : null;
 
 Directory.CreateDirectory(output);
 var engine = new SaveEngine();
 var legalizer = new LegalizerService();
 
-foreach (var generation in generations)
+foreach (var (context, version, fileName) in LivingDexBundles.Families)
 {
-    var bundle = Path.Combine(output, $"dex-g{generation}.bin.gz");
-    var built = 0;
+    var token = context.ToString()[3..].ToLowerInvariant(); // Gen8a -> "8a"
+    if (requested is not null && !requested.Contains(token))
+        continue;
+    var bundle = Path.Combine(output, fileName);
     var failed = new List<int>();
+    var mons = new List<PKM>();
     try
     {
-        using var session = engine.OpenBlankSession(generation);
-        var maxSpecies = ((SaveEngineSession)session).MaxSpeciesID;
-
-        using var raw = new MemoryStream();
-        using var writer = new BinaryWriter(raw, Encoding.UTF8, leaveOpen: true);
-        writer.Write(generation);
-        writer.Write(0); // count placeholder
+        using var session = (SaveEngineSession)engine.OpenBlankSession(version);
+        var save = session.SaveFile;
+        var maxSpecies = save.MaxSpeciesID;
 
         for (var species = 1; species <= maxSpecies; species++)
         {
+            // Only species this game can hold at all (Legends: Arceus has 242, BDSP 493).
+            if (!save.Personal.IsSpeciesInGame((ushort)species))
+                continue;
             try
             {
-                var request = new GenerationRequest(Species: species, Level: 50, Shiny: false,
-                    Nature: null, Ability: null, Ball: null, Moves: null);
-                var entity = legalizer.GenerateData(session, request);
+                // The base form first; when the game only has a regional form (Legends:
+                // Arceus has Hisuian Growlithe, Typhlosion, Zorua... and no Kantonian or
+                // Johtonian one), the first form it does have.
+                GeneratedEntity? entity = null;
+                var formCount = save.Personal[(ushort)species].FormCount;
+                for (byte form = 0; form < formCount && entity is null; form++)
+                {
+                    if (!save.Personal.IsPresentInGame((ushort)species, form))
+                        continue;
+                    var request = new GenerationRequest(Species: species, Level: 50, Shiny: false,
+                        Nature: null, Ability: null, Ball: null, Moves: null, Form: form);
+                    entity = legalizer.GenerateData(session, request);
+                }
                 if (entity is null || entity.Info.Species != species)
                 {
                     // The legalizer occasionally answers a species request with a cousin
@@ -53,42 +67,31 @@ foreach (var generation in generations)
                     failed.Add(species);
                     continue;
                 }
-                writer.Write((ushort)species);
-                writer.Write(entity.Data.Length);
-                writer.Write(entity.Data);
-                built++;
-                if (built % 100 == 0)
-                    Console.WriteLine($"g{generation}: {built}/{maxSpecies}");
+                var mon = EntityFormat.GetFromBytes(entity.Data, context);
+                if (mon is null || mon.GetType() != save.PKMType || mon.Species != species
+                    || !new LegalityAnalysis(mon).Valid)
+                {
+                    failed.Add(species);
+                    continue;
+                }
+                mons.Add(mon);
+                if (mons.Count % 100 == 0)
+                    Console.WriteLine($"{token}: {mons.Count}");
             }
             catch
             {
                 failed.Add(species);
             }
         }
-
-        writer.Flush();
-        raw.Position = 0;
-        // patch the count
-        using var patched = new MemoryStream();
-        // header is 8 bytes: generation + count
-        var header = new byte[8];
-        raw.Read(header, 0, 8);
-        BitConverter.GetBytes(built).CopyTo(header, 4);
-        patched.Write(header);
-        patched.Write(raw.ToArray(), 8, (int)raw.Length - 8);
-
-        await using var file = File.Create(bundle);
-        await using var gzip = new GZipStream(file, CompressionLevel.Optimal);
-        patched.Position = 0;
-        await patched.CopyToAsync(gzip);
+        await File.WriteAllBytesAsync(bundle, LivingDexBundles.Write(context, mons));
     }
     catch (Exception ex)
     {
-        Console.Error.WriteLine($"g{generation} FAILED: {ex.Message}");
+        Console.Error.WriteLine($"{token} FAILED: {ex.Message}");
         if (File.Exists(bundle)) File.Delete(bundle);
         continue;
     }
-    Console.WriteLine($"g{generation}: bundle {bundle} - {built} mons, {failed.Count} failed" +
-        (failed.Count > 0 ? $" (first: {string.Join(',', failed.Take(10))})" : ""));
+    Console.WriteLine($"{token}: bundle {bundle} - {mons.Count} mons, {failed.Count} failed" +
+        (failed.Count > 0 ? $" ({string.Join(',', failed)})" : ""));
 }
 return 0;

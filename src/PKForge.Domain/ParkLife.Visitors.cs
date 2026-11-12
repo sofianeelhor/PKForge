@@ -223,7 +223,7 @@ public sealed partial class ParkLife
     private const int ShinyOdds = 100;
 
     /// <summary>The most residents a park has (the page holds it to this); a wild visitor still fits.</summary>
-    public const int MostResidents = 24;
+    public const int MostResidents = 30;
 
     // Where a place lets the wild lands in: its gates (the end of the pier, the top of the mountain
     // path, the edge of the woods); the home park's arch when it has none.
@@ -254,7 +254,7 @@ public sealed partial class ParkLife
         var gateway = new ParkPoint(gate.X, gate.Y);
         var flies = CanFly(resident);
         var start = flies ? Outside(gateway) : gateway;
-        var visitor = new ParkActor(resident, navigator, new Random(_random.Next()), start.X, start.Y) { Facing = 0, LeaveAt = leaveAt, Gateway = gateway };
+        var visitor = new ParkActor(resident, navigator, new Random(_random.Next()), start.X, start.Y) { Facing = 0, LeaveAt = leaveAt, Gateway = gateway, Place = place };
         _actors[resident.Id] = visitor;
         if (flies) TakeOff(visitor, gateway, now);
         return visitor;

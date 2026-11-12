@@ -250,6 +250,10 @@ internal sealed class RadicalRedMon
 
     public bool LooksValid => Species is > 0 and <= 2500 && Experience is > 0 and <= 2_000_000;
 
+    /// <summary>A record whose party form can be built: a species and a sane EXP. Unlike
+    /// <see cref="LooksValid"/> it accepts EXP 0, which a level-1 Pokémon really stores.</summary>
+    public bool CanEnterParty => Species is > 0 and <= 2500 && Experience <= 2_000_000;
+
     /// <summary>Visual level: stored in the party tail; derived from exp + growth for PC mons.</summary>
     public int Level => Party ? Raw[0x54] : Data.LevelForExperience(Species, Experience);
 

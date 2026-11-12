@@ -85,11 +85,12 @@ public static class LegalityAssistUi
 
     /// <summary>Row accent for a move verdict: green legal, red not legal, the type colour when unknown.</summary>
     public static Color? VerdictColor(MoveVerdict? verdict, Color? fallback) =>
-        verdict is null || verdict.Move == 0 ? fallback : verdict.Valid ? UiTokens.Green : UiTokens.Bad;
+        verdict is null || verdict.Move == 0 ? fallback : verdict.Valid ? UiTokens.Green : verdict.LegalIfHatched ? UiTokens.Warn : UiTokens.Bad;
 
     /// <summary>The verdict tail for a move row: "Legal · Level Up" or "Illegal · Invalid Move".</summary>
     public static string VerdictText(MoveVerdict? verdict) =>
-        verdict is null || verdict.Move == 0 ? "" : verdict.Valid ? $"Legal · {verdict.Reason}" : $"Illegal · {verdict.Reason}";
+        verdict is null || verdict.Move == 0 ? "" : verdict.Valid ? $"Legal · {verdict.Reason}"
+            : verdict.LegalIfHatched ? $"Possibly legal · {verdict.Reason}" : $"Illegal · {verdict.Reason}";
 }
 
 /// <summary>

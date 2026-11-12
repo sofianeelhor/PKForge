@@ -151,10 +151,10 @@ public static class ShowdownTeamService
         if (slot.Box == -1)
         {
             if (save.PartyCount >= 6) return false;
-            save.SetPartySlotAtIndex(pk, save.PartyCount, EntityImportSettings.None);
+            save.SetPartySlotAtIndex(pk, save.PartyCount, NewcomerImport.For(save, pk));
             return true;
         }
-        save.SetBoxSlotAtIndex(pk, slot.Box, slot.Slot, EntityImportSettings.None);
+        save.SetBoxSlotAtIndex(pk, slot.Box, slot.Slot, NewcomerImport.For(save, pk));
         return true;
     }
 

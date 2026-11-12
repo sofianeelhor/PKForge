@@ -121,8 +121,8 @@ public sealed class HeldItemFlagTests
     {
         ISaveEngineSession? session = hack switch
         {
-            "unbound" => TestData("unbound-v2111.srm") is { } u ? new UnboundEngineSession(File.ReadAllBytes(u), "Unbound") : null,
-            "radicalred" => TestData("radicalred-champ.sav") is { } r ? new RadicalRedEngineSession(File.ReadAllBytes(r), "Radical Red") : null,
+            "unbound" => TestData("thor", "retroarch", "mGBA", "Pokémon Unbound (v2.1.1.1).srm") is { } u ? new UnboundEngineSession(File.ReadAllBytes(u), "Unbound") : null,
+            "radicalred" => TestData("thor", "retroarch", "mGBA", "Radical-red-champ.sav") is { } r ? new RadicalRedEngineSession(File.ReadAllBytes(r), "Radical Red") : null,
             _ => TestData("romhacks", "Pokemon - GS Chronicles.sav") is { } g
                 ? new PKForge.Engine.GsChronicles.GsChroniclesEngineSession(File.ReadAllBytes(g)) : null,
         };

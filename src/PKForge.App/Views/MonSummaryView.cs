@@ -90,10 +90,10 @@ public sealed class MonSummaryView : ContentView
     public MonSummaryView(ISpriteService sprites)
     {
         _sprites = sprites;
-        _left.PaintSurface += PaintLeft;
-        _tabs.PaintSurface += PaintTabs;
+        _left.PaintSurface += PaintGuard.Wrap("MonSummaryView.PaintLeft", PaintLeft);
+        _tabs.PaintSurface += PaintGuard.Wrap("MonSummaryView.PaintTabs", PaintTabs);
         _tabs.Touch += OnTabTouch;
-        _page.PaintSurface += PaintPage;
+        _page.PaintSurface += PaintGuard.Wrap("MonSummaryView.PaintPage", PaintPage);
         _page.Touch += OnPageTouch;
 
         _right.RowDefinitions.Add(new RowDefinition(new GridLength(TabsHeight * _unit)));
@@ -144,7 +144,7 @@ public sealed class MonSummaryView : ContentView
     /// <summary>The same entity decoded twice (quick, then with its verdict), not merely the same species.</summary>
     private static bool SameMon(MonSummary? a, MonSummary? b) =>
         a is not null && b is not null && a.Species == b.Species && a.Form == b.Form && a.IsShiny == b.IsShiny
-        && a.Ball == b.Ball && a.IsEgg == b.IsEgg && a.Nickname == b.Nickname && a.Level == b.Level
+        && a.Ball == b.Ball && a.IsEgg == b.IsEgg && a.Nickname == b.Nickname && a.Level == b.Level && a.Gender == b.Gender
         && a.OriginalTrainer == b.OriginalTrainer && a.TrainerId == b.TrainerId && a.Nature == b.Nature
         && a.Friendship == b.Friendship && a.HeldItem == b.HeldItem && a.RibbonCount == b.RibbonCount
         && a.Stats.SequenceEqual(b.Stats) && a.IVs.SequenceEqual(b.IVs) && a.EVs.SequenceEqual(b.EVs)
@@ -221,7 +221,7 @@ public sealed class MonSummaryView : ContentView
     private double _touchStartScroll;
     private bool _dragging, _swiping;
     private readonly List<(long Ms, float Y)> _touchTrail = new();
-    private IDispatcherTimer? _fling;
+    private VsyncLoop? _fling;
     private double _flingVelocity; // design pixels per ms
 
     private const string ScrollAnimation = "summary-scroll";
@@ -295,19 +295,15 @@ public sealed class MonSummaryView : ContentView
         _fling.Start();
     }
 
-    private IDispatcherTimer CreateFlingTimer()
+    // Stepped on each screen refresh by the time that really passed (see VsyncLoop).
+    private VsyncLoop CreateFlingTimer() => new(elapsed =>
     {
-        var timer = Dispatcher.CreateTimer();
-        timer.Interval = TimeSpan.FromMilliseconds(16);
-        timer.Tick += (_, _) =>
-        {
-            var target = _scrollY + _flingVelocity * 16;
-            _flingVelocity *= FlingFriction;
-            if (target <= 0 || target >= MaxScroll || Math.Abs(_flingVelocity) < 0.02 / _unit) StopFling();
-            ScrollTo(target);
-        };
-        return timer;
-    }
+        var target = _scrollY + _flingVelocity * elapsed;
+        _flingVelocity *= Math.Pow(FlingFriction, elapsed / 16.0);
+        var more = !(target <= 0 || target >= MaxScroll || Math.Abs(_flingVelocity) < 0.02 / _unit);
+        ScrollTo(target);
+        return more;
+    });
 
     private void StopFling() => _fling?.Stop();
 
@@ -396,9 +392,27 @@ public sealed class MonSummaryView : ContentView
         var name = s.IsEgg ? "Egg" : s.DisplayName;
         var hasBall = !s.IsEgg && DrawBall(c, s.Ball, new SKRect(28, 46, 88, 106));
         var nameLeft = hasBall ? 100f : 0f;
-        SummaryInk.Draw(c, SummaryInk.Fit(name, 44, 540 - nameLeft - 20), (nameLeft + 540) / 2, SummaryInk.Center(77, 44), 44, Pksm.Ink, align: SKTextAlign.Center);
+        // The gender sign closes the banner, in the games' blue and pink; eggs keep it a surprise.
+        var (sign, signInk) = GenderSign(s);
+        var nameRight = 540f;
+        if (sign is not null)
+        {
+            var (signX, signBaseline, signLeft) = BannerSign(sign);
+            SummaryInk.Draw(c, sign, signX, signBaseline, BannerSignSize, signInk, bold: true);
+            nameRight = signLeft;
+        }
+        SummaryInk.Draw(c, SummaryInk.Fit(name, 44, nameRight - nameLeft - 20), (nameLeft + nameRight) / 2, SummaryInk.Center(77, 44), 44, Pksm.Ink, align: SKTextAlign.Center);
+        // The level sits under the banner's end, the caption (box and slot) keeps the start.
+        var level = s.IsEgg || s.Level <= 0 ? null : $"Lv. {s.Level}";
+        if (level is not null)
+        {
+            // On a chip in the banner's frame colour, so it reads on every theme's backdrop.
+            var chip = new SKRect(576 - SummaryInk.Width(level, 30, bold: true) - 36, 124, 590, 168);
+            using (var frame = new SKPaint { Color = NameFrame, IsAntialias = true }) c.DrawRoundRect(chip, 22, 22, frame);
+            SummaryInk.Draw(c, level, 572, SummaryInk.Center(146, 30), 30, Pksm.Ink, bold: true, align: SKTextAlign.Right);
+        }
         if (!string.IsNullOrEmpty(_caption))
-            SummaryInk.Draw(c, SummaryInk.Fit(_caption, 24, 560), 24, SummaryInk.Center(146, 24), 24, SubInk);
+            SummaryInk.Draw(c, SummaryInk.Fit(_caption, 24, level is null ? 560 : 400), 24, SummaryInk.Center(146, 24), 24, SubInk);
 
         // The species card sits on the bottom edge; the Pokémon stands in the space above it.
         var cardTop = Math.Max(640, size.Height - 390);
@@ -407,6 +421,36 @@ public sealed class MonSummaryView : ContentView
         else PaintPokemon(c, 300, middle, s);
         PaintSpeciesCard(c, cardTop, s);
     }
+
+    // "Legal if it hatched from an egg": an amber between legal green and illegal red.
+    private static readonly SKColor PossiblyLegal = new(0xE8, 0xB0, 0x4A);
+
+    private const float BannerSignSize = 44;
+
+    /// <summary>
+    /// Where the gender sign sits in the name banner (top 34, bottom 118, its right edge slanting
+    /// from x 530 to 570): its ink centred on the banner's middle and kept clear of the slanted
+    /// edge at the glyph's top, where ♂'s arrow reaches. Returns the left-aligned draw position
+    /// and the ink's left end, where the name's room stops.
+    /// </summary>
+    internal static (float X, float Baseline, float InkLeft) BannerSign(string sign)
+    {
+        const float top = 34, bottom = 118, edgeTop = 530, slant = 40, clearance = 16;
+        var ink = SummaryInk.Bounds(sign, BannerSignSize, bold: true);
+        var baseline = (top + bottom) / 2 - (ink.Top + ink.Bottom) / 2;
+        var inkTop = baseline + ink.Top;
+        var edge = edgeTop + slant * (inkTop - top) / (bottom - top);
+        var x = MathF.Round(edge - clearance - ink.Right);
+        return (x, MathF.Round(baseline), x + ink.Left);
+    }
+
+    /// <summary>♂ in the fixed signal blue, ♀ in pink; none for genderless Pokémon and eggs.</summary>
+    internal static (string? Sign, SKColor Ink) GenderSign(MonSummary s) => s.IsEgg ? (null, default) : s.Gender switch
+    {
+        0 => ("♂", Pksm.SignalBlue),
+        1 => ("♀", Pksm.Female),
+        _ => (null, default),
+    };
 
     /// <summary>Draws the ball icon (20 px pixel art) into a square; false while it loads or when there is none.</summary>
     private bool DrawBall(SKCanvas c, int ball, SKRect square)
@@ -417,7 +461,7 @@ public sealed class MonSummaryView : ContentView
             _sprites.WarmBall(ball, () => MainThread.BeginInvokeOnMainThread(() => { _left.InvalidateSurface(); _page.InvalidateSurface(); }));
             return false;
         }
-        using var image = SKImage.FromBitmap(bitmap);
+        var image = Services.SpriteImages.Of(bitmap);
         c.DrawImage(image, square, new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
         return true;
     }
@@ -431,14 +475,8 @@ public sealed class MonSummaryView : ContentView
         void Redraw() => MainThread.BeginInvokeOnMainThread(_left.InvalidateSurface);
         if (s.IsEgg)
         {
-            // No egg art ships with the sprite set: a plain speckled egg keeps the species a surprise.
-            var eh = 260f;
-            var egg = new SKRect(cx - eh * 0.38f, cy - eh / 2, cx + eh * 0.38f, cy + eh / 2);
-            using var shell = new SKPaint { Color = new SKColor(0xF4, 0xEE, 0xD8), IsAntialias = true };
-            using var spot = new SKPaint { Color = new SKColor(0x7F, 0xC4, 0x6A), IsAntialias = true };
-            c.DrawOval(egg, shell);
-            c.DrawCircle(egg.MidX - eh * 0.12f, egg.MidY - eh * 0.12f, eh * 0.08f, spot);
-            c.DrawCircle(egg.MidX + eh * 0.14f, egg.MidY + eh * 0.08f, eh * 0.1f, spot);
+            // The artist's egg, by whole steps (20× here, 240×280), keeps the species a surprise.
+            EggSprite.Draw(c, new SKRect(cx - 130, cy - 140, cx + 130, cy + 140));
             return;
         }
         if (!_sprites.TryGetShowdownFront(s.Look, Redraw, out var sprite)) return;
@@ -450,7 +488,7 @@ public sealed class MonSummaryView : ContentView
         var k = Math.Clamp(MathF.Floor(Math.Min(520f / sprite.Width, 500f / sprite.Height)), 1, 7);
         var w = sprite.Width * k;
         var h = sprite.Height * k;
-        using var image = SKImage.FromBitmap(sprite);
+        var image = Services.SpriteImages.Of(sprite);
         c.DrawImage(image, new SKRect(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2),
             new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
     }
@@ -633,7 +671,7 @@ public sealed class MonSummaryView : ContentView
             SummaryPage.Info => InfoPage(s),
             SummaryPage.Stats => StatsPage(s),
             SummaryPage.Moves => MovesPage(s),
-            SummaryPage.Origin => OriginPage(s),
+            SummaryPage.Origin => OriginPage(s, HistoryOf(s)),
             _ => LegalityPage(s),
         };
         var y = 0f;
@@ -883,7 +921,7 @@ public sealed class MonSummaryView : ContentView
     private static Block MoveBlock(SummaryMove move, MoveVerdict? verdict) => (c, y, right) =>
     {
         var width = right - LabelX;
-        var verdictLines = verdict is null ? [] : SummaryInk.Wrap($"{(verdict.Valid ? "Legal" : "Illegal")} · {verdict.Reason}", 28, width);
+        var verdictLines = verdict is null ? [] : SummaryInk.Wrap($"{(verdict.Valid ? "Legal" : verdict.LegalIfHatched ? "Possibly legal" : "Illegal")} · {verdict.Reason}", 28, width);
         var effect = string.IsNullOrWhiteSpace(move.Effect) ? [] : SummaryInk.Wrap(move.Effect, 28, width);
         var height = 150 + 34 * (verdictLines.Count + effect.Count);
         if (c is null) return height;
@@ -898,7 +936,7 @@ public sealed class MonSummaryView : ContentView
         var ly = y + 136;
         foreach (var line in verdictLines)
         {
-            SummaryInk.Draw(c, line, LabelX, SummaryInk.Center(ly, 28), 28, verdict!.Valid ? Pksm.Legal : Pksm.Illegal);
+            SummaryInk.Draw(c, line, LabelX, SummaryInk.Center(ly, 28), 28, verdict!.Valid ? Pksm.Legal : verdict.LegalIfHatched ? PossiblyLegal : Pksm.Illegal);
             ly += 34;
         }
         foreach (var line in effect)
@@ -912,7 +950,36 @@ public sealed class MonSummaryView : ContentView
 
     // ── Origin ───────────────────────────────────────────────────────────────
 
-    private static List<Block> OriginPage(MonSummary s)
+    // Pokémon History records read for this view, by identity: one disk read per Pokémon shown.
+    private readonly Dictionary<string, PokemonHistoryRecord?> _histories = new(StringComparer.Ordinal);
+
+    private PokemonHistoryRecord? HistoryOf(MonSummary s)
+    {
+        if (s.HistoryKey is not { } key) return null;
+        if (!_histories.TryGetValue(key, out var record))
+        {
+            try { record = PokemonHistorySetting.Store.Find([key]); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { record = null; }
+            _histories[key] = record;
+        }
+        return record;
+    }
+
+    /// <summary>The games a Pokémon has travelled between (Pokémon History), newest trip first.</summary>
+    private static IEnumerable<Block> HistoryBlocks(PokemonHistoryRecord history)
+    {
+        yield return Divider("History");
+        foreach (var trip in history.Trips.OrderByDescending(t => t.At).Take(8))
+            yield return Row(trip.At.LocalDateTime.ToString("yyyy-MM-dd"), $"{trip.FromGame} → {trip.ToGame}",
+                trip.Restored ? $"Came back to its {trip.ToGame} data, with its progress kept." : null,
+                null);
+        if (history.Trips.Count > 8) yield return Text($"And {history.Trips.Count - 8} earlier trip(s).", SubInk);
+        var kept = history.Departures.Select(d => d.Game).Distinct(StringComparer.Ordinal).ToList();
+        if (kept.Count > 0)
+            yield return Text($"Saved copies: {string.Join("\u00A0· ", kept)}. Each comes back when it returns there.", SubInk);
+    }
+
+    private static List<Block> OriginPage(MonSummary s, PokemonHistoryRecord? history)
     {
         var blocks = new List<Block> { Divider("Origin") };
         if (s.Met is { } met)
@@ -951,6 +1018,7 @@ public sealed class MonSummaryView : ContentView
             blocks.Add(Text($"{s.RibbonCount} ribbon(s)  ·  {s.MarkCount} mark(s)", SubInk));
         }
         else blocks.Add(Text("No ribbons or marks yet.", SubInk));
+        if (history is { Trips.Count: > 0 }) blocks.AddRange(HistoryBlocks(history));
         return blocks;
     }
 

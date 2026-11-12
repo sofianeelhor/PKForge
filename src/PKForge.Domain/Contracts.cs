@@ -9,6 +9,9 @@ public interface ISaveEngine
 
     /// <summary>Cheap metadata probe for detection listings; null when the bytes are not a save.</summary>
     SaveDescription? TryDescribe(ReadOnlyMemory<byte> bytes, string? displayName = null);
+    /// <summary>Why <see cref="TryDescribe"/> refused these bytes, in a few words for the scan
+    /// report ("never saved in game", "not a known save size"), or null when nothing specific is known.</summary>
+    string? DescribeRejection(ReadOnlyMemory<byte> bytes) => null;
 
     /// <summary>
     /// Describes loose .pk* bytes for a bank deposit; null when unrecognizable.
@@ -78,7 +81,7 @@ public sealed record LayoutRisk(LayoutRiskKind Kind, string Reason)
 }
 
 /// <param name="Language">The cartridge language the save records ("FR"), when it records one reliably.</param>
-public sealed record SaveDescription(string GameName, int Generation, string TrainerName, string PlayTime, string? Language = null);
+public sealed record SaveDescription(string GameName, int Generation, string TrainerName, string PlayTime, string? Language = null, int? TrainerId = null);
 
 public interface IBackupService
 {
@@ -88,6 +91,10 @@ public interface IBackupService
         CancellationToken cancellationToken = default);
     ValueTask<IReadOnlyList<BackupInfo>> ListAsync(CancellationToken cancellationToken = default);
     ValueTask<ReadOnlyMemory<byte>> ReadAsync(string backupId, CancellationToken cancellationToken = default);
+
+    /// <summary>Pins a restore point (or lets it go): a pinned point is the player's to keep, and
+    /// is never dropped to make room for newer ones.</summary>
+    ValueTask SetPinnedAsync(string backupId, bool pinned, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 }
 
 public interface ISaveFileAccess
@@ -188,6 +195,12 @@ public sealed class UnsafeSaveWriteException(string message, bool requiresConfir
 }
 
 /// <summary>
+/// Something failed after a save was written (reopening the open game from it, say). The save on
+/// disk holds the change, so whatever went with it (an Item Bank move) must not be undone.
+/// </summary>
+public sealed class SaveAlreadyWrittenException(string message, Exception inner) : Exception(message, inner);
+
+/// <summary>
 /// The Bank: the app's own cross-game vault. Entities are stored as raw decrypted bytes
 /// with provenance, never lossily normalized (brief §7). Unlimited boxes; the index is
 /// written atomically and survives everything.
@@ -198,6 +211,8 @@ public interface IBankService
     const int SlotsPerBox = 30;
 
     IReadOnlyList<BankEntry> GetAll();
+    /// <summary>How many Pokémon the Bank holds, without copying the list (a painter shows it).</summary>
+    int Count { get; }
     int BoxCount { get; }
     BankEntry Add(byte[] data, BankEntryInfo info);
     /// <summary>
@@ -240,6 +255,17 @@ public interface IBankService
     /// stored bytes never move. Returns how many entries actually changed slot.
     /// </summary>
     int Place(IReadOnlyList<(Guid Id, int Box, int Slot)> placements);
+    /// <summary>The boxes the user locked (see <see cref="BankBoxLocks"/>). Every write above
+    /// refuses to put an entry into, or take one out of, a locked box, and deposits without a
+    /// slot step over them; <see cref="Replace"/> (edit, evolve) still works in place.</summary>
+    IReadOnlySet<int> LockedBoxes { get; }
+    /// <summary>Locks or unlocks one box, persisted with the index.</summary>
+    void SetBoxLocked(int box, bool locked);
+    /// <summary>The box groups (see <see cref="BankBoxGroups"/>), stored in the index beside the
+    /// locks so they travel with the bank. They follow their boxes through <see cref="RemapBoxes"/>.</summary>
+    IReadOnlyList<BankBoxGroup> BoxGroups { get; }
+    /// <summary>Replaces every group in one index write; the list is normalized first.</summary>
+    void SetBoxGroups(IReadOnlyList<BankBoxGroup> groups);
 }
 
 /// <summary>One Pokémon for <see cref="IBankService.AddMany"/>; <paramref name="Box"/> and
@@ -303,7 +329,8 @@ public sealed record BackupInfo(
     int Generation,
     long SizeBytes,
     string? ChangeDescription = null,
-    string? DocumentId = null)
+    string? DocumentId = null,
+    bool Pinned = false)
 {
     /// <summary>
     /// Whether this restore point belongs to the save file <paramref name="documentId"/>.
@@ -343,6 +370,9 @@ public static class BankEntryFiles
     /// The PKHeX file extension for an entry: its recorded format (".pb8", ".pk6", ".pa9"), so a
     /// re-import reads the same type; ".pk{generation}" for an entry with no recorded format.
     /// </summary>
-    public static string ExtensionFor(BankEntryInfo info) =>
-        info.Format is { Length: > 0 } format ? "." + format.ToLowerInvariant() : $".pk{info.Generation}";
+    public static string ExtensionFor(BankEntryInfo info) => PkFileExport.ExtensionFor(info.Format, info.Generation);
+
+    /// <summary>The plain .pk file for an entry, as "Save .pk files to a folder" writes it.</summary>
+    public static PkFile PkFileFor(BankEntry entry, byte[] data) =>
+        new(PkFileExport.FileNameFor(entry.Info.Species, entry.Info.Nickname, ExtensionFor(entry.Info)), data);
 }

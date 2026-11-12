@@ -20,7 +20,7 @@ public sealed class RadicalRedBagTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "PKForge.sln")))
             directory = directory.Parent;
-        var path = directory is null ? null : Path.Combine(directory.FullName, ".local-testdata", "radicalred-champ.sav");
+        var path = directory is null ? null : Path.Combine(directory.FullName, ".local-testdata", "thor/retroarch/mGBA/Radical-red-champ.sav");
         return path is not null && File.Exists(path) ? path : null;
     }
 
@@ -148,7 +148,7 @@ public sealed class RadicalRedBagTests
         for (var slot = 0; slot < reopened.BoxSlotCount; slot++)
             if (!reopened.ReadEntity(box, slot).IsEmpty)
                 mons++;
-        Assert.Equal(151, mons);
+        Assert.Equal(152, mons);
         Assert.False(reopened.ReadEntity(-1, 0).IsEmpty); // party Terapagos untouched
     }
 

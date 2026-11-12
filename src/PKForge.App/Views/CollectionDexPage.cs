@@ -3,7 +3,6 @@ using PKForge.App.Theme;
 using PKForge.App.ViewModels;
 using PKForge.Domain;
 using PKForge.Engine;
-using PKForge.Chrome;
 using SkiaSharp;
 using SkiaSharp.Views.Maui;
 using SkiaSharp.Views.Maui.Controls;
@@ -65,7 +64,7 @@ public sealed class CollectionDexPage : IPadPagingHandler
         }
         catch (Exception error)
         {
-            viewModel.Status = $"Collection dex closed: {error.Message}";
+            viewModel.Status = $"Collection dex closed. {Domain.ErrorText.Plain(error)}";
         }
     }
 
@@ -84,7 +83,7 @@ public sealed class CollectionDexPage : IPadPagingHandler
         _cursorInfo = new Label { TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextBody };
 
         _grid = new DexGridView(sprites) { VerticalOptions = LayoutOptions.Fill };
-        _grid.Tapped += index => { _ = ShowActionsAsync(); };
+        _grid.Tapped += index => { _ = ShowHowToGetAsync(); };
         // The second screen shows the Pokédex page of the species under the cursor.
         _secondState = IPlatformApplication.Current?.Services.GetService<SecondScreenState>();
         _secondClaim = _secondState?.Routes.OpenOverlay(SecondScreenOwner.Pokedex);
@@ -97,7 +96,7 @@ public sealed class CollectionDexPage : IPadPagingHandler
         _chips = new HorizontalStackLayout { Spacing = 5 };
 
         View hints = Kit.WindowHints(
-            ("A", "Actions", () => _ = ShowActionsAsync()),
+            ("A", "How to get", () => _ = ShowHowToGetAsync()),
             ("B", "Done", () => Close()),
             ("LR", "Generation", () => OnPadButton(PadButton.R)),
             ("X", "Scope", () => _ = ShowScopeMenuAsync()),
@@ -389,7 +388,7 @@ public sealed class CollectionDexPage : IPadPagingHandler
             case PadButton.Down: _grid.Move(0, 1); return true;
             case PadButton.L: _grid.JumpSection(-1); return true;
             case PadButton.R: _grid.JumpSection(1); return true;
-            case PadButton.A: _ = ShowActionsAsync(); return true;
+            case PadButton.A: _ = ShowHowToGetAsync(); return true;
             case PadButton.B: Close(); return true;
             case PadButton.X: _ = ShowScopeMenuAsync(); return true;
             case PadButton.Y: ToggleMissingOnly(); return true;
@@ -409,8 +408,11 @@ public sealed class CollectionDexPage : IPadPagingHandler
             Detail: _shinyDex ? null : "Only shiny Pokémon count toward each species."));
         options.Add(new PadOption(_formsDex ? "View: one per species" : "View: every form",
             Detail: _formsDex ? "Back to one entry per species." : "Lists each form on its own, like Unown letters and Vivillon patterns."));
+        options.Add(new PadOption(DexModesChoice,
+            Detail: "Origin dex (each species from its own generation), every form with switches, and a box planner for the Bank."));
         var choice = await PadMenu.ShowAsync(_host, "Scope", null, options.ToArray());
         if (choice is null) return;
+        if (choice == DexModesChoice) { await OpenDexModesAsync(); return; }
         if (choice == "All generations") SetScope(null);
         else if (choice == "This game") SetScope(0);
         else if (choice.StartsWith("View: every form", StringComparison.Ordinal) || choice.StartsWith("View: one per", StringComparison.Ordinal))
@@ -430,25 +432,39 @@ public sealed class CollectionDexPage : IPadPagingHandler
         "VI" => "6", "VII" => "7", "VIII" => "8", "IX" => "9", _ => null,
     };
 
-    private async Task ShowActionsAsync()
+    private async Task ShowHowToGetAsync()
     {
         if (!_loaded || Count == 0) return;
         var key = _viewIds[Math.Min(_grid.Cursor, Count - 1)];
         var id = SpeciesOf(key);
-        var choice = await PadMenu.ShowAsync(_host, $"#{id:000} {CellName(key)}", null,
-            new PadOption("How to get", IconPath: "map", Detail: "Where to find this species in each game."),
-            new PadOption("Close", IconPath: "close"));
-        if (choice == "How to get")
-        {
-            // Straight to the answer for THIS Pokémon: no species wizard, and it works
-            // with or without an open save (CATCH is offered only for a game the save can be).
-            await EncounterGallery.ShowAllGamesForSpeciesAsync(_host, _viewModel, _session, id, () => { });
+        // A goes straight to "How to get" for this Pokémon: a menu holding that one choice
+        // and a Close that B already gives was a step for nothing. No species wizard, and it
+        // works with or without an open save (CATCH is offered only for a game the save can be).
+        await EncounterGallery.ShowAllGamesForSpeciesAsync(_host, _viewModel, _session, id, () => { });
 
-            // A catch may have added a species; recount before returning. National scope,
-            // same as the initial count: a catch must never shrink the header to game scope.
-            Apply(await CollectAsync(_session));
-            RefreshView();
+        // A catch may have added a species; recount before returning. National scope,
+        // same as the initial count: a catch must never shrink the header to game scope.
+        Apply(await CollectAsync(_session));
+        RefreshView();
+    }
+
+    private const string DexModesChoice = "Origin dex, all forms and box planner";
+
+    /// <summary>The Origin Dex, the Extended Living Dex and the box planner; the count follows a Bank arrangement.</summary>
+    private async Task OpenDexModesAsync()
+    {
+        if (!_loaded) return;
+        _router?.Remove(this);
+        try
+        {
+            await DexModesPage.ShowAsync(_host, _viewModel, _data, _sprites);
         }
+        finally
+        {
+            _router?.Push(this);
+        }
+        Apply(await CollectAsync(_session));
+        RefreshView();
     }
 
     /// <summary>From the tracker straight into the plan that fills it; the count follows the moves.</summary>

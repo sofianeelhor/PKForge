@@ -162,7 +162,7 @@ public sealed class MonSummaryScreen : IPadPagingHandler
         catch (Exception error)
         {
             if (!Wanted()) return;
-            _view.Show(null, emptyText: $"Can't read this Pokémon\n{error.Message}");
+            _view.Show(null, emptyText: $"Can't read this Pokémon\n{Domain.ErrorText.Plain(error)}");
         }
     }
 

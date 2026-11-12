@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using PKForge.Domain;
 using PKHeX.Core;
 
 namespace PKForge.Engine;
@@ -48,6 +49,20 @@ internal static class SaveParser
         return false;
     }
 
+    /// <summary>
+    /// Why bytes no parser reads were refused: a recognized hack PKForge cannot open yet
+    /// (Elite Redux, Origin HeartGold…) is named, anything else is "not a recognized save".
+    /// </summary>
+    internal static InvalidDataException NotReadable(ReadOnlySpan<byte> bytes)
+    {
+        RecognizedHacks.Hack? hack = null;
+        try { hack = RecognizedHacks.Identify(RetroArchSaveContainer.Decode(bytes)); }
+        catch (InvalidDataException) { }
+        return new InvalidDataException(hack is null
+            ? "The selected bytes are not a recognized save file."
+            : RecognizedHacks.RefusalMessage(hack));
+    }
+
     // Ruby and Sapphire have identical save layouts and no reliable version flag.
     // Only resolve an ambiguous RS save, and require a standalone name token.
     /// <summary>
@@ -58,6 +73,14 @@ internal static class SaveParser
     /// </summary>
     internal static void ApplyVersionHint(SaveFile save, string? chosenGame)
     {
+        // Gen 1 has no version byte and no per-Pokémon origin: the picked cartridge is
+        // applied in memory for this open (shelf, Pokédex origin); the file is not rewritten.
+        if (save is SAV1)
+        {
+            if (Gen1Edition(chosenGame) is { } gen1)
+                save.Version = gen1;
+            return;
+        }
         if (save is not (SAV3FRLG or SAV3RS)) return;
         var game = chosenGame?.Replace("Pokémon ", "", StringComparison.Ordinal).Trim();
         GameVersion? chosen = game switch
@@ -75,6 +98,19 @@ internal static class SaveParser
         if ((chosen ?? owned) is { } edition)
             save.Version = edition;
     }
+
+    /// <summary>
+    /// The Gen 1 cartridge the player picked (idea from community PR #60, gui-camargo).
+    /// International Blue and Japanese Green share PKHeX's GN id. File names never match.
+    /// </summary>
+    private static GameVersion? Gen1Edition(string? chosenGame) =>
+        chosenGame?.Replace("Pokémon ", "", StringComparison.Ordinal).Trim() switch
+        {
+            "Red" => GameVersion.RD,
+            "Blue (INT)" or "Green (JP)" => GameVersion.GN,
+            "Blue (JP)" => GameVersion.BU,
+            _ => null,
+        };
 
     /// <summary>
     /// The edition of a shared-layout save, read from the save's own Pokémon: every mon the
@@ -197,4 +233,110 @@ internal static class SaveParser
     /// </summary>
     internal static bool IsPokemonRadicalRed(ReadOnlySpan<byte> data) =>
         RadicalRed.RadicalRedFormat.IsRadicalRed(data);
+
+    /// <summary>
+    /// True when the bytes are a Pokémon Recharged Yellow save. The hack keeps the retail
+    /// Emerald flash envelope and PK3 records but repacks SaveBlock1, so PKHeX reads the
+    /// party at the wrong offset. Detection is structural (see RechargedYellowFormat);
+    /// mGBA's 16-byte RTC footer is trimmed first.
+    /// </summary>
+    internal static bool IsPokemonRechargedYellow(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < RechargedYellow.RechargedYellowFormat.FileSize)
+            return false;
+        var payload = SramPadding.Trim(data.ToArray());
+        return RechargedYellow.RechargedYellowFormat.LooksLike(payload);
+    }
+
+    /// <summary>
+    /// True when the bytes are a Pokémon Quetzal save: a complete 16-sector slot with
+    /// valid checksums and a readable 104-byte party in its newest slot. Quetzal keeps
+    /// the retail 0x08012025 signature, so the 16-id slot and the plaintext party are
+    /// the discriminators.
+    /// </summary>
+    internal static bool IsPokemonQuetzal(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < Quetzal.QuetzalFormat.FileSize)
+            return false;
+        return Quetzal.QuetzalFormat.LooksLike(data);
+    }
+
+    /// <summary>
+    /// True when the bytes are a Pokémon Soul Gold save: BX storage markers or a
+    /// 96-byte party at SB1+0x238 whose records pass the hack's sanity checks.
+    /// Routed before the stock parser and before the generic expansion engine.
+    /// </summary>
+    internal static bool IsPokemonSoulGold(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < SoulGold.SoulGoldFormat.FileSize)
+            return false;
+        return SoulGold.SoulGoldFormat.LooksLike(data);
+    }
+
+    /// <summary>
+    /// True when the bytes are a save the generic pokeemerald-expansion engine can prove:
+    /// Heart &amp; Soul 2.0, a standard 14-box expansion save, or Perfect Emerald.
+    /// A retail save with a single injected foreign mon is NOT claimed.
+    /// </summary>
+    internal static bool IsPokemonExpansion(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < Expansion.ExpansionFormat.FileSize)
+            return false;
+        var payload = SramPadding.Trim(data.ToArray());
+        return Expansion.ExpansionFormat.LooksLike(payload) is not null || Exceeded.ExceededFormat.Matches(payload);
+    }
+
+    /// <summary>
+    /// True when the bytes are a Pokémon Elite Redux save: one intact rotating 20-sector slot
+    /// (ids 0-19, one counter, every checksum valid, nothing stamped after it) whose party
+    /// decodes as the hack's own records. No retail save carries a section id past 13.
+    /// </summary>
+    internal static bool IsPokemonEliteRedux(ReadOnlySpan<byte> data) =>
+        data.Length >= EliteRedux.EliteReduxFormat.FileSize && EliteRedux.EliteReduxFormat.LooksLike(data);
+
+    /// <summary>
+    /// True when the bytes are a Pokémon Origin HeartGold save: a 512 KB HeartGold envelope
+    /// whose general and storage blocks carry the hack's sizes (0xF7CC / 0x18408) with a valid
+    /// CRC. No retail Gen 4 game writes those sizes; stock PKHeX refuses the file.
+    /// </summary>
+    internal static bool IsPokemonOriginHeartGold(ReadOnlySpan<byte> data) =>
+        OriginHeartGold.OriginHeartGoldFormat.LooksLike(data);
+
+    /// <summary>
+    /// True when the bytes are a Fire Red Extended or Crystal Advance Redux save: FireRed's
+    /// game code, 0xFF0-chunked retail blocks, and Pokémon records only those hacks write
+    /// (see FireRedHacks.FireRedHackFormat). Exclusive with Radical Red, which keeps
+    /// plaintext CFRU records, and with retail FireRed, whose checksum windows differ.
+    /// </summary>
+    internal static bool IsPokemonFireRedHack(ReadOnlySpan<byte> data) => FireRedHackRoute(data) is not null;
+
+    /// <summary>The route of a Fire Red Extended or Crystal Advance Redux save, or null.</summary>
+    internal static SaveFormat? FireRedHackRoute(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < FireRedHacks.FireRedHackFormat.FileSize)
+            return null;
+        return FireRedHacks.FireRedHackFormat.Identify(SramPadding.Trim(data.ToArray())) switch
+        {
+            FireRedHacks.FireRedHackGame.FireRedExtended => SaveFormat.FireRedExtended,
+            FireRedHacks.FireRedHackGame.CrystalAdvanceRedux => SaveFormat.CrystalAdvanceRedux,
+            _ => null,
+        };
+    }
+
+    /// <summary>The ROM-hack route these bytes take, in the documented order (Origin HeartGold, Unbound, GS
+    /// Chronicles, CFRU, Recharged Yellow, Quetzal, Soul Gold, expansion, Elite Redux, Fire Red Extended / Crystal Advance Redux), or null for stock PKHeX.</summary>
+    internal static SaveFormat? HackRoute(ReadOnlySpan<byte> data)
+    {
+        if (IsPokemonOriginHeartGold(data)) return SaveFormat.OriginHeartGold;
+        if (IsPokemonUnbound(data)) return SaveFormat.Unbound;
+        if (IsPokemonGsChronicles(data)) return SaveFormat.GsChronicles;
+        if (IsPokemonRadicalRed(data)) return SaveFormat.RadicalRed;
+        if (IsPokemonRechargedYellow(data)) return SaveFormat.RechargedYellow;
+        if (IsPokemonQuetzal(data)) return SaveFormat.Quetzal;
+        if (IsPokemonSoulGold(data)) return SaveFormat.SoulGold;
+        if (IsPokemonExpansion(data)) return SaveFormat.Expansion;
+        if (IsPokemonEliteRedux(data)) return SaveFormat.EliteRedux;
+        if (FireRedHackRoute(data) is { } fireRed) return fireRed;
+        return null;
+    }
 }

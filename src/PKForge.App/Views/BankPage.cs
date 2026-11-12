@@ -1,4 +1,3 @@
-using Microsoft.Maui.Controls.Shapes;
 using PKForge.App.Services;
 using PKForge.App.Theme;
 using PKForge.App.ViewModels;
@@ -35,6 +34,11 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
     private readonly FrameInvalidator _frame;
     private readonly Grid _hostGrid;
     private readonly SKCanvasView _boxBar;
+    // The Bank's section tabs ("Pokémon | Items") over the side panel, beside the box banner.
+    private readonly SKCanvasView _sections;
+    private IReadOnlyList<SKRect> _sectionHits = [];
+    // True while the pad cursor stands on the section tabs (Up from the box's top row).
+    private bool _onSections;
     private readonly SKCanvasView _panel;
     private string _boxTitle = "";
     private Label _statusLine = null!;
@@ -51,6 +55,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
 
     public BankPage(IBankService bank, ISpriteService sprites, BoxBrowserViewModel boxViewModel, IGameDataService data)
     {
+        PerfTrace.Track(this);
         _bank = bank;
         _sprites = sprites;
         _boxViewModel = boxViewModel;
@@ -60,21 +65,28 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         NavigationPage.SetHasNavigationBar(this, false);
 
         _canvas = new SKCanvasView { EnableTouchEvents = true };
-        _frame = new FrameInvalidator(_canvas);
-        _canvas.PaintSurface += Paint;
+        _frame = new FrameInvalidator(_canvas, () => _panelDirty = true);
+        _motion = new FrameInvalidator(_canvas);
+        _canvas.PaintSurface += PaintGuard.Wrap("BankPage.Paint", Paint);
         _canvas.Touch += Touch;
 
         // The box header over the well, as in the storage screen: the chevrons page the
         // boxes, the banner opens the box overview.
         _boxBar = new SKCanvasView { HeightRequest = Design(72), Margin = new Thickness(0, 0, 0, Design(28)) };
-        _boxBar.PaintSurface += PaintBoxBar;
+        _boxBar.PaintSurface += PaintGuard.Wrap("BankPage.PaintBoxBar", PaintBoxBar);
         var boxBarTap = new TapGestureRecognizer();
         boxBarTap.Tapped += (_, args) => TapBoxBar(args.GetPosition(_boxBar)?.X ?? _boxBar.Width / 2);
         _boxBar.GestureRecognizers.Add(boxBarTap);
 
+        // The sections, level with the box banner as the bag's pouch tabs sit beside its banner:
+        // "Items" is the Item Bank, the Bank's other half.
+        _sections = new SKCanvasView { HeightRequest = Design(72), Margin = new Thickness(0, 0, 0, Design(28)), EnableTouchEvents = true };
+        _sections.PaintSurface += PaintGuard.Wrap("BankPage.PaintSections", PaintSections);
+        _sections.Touch += TouchSections;
+
         // The side panel: the selected Pokémon in the editor panel's look, the Bank's tools under it.
         _panel = new SKCanvasView { InputTransparent = true };
-        _panel.PaintSurface += PaintPanel;
+        _panel.PaintSurface += PaintGuard.Wrap("BankPage.PaintPanel", PaintPanel);
         Button Tool(string text, Action action)
         {
             var button = EditorTool(text);
@@ -105,10 +117,11 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         Grid.SetRow(_canvas, 1);
         var right = new Grid
         {
-            RowDefinitions = [new(GridLength.Star), new(GridLength.Auto)],
-            Children = { _panel, tools },
+            RowDefinitions = [new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto)],
+            Children = { _sections, _panel, tools },
         };
-        Grid.SetRow(tools, 1);
+        Grid.SetRow(_panel, 1);
+        Grid.SetRow(tools, 2);
         var content = new Grid
         {
             Padding = new Thickness(Design(48), Design(32), Design(28), Design(20)),
@@ -162,7 +175,9 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        MusicMenu.Enter(MusicPlace.Bank);
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Push(this);
+        PortalOverlay.Warm(_hostGrid);
         // The lower screen belongs to the Bank's inspector while this page is in front.
         _secondClaim ??= IPlatformApplication.Current?.Services.GetService<SecondScreenState>()?.Routes.CreateClaim(SecondScreenOwner.Bank);
         _secondClaim?.Activate();
@@ -171,12 +186,18 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         RefreshBoxEntries();
         UpdatePreview();
         UpdateStatus();
+        ReadItemKinds(); // the Items count may have changed in the Item Bank
+        _sections.InvalidateSurface();
         StartFactRotation();
     }
 
     protected override void OnDisappearing()
     {
+        PerfTrace.Mark("home");
+        PortalOverlay.Stop();
+        EvolutionOverlay.Stop();
         base.OnDisappearing();
+        MusicMenu.Leave(MusicPlace.Bank);
         _factTimer?.Stop();
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
         _inspectCancel?.Cancel();
@@ -190,6 +211,94 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
     }
 
     private SecondScreenClaim? _secondClaim;
+
+    /// <summary>The Item Bank screen: banked items on one side, any game's bag on the other. It
+    /// comes in without a slide, under the same section tabs, so it reads as the Bank's other tab.</summary>
+    private Task OpenItemBankAsync()
+    {
+        LeaveSections();
+        return Navigation.PushAsync(new ItemBankPage(), false);
+    }
+
+    private void PaintSections(object? sender, SKPaintSurfaceEventArgs args)
+    {
+        var canvas = args.Surface.Canvas;
+        canvas.Clear(SKColors.Transparent);
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        _sectionHits = BankSectionPaint.Paint(canvas, new SKRect(0, 0, args.Info.Width, args.Info.Height),
+        [
+            new BankSection("Pokémon", SectionIcon("bank"), _bank.Count.ToString(culture)),
+            new BankSection("Items", SectionIcon("bag"), _itemKinds.ToString(culture)),
+        ], 0, _onSections ? 1 : null, BoxBrowserPage.PixelTypeface());
+    }
+
+    // The Item Bank's kinds, read when the page shows (the Item Bank is its own page), never in paint.
+    private int _itemKinds;
+
+    private void ReadItemKinds()
+    {
+        try { _itemKinds = IPlatformApplication.Current?.Services.GetService<ItemBankStore>()?.Read().Entries.Count ?? 0; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException) { }
+    }
+
+    private static readonly Dictionary<string, SKImage?> SectionIcons = new(StringComparer.Ordinal);
+
+    private static SKImage? SectionIcon(string name)
+    {
+        if (SectionIcons.TryGetValue(name, out var known)) return known;
+        SKImage? image = null;
+        try
+        {
+            using var bitmap = SKBitmap.Decode(PksmIcons.GetPng(name, PksmIcons.White));
+            image = bitmap is null ? null : SKImage.FromBitmap(bitmap);
+        }
+        catch (Exception error) when (error is IOException or ArgumentException) { }
+        SectionIcons[name] = image;
+        return image;
+    }
+
+    /// <summary>A tap on "Items" opens the Item Bank; "Pokémon" is where the player already is.</summary>
+    private void TouchSections(object? sender, SKTouchEventArgs args)
+    {
+        args.Handled = true;
+        if (args.ActionType != SKTouchAction.Released) return;
+        if (_sectionHits.Count > 1 && _sectionHits[1].Contains(args.Location)) _ = OpenItemBankAsync();
+        else if (_onSections) LeaveSections();
+    }
+
+    /// <summary>Up from the box's top row: the cursor climbs onto the section tabs, as the games'
+    /// PC cursor climbs onto the box name.</summary>
+    private void EnterSections()
+    {
+        _onSections = true;
+        _boxViewModel.Status = "Items: the Item Bank, the bank's other half. A opens it, Down comes back.";
+        _sections.InvalidateSurface();
+        RepaintGrid();
+    }
+
+    private void LeaveSections()
+    {
+        if (!_onSections) return;
+        _onSections = false;
+        UpdateStatus();
+        _sections.InvalidateSurface();
+        RepaintGrid();
+    }
+
+    /// <summary>The pad while on the section tabs: A or Right opens the Item Bank, Down or B comes back.</summary>
+    private bool OnSectionsButton(PadButton button)
+    {
+        switch (button)
+        {
+            case PadButton.A or PadButton.Right: _ = OpenItemBankAsync(); return true;
+            case PadButton.Down or PadButton.B: LeaveSections(); return true;
+            case PadButton.Up or PadButton.Left: return true;
+            default:
+                // Any other button belongs to the box: the cursor goes back down and it acts there.
+                LeaveSections();
+                return false;
+        }
+    }
 
     private async Task OpenLivingDexAsync()
     {
@@ -209,7 +318,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         }
         catch (Exception error)
         {
-            _boxViewModel.Status = $"Search closed: {error.Message}";
+            _boxViewModel.Status = $"Search closed. {Domain.ErrorText.Plain(error)}";
         }
     }
 
@@ -229,7 +338,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         UpdatePageLabel();
         UpdatePreview();
         UpdateStatus();
-        _canvas.InvalidateSurface();
+        RepaintGrid();
     }
 
     /// <summary>"Select all filtered": the search's results become the organizer's marks, and
@@ -311,12 +420,88 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         }
         catch (Exception error)
         {
-            _boxViewModel.Status = $"Export failed: {error.Message}";
+            _boxViewModel.Status = $"Export failed. {Domain.ErrorText.Plain(error)}";
         }
         finally
         {
             overlay.Close();
         }
+    }
+
+    /// <summary>
+    /// "Save .pk files to a folder": each Pokémon as one plain .pk file in its own format's
+    /// extension, under a clean name; a name already in the folder gets " (2)", " (3)"... so
+    /// nothing there is ever replaced. No manifest - just the files, as PKHeX writes them.
+    /// </summary>
+    private async Task SavePkFilesAsync(IReadOnlyList<BankEntry> entries, string label)
+    {
+        if (entries.Count == 0)
+        {
+            _boxViewModel.Status = "Nothing to save — that box is empty.";
+            return;
+        }
+        var services = IPlatformApplication.Current?.Services;
+        var picker = services?.GetService<IFolderPicker>();
+        var files = services?.GetService<IFolderFileAccess>();
+        if (picker is null || files is null) return;
+        if (await Services.PkforgeFolderExports.TryAsync(_hostGrid, label, () => [.. entries.Select(e => BankEntryFiles.PkFileFor(e, _bank.GetData(e.Id)))]) is { } inFolder)
+        {
+            _boxViewModel.Status = inFolder;
+            return;
+        }
+        var folder = await picker.PickFolderAsync();
+        if (folder is null) return;
+        var overlay = LoadingOverlay.Show(_hostGrid, "Saving .pk files…", $"Writing to {folder.DisplayName}.");
+        try
+        {
+            var written = await Task.Run(() => PkFileExport.WriteAsync(files, folder.TreeId,
+                [.. entries.Select(e => BankEntryFiles.PkFileFor(e, _bank.GetData(e.Id)))]));
+            _boxViewModel.Status = $"{written} .pk file{(written == 1 ? "" : "s")} from {label} saved to {folder.DisplayName}.";
+        }
+        catch (Exception error)
+        {
+            _boxViewModel.Status = $"Saving failed. {Domain.ErrorText.Plain(error)}";
+        }
+        finally
+        {
+            overlay.Close();
+        }
+    }
+
+    private bool IsLocked(int box) => _bank.LockedBoxes.Contains(box);
+
+    /// <summary>True, with the reason on the status line, when <paramref name="box"/> is locked.</summary>
+    private bool RefuseLocked(int box)
+    {
+        if (!IsLocked(box)) return false;
+        _boxViewModel.Status = BankBoxLocks.Refusal(box);
+        return true;
+    }
+
+    /// <summary>Locks or unlocks a bank box (from the bank actions and the box overview).</summary>
+    public bool ToggleBoxLock(int box)
+    {
+        var locking = !IsLocked(box);
+        if (locking && CarriedEntry() is { } carried && carried.Box == box)
+        {
+            // A lock would keep the Pokémon in hand from ever leaving its box: it is dropped first.
+            _boxViewModel.Status = $"Drop {carried.Info.Nickname} first: it is in hand from box {box + 1:00}.";
+            return false;
+        }
+        try
+        {
+            _bank.SetBoxLocked(box, locking);
+        }
+        catch (Exception error) when (error is InvalidOperationException or IOException)
+        {
+            _boxViewModel.Status = Domain.ErrorText.Plain(error);
+            return false;
+        }
+        _boxViewModel.Status = locking
+            ? $"Box {box + 1:00} locked: sorts, moves, sends, releases and deposits leave it alone."
+            : $"Box {box + 1:00} unlocked.";
+        _boxBar.InvalidateSurface();
+        return true;
     }
 
     /// <summary>PKSM bank export: the whole bank or this box keep their layout; a selection is packed.</summary>
@@ -352,7 +537,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         RefreshBoxEntries();
         UpdatePageLabel();
         UpdatePreview();
-        _canvas.InvalidateSurface();
+        RepaintGrid();
     }
 
     private async Task ImportArchiveAsync()
@@ -399,34 +584,47 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         }
         catch (Exception error)
         {
-            _boxViewModel.Status = $"Import failed: {error.Message}";
+            _boxViewModel.Status = $"Import failed. {Domain.ErrorText.Plain(error)}";
         }
         finally
         {
             overlay.Close();
             RefreshBoxEntries();
             UpdatePageLabel();
-            _canvas.InvalidateSurface();
+            RepaintGrid();
         }
     }
 
 
     private void UpdatePageLabel()
     {
-        _boxTitle = BankBoxDecor.Names.Get(_boxIndex) is { } name
-            ? $"{_boxIndex + 1:00} / {_bank.BoxCount:00} · {name}"
-            : $"Box {_boxIndex + 1:00} / {_bank.BoxCount:00}";
+        // Within a group, the banner counts the group's boxes and names the group.
+        if (ScopeMembers() is { } members && members.Contains(_boxIndex))
+        {
+            var place = $"{_groupScope} {members.ToList().IndexOf(_boxIndex) + 1}/{members.Count}";
+            _boxTitle = BankBoxDecor.Names.Get(_boxIndex) is { } named ? $"{place} · {named}" : $"{place} · Box {_boxIndex + 1:00}";
+        }
+        else
+        {
+            _boxTitle = BankBoxDecor.Names.Get(_boxIndex) is { } name
+                ? $"{_boxIndex + 1:00} / {_bank.BoxCount:00} · {name}"
+                : $"Box {_boxIndex + 1:00} / {_bank.BoxCount:00}";
+        }
         _boxBar.InvalidateSurface();
     }
 
     private void ChangeBox(int delta)
     {
+        // Scoped to a group, L/R and the chevrons step through its boxes, wrapping.
+        if (delta != 0 && ScopeMembers() is { } members && BankBoxGroups.Step(members, _boxIndex, delta) is { } next)
+            delta = next - _boxIndex;
+        PerfTrace.Mark("bankbox");
         _boxIndex = Math.Clamp(_boxIndex + delta, 0, _bank.BoxCount - 1);
         RefreshBoxEntries();
         UpdatePageLabel();
         UpdatePreview();
         UpdateStatus();
-        _canvas.InvalidateSurface();
+        RepaintGrid();
     }
 
     /// <summary>Rebuild the current box's slot map from the bank. Call after any mutation.</summary>
@@ -442,6 +640,9 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         _boxEntries = map;
         // Never keep a mark on a slot the bank no longer holds (release, move, sort).
         _marked.IntersectWith(live);
+        // The "Pokémon N" tab counts the bank: it repaints with every change of contents
+        // (it said 12 after a send left 11, QA 2026-11-12).
+        _sections?.InvalidateSurface();
     }
 
     private BankEntry? EntryAt(int slot) => _boxEntries.GetValueOrDefault(slot);
@@ -544,7 +745,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 _selectedSlot = slot;
                 UpdatePreview();
                 UpdateStatus();
-                _canvas.InvalidateSurface();
+                RepaintGrid();
             });
         var page = services.GetService<SecondScreenState>()?.InspectorPage ?? SummaryPage.Info;
         var result = await MonSummaryScreen.ShowAsync(_hostGrid, _sprites, deck, page);
@@ -569,6 +770,9 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             : $"{Describe(entry)} · Y mark · X actions";
     }
 
+    /// <summary>Where <paramref name="entry"/> lives, for <see cref="CompareFlow"/>: its id follows it from box to box.</summary>
+    private static string ComparePlace(BankEntry entry) => $"bank:{entry.Id}";
+
     private string Describe(BankEntry entry)
     {
         var species = _facts.SpeciesName(entry.Info.Species);
@@ -583,7 +787,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         if (_marked.Remove((_boxIndex, _selectedSlot))) _anchor = null;
         else { _marked.Add((_boxIndex, _selectedSlot)); _anchor = (_boxIndex, _selectedSlot); }
         UpdateStatus();
-        _canvas.InvalidateSurface();
+        RepaintGrid();
     }
 
     /// <summary>The marked entries, in slot order, looked up fresh from the bank.
@@ -603,21 +807,21 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         _marked.Clear();
         _anchor = null;
         UpdateStatus();
-        _canvas.InvalidateSurface();
+        RepaintGrid();
     }
 
     private void MarkThisBox()
     {
         foreach (var entry in _boxEntries.Values) _marked.Add((entry.Box, entry.Slot));
         UpdateStatus();
-        _canvas.InvalidateSurface();
+        RepaintGrid();
     }
 
     private void MarkWholeBank()
     {
         foreach (var entry in _bank.GetAll()) _marked.Add((entry.Box, entry.Slot));
         UpdateStatus();
-        _canvas.InvalidateSurface();
+        RepaintGrid();
     }
 
     /// <summary>Flips every mark in this box: the quick "everything but these" selection.</summary>
@@ -627,7 +831,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             if (!_marked.Remove((entry.Box, entry.Slot))) _marked.Add((entry.Box, entry.Slot));
         _anchor = null;
         UpdateStatus();
-        _canvas.InvalidateSurface();
+        RepaintGrid();
     }
 
     /// <summary>Range mark: every occupied slot from the last Y mark to the cursor, across
@@ -639,15 +843,18 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             _marked.Add(slot);
         _anchor = (_boxIndex, _selectedSlot);
         UpdateStatus();
-        _canvas.InvalidateSurface();
+        RepaintGrid();
     }
 
     // ── Interaction ──────────────────────────────────────────────────────────
 
     public bool OnPadButton(PadButton button)
     {
+        if (_onSections && OnSectionsButton(button)) return true;
         switch (button)
         {
+            // Up from the top row climbs onto the section tabs (not while a Pokémon is in hand).
+            case PadButton.Up when _selectedSlot < Columns && _carryId is null: EnterSections(); return true;
             case PadButton.Up: return MoveCursor(0, -1);
             case PadButton.Down: return MoveCursor(0, 1);
             case PadButton.Left: return MoveCursor(-1, 0);
@@ -659,7 +866,8 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             case PadButton.X: _ = ShowBankActionsAsync(); return true;
             case PadButton.B:
                 if (_marked.Count > 0) { ClearMarks(); return true; }
-                if (_carryId is not null) { _carryId = null; _canvas.InvalidateSurface(); return true; }
+                if (_carryId is not null) { _carryId = null; RepaintGrid(); return true; }
+                if (CompareFlow.Cancel() is { } cancelled) { _boxViewModel.Status = cancelled; return true; }
                 _ = Navigation.PopAsync();
                 return true;
             case PadButton.Start: _ = OpenCursorMenuAsync(); return true;
@@ -677,7 +885,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         _selectedSlot = row * Columns + col;
         UpdatePreview();
         if (_marked.Count == 0) UpdateStatus();
-        _canvas.InvalidateSurface();
+        RepaintGrid();
         return true;
     }
 
@@ -685,20 +893,28 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
     {
         if (_carryId is { } carrying)
         {
-            _bank.Move(carrying, _boxIndex, _selectedSlot);
+            if (RefuseLocked(_boxIndex)) return; // still in hand: drop it in an unlocked box
+            try { _bank.Move(carrying, _boxIndex, _selectedSlot); }
+            catch (Exception error) when (error is InvalidOperationException or IOException)
+            {
+                // Its own box was locked meanwhile, say: the reason, and it stays in hand.
+                _boxViewModel.Status = Domain.ErrorText.Plain(error);
+                return;
+            }
             _carryId = null;
             RefreshBoxEntries();
             // The panel and the lower screen still describe what the slot held before the drop.
             UpdatePreview();
             UpdateStatus();
-            _canvas.InvalidateSurface();
+            RepaintGrid();
             return;
         }
         var entry = EntryAt(_selectedSlot);
         if (entry is not null)
         {
+            if (RefuseLocked(entry.Box)) return;
             _carryId = entry.Id;
-            _canvas.InvalidateSurface();
+            RepaintGrid();
             return;
         }
         await OpenEmptySlotMenuAsync();
@@ -716,22 +932,29 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
 
         // Hardcore mode keeps every move and drops every copy: the read-only Summary is always
         // offered, the editor only when editing is allowed; Duplicate and Copy to game are not offered at all.
-        var options = new List<PadOption> { new("Summary", IconPath: "info", Detail: "A read-only look at this Pokémon.") };
+        var options = new List<PadOption> { new("Summary", IconPath: "info", Detail: "A read-only look at this Pokémon."), CompareFlow.Option(ComparePlace(entry)) };
         if (Allowed(SaveAction.EditMon))
         {
             options.Add(new PadOption("Edit", IconPath: "editor"));
             options.Add(new PadOption("Evolve…", IconPath: "evolve", Detail: "Evolves it right here in the bank."));
         }
         options.Add(new PadOption("Send to Poképark", IconPath: "park", Detail: "It joins the Poképark visitors. The bank is not changed."));
+        options.Add(new PadOption("Set as widget partner", IconPath: "park", Detail: "The home-screen Partner widget shows it. The bank is not changed."));
         if (Allowed(SaveAction.Duplicate)) options.Add(new PadOption("Duplicate", IconPath: "copy", Detail: "An exact copy goes into the first free bank slot."));
-        options.Add(new PadOption("Send to game…", IconPath: "send", Detail: "Moves it into a game's boxes and out of the bank."));
+        var held = IsLocked(entry.Box); // a locked box keeps it: nothing that takes it out or moves it
+        if (!held) options.Add(new PadOption("Send to game…", IconPath: "send", Detail: "Moves it into a game's boxes and out of the bank."));
         if (Allowed(SaveAction.Duplicate)) options.Add(new PadOption("Copy to game…", IconPath: "copy", Detail: "Puts a copy in a game's boxes; this one stays in the bank."));
-        options.Add(new PadOption("Move (carry)", IconPath: "move", Detail: "Pick it up and drop it in another slot."));
+        if (!held) options.Add(new PadOption("Move (carry)", IconPath: "move", Detail: "Pick it up and drop it in another slot."));
         options.Add(new PadOption("Export .pk file", IconPath: "export", Detail: "Saves this Pokémon as a single .pk file."));
-        options.Add(new PadOption("Release from bank", IconPath: "release", Detail: "Removes it from the bank for good; there is no undo."));
-        options.Add(new PadOption("Release to the Wilds", IconPath: "release", Detail: "It leaves the bank and lives on in the wild lands around the Poképark. It may come back to visit."));
+        options.Add(new PadOption("Save .pk file to a folder", IconPath: "folder", Detail: "Writes it into a folder you pick; nothing there is replaced."));
+        if (!held)
+        {
+            options.Add(new PadOption("Release from bank", IconPath: "release", Detail: "Removes it from the bank for good; there is no undo."));
+            options.Add(new PadOption("Release to the Wilds", IconPath: "release", Detail: "It leaves the bank and lives on in the wild lands around the Poképark. It may come back to visit."));
+        }
         var choice = await PadMenu.ShowAsync(_hostGrid, entry.Info.Nickname,
-            Note($"From {entry.Info.SourceName} · Gen {entry.Info.Generation} · deposited {entry.AddedUtc:yyyy-MM-dd}"),
+            Note($"From {entry.Info.SourceName} · Gen {entry.Info.Generation} · deposited {entry.AddedUtc:yyyy-MM-dd}"
+                + (held ? $" · box {entry.Box + 1:00} is locked" : "")),
             options.ToArray());
         switch (choice)
         {
@@ -739,8 +962,25 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 _boxViewModel.Status = IPlatformApplication.Current!.Services.GetRequiredService<PokeparkService>().AddBankVisitor(entry.Id);
                 await PadMenu.ShowAsync(_hostGrid, "Poképark", _boxViewModel.Status, new PadOption("OK"));
                 return;
+            case "Set as widget partner":
+            {
+                var data = _bank.GetData(entry.Id);
+                var partner = await Task.Run(() => HomeWidgets.PartnerFrom(data, entry.Info.Format, "Bank", entry.Id, null));
+                if (partner is null) { _boxViewModel.Status = "This Pokémon can't be a partner."; return; }
+                await HomeWidgets.SetPartnerAsync(partner);
+                _boxViewModel.Status = HomeWidgets.HasAny(HomeWidgetKind.Partner)
+                    ? $"{partner.Name} is your partner on the home screen."
+                    : $"{partner.Name} is your partner. Add the Partner widget from Settings › Home-screen widgets.";
+                await WidgetMenu.OfferOnceAsync(_hostGrid, HomeWidgetKind.Partner, $"{partner.Name} can keep you company on your home screen: the Partner widget shows it, asleep at night.");
+                return;
+            }
             case "Summary":
                 await OpenSummaryAsync();
+                return;
+            case var compare when CompareFlow.Is(compare):
+                _boxViewModel.Status = await CompareFlow.ChooseAsync(_hostGrid, _sprites, () => SummaryLoaders.FromBank(_bank,
+                    IPlatformApplication.Current!.Services.GetRequiredService<ISaveEngine>(), IPlatformApplication.Current.Services.GetRequiredService<IMonSummaryService>(),
+                    entry, true), $"Bank · Box {entry.Box + 1:00}", ComparePlace(entry));
                 return;
             case "Edit":
                 await EditEntryAsync(entry);
@@ -757,7 +997,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 UpdatePageLabel();
                 UpdatePreview();
                 _boxViewModel.Status = $"{entry.Info.Nickname} cloned in the bank.";
-                _canvas.InvalidateSurface();
+                RepaintGrid();
                 return;
             case "Send to game…":
                 await SendToGamePickerAsync(entry);
@@ -768,20 +1008,23 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 return;
             case "Move (carry)":
                 _carryId = entry.Id;
-                _canvas.InvalidateSurface();
+                RepaintGrid();
                 return;
             case "Export .pk file":
                 await ExportAsync(entry);
                 return;
+            case "Save .pk file to a folder":
+                await SavePkFilesAsync([entry], entry.Info.Nickname);
+                return;
             case "Release from bank":
                 var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Release from bank?",
-                    $"Release {entry.Info.Nickname}? Bank releases are permanent (the bank has no restore points yet).",
+                    $"Release {entry.Info.Nickname}? A Bank release can't be undone.",
                     "Release");
                 if (!confirmed) return;
                 _bank.Remove(entry.Id);
                 RefreshBoxEntries();
                 UpdatePreview();
-                _canvas.InvalidateSurface();
+                RepaintGrid();
                 return;
             case "Release to the Wilds":
                 await ReleaseToWildsAsync(entry);
@@ -806,7 +1049,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             if (lived) park?.RemoveVisitor(residentId);
             RefreshBoxEntries();
             UpdatePreview();
-            _canvas.InvalidateSurface();
+            RepaintGrid();
             return Task.FromResult(true);
         });
     }
@@ -827,13 +1070,14 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         var targets = TransferTargets();
 
         var options = new List<PadOption> { new("Boxes…", IconPath: "box", Detail: "Every box at a glance, to reorder, rename or restyle them.") };
+        options.Add(new PadOption("Item Bank…", IconPath: "bag", Detail: "The banked items, to send them to any game's bag or bring items in."));
         if (selection.Count > 0)
         {
             options.Add(new PadOption("Move to another box…", IconPath: "move", Detail: "They fill a box's empty slots, in order."));
             options.Add(new PadOption("Move to a position…", IconPath: "move", Detail: "They land from a slot you pick; what is there slides back."));
             if (Allowed(SaveAction.Duplicate))
                 options.Add(new PadOption(selection.Count == 1 ? "Duplicate" : "Duplicate all", IconPath: "copy", Detail: "Each copy goes into the first free bank slot."));
-            options.Add(new PadOption(selection.Count == 1 ? "Export .pk file" : "Export .pk files", IconPath: "export", Detail: "Writes one .pk file each into a folder you pick."));
+            options.Add(new PadOption(selection.Count == 1 ? "Export .pk file" : "Export .pk files", IconPath: "export", Detail: "Writes one .pk file each into a folder you pick; nothing there is replaced."));
             options.Add(new PadOption("Export as a PKSM bank", IconPath: "export", Detail: "Packs them into one bank file for PKSM on the 3DS."));
             if (targets.ConnectedLabel is not null || targets.Detected.Length > 0)
                 options.Add(new PadOption("Send to a game…", IconPath: "send", Detail: "Moves them into a game; only those that arrive leave the bank."));
@@ -850,9 +1094,13 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         options.Add(new PadOption("Sort the whole bank…", IconPath: "sort", Detail: "Reorders every Pokémon in the bank by the order you pick."));
         if (_marked.Count > 1) options.Add(new PadOption("Sort the marked into boxes…", IconPath: "sort", Detail: "The marked move, sorted, into new boxes after the last one used."));
         options.Add(new PadOption("Compact the bank (close gaps)", IconPath: "compact", Detail: "Fills every empty slot from box 1 on, keeping the order."));
+        var boxLocked = IsLocked(_boxIndex);
+        options.Add(new PadOption(boxLocked ? $"Unlock box {_boxIndex + 1:00}" : $"Lock box {_boxIndex + 1:00}", IconPath: "padlock",
+            Detail: "A locked box is left out of sorts, moves, sends, releases and deposits. It can still be opened."));
+        options.Add(new PadOption($"Save box {_boxIndex + 1:00} as .pk files…", IconPath: "folder", Detail: "One .pk file per Pokémon into a folder you pick; nothing there is replaced."));
         options.Add(new PadOption($"Rename box {_boxIndex + 1:00}…", IconPath: "rename"));
         options.Add(new PadOption($"Wallpaper for box {_boxIndex + 1:00}…", IconPath: "fashion"));
-        if (_bank.BoxCount > 1)
+        if (_bank.BoxCount > 1 && !boxLocked)
             options.Add(new PadOption($"Delete box {_boxIndex + 1:00}…", IconPath: "delete", Detail: "Its Pokémon move to free slots in other boxes first."));
 
         var choice = await PadMenu.ShowAsync(_hostGrid, $"Bank actions · {noun}",
@@ -860,9 +1108,31 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 ? "Marks keep across box pages. Sorting rewrites the bank's own index."
                 : "Y marks slots; with nothing marked X acts on the cursor slot."),
             options.ToArray());
+        // Moves, sends and releases leave a locked box's Pokémon where they are.
+        if (choice is "Move to another box…" or "Move to a position…" or "Send to a game…" or "Release from bank…")
+        {
+            var (free, held) = BankBoxLocks.Split(selection, _bank.LockedBoxes);
+            if (free.Count == 0)
+            {
+                _boxViewModel.Status = BankBoxLocks.Refusal(selection[0].Box);
+                return;
+            }
+            if (held > 0) _boxViewModel.Status = $"{held} in a locked box stay where they are.";
+            selection = free;
+        }
         switch (choice)
         {
             case null:
+                return;
+            case "Item Bank…":
+                await OpenItemBankAsync();
+                return;
+            case string label when label.StartsWith("Lock box ", StringComparison.Ordinal)
+                                   || label.StartsWith("Unlock box ", StringComparison.Ordinal):
+                ToggleBoxLock(_boxIndex);
+                return;
+            case string label when label.StartsWith("Save box ", StringComparison.Ordinal):
+                await SavePkFilesAsync([.. _bank.GetAll().Where(e => e.Box == _boxIndex).OrderBy(e => e.Slot)], $"box {_boxIndex + 1:00}");
                 return;
             case "Move to another box…":
                 await MoveSelectionToBoxAsync(selection);
@@ -875,7 +1145,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 DuplicateSelection(selection);
                 return;
             case "Export .pk file" or "Export .pk files":
-                await ExportToFolderAsync(selection, $"{selection.Count} selected");
+                await SavePkFilesAsync(selection, selection.Count == 1 ? selection[0].Info.Nickname : $"{selection.Count} selected");
                 return;
             case "Export as a PKSM bank":
                 await ExportPksmAsync(selection);
@@ -939,6 +1209,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             $"{selection.Count} selected · the box's empty slots take them in order.", boxes);
         if (target is null) return;
         var box = Array.IndexOf(boxes, target);
+        if (RefuseLocked(box)) return;
         var before = _bank.GetAll();
         var placements = BankPlacement.IntoBox(selection.Select(e => e.Id).ToArray(), box, before);
         if (placements.Count == 0)
@@ -961,6 +1232,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         var target = await PadMenu.ShowAsync(_hostGrid, "Move to which box?", $"{selection.Count} selected.", boxes);
         if (target is null) return;
         var box = Array.IndexOf(boxes, target);
+        if (RefuseLocked(box)) return;
         var slots = Enumerable.Range(1, IBankService.SlotsPerBox).Select(n => $"Slot {n:00}").ToArray();
         var startChoice = await PadMenu.ShowAsync(_hostGrid, $"Fill forward from slot? (box {box + 1:00})",
             "The selection lands here in order; whatever is already there slides back.", slots);
@@ -989,7 +1261,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         try { _bank.AddMany([.. selection.Select(e => new BankDeposit(_bank.GetData(e.Id), e.Info))]); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            _boxViewModel.Status = $"Nothing was cloned: {error.Message}";
+            _boxViewModel.Status = $"Nothing was cloned. {Domain.ErrorText.Plain(error)}";
             return;
         }
         FinishOrganizer(selection.Count == 1
@@ -1001,8 +1273,8 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
     {
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Release from the bank?",
             selection.Count == 1
-                ? $"Release {selection[0].Info.Nickname}? Bank releases are permanent (the bank has no restore points yet)."
-                : $"Release all {selection.Count} selected Pokémon? Bank releases are permanent (the bank has no restore points yet).",
+                ? $"Release {selection[0].Info.Nickname}? A Bank release can't be undone."
+                : $"Release all {selection.Count} selected Pokémon? A Bank release can't be undone.",
             selection.Count == 1 ? "Release" : "Release all");
         if (!confirmed) return;
         var released = _bank.RemoveMany(selection.Select(e => e.Id).ToArray());
@@ -1026,12 +1298,13 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
 
         var items = selection.Select(e => new PKForge.Engine.TransferItem(_bank.GetData(e.Id), e.Info.Format, e.Info.Nickname)).ToArray();
         var ids = selection.Select(e => e.Id).ToArray();
+        var leaving = PortalSources(selection);
         var subject = selection.Count == 1 ? selection[0].Info.Nickname : $"{selection.Count} Pokémon";
         PKForge.Engine.BatchTransferOutcome outcome;
         if (destinationPick.Other is null)
         {
             const string destination = "the connected game";
-            var open = SlotPlanning.FreeSlotsFrom(_boxViewModel.Save?.Slots ?? [], null).ToArray();
+            var open = SlotPlanning.FreeSlotsFrom(_boxViewModel.LiveSlots, null).ToArray();
             if (open.Length == 0)
             {
                 _boxViewModel.Status = "No empty slot in the connected game.";
@@ -1055,7 +1328,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                     Math.Max(0, _selectedSlot), refreshSlot: false, action: SaveAction.Move) ? null : _boxViewModel.Status,
                 async () => await _boxViewModel.RunMutationAsync(session =>
                 {
-                    foreach (var room in rooms) session.ReleaseSlot(room.Box, room.Slot);
+                    SlotReleases.ReleaseAll(session, [.. rooms.Select(room => (room.Box, room.Slot))]);
                     return new GenerationOutcome(true, $"{subject} went back to the bank.");
                 }, Math.Max(0, _selectedSlot), refreshSlot: false, action: SaveAction.Move) ? null : _boxViewModel.Status);
         }
@@ -1081,7 +1354,16 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
 
         if (outcome.Success || outcome.Duplicated) FinishOrganizer(outcome.Message);
         else _boxViewModel.Status = outcome.Message;
+        if (outcome.Success) PlayPortal(leaving);
     }
+
+    /// <summary>The entries as the portal shows them leaving: read before the transfer takes them out.</summary>
+    private PortalSource[] PortalSources(IEnumerable<BankEntry> entries) =>
+        [.. entries.Take(PortalPaint.MaxMembers).Select(e => new PortalSource(Slot(e, e.Slot), e.Box == _boxIndex ? e.Slot : null))];
+
+    /// <summary>The transfer portal over the bank box, once a send has succeeded.</summary>
+    private void PlayPortal(PortalSource[] leaving) =>
+        PortalOverlay.Play(_hostGrid, _canvas, leaving, _sprites, liftedCell: _onSections ? -1 : _selectedSlot);
 
     /// <summary>
     /// The bank's toolkit for sorting: a real reorder of the vault's slots through the index,
@@ -1090,21 +1372,25 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
     /// </summary>
     private async Task SortAsync(int? box)
     {
+        if (box is { } only && RefuseLocked(only)) return;
         var picked = await BankSearchPage.PickSortAsync(_hostGrid,
             box is null ? "Sort the whole bank" : $"Sort box {box.Value + 1:00}",
             "A real reorder of the bank's slots - stored bytes never move.");
         if (picked is null) return;
         var (order, reverse, label) = picked.Value;
 
+        var locked = _bank.LockedBoxes;
         var before = _bank.GetAll();
-        var scope = box is { } target ? before.Where(e => e.Box == target).ToList() : before.ToList();
+        // A whole-bank sort flows around locked boxes and leaves their Pokémon in place.
+        var scope = box is { } target ? before.Where(e => e.Box == target).ToList()
+            : before.Where(e => !locked.Contains(e.Box)).ToList();
         if (scope.Count < 2)
         {
             _boxViewModel.Status = "Nothing to sort there yet.";
             return;
         }
         var where = box is { } sorted ? $"box {sorted + 1:00}" : "the whole bank";
-        await ApplyLayoutAsync(before, BankPlacement.Reorder(box, BankSorting.Order(scope, order, _facts, reverse)),
+        await ApplyLayoutAsync(before, BankPlacement.Reorder(box, BankSorting.Order(scope, order, _facts, reverse), box is null ? locked : new HashSet<int>()),
             label, where, scope.Count);
     }
 
@@ -1115,6 +1401,13 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
     /// </summary>
     private async Task SortSelectionAsync(List<BankEntry> selection)
     {
+        var (free, held) = BankBoxLocks.Split(selection, _bank.LockedBoxes);
+        if (free.Count == 0)
+        {
+            _boxViewModel.Status = BankBoxLocks.Refusal(selection[0].Box);
+            return;
+        }
+        selection = free;
         var picked = await BankSearchPage.PickSortAsync(_hostGrid, $"Sort {selection.Count} marked",
             "They move, in order, into new boxes after the last one in use.");
         if (picked is null) return;
@@ -1122,10 +1415,13 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
 
         var before = _bank.GetAll();
         var chosen = selection.Select(e => e.Id).ToHashSet();
-        var shelf = before.Where(e => !chosen.Contains(e.Id)).Select(e => e.Box + 1).DefaultIfEmpty(0).Max();
+        var locked = _bank.LockedBoxes;
+        var shelf = before.Where(e => !chosen.Contains(e.Id)).Select(e => e.Box + 1)
+            .Concat(locked.Select(b => b + 1)).DefaultIfEmpty(0).Max();
         var boxes = (selection.Count + IBankService.SlotsPerBox - 1) / IBankService.SlotsPerBox;
         await ApplyLayoutAsync(before, BankPlacement.Reorder(shelf, BankSorting.Order(selection, order, _facts, reverse)),
             label, boxes == 1 ? $"box {shelf + 1:00}" : $"boxes {shelf + 1:00}-{shelf + boxes:00}", selection.Count);
+        if (held > 0) _boxViewModel.Status += $" · {held} in a locked box stayed.";
     }
 
     // ── Box management ─────────────────────────────────────────────────────
@@ -1145,7 +1441,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         }
         catch (Exception error) when (error is InvalidOperationException or ArgumentException or IOException)
         {
-            _boxViewModel.Status = error.Message;
+            _boxViewModel.Status = Domain.ErrorText.Plain(error);
             return false;
         }
         BankBoxDecor.Names.Remap(remap);
@@ -1167,6 +1463,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
     /// </summary>
     public async Task<bool> DeleteBoxAsync(int box)
     {
+        if (RefuseLocked(box)) return false;
         var inside = _bank.GetAll().Where(e => e.Box == box).OrderBy(e => e.Slot).ToList();
         var later = _bank.BoxCount - box - 1;
         var shift = later > 0 ? $" The {later} box{(later == 1 ? "" : "es")} after it move{(later == 1 ? "s" : "")} down one." : "";
@@ -1179,11 +1476,12 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         if (inside.Count > 0)
         {
             var taken = _bank.GetAll().Where(e => e.Box != box).Select(e => (e.Box, e.Slot)).ToHashSet();
+            var locked = _bank.LockedBoxes;
             var placements = new List<(Guid Id, int Box, int Slot)>(inside.Count);
             var cursor = 0;
             foreach (var entry in inside)
             {
-                while (cursor / IBankService.SlotsPerBox == box || taken.Contains((cursor / IBankService.SlotsPerBox, cursor % IBankService.SlotsPerBox))) cursor++;
+                while (cursor / IBankService.SlotsPerBox == box || locked.Contains(cursor / IBankService.SlotsPerBox) || taken.Contains((cursor / IBankService.SlotsPerBox, cursor % IBankService.SlotsPerBox))) cursor++;
                 placements.Add((entry.Id, cursor / IBankService.SlotsPerBox, cursor % IBankService.SlotsPerBox));
                 cursor++;
             }
@@ -1193,7 +1491,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             }
             catch (Exception error) when (error is InvalidOperationException or ArgumentException or IOException)
             {
-                _boxViewModel.Status = error.Message;
+                _boxViewModel.Status = Domain.ErrorText.Plain(error);
                 return false;
             }
         }
@@ -1211,7 +1509,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         if (name.Length > 24) name = name[..24];
         BankBoxDecor.Names.SetMany([(box, name)]);
         UpdatePageLabel();
-        _canvas.InvalidateSurface(); // the side panel shows the box name on empty slots
+        RepaintGrid(); // the side panel shows the box name on empty slots
         _boxViewModel.Status = name.Length == 0 ? $"Box {box + 1:00} shows its number again." : $"Box {box + 1:00} is now \"{name}\".";
         return true;
     }
@@ -1221,28 +1519,71 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         var chosen = await BankWallpaperPicker.ShowAsync(_hostGrid, $"Wallpaper · {BankBoxDecor.Label(box)}", BankBoxArt.Of(box));
         if (chosen is null) return false;
         BankBoxDecor.Wallpapers.Set(box, chosen);
-        _canvas.InvalidateSurface();
+        RepaintGrid();
         return true;
     }
 
     private async Task OpenBoxOverviewAsync()
     {
-        var opened = await BankBoxOverview.ShowAsync(this, _hostGrid, _bank, _sprites, _boxIndex);
-        if (opened is { } box)
+        var opened = await BankBoxOverview.ShowAsync(this, _hostGrid, _bank, _sprites, _boxIndex, _groupScope);
+        if (opened is { } result)
         {
-            _boxIndex = Math.Clamp(box, 0, _bank.BoxCount - 1);
+            _boxIndex = Math.Clamp(result.Box, 0, _bank.BoxCount - 1);
             _selectedSlot = 0;
+            // Opened from one group's view: L/R and the chevrons stay within that group.
+            _groupScope = result.Group;
         }
         ChangeBox(0);
+    }
+
+    // ── Box groups ─────────────────────────────────────────────────────────
+
+    /// <summary>The group L/R stay within (opened from that group's view), or null for every box.</summary>
+    private string? _groupScope;
+
+    /// <summary>The boxes L/R step through: the scoped group's, when it still has any.</summary>
+    private IReadOnlyList<int>? ScopeMembers()
+    {
+        if (_groupScope is null) return null;
+        var members = BankBoxGroups.Members(_bank.BoxGroups, _groupScope);
+        if (members.Count == 0) _groupScope = null;
+        return members.Count == 0 ? null : members;
+    }
+
+    /// <summary>What the status line says now (the overview shows a refusal there too).</summary>
+    public string StatusText => _boxViewModel.Status ?? "";
+
+    /// <summary>
+    /// The one write path for groups: <paramref name="change"/> turns the bank's groups into the
+    /// new ones, written in one index write. False (and the reason on the status line) when the
+    /// change is refused, e.g. a name already taken; nothing changed then.
+    /// </summary>
+    public bool ChangeGroups(Func<IReadOnlyList<BankBoxGroup>, IReadOnlyList<BankBoxGroup>> change, string? done)
+    {
+        // Hardcore mode allows this: groups are labels over boxes, no Pokémon is touched.
+        try
+        {
+            _bank.SetBoxGroups(change(_bank.BoxGroups));
+        }
+        catch (Exception error) when (error is InvalidOperationException or ArgumentException or IOException)
+        {
+            _boxViewModel.Status = Domain.ErrorText.Plain(error);
+            return false;
+        }
+        if (_groupScope is not null && !BankBoxGroups.Exists(_bank.BoxGroups, _groupScope)) _groupScope = null;
+        if (done is not null) _boxViewModel.Status = done;
+        UpdatePageLabel();
+        return true;
     }
 
     /// <summary>Closes every gap in the vault while keeping the current order: packed box by
     /// box, slot by slot, from box 1 slot 1.</summary>
     private async Task CompactAsync()
     {
+        var locked = _bank.LockedBoxes;
         var before = _bank.GetAll();
-        var ordered = before.OrderBy(e => e.Box).ThenBy(e => e.Slot).ToList();
-        await ApplyLayoutAsync(before, BankPlacement.Reorder(null, ordered), "Compact", "the whole bank", ordered.Count);
+        var ordered = before.Where(e => !locked.Contains(e.Box)).OrderBy(e => e.Box).ThenBy(e => e.Slot).ToList();
+        await ApplyLayoutAsync(before, BankPlacement.Reorder(null, ordered, locked), "Compact", "the whole bank", ordered.Count);
     }
 
     /// <summary>
@@ -1304,7 +1645,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         UpdatePageLabel();
         UpdatePreview();
         _boxViewModel.Status = _marked.Count > 0 ? $"{status} · {_marked.Count} still marked" : status;
-        _canvas.InvalidateSurface();
+        RepaintGrid();
     }
 
     /// <summary>The connected save plus every other detected game, as the transfer picker
@@ -1313,14 +1654,20 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
     {
         var services = IPlatformApplication.Current?.Services;
         var connected = services?.GetService<ISaveSessionService>()?.Current;
-        var detected = services?.GetService<SavePickerViewModel>()?.Saves.ToArray() ?? [];
+        // Live saves first: a backup copy put back on Home comes after them, labelled as one.
+        var detected = SaveTargets.LiveFirst(services?.GetService<SavePickerViewModel>()?.Saves ?? []).ToArray();
         if (connected is null) return (null, detected);
         // The connected save by the player's own name when the shelf knows it.
-        var connectedName = detected.FirstOrDefault(s => s.DocumentId == connected.Document.DocumentId)?.GameLabel
-            ?? connected.Document.DisplayName;
+        var connectedSave = detected.FirstOrDefault(s => s.DocumentId == connected.Document.DocumentId);
+        var connectedName = connectedSave is { IsCopy: true } copy ? $"{copy.GameLabel} (backup)"
+            : connectedSave?.GameLabel ?? connected.Document.DisplayName;
         return ($"{connectedName} (connected)",
             detected.Where(s => s.DocumentId != connected.Document.DocumentId).ToArray());
     }
+
+    /// <summary>The detected games' labels, twin saves of one game told apart the way the save
+    /// picker does it (trainer · file · date, then #n). Shared with the Item Bank's game picker.</summary>
+    internal static string[] TransferLabels(IReadOnlyList<DetectedSave> detected) => SaveTargets.Labels(detected);
 
     /// <summary>
     /// The destination picker both sends share: the connected save first, then every other
@@ -1337,28 +1684,12 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             return null;
         }
 
-        var labels = detected.Select(save =>
-        {
-            var label = save.GameLabel;
-            if (detected.Count(other => other.GameLabel == save.GameLabel) > 1)
-            {
-                if (!string.IsNullOrEmpty(save.TrainerName)) label += $" · {save.TrainerName}";
-                label += $" · {save.FileName}";
-                if (save.LastModified is { } modified) label += $" · {modified:yyyy-MM-dd}";
-            }
-            return label;
-        }).ToArray();
-        var pristine = labels.ToArray();
-        for (var i = 0; i < labels.Length; i++)
-        {
-            if (pristine.Count(label => label == pristine[i]) <= 1) continue;
-            labels[i] += $" (#{Enumerable.Range(0, i + 1).Count(j => pristine[j] == pristine[i])})";
-        }
+        var labels = TransferLabels(detected);
 
         var options = new List<PadOption>();
         if (connectedLabel is not null) options.Add(new PadOption(connectedLabel, IconPath: "game"));
         options.AddRange(labels.Select((label, i) => new PadOption(label, Glyph: "●",
-            Accent: SaveColors.For(detected[i].Identity?.ColorKey, detected[i].Generation))));
+            Accent: SaveColors.For(detected[i].Identity?.ColorKey, detected[i].Generation), Detail: SaveTargets.Detail(detected[i]))));
         var choice = await PadMenu.ShowAsync(_hostGrid, "Send to game", subtitle, options.ToArray());
         if (choice is null) return null;
         var index = options.FindIndex(o => o.Label == choice);
@@ -1391,9 +1722,9 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             await PadMenu.ShowAsync(_hostGrid, "Evolution", "This Pokémon's data could not be read.", "OK");
             return;
         }
-        var request = await EvolutionCard.RunAsync(_hostGrid, session, 0, 0);
-        if (request is null) return;
-        var outcome = service.Evolve(session, 0, 0, request);
+        var choice = await EvolutionCard.RunAsync(_hostGrid, session, 0, 0);
+        if (choice is null) return;
+        var outcome = service.Evolve(session, 0, 0, choice.Request);
         if (outcome.Success)
         {
             var export = session.ExportSlot(0, 0);
@@ -1402,9 +1733,15 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             RefreshBoxEntries();
             ForgetPanelSummary(); // same id, new Pokémon: the panel must read it again
             UpdatePreview();
-            _canvas.InvalidateSurface();
+            RepaintGrid();
         }
         _boxViewModel.Status = outcome.Message;
+        // Stored: with Animations on Full the evolution scene says it; otherwise the box does.
+        if (outcome.Success && MotionSetting.Decorative)
+        {
+            await EvolutionOverlay.PlayAsync(_hostGrid, choice, _sprites);
+            return;
+        }
         await PadMenu.ShowAsync(_hostGrid, outcome.Success ? "Congratulations!" : "Evolution failed", outcome.Message, "OK");
     }
 
@@ -1418,7 +1755,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             ForgetPanelSummary(); // same id, edited bytes: the panel must read it again
             UpdatePreview();
             _boxViewModel.Status = $"{EntryAt(_selectedSlot)?.Info.Nickname ?? "Pokémon"} updated in the bank.";
-            _canvas.InvalidateSurface();
+            RepaintGrid();
         }
     }
 
@@ -1519,10 +1856,10 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
                 {
-                    _boxViewModel.Status = $"Nothing was deposited: {error.Message}";
+                    _boxViewModel.Status = $"Nothing was deposited. {Domain.ErrorText.Plain(error)}";
                 }
                 RefreshBoxEntries();
-                _canvas.InvalidateSurface();
+                RepaintGrid();
                 return;
             }
         }
@@ -1537,7 +1874,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         UpdatePageLabel();
         UpdatePreview();
         _boxViewModel.Status = $"{generated.Info.Nickname} deposited in the bank.";
-        _canvas.InvalidateSurface();
+        RepaintGrid();
     }
 
     /// <summary>Withdraw into ANY detected game: pick the destination, the transfer service
@@ -1557,12 +1894,12 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         var bytes = _bank.GetData(entry.Id);
         var nickname = entry.Info.Nickname;
         var format = entry.Info.Format;
+        var leaving = PortalSources([entry]);
 
         if (destination.Other is null)
         {
             // The connected save goes through the live session, first empty slot of any box.
-            var landing = _boxViewModel.Save?.Slots.FirstOrDefault(s => s.Species is null);
-            if (landing is null)
+            if (SlotPlanning.FreeSlotsFrom(_boxViewModel.LiveSlots, null).Cast<SlotRef?>().FirstOrDefault() is not { } landing)
             {
                 _boxViewModel.Status = "No empty slot in the connected game.";
                 return;
@@ -1570,7 +1907,9 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             var connectedPreview = transfer.PreviewIntoConnected(bytes, nickname, landing.Box, landing.Slot, format);
             if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, connectedPreview, nickname, "the connected game")) return;
             var ok = await _boxViewModel.RunMutationAsync(session =>
-                Services.TransferService.TryImport(session, landing.Box, landing.Slot, bytes, out var refusal, format)
+                !session.ReadEntity(landing.Box, landing.Slot).IsEmpty
+                    ? new GenerationOutcome(false, $"Box {landing.Box + 1}, slot {landing.Slot + 1} is no longer empty.")
+                    : Services.TransferService.TryImport(session, landing.Box, landing.Slot, bytes, out var refusal, format)
                     ? new GenerationOutcome(true, $"{nickname} joined the game (box {landing.Box + 1}).")
                     : new GenerationOutcome(false, refusal ?? Services.TransferService.Refusal(bytes, nickname, session.Snapshot, "this game", format)), landing.Slot,
                 action: keepOriginal ? SaveAction.Duplicate : SaveAction.Move);
@@ -1592,7 +1931,8 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             RefreshBoxEntries();
             UpdatePreview();
         }
-        _canvas.InvalidateSurface();
+        RepaintGrid();
+        PlayPortal(leaving);
     }
 
     private async Task ExportAsync(BankEntry entry)
@@ -1607,7 +1947,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         }
         catch (Exception error)
         {
-            _boxViewModel.Status = $"Export failed: {error.Message}";
+            _boxViewModel.Status = $"Export failed. {Domain.ErrorText.Plain(error)}";
         }
     }
 
@@ -1625,7 +1965,16 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         var unit = args.Info.Height / HeaderDesignHeight;
         using var font = new SKFont(BoxBrowserPage.PixelTypeface(), 34f * unit);
         StoragePaint.BoxHeader(canvas, new SKRect(0, 0, args.Info.Width, args.Info.Height), _boxTitle, font,
-            canPrev: _boxIndex > 0, canNext: _boxIndex < _bank.BoxCount - 1, unit);
+            canPrev: ScopeMembers() is { } scoped ? scoped.Count > 1 : _boxIndex > 0,
+            canNext: ScopeMembers() is { } scope ? scope.Count > 1 : _boxIndex < _bank.BoxCount - 1, unit);
+        if (IsLocked(_boxIndex))
+        {
+            // The lock mark sits at the banner's right end, inside the next-box arrow.
+            var banner = StoragePaint.BannerRect(new SKRect(0, 0, args.Info.Width, args.Info.Height), unit);
+            var size = 30f * unit;
+            BoxGridRenderer.DrawPadlock(canvas, new SKRect(banner.Right - size - 14f * unit, banner.MidY - size / 2,
+                banner.Right - 14f * unit, banner.MidY + size / 2));
+        }
     }
 
     private void TapBoxBar(double x)
@@ -1649,24 +1998,45 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             slots[index] = _boxEntries.TryGetValue(index, out var entry) ? Slot(entry, index) : new SlotSummary(_boxIndex, index, null, null, false, true);
         var carried = CarriedEntry();
         var origin = _boxEntries.Values.FirstOrDefault(e => e.Id == _carryId) is { } source ? source.Slot : (int?)null;
-        var scene = new BoxGridRenderer.StorageScene(slots, _selectedSlot, origin,
+        var scene = new BoxGridRenderer.StorageScene(slots, _onSections ? -1 : _selectedSlot, origin,
             carried is null ? null : Slot(carried, _selectedSlot), Marking: false,
             index => _marked.Contains((_boxIndex, index)), _ => null, _boxIndex);
+        PerfTrace.Since("nav", "bank.firstpaint");
+        PerfTrace.Since("bankbox", "bank.box.firstpaint");
+        // A wallpaper picture goes through the save boxes' painter (frame cropped, the
+        // player's Box background style); a flat colour tints the well.
+        var wallpaper = BankBoxArt.Art(_boxIndex, _frame.Request);
+        var tone = BankBoxArt.Tone(_boxIndex);
+        var panelDirty = _panelDirty;
+        _panelDirty = false;
         BoxGridRenderer.PaintScene(args.Surface.Canvas, args.Info, scene, _sprites, _frame.Request, _hand, (c, well, unit) =>
         {
-            // A wallpaper picture goes through the save boxes' painter (frame cropped, the
-            // player's Box background style); a flat colour tints the well.
-            if (BankBoxArt.Art(_boxIndex, _frame.Request) is { } art)
+            if (wallpaper is { } art)
             {
-                using var image = SKImage.FromBitmap(art.Art);
+                var image = Services.SpriteImages.Of(art.Art);
                 StoragePaint.Wallpaper(c, well, image, art.Average, BoxBackground.Style, unit);
                 return;
             }
             var inner = SKRect.Inflate(well, -3 * unit, -3 * unit);
-            using var tint = new SKPaint { Color = PksmPaint.Mix(BankBoxArt.Tone(_boxIndex), StoragePaint.Well, 0.7f), IsAntialias = true };
+            using var tint = new SKPaint { Color = PksmPaint.Mix(tone, StoragePaint.Well, 0.7f), IsAntialias = true };
             c.DrawRoundRect(inner, 25 * unit, 25 * unit, tint);
-        });
-        _panel.InvalidateSurface();
+        }, _wellLayer, wallpaper is { } shown ? (object)(shown.Art, shown.Average) : tone, _motion.Request);
+        // The side panel follows every repaint but the grid's own motion frames (the hop, the
+        // hand's glide): those change nothing it shows, and it is the costlier of the two.
+        if (panelDirty) _panel.InvalidateSurface();
+    }
+
+    /// <summary>The grid's next motion frame; unlike <see cref="_frame"/>, it leaves the side panel be.</summary>
+    private readonly FrameInvalidator _motion;
+
+    /// <summary>Set by every repaint request but the grid's motion frames: the panel repaints with the grid.</summary>
+    private volatile bool _panelDirty = true;
+
+    /// <summary>Repaints the grid, and the side panel with it.</summary>
+    private void RepaintGrid()
+    {
+        _panelDirty = true;
+        _canvas.InvalidateSurface();
     }
 
     /// <summary>A Bank entry as a storage slot (what the box painter draws).</summary>
@@ -1675,6 +2045,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
             HeldItem: _facts.HeldItem(entry), Traits: entry.Info.Traits ?? default);
 
     private readonly CarryHand _hand = new();
+    private readonly WellLayer _wellLayer = new();
 
     // The entry in hand, looked up once per carry: it travels across boxes, out of _boxEntries.
     private BankEntry? _carriedEntry;
@@ -1729,7 +2100,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 {
                     if (cancel.IsCancellationRequested || _panelFor != entry.Id) return;
                     _panelSummary = summary;
-                    _canvas.InvalidateSurface();
+                    RepaintGrid();
                 });
             }
             catch (OperationCanceledException)
@@ -1756,7 +2127,8 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         var bounds = new SKRect(0, 0, args.Info.Width, args.Info.Height);
         var unit = args.Info.Width / EditorPaint.DesignWidth;
         StoragePaint.WellPanel(canvas, bounds, unit);
-        const float text = 30, rowHeight = 60;
+        const float text = 30;
+        var rowHeight = 60f;
         var width = EditorPaint.DesignWidth;
         var height = args.Info.Height / unit;
         var face = BoxBrowserPage.PixelTypeface();
@@ -1830,7 +2202,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 var x = valueX;
                 if (_sprites.GetBall(summary.Ball) is { } ball)
                 {
-                    using var ballImage = SKImage.FromBitmap(ball);
+                    var ballImage = Services.SpriteImages.Of(ball);
                     canvas.DrawImage(ballImage, SKRect.Create(x, cy - 20, 40, 40), BoxGridRenderer.SpriteSampling);
                     x += 52;
                 }
@@ -1838,6 +2210,9 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
                 SummaryInk.Draw(canvas, SummaryInk.Fit(summary.BallName, text, width - x - 24), x, SummaryInk.Center(cy, text), text, EditorPaint.Value);
             }));
         }
+        // The facts down to the held item always show: under the section tabs the rows tighten a
+        // little rather than leave the item out.
+        if (rows.Count >= 5) rowHeight = Math.Clamp(MathF.Floor((bottom - top) / 5f), 44f, 60f);
         var y = top;
         for (var i = 0; i < rows.Count && y + rowHeight <= bottom; i++)
         {
@@ -1882,7 +2257,7 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         var scale = side / Math.Max(picture.Width, picture.Height);
         var w = picture.Width * scale;
         var h = picture.Height * scale;
-        using var image = SKImage.FromBitmap(picture);
+        var image = Services.SpriteImages.Of(picture);
         canvas.DrawImage(image, new SKRect(card.MidX - w / 2, card.MidY - h / 2, card.MidX + w / 2, card.MidY + h / 2),
             home is null ? BoxGridRenderer.SpriteSampling : new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
     }
@@ -1936,9 +2311,6 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         SummaryInk.Draw(canvas, $"Pokémon {version}", area.Right, y - SummaryInk.Leading(size), size, EditorPaint.Cyan, align: SKTextAlign.Right);
     }
 
-    private static SKColor ToSk(Color color) =>
-        new((byte)(color.Red * 255), (byte)(color.Green * 255), (byte)(color.Blue * 255));
-
     /// <summary>A new Pokédex entry every little while, like flipping through the dex.</summary>
     private void StartFactRotation()
     {
@@ -1964,8 +2336,11 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
 
         var slot = BoxGridRenderer.StorageSlotFromTouch(_canvas.CanvasSize, args.Location);
         if (slot < 0) return;
+        // A tap in the box takes the cursor back down from the section tabs; it selects, never acts.
+        var fromSections = _onSections;
+        LeaveSections();
 
-        var wasSelected = _selectedSlot == slot;
+        var wasSelected = _selectedSlot == slot && !fromSections;
         _selectedSlot = slot;
         UpdatePreview();
         UpdateStatus();
@@ -1973,6 +2348,6 @@ public sealed class BankPage : ContentPage, IPadPagingHandler
         if (_carryId is not null) { _ = ConfirmAsync(); return; }
         if (EntryAt(slot) is null) { _ = OpenEmptySlotMenuAsync(); return; }
         if (wasSelected) _ = ConfirmAsync(); // second tap grabs
-        _canvas.InvalidateSurface();
+        RepaintGrid();
     }
 }

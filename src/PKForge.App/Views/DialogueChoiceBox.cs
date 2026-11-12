@@ -1,7 +1,6 @@
 using Microsoft.Maui.Controls.Shapes;
 using PKForge.App.Services;
 using PKForge.App.Theme;
-using PKForge.Chrome;
 
 namespace PKForge.App.Views;
 
@@ -125,7 +124,9 @@ public sealed class DialogueChoiceBox : IPadHandler
         };
         dialogue.GestureRecognizers.Add(revealMessage);
 
-        _overlay = new Grid { Children = { dialogue, _answers } };
+        // An invisible layer under the box takes every other tap, so none reaches the page underneath.
+        var swallow = Kit.Scrim(() => { if (!_choicesVisible) Reveal(); }, Colors.Transparent);
+        _overlay = new Grid { Children = { swallow, dialogue, _answers } };
         host.Add(_overlay);
         Grid.SetRowSpan(_overlay, Math.Max(1, host.RowDefinitions.Count));
         Grid.SetColumnSpan(_overlay, Math.Max(1, host.ColumnDefinitions.Count));

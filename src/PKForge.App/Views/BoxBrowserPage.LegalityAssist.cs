@@ -28,12 +28,12 @@ public sealed partial class BoxBrowserPage
         var session = _sessionsFor();
         var stock = session is SaveEngineSession && session.SupportsLegalityAnalysis;
         return Menu(
-            stock ? Allowed(SaveAction.BatchEdit, new(BulkLegalize, IconPath: "fix", Detail: "Rewrite the illegal marked Pokémon to their closest legal version.")) : null,
+            stock ? Allowed(SaveAction.BatchEdit, new(BulkLegalize, IconPath: "fix", Detail: "Flagged ones get their closest legal version.")) : null,
             stock ? Allowed(SaveAction.BatchEdit, new(BulkShiny, IconPath: "shiny", Detail: "Only when a legal shiny version exists, unless HaX mode is on.")) : null,
             stock ? Allowed(SaveAction.BatchEdit, new(BulkUnshiny, IconPath: "shiny", Detail: "Only when a legal version exists, unless HaX mode is on.")) : null,
             stock && session!.Generation >= 6 ? Allowed(SaveAction.BatchEdit, new(BulkHandler, IconPath: "trainer", Detail: "You become their current trainer, as after a real trade.")) : null,
-            session is SaveEngineSession ? Allowed(SaveAction.BatchEdit, new(BulkHeal, IconPath: "heal", Detail: "Full HP, status and PP in the party; boxed Pokémon get PP back.")) : null,
-            Allowed(SaveAction.Release, new(BulkClones, IconPath: "release", Detail: "Keep one of each identical Pokémon and release the copies.")));
+            session is SaveEngineSession ? Allowed(SaveAction.BatchEdit, new(BulkHeal, IconPath: "heal", Detail: "Full HP, status and PP; boxed ones get PP back.")) : null,
+            Allowed(SaveAction.Release, new(BulkClones, IconPath: "release", Detail: "Keep one of each; release the copies.")));
     }
 
     /// <summary>Runs a bulk entry; false when <paramref name="choice"/> is not one.</summary>
@@ -86,7 +86,7 @@ public sealed partial class BoxBrowserPage
         var marked = _viewModel.MarkedSlots.ToList();
         if (marked.Count == 0) return;
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, $"{verb}?",
-            $"{explanation}\n{marked.Count} marked. The current state stays available as a restore point.", verb);
+            $"{explanation}\n{marked.Count} marked. Restore points can undo it.", verb);
         if (!confirmed) return;
 
         var overlay = overlayTitle is null ? null : LoadingOverlay.Show(_hostGrid, overlayTitle, $"{marked.Count} Pokémon, one backed-up write.");
@@ -124,7 +124,7 @@ public sealed partial class BoxBrowserPage
         }
         var lockedNote = locked.Count > 0 ? $" {locked.Count} locked clone(s) stay." : "";
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Delete clones?",
-            $"{targets.Count} duplicate(s) share an identity (EC + PID, or PID + OT + TID) with another marked Pokémon. One of each is kept (a party member first).{lockedNote} The current state stays available as a restore point.",
+            $"{targets.Count} duplicate(s) share an identity (EC + PID, or PID + OT + TID) with another marked Pokémon. One of each is kept (a party member first).{lockedNote} Restore points can undo it.",
             "Delete clones");
         if (!confirmed) return;
         await _viewModel.BulkReleaseAsync(targets);
@@ -163,7 +163,7 @@ public sealed partial class BoxBrowserPage
         catch (OperationCanceledException) { return; }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException)
         {
-            _viewModel.Status = error.Message;
+            _viewModel.Status = Domain.ErrorText.Plain(error);
             return;
         }
         finally { overlay.Close(); }
@@ -208,7 +208,7 @@ public sealed partial class BoxBrowserPage
         var fits = Math.Min(picked.Count, targets.Count);
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Import sets?",
             $"{fits} Pokémon go into empty slots" + (picked.Count > targets.Count ? $"; {picked.Count - targets.Count} do not fit and are skipped" : "") +
-            ". Nothing is overwritten. The current state stays available as a restore point.", "Import");
+            ". Nothing is overwritten. Restore points can undo it.", "Import");
         if (!confirmed) return;
 
         var place = LoadingOverlay.Show(_hostGrid, "Placing the sets…", "One backed-up write.");

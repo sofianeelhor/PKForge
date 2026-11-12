@@ -120,7 +120,7 @@ public sealed class PokeparkDaycareService(PokeparkService park, IBankService ba
             return new GenerationOutcome(true, $"{mon.Name} grew to level {growth.LevelAfter} at the Poképark daycare.");
         }, source.Slot, refreshSlot: false, changeDescription: $"Poképark daycare: {mon.Name} grew {grew}", action: SaveAction.EditMon);
         return written
-            ? $"{hello} It grew {grew}, and its save is updated. A restore point was made first."
+            ? $"{hello} It grew {grew}, and its save is updated."
             : $"{hello} It grew {grew} here, but the save could not be written: {boxes.Status}";
     }
 

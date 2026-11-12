@@ -2,7 +2,6 @@ using Microsoft.Maui.Controls.Shapes;
 using PKForge.App.Theme;
 using PKForge.Chrome;
 using SkiaSharp;
-using SkiaSharp.Views.Maui;
 using SkiaSharp.Views.Maui.Controls;
 
 namespace PKForge.App.Views;
@@ -32,7 +31,7 @@ public sealed class DsFolderButton : Grid
         ColumnDefinitions = [new(new GridLength(30)), new(new GridLength(30)), new(GridLength.Star)];
 
         _bg = new SKCanvasView { InputTransparent = true };
-        _bg.PaintSurface += (_, args) => DrawRow(args.Surface.Canvas, args.Info, _selected);
+        _bg.PaintSurface += PaintGuard.Wrap("DsKit _bg", (_, args) => DrawRow(args.Surface.Canvas, args.Info, _selected));
 
         // The icon column: a bundled PKSM pixel icon when the option carries a semantic
         // name, else the accent glyph. White on blue buttons, indigo when selected.
@@ -138,7 +137,15 @@ public sealed class DsFolderButton : Grid
     {
         var generation = ++_marqueeGeneration;
         _label.TranslationX = 0;
-        await Task.Delay(700);
+        // A label that scrolls is a loop: it stays cut short unless decorative motion is on.
+        if (!Services.MotionSetting.Decorative) return;
+        try { await Task.Delay(700); }
+        catch (Exception error)
+        {
+            // async void: as in Glide, a window closing meanwhile must not take the app down.
+            Services.AppLog.Warn("ui", $"A scrolling label stopped: {error.Message}");
+            return;
+        }
         if (!_selected || generation != _marqueeGeneration || _labelViewport.Width <= 0) return;
         Glide(_label, generation);
         if (_detail is not null) Glide(_detail, generation);
@@ -146,26 +153,36 @@ public sealed class DsFolderButton : Grid
 
     private async void Glide(Label line, int generation)
     {
-        // A line narrower than the button fits: leave it alone (measuring it outside the
-        // layout pass can shift it out of place).
-        if (line.Width < _labelViewport.Width - 4) return;
-        var measured = line.Measure(double.PositiveInfinity, HeightRequest).Width;
-        var overflow = measured - _labelViewport.Width;
-        if (overflow <= 4) return;
-        // At rest a detail line ends in "…"; while it scrolls it shows in full.
-        line.LineBreakMode = LineBreakMode.NoWrap;
-        line.WidthRequest = measured;
-        _gliding.Add(line);
-
-        while (_selected && generation == _marqueeGeneration)
+        try
         {
-            var duration = (uint)Math.Clamp(overflow * 45, 1800, 6500);
-            await line.TranslateToAsync(-overflow, 0, duration, Easing.Linear);
-            if (!_selected || generation != _marqueeGeneration) return;
-            await Task.Delay(900);
-            if (!_selected || generation != _marqueeGeneration) return;
-            line.TranslationX = 0;
-            await Task.Delay(700);
+            // A line narrower than the button fits: leave it alone (measuring it outside the
+            // layout pass can shift it out of place).
+            if (line.Width < _labelViewport.Width - 4) return;
+            var measured = line.Measure(double.PositiveInfinity, HeightRequest).Width;
+            var overflow = measured - _labelViewport.Width;
+            if (overflow <= 4) return;
+            // At rest a detail line ends in "…"; while it scrolls it shows in full.
+            line.LineBreakMode = LineBreakMode.NoWrap;
+            line.WidthRequest = measured;
+            _gliding.Add(line);
+
+            // The loop ends with the button: deselected, taken off screen (a menu closed) or gone
+            // with its window (the app was left), so it never animates a view nothing shows.
+            while (_selected && generation == _marqueeGeneration && line.Handler is not null)
+            {
+                var duration = (uint)Math.Clamp(overflow * 45, 1800, 6500);
+                await line.TranslateToAsync(-overflow, 0, duration, Easing.Linear);
+                if (!_selected || generation != _marqueeGeneration) return;
+                await Task.Delay(900);
+                if (!_selected || generation != _marqueeGeneration) return;
+                line.TranslationX = 0;
+                await Task.Delay(700);
+            }
+        }
+        catch (Exception error) when (error is ObjectDisposedException or InvalidOperationException)
+        {
+            // The window closed between two steps (its services are disposed): nothing is left to
+            // animate. Escaping an async void would take the whole app down instead.
         }
     }
 
@@ -325,13 +342,13 @@ public sealed class DsCard : Grid
         HeightRequest = height;
 
         _bg = new SKCanvasView { InputTransparent = true };
-        _bg.PaintSurface += (_, a) => DrawTile(a.Surface.Canvas, a.Info, _selected);
+        _bg.PaintSurface += PaintGuard.Wrap("DsKit _bg", (_, a) => DrawTile(a.Surface.Canvas, a.Info, _selected));
 
         _iconCanvas = new SKCanvasView { InputTransparent = true, WidthRequest = 36, HeightRequest = 36 };
-        _iconCanvas.PaintSurface += (_, a) =>
+        _iconCanvas.PaintSurface += PaintGuard.Wrap("DsKit _iconCanvas", (_, a) =>
         {
             if (_drawnIcon is { } di) DsIcons.Draw(a.Surface.Canvas, a.Info, di);
-        };
+        });
         View iconView = _iconCanvas;
         if (asset is not null)
             iconView = PksmIcons.Icon(asset, 36, PksmIcons.White);
@@ -365,8 +382,10 @@ public sealed class DsCard : Grid
             if (_selected == value) return;
             _selected = value;
             _bg.InvalidateSurface();
-            // The Nintendo focus pop: a short spring scale, never a slow fade.
-            _ = _selected
+            // The Nintendo focus pop: a short spring scale, never a slow fade. Without
+            // decorative motion the selected tile is simply the larger one.
+            if (!Services.MotionSetting.Decorative) Scale = _selected ? 1.05 : 1.0;
+            else _ = _selected
                 ? this.ScaleToAsync(1.05, 130, Easing.SpringOut)
                 : this.ScaleToAsync(1.0, 110, Easing.CubicOut);
         }
@@ -450,11 +469,11 @@ public static class DsChrome
     public static SKCanvasView GridBackground()
     {
         var view = new SKCanvasView { InputTransparent = true };
-        view.PaintSurface += (_, a) =>
+        view.PaintSurface += PaintGuard.Wrap("DsKit view", (_, a) =>
         {
             var c = a.Surface.Canvas;
             PksmPaint.LogoGrid(c, new SKRect(0, 0, a.Info.Width, a.Info.Height));
-        };
+        });
         return view;
     }
 }

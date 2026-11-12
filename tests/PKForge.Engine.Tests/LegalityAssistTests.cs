@@ -165,6 +165,69 @@ public sealed class LegalityAssistTests(ITestOutputHelper output)
         }
     }
 
+    /// <summary>A legal non-hatched corpus mon and an egg move of its line it cannot know as it is
+    /// (legality says so: the move stays invalid and the encounter stays non-egg).</summary>
+    private static (string Name, ISaveEngineSession Session, PKM Pk, ushort EggMove)? WildWithEggMove()
+    {
+        foreach (var (name, session, pk) in LegalCorpus())
+        {
+            if (pk.Format < 6) { session.Dispose(); continue; }
+            var la = new LegalityAnalysis(pk);
+            var eggOnly = MonInfoService.EggOnlyMoves(pk, la, pk.Version);
+            var learnable = LearnPossible.Get(pk, la.EncounterMatch, la.Info.EvoChainsAllGens, MoveSourceType.All);
+            // Some samples' met data fits an egg too: setting the move rematches them, and it is legal.
+            bool Invalid(ushort m)
+            {
+                var trial = pk.Clone();
+                trial.Move4 = m;
+                trial.RefreshChecksum();
+                var after = new LegalityAnalysis(trial);
+                return !after.Info.Moves[3].Valid && !after.EncounterMatch.IsEgg;
+            }
+            var move = eggOnly.FirstOrDefault(m => m < learnable.Length && !learnable[m] && Invalid(m));
+            if (move != 0) return (name, session, pk, move);
+            session.Dispose();
+        }
+        return null;
+    }
+
+    [Fact]
+    public void EggMovesOfAWildMonAreLegalIfHatchedNotPlainIllegal()
+    {
+        var found = WildWithEggMove();
+        Assert.True(found is not null, "the corpus has a wild Gen 6+ mon whose line has egg moves");
+        var (name, session, pk, eggMove) = found!.Value;
+        using (session)
+        {
+            output.WriteLine($"{name}: {(Species)pk.Species} with egg move {(Move)eggMove}");
+            Assert.False(new LegalityAnalysis(pk).EncounterMatch.IsEgg);
+
+            var withEgg = pk.Clone();
+            withEgg.Move4 = eggMove;
+            withEgg.RefreshChecksum();
+            Put(session, withEgg);
+            var verdict = Assist.GetMoveLegality(session, 0, 0).Move(3)!;
+            Assert.False(verdict.Valid);
+            Assert.True(verdict.LegalIfHatched, verdict.Reason);
+            Assert.StartsWith(MoveVerdict.IfHatchedReason, verdict.Reason);
+            Assert.Contains(Assist.GetReport(session, 0, 0).Groups.SelectMany(g => g.Lines),
+                line => line.Text.Contains(MoveVerdict.IfHatchedReason, StringComparison.Ordinal));
+
+            // The move picker says the same: "if hatched", neither legal nor plain illegal.
+            var learn = MonInfoService.LearnSources(withEgg, null, null, ((SaveEngineSession)session).SaveFile);
+            Assert.Equal(LearnKind.EggIfHatched, learn[eggMove].Kind);
+            Assert.False(learn[eggMove].IsLegal);
+            Assert.True(learn[eggMove].IsLegalIfHatched);
+
+            // A move no egg could carry stays plain illegal.
+            var sketch = pk.Clone();
+            sketch.Move4 = (ushort)Move.Sketch;
+            sketch.RefreshChecksum();
+            Put(session, sketch);
+            Assert.False(Assist.GetMoveLegality(session, 0, 0).Move(3)!.LegalIfHatched);
+        }
+    }
+
     [Fact]
     public void ReportGroupsFailuresAndOffersTheMatchingFix()
     {

@@ -128,7 +128,47 @@ public sealed class BankTransfersTests : IDisposable
         Assert.False(outcome.Success);
         Assert.Contains(items[1].Nickname, outcome.Message);
         Assert.Equal(entries, bank.GetAll());
-        Assert.Equal(1, BankTransfers.ImportAll(target, items, rooms, out _)); // index of the refused one
+        using var fresh = SaveWith();
+        Assert.Equal(1, BankTransfers.ImportAll(fresh, items, rooms, out _)); // index of the refused one
+    }
+
+    [Fact]
+    public void ASecondBatchIsRefusedTheRoomsTheFirstOneTook()
+    {
+        // Two sends in a row to the connected game were handed the same "empty" slots, read
+        // from the picture taken when the save was opened: the second replaced the first,
+        // which had already left the Bank for good.
+        using var source = SaveWith(25, 133, 1);
+        var bank = new FileBankService(_root);
+        var entries = bank.AddMany(Deposits(source, 3));
+        var items = entries.Select(e => new TransferItem(bank.GetData(e.Id), e.Info.Format, e.Info.Nickname)).ToArray();
+        using var target = SaveWith();
+        var stale = SlotPlanning.FreeSlotsFrom(target.Snapshot.Slots, null).Take(2).ToArray();
+
+        Assert.Equal(-1, BankTransfers.ImportAll(target, items[..2], stale, out _));
+        Assert.Equal(0, BankTransfers.ImportAll(target, items[2..], stale, out var refusal));
+
+        Assert.Contains("no longer empty", refusal);
+        Assert.Equal(25, target.ReadEntity(0, 0).Species);
+        Assert.Equal(133, target.ReadEntity(0, 1).Species);
+    }
+
+    [Fact]
+    public void RoomsReadFromTheLiveSessionFollowEachArrival()
+    {
+        using var source = SaveWith(25, 133, 1);
+        var bank = new FileBankService(_root);
+        var entries = bank.AddMany(Deposits(source, 3));
+        var items = entries.Select(e => new TransferItem(bank.GetData(e.Id), e.Info.Format, e.Info.Nickname)).ToArray();
+        using var target = SaveWith();
+
+        var first = SlotPlanning.FreeSlotsFrom(target.Snapshot.Slots, null).Take(2).ToArray();
+        Assert.Equal(-1, BankTransfers.ImportAll(target, items[..2], first, out _));
+        var second = SlotPlanning.FreeSlotsFrom(target.Snapshot.Slots, null).Take(1).ToArray();
+        Assert.Equal(-1, BankTransfers.ImportAll(target, items[2..], second, out _));
+
+        Assert.Equal(new SlotRef(0, 2), second[0]);
+        Assert.Equal([25, 133, 1], Enumerable.Range(0, 3).Select(slot => target.ReadEntity(0, slot).Species));
     }
 
     [Fact]

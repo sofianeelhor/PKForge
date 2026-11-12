@@ -107,7 +107,7 @@ public sealed class BankSearchPage : IPadPagingHandler
         _chips = new HorizontalStackLayout { Spacing = 5 };
 
         _canvas = new SKCanvasView { EnableTouchEvents = true, VerticalOptions = LayoutOptions.Fill };
-        _canvas.PaintSurface += Paint;
+        _canvas.PaintSurface += PaintGuard.Wrap("BankSearchPage.Paint", Paint);
         _canvas.Touch += Touch;
 
         View hints = Kit.WindowHints(
@@ -603,7 +603,7 @@ public sealed class BankSearchPage : IPadPagingHandler
                 var w = bitmap.Width * scale;
                 var h = bitmap.Height * scale;
                 var dest = new SKRect(rect.MidX - w / 2, rect.MidY - h / 2, rect.MidX + w / 2, rect.MidY + h / 2);
-                using var image = SKImage.FromBitmap(bitmap);
+                var image = Services.SpriteImages.Of(bitmap);
                 canvas.DrawImage(image, dest, BoxGridRenderer.SpriteSampling);
             }
             else

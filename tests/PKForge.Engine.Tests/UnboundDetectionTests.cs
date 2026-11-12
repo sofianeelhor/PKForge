@@ -52,7 +52,7 @@ public sealed class UnboundDetectionTests
     [Fact]
     public void RealUnboundSaveIsLabeledAndOpensInTheUnboundSession()
     {
-        var path = LocalArtifact("unbound-v2111.srm");
+        var path = LocalArtifact("thor/retroarch/mGBA/Pokémon Unbound (v2.1.1.1).srm");
         if (path is null) return; // ground truth lives gitignored on the dev machine
 
         var bytes = File.ReadAllBytes(path);

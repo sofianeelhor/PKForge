@@ -117,7 +117,7 @@ public sealed class LivingDexAutopilotPage : IPadHandler
         }
         catch (Exception error)
         {
-            viewModel.Status = $"Living Dex Autopilot closed: {error.Message}";
+            viewModel.Status = $"Living Dex Autopilot closed. {Domain.ErrorText.Plain(error)}";
         }
     }
 
@@ -143,7 +143,7 @@ public sealed class LivingDexAutopilotPage : IPadHandler
         _detail = new Label { TextColor = UiTokens.Ink0, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextSmall, LineBreakMode = LineBreakMode.WordWrap, MaxLines = 3, MinimumHeightRequest = 34 };
 
         _list = new SKCanvasView { EnableTouchEvents = true, VerticalOptions = LayoutOptions.Fill };
-        _list.PaintSurface += PaintList;
+        _list.PaintSurface += PaintGuard.Wrap("LivingDexAutopilotPage.PaintList", PaintList);
         _list.Touch += TouchList;
         _listFrame = new Border
         {
@@ -178,7 +178,7 @@ public sealed class LivingDexAutopilotPage : IPadHandler
 
         var window = Kit.DevicePanel(rows, padding: 10);
         window.Margin = new Thickness(24, 12);
-        var scrim = new BoxView { Color = UiTokens.Scrim };
+        var scrim = Kit.Scrim(); // swallows taps so none reach the page underneath
         _overlay = new Grid { Children = { scrim, window } };
         _host.Add(_overlay);
         Grid.SetRowSpan(_overlay, Math.Max(1, _host.RowDefinitions.Count));
@@ -231,10 +231,10 @@ public sealed class LivingDexAutopilotPage : IPadHandler
             Children =
             {
                 Head("What it never does"),
-                Line("copy", "Never copies: every Pokémon moves, none is duplicated.", PksmIcons.White),
-                Line("padlock", "Never takes a game's only one of a species, or your party, unless you allow it.", PksmIcons.White),
-                Line("hardcore", "Never touches Hardcore, ROM hack or read-only saves.", PksmIcons.White),
-                Line("history", "Makes a restore point per game, and writes nothing until you press Apply.", PksmIcons.White),
+                Line("copy", "Copy: every Pokémon moves, none is duplicated.", PksmIcons.White),
+                Line("padlock", "Take a game's only one of a species, or your party, unless you allow it.", PksmIcons.White),
+                Line("hardcore", "Touch Hardcore, ROM hack or read-only saves.", PksmIcons.White),
+                Line("history", "Write before you press Apply. Each game gets a restore point first.", PksmIcons.White),
             },
         };
         var columns = new Grid { ColumnDefinitions = [new(GridLength.Star), new(GridLength.Star)], ColumnSpacing = 18, Children = { does, never } };
@@ -326,7 +326,7 @@ public sealed class LivingDexAutopilotPage : IPadHandler
         catch (Exception error)
         {
             loader.Close();
-            await PadMenu.ShowAsync(_host, "Living Dex Autopilot", $"The shelf could not be read: {error.Message}", "OK");
+            await PadMenu.ShowAsync(_host, "Living Dex Autopilot", $"The shelf could not be read. {Domain.ErrorText.Plain(error)}", "OK");
             Close();
             return;
         }
@@ -415,7 +415,7 @@ public sealed class LivingDexAutopilotPage : IPadHandler
         }
         catch (Exception error)
         {
-            _stageLine = error.Message;
+            _stageLine = Domain.ErrorText.Plain(error);
             RebuildRows();
             return;
         }
@@ -471,7 +471,7 @@ public sealed class LivingDexAutopilotPage : IPadHandler
         catch (Exception error)
         {
             if (!ReferenceEquals(plan, _plan)) return;
-            _stageLine = $"The check stopped: {error.Message}";
+            _stageLine = $"The check stopped. {Domain.ErrorText.Plain(error)}";
         }
         _dryRunDone = true;
         RebuildRows();
@@ -1073,7 +1073,7 @@ public sealed class LivingDexAutopilotPage : IPadHandler
         var scale = Math.Min(box.Width / sprite.Width, box.Height / sprite.Height);
         var w = sprite.Width * scale;
         var h = sprite.Height * scale;
-        using var image = SKImage.FromBitmap(sprite);
+        var image = Services.SpriteImages.Of(sprite);
         var dest = new SKRect(box.MidX - w / 2, box.MidY - h / 2, box.MidX + w / 2, box.MidY + h / 2);
         if (step.Kind == LivingDexStepKind.Guide)
         {
@@ -1248,7 +1248,7 @@ public sealed class LivingDexAutopilotPage : IPadHandler
         }
         catch (Exception error)
         {
-            result = new LivingDexRunResult(false, false, $"Stopped: {error.Message}", [], new Dictionary<string, string>(), plan.CoveredBefore, plan.CoveredBefore, error.Message);
+            result = new LivingDexRunResult(false, false, $"Stopped. {Domain.ErrorText.Plain(error)}", [], new Dictionary<string, string>(), plan.CoveredBefore, plan.CoveredBefore, error.Message);
         }
         _applying = false;
         _applyCts = null;
@@ -1289,7 +1289,7 @@ public sealed class LivingDexAutopilotPage : IPadHandler
         {
             sessions.Close();
             _viewModel.Disconnect();
-            _viewModel.Status = $"Open the game again to see the changes ({error.Message}).";
+            _viewModel.Status = $"Open the game again to see the changes. {Domain.ErrorText.Plain(error)}";
         }
     }
 

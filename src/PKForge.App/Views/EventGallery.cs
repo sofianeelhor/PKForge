@@ -447,7 +447,7 @@ public static class EventGallery
             var previewW = Math.Clamp(maxW * 0.38, 200, 250);
 
             _header = new SKCanvasView { HeightRequest = 32, InputTransparent = true };
-            _header.PaintSurface += PaintHeader;
+            _header.PaintSurface += PaintGuard.Wrap("EventGallery.PaintHeader", PaintHeader);
 
             _search = Kit.TextField();
             _search.Placeholder = "Search title, Pokémon, OT, move…";
@@ -457,18 +457,18 @@ public static class EventGallery
             _search.Completed += (_, _) => _search.Unfocus();
 
             _chips = new SKCanvasView { HeightRequest = 28, EnableTouchEvents = true };
-            _chips.PaintSurface += PaintChips;
+            _chips.PaintSurface += PaintGuard.Wrap("EventGallery.PaintChips", PaintChips);
             _chips.Touch += OnChipsTouch;
 
             _list = new SKCanvasView { EnableTouchEvents = true };
-            _list.PaintSurface += PaintList;
+            _list.PaintSurface += PaintGuard.Wrap("EventGallery.PaintList", PaintList);
             _list.Touch += OnListTouch;
             // Drag, flick with momentum, and a thumb you can grab: the album is long.
             _scroller = new TouchScroller(_list.Dispatcher, () => _scroll, offset => { _scroll = offset; _list.InvalidateSurface(); },
                 () => Math.Max(0, _contentH - _viewH), () => _viewH, () => _track, slop: 8, grabWidth: 28);
 
             _preview = new SKCanvasView { EnableTouchEvents = true };
-            _preview.PaintSurface += PaintPreview;
+            _preview.PaintSurface += PaintGuard.Wrap("EventGallery.PaintPreview", PaintPreview);
             _preview.Touch += (_, args) =>
             {
                 args.Handled = true;
@@ -526,13 +526,16 @@ public static class EventGallery
                 VerticalOptions = LayoutOptions.Center,
             };
 
-            var scrim = new BoxView { Color = UiTokens.Scrim };
+            var scrim = Kit.Scrim(); // swallows taps so none reach the page underneath
             _overlay = new Grid { Children = { scrim, window } };
             host.Add(_overlay);
             Grid.SetRowSpan(_overlay, Math.Max(1, host.RowDefinitions.Count));
             Grid.SetColumnSpan(_overlay, Math.Max(1, host.ColumnDefinitions.Count));
 
-            _query = WonderCardAlbum.DefaultQuery(entries);
+            _defaults = WonderCardAlbum.DefaultQuery(entries);
+            _query = WonderCardQueryMemory.Restore(StoredQuery(), _defaults);
+            // "Fits save" has no chip without a save: never restore it into a gallery that cannot undo it.
+            if (_ctx.Profile is null) _query = _query with { CompatibleOnly = false };
             Requery(keep: null);
             _router?.Push(this);
             Kit.AnimateIn(window);
@@ -694,9 +697,21 @@ public static class EventGallery
                 if (SKRect.Inflate(rect, 2, 4).Contains(p)) { tap(); return; }
         }
 
+        private const string QueryPreferenceKey = "events.galleryFilters";
+        private WonderCardQuery _defaults = new();
+
+        private static string? StoredQuery()
+        {
+            try { return Preferences.Default.Get<string?>(QueryPreferenceKey, null); }
+            catch (Exception) { return null; }
+        }
+
         private void Set(WonderCardQuery query)
         {
             _query = query;
+            // Remembered for the next gallery, whichever save: WonderCardQueryMemory says what is kept.
+            try { Preferences.Default.Set(QueryPreferenceKey, WonderCardQueryMemory.Save(query, _defaults)); }
+            catch (Exception) { /* not persisted: the filter still applies now */ }
             Requery(keep: Current);
         }
 
@@ -1137,6 +1152,12 @@ public static class EventGallery
                 if (receive is not null) Close(receive);
                 else Repaint();
             }
+            catch (Exception error)
+            {
+                // async void: a card that cannot be shown is logged, the gallery stays.
+                AppLog.Error("events", $"The card {entry.Title} could not be shown", error);
+                Repaint();
+            }
             finally
             {
                 _busy = false;
@@ -1158,7 +1179,6 @@ public static class EventGallery
     {
         private readonly TaskCompletionSource<WonderCardEntry?> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly AlbumContext _ctx;
-        private readonly WonderCardEntry _entry;
         private readonly IReadOnlyList<WonderCardEntry> _variants;
         private readonly Grid _overlay;
         private readonly GamepadRouter? _router;
@@ -1180,7 +1200,6 @@ public static class EventGallery
         private WonderCardSheet(AlbumContext ctx, WonderCardEntry entry)
         {
             _ctx = ctx;
-            _entry = entry;
             _variants = entry.Variants.Count > 0 ? entry.Variants : [entry];
             _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
             var host = ctx.Host;
@@ -1188,9 +1207,9 @@ public static class EventGallery
             var maxH = host.Height > 0 ? host.Height - 16 : 344;
 
             _card = new SKCanvasView { InputTransparent = true };
-            _card.PaintSurface += PaintCard;
+            _card.PaintSurface += PaintGuard.Wrap("EventGallery.PaintCard", PaintCard);
             _facts = new SKCanvasView { InputTransparent = true };
-            _facts.PaintSurface += PaintFacts;
+            _facts.PaintSurface += PaintGuard.Wrap("EventGallery.PaintFacts", PaintFacts);
 
             _receive = Kit.Capsule("Receive", UiTokens.Green, primary: true, icon: "events");
             _receive.Clicked += (_, _) => Receive();
@@ -1576,7 +1595,7 @@ public static class EventGallery
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
             {
-                _note.Text = $"Export failed: {error.Message}";
+                _note.Text = $"Export failed. {Domain.ErrorText.Plain(error)}";
             }
             finally
             {
@@ -1603,7 +1622,7 @@ public static class EventGallery
         var canvasView = new SKCanvasView { InputTransparent = true };
         SKBitmap? prerendered = null;
         var prerenderedSize = new SKSizeI(-1, -1);
-        canvasView.PaintSurface += (_, args) =>
+        canvasView.PaintSurface += PaintGuard.Wrap("EventGallery canvasView", (_, args) =>
         {
             var info = args.Info;
             if (info.Width <= 0 || info.Height <= 0) return;
@@ -1614,7 +1633,7 @@ public static class EventGallery
                 prerenderedSize = info.Size;
             }
             args.Surface.Canvas.DrawBitmap(prerendered, 0, 0);
-        };
+        });
         canvasView.Unloaded += (_, _) =>
         {
             prerendered?.Dispose();

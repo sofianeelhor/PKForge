@@ -13,7 +13,7 @@ public static class PokeparkPortrait
         var scale = Math.Max(1, Math.Min(info.Width / portrait.Width, info.Height / portrait.Height));
         float w = portrait.Width * scale, h = portrait.Height * scale;
         var target = SKRect.Create(MathF.Round((info.Width - w) / 2), MathF.Round((info.Height - h) / 2), w, h);
-        using var image = SKImage.FromBitmap(portrait);
+        var image = Services.SpriteImages.Of(portrait);
         canvas.DrawImage(image, target, new SKSamplingOptions(SKFilterMode.Nearest));
         return true;
     }

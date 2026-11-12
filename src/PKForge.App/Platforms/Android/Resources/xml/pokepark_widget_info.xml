@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 2x2, 4x2 (default) and 4x4 cells; the picture is repainted for each size.
+     updatePeriodMillis is the 30-minute floor, and it never wakes a sleeping device. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="240dp"
-    android:minHeight="135dp"
-    android:minResizeWidth="180dp"
-    android:minResizeHeight="100dp"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="110dp"
     android:targetCellWidth="4"
     android:targetCellHeight="2"
-    android:updatePeriodMillis="0"
-    android:initialLayout="@layout/pokepark_widget"
-    android:previewLayout="@layout/pokepark_widget"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/pokepark_widget_initial"
+    android:previewLayout="@layout/pokepark_widget_preview"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/pokepark_widget_description" />

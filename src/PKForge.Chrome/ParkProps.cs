@@ -46,23 +46,6 @@ public static class ParkProps
         canvas.DrawRect(x, top + 2, 1, 2, paint);
     }
 
-    /// <summary>A Pokémon egg, cream with green spots, rocking by <paramref name="tilt"/> pixels.
-    /// Stand-in until the artist's egg sprite.</summary>
-    public static void DrawEgg(SKCanvas canvas, SKPaint paint, float x, float bottom, int tilt)
-    {
-        x = MathF.Round(x) + tilt; bottom = MathF.Round(bottom);
-        paint.Color = Outline;
-        canvas.DrawRect(x - 2, bottom - 9, 5, 9, paint);
-        canvas.DrawRect(x - 3, bottom - 7, 7, 6, paint);
-        paint.Color = new SKColor(0xf6, 0xf0, 0xd8);
-        canvas.DrawRect(x - 1, bottom - 8, 3, 7, paint);
-        canvas.DrawRect(x - 2, bottom - 6, 5, 4, paint);
-        paint.Color = new SKColor(0x7c, 0xc0, 0x6a);
-        canvas.DrawRect(x - 1, bottom - 6, 1, 1, paint);
-        canvas.DrawRect(x + 1, bottom - 4, 1, 2, paint);
-        canvas.DrawRect(x - 2, bottom - 3, 1, 1, paint);
-    }
-
     /// <param name="facing">PMD order (0 south … 6 west): the prop goes in front, or beside when facing away.</param>
     /// <param name="age">ms since the prop appeared.</param>
     /// <summary>Berry colors by flavor (Cheri, Aspear, Pecha, Chesto, Rawst), then the Oran Berry.</summary>
@@ -131,8 +114,15 @@ public static class ParkProps
                 return;
             }
             case ParkProp.Egg:
-                DrawEgg(canvas, paint, x, y - 3, MathF.Sin(age / 300f) > .85f ? 1 : 0);
+            {
+                // The artist's egg, one art pixel each, rocking now and then.
+                var sway = MathF.Sin(age / 300f);
+                var frame = sway > .85f ? "wobble-right" : sway < -.85f ? "wobble-left" : EggSprite.Still;
+                paint.Color = SKColors.White; // the scene's light stays in the paint's filter
+                EggSprite.Draw(canvas, SKRect.Create(x - EggSprite.Width / 2, y - 3 - EggSprite.Height, EggSprite.Width, EggSprite.Height),
+                    frame, maxScale: 1, paint);
                 return;
+            }
             case ParkProp.Notes:
             {
                 // Notes drift up from the Pokémon, one after another.

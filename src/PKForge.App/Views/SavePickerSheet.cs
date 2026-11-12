@@ -11,30 +11,15 @@ public static class SavePickerSheet
     public static async Task<DetectedSave?> PickAsync(
         Grid host, IReadOnlyList<DetectedSave> saves, string title, string? message, string? excludeDocumentId = null)
     {
-        var candidates = saves.Where(s => s.DocumentId != excludeDocumentId).ToArray();
+        // Live saves first; a backup copy says so in its name and shows its folder and date.
+        var candidates = SaveTargets.LiveFirst(saves.Where(s => s.DocumentId != excludeDocumentId)).ToArray();
         if (candidates.Length == 0) return null;
 
         // Each row is the player's own name for the save, in its cartridge color. Twins
         // (same name) are told apart by trainer, then file and date, then a number.
-        var labels = candidates.Select(s => s.GameLabel).ToArray();
-        for (var i = 0; i < labels.Length; i++)
-        {
-            if (candidates.Count(x => x.GameLabel == candidates[i].GameLabel) <= 1) continue;
-            var save = candidates[i];
-            if (!string.IsNullOrEmpty(save.TrainerName)) labels[i] += $" · {save.TrainerName}";
-            labels[i] += $" · {save.FileName}";
-            if (save.LastModified is { } modified) labels[i] += $" · {modified:yyyy-MM-dd}";
-        }
-        for (var i = 0; i < labels.Length; i++)
-        {
-            // Number identical labels against the pristine list; suffixing in place
-            // would shift the comparisons as we go.
-            if (labels.Count(label => label == labels[i]) <= 1) continue;
-            var ordinal = Enumerable.Range(0, i + 1).Count(j => labels[j] == labels[i]);
-            labels[i] += $" (#{ordinal})";
-        }
+        var labels = SaveTargets.Labels(candidates);
         var options = candidates.Select((s, i) => new PadOption(labels[i], Glyph: "●",
-            Accent: SaveColors.For(s.Identity?.ColorKey, s.Generation))).ToArray();
+            Accent: SaveColors.For(s.Identity?.ColorKey, s.Generation), Detail: SaveTargets.Detail(s))).ToArray();
         var choice = await PadMenu.ShowAsync(host, title, message, options);
         if (choice is null) return null;
         var index = Array.FindIndex(options, o => o.Label == choice);
@@ -72,12 +57,14 @@ public static class SavePickerSheet
         var who = string.IsNullOrEmpty(save.TrainerName) ? save.FileName : save.TrainerName!;
         if (!string.IsNullOrEmpty(save.TrainerName) && !string.IsNullOrEmpty(save.PlayTime)) who += $" · {save.PlayTime}";
         if (save.Language is { } language) who += $" · {language}";
-        return who;
+        // A backup copy put back on Home says so first, so it never passes for the live save.
+        return save.IsCopy ? $"Backup · {who}" : who;
     }
 
     private static string RowDetail(DetectedSave save)
     {
         var detail = ViewModels.SaveDescriptions.Detail(save);
-        return string.IsNullOrEmpty(save.TrainerName) ? detail : $"{save.FileName} · {detail}";
+        detail = string.IsNullOrEmpty(save.TrainerName) ? detail : $"{save.FileName} · {detail}";
+        return save.IsCopy ? $"Backup copy · {detail}" : detail;
     }
 }

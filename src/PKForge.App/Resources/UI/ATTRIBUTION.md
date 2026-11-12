@@ -17,6 +17,13 @@ sprites are sourced from the [Bulbagarden Archives](https://archives.bulbagarden
 Pokémon and Pokémon character names are trademarks of Nintendo, Creatures Inc., and GAME FREAK Inc.
 PKForge is not affiliated with Nintendo, Creatures Inc., GAME FREAK Inc., or The Pokémon Company.
 
+The encounter kind icons in `tools/` are from the duotone set of [Phosphor Icons](https://github.com/phosphor-icons/core),
+MIT License (© 2023 Phosphor Icons), rasterized white at 96 px.
+
+The Save data tools are shown by game item sprites in `items/`, from the
+[PokeAPI sprites](https://github.com/PokeAPI/sprites) collection, the same source the bag
+fetches item art from at runtime. The door standing for Close and the Pokédex are PKForge's own, drawn to match them; the Hall of Fame tile is PKHeX's Kalos Champion Ribbon.
+
 Additional icons from [game-icons.net](https://game-icons.net) (CC-BY 3.0,
 © Lorc, Delapouite, Guard13007, Carl Olsen and other contributing artists):
 music, play, pause, skip, shuffle, autostart, quit, restore, release,

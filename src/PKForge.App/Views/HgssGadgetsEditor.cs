@@ -6,18 +6,13 @@ using PKForge.Engine;
 namespace PKForge.App.Views;
 
 /// <summary>
-/// HeartGold/SoulSilver gadgets: the Apricorn Box (PKHeX SAV_Apricorn) and the Pokéwalker
-/// (PKHeX SAV_Misc4 Walker tab). Apricorns are bag contents (<see cref="SaveAction.EditInventory"/>);
-/// Pokéwalker steps, watts and courses are world state (<see cref="SaveAction.EditWorld"/>).
+/// HeartGold/SoulSilver gadgets: the Apricorn Box (PKHeX SAV_Apricorn). Apricorns are bag contents
+/// (<see cref="SaveAction.EditInventory"/>). The Pokéwalker has its own painted screen, <see cref="PokewalkerEditor"/>.
 /// </summary>
 public static class HgssGadgetsEditor
 {
     private const string AllApricorns = "Fill every Apricorn (99)";
     private const string NoApricorns = "Empty the Apricorn Box";
-
-    private const string Steps = "Set steps…";
-    private const string Watts = "Set watts…";
-    private const string UnlockAll = "Unlock every course";
 
     public static async Task ShowApricornsAsync(Grid host, ISaveEngineSession session, BoxBrowserViewModel viewModel)
     {
@@ -54,88 +49,4 @@ public static class HgssGadgetsEditor
             if (!ok) return;
         }
     }
-
-    public static async Task ShowPokewalkerAsync(Grid host, ISaveEngineSession session, BoxBrowserViewModel viewModel)
-    {
-        while (true)
-        {
-            var state = PokewalkerService.GetState(session);
-            var unlocked = state.Courses.Count(c => c.Unlocked);
-            var detail = $"Steps {state.Steps:N0} · Watts {state.Watts:N0} · {unlocked}/{state.Courses.Count} courses unlocked" +
-                Environment.NewLine + "Pick a course to see what it gives.";
-            var blocked = PKForge.App.Services.HardcoreMode.Blocks(SaveAction.EditWorld, out _);
-
-            var options = new List<PadOption>();
-            if (!blocked)
-            {
-                options.Add(new PadOption(Steps, IconPath: "records", Detail: "The total steps the Pokéwalker has counted."));
-                options.Add(new PadOption(Watts, IconPath: "stats", Detail: "The watts stored on the Pokéwalker."));
-                options.Add(new PadOption(UnlockAll, IconPath: "all", Accent: UiTokens.Green, Detail: "Opens every course your game's language has."));
-            }
-            options.AddRange(state.Courses.Select(c => new PadOption(CourseLabel(c),
-                Accent: c.Unlocked ? UiTokens.Green : null, IconPath: c.Unlocked ? "check" : "padlock",
-                Detail: string.Join(", ", c.Encounters))));
-            var choice = await EditorMenu.ShowAsync(host, "Pokéwalker",
-                blocked ? detail + Environment.NewLine + PKForge.App.Services.HardcoreMode.StatusFor(SaveAction.EditWorld) : detail,
-                options.ToArray());
-            if (choice is null) return;
-
-            bool ok;
-            switch (choice)
-            {
-                case Steps:
-                case Watts:
-                {
-                    var isSteps = choice == Steps;
-                    var value = await StatsPopup.ShowSingleAsync(host, isSteps ? "Steps" : "Watts",
-                        (int)Math.Min(isSteps ? state.Steps : state.Watts, PokewalkerService.MaxCounter), (int)PokewalkerService.MaxCounter,
-                        $"0 - {PokewalkerService.MaxCounter:N0}");
-                    if (value is not { } v) continue;
-                    ok = await WorldEventsMenu.WriteAsync(viewModel, s =>
-                    {
-                        var after = PokewalkerService.SetCounters(s, isSteps ? (uint)v : state.Steps, isSteps ? state.Watts : (uint)v);
-                        return $"Pokéwalker: {after.Steps:N0} steps, {after.Watts:N0} watts.";
-                    });
-                    break;
-                }
-                case UnlockAll:
-                    ok = await WorldEventsMenu.WriteAsync(viewModel, s =>
-                        $"{PokewalkerService.UnlockAll(s).Courses.Count(c => c.Unlocked)} courses unlocked (every course your game's language has).");
-                    break;
-                default:
-                {
-                    var course = state.Courses.FirstOrDefault(c => CourseLabel(c) == choice);
-                    if (course is null) continue;
-                    ok = await ShowCourseAsync(host, viewModel, course, blocked);
-                    break;
-                }
-            }
-            if (!ok) return;
-        }
-    }
-
-    private static async Task<bool> ShowCourseAsync(Grid host, BoxBrowserViewModel viewModel, PokewalkerCourse course, bool blocked)
-    {
-        var detail = (course.IsSpecial
-                ? "Special course: it was handed out by events, not unlocked by earning watts."
-                : "Unlocked on the Pokéwalker by earning watts.") + Environment.NewLine +
-            "Pokémon you can catch here:" + Environment.NewLine + string.Join(Environment.NewLine, course.Encounters) +
-            (course.AvailableForLanguage ? "" : Environment.NewLine + "Your game's language never received this course.");
-        if (blocked || (!course.AvailableForLanguage && !course.Unlocked))
-        {
-            await EditorMenu.ShowAsync(host, course.Name, detail, "OK");
-            return true;
-        }
-        var toggle = course.Unlocked ? "Lock this course" : "Unlock this course";
-        var choice = await EditorMenu.ShowAsync(host, course.Name, detail,
-            new PadOption(toggle, IconPath: course.Unlocked ? "padlock" : "check", Accent: course.Unlocked ? null : UiTokens.Green));
-        if (choice != toggle) return true;
-        return await WorldEventsMenu.WriteAsync(viewModel, s =>
-        {
-            PokewalkerService.SetCourse(s, course.Index, !course.Unlocked);
-            return $"{course.Name} {(course.Unlocked ? "locked" : "unlocked")}.";
-        });
-    }
-
-    private static string CourseLabel(PokewalkerCourse c) => $"{c.Index + 1:00} {c.Name}{(c.IsSpecial ? " ★" : "")}";
 }

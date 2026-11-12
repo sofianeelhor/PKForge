@@ -25,7 +25,7 @@ public sealed class PokeparkJournalView : SKCanvasView
         _sprites = services?.GetService<PokeparkSpriteService>();
         _changed = (_, _) => MainThread.BeginInvokeOnMainThread(InvalidateSurface);
         if (_state is not null) _state.PropertyChanged += _changed;
-        PaintSurface += Paint;
+        PaintSurface += PaintGuard.Wrap("PokeparkJournalView.Paint", Paint);
     }
 
     /// <summary>Stops listening to the park; call when the lower screen lets go of the view.</summary>

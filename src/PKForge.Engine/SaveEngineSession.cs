@@ -13,6 +13,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
     private readonly byte[] _originalBytes;
     private readonly string? _displayName;
+    private readonly byte[]? _ranchRecord;
     private bool _disposed;
 
     public SaveEngineSession(ReadOnlyMemory<byte> bytes, string? displayName = null)
@@ -22,7 +23,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         // signature block). The baseline every restore point is cut from must stay the
         // pristine file bytes, so the parser gets its own scratch copy.
         if (!SaveParser.TryGetSaveFile(_originalBytes.ToArray(), out var save) || save is null)
-            throw new InvalidDataException("The selected bytes are not a recognized save file.");
+            throw SaveParser.NotReadable(_originalBytes);
         _save = save;
         _displayName = displayName;
         SaveParser.ApplyVersionHint(_save, displayName);
@@ -33,13 +34,29 @@ public sealed class SaveEngineSession : ISaveEngineSession
     /// Boy cartridge save allows the GB-era events (PCNY eggs, Pokémon Stadium gifts), which the
     /// 3DS Virtual Console rules used for every later save exclude. The era is process-wide, so
     /// only the save the player opens sets it, never the other saves a transfer or the Bank
-    /// reads. PKHeX's active-trainer handler checks are not taken on.
+    /// reads. PKHeX's active-trainer handler checks are not taken on: the era flags are set
+    /// directly rather than through InitFromSaveFileData, which would publish this save as
+    /// the process-wide active trainer, even for an instant. Any legality analysis running
+    /// meanwhile on another thread (a box sweep, a preview) would then judge its Pokémon's
+    /// current handler against this save and report a false "Invalid Current handler".
     /// </summary>
     public void MakeActive()
     {
         ThrowIfDisposed();
-        ParseSettings.InitFromSaveFileData(_save);
-        ParseSettings.ClearActiveTrainer();
+        // Same rules as PKHeX's ParseSettings.InitFromSaveFileData, minus the active trainer.
+        ParseSettings.AllowEraCartGB = _save switch
+        {
+            SAV1 { IsVirtualConsole: true } => false,
+            SAV2 { IsVirtualConsole: true } => false,
+            { Generation: 1 or 2 } => true,
+            _ => false,
+        };
+        var isVirtual3 = _save is SAV3 { IsVirtualConsole: true };
+        // A Switch-era save can hold FR/LG Switch Virtual Console Pokémon that came through HOME (FRX/LGX).
+        ParseSettings.AllowEraSwitchGBA = isVirtual3 || _save.Generation >= 8;
+        ParseSettings.AllowEraCartGBA = !isVirtual3;
+        // PKHeX.WinForms' load step also reads the Gen 3 e-Reader berry for the Enigma Berry check.
+        if (_save is SAV3 gen3) EReaderBerrySettings.LoadFrom(gen3);
     }
 
     /// <summary>
@@ -48,11 +65,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
     /// be written out (SAV3.WriteSectors throws), and a standalone entity session is never
     /// written back to a save file - only its single mon is exported via ExportSlot.
     /// </summary>
-    internal SaveEngineSession(SaveFile save, string? displayName)
+    internal SaveEngineSession(SaveFile save, string? displayName, byte[]? ranchRecord = null)
     {
         _save = save;
         _originalBytes = [];
         _displayName = displayName;
+        _ranchRecord = ranchRecord;
     }
 
     /// <summary>Built on demand: every read must reflect writes made through this
@@ -64,6 +82,17 @@ public sealed class SaveEngineSession : ISaveEngineSession
         ThrowIfDisposed();
         ValidateCoordinates(box, slot);
         return GetEntityCore(box, slot);
+    }
+
+    /// <summary>Writes one slot for a sibling service (eggs); <paramref name="registerDex"/> marks
+    /// the species seen and caught, as the game does when an egg hatches. Surgical otherwise.</summary>
+    internal void SetEntity(int box, int slot, PKM pk, bool registerDex = false)
+    {
+        ThrowIfDisposed();
+        ValidateCoordinates(box, slot);
+        var settings = registerDex ? ImportReceived : ImportNone;
+        if (box == -1) _save.SetPartySlotAtIndex(pk, slot, settings);
+        else _save.SetBoxSlotAtIndex(pk, box, slot, settings);
     }
 
     /// <summary>Box -1 addresses the party (0-5, compact like the games).</summary>
@@ -155,6 +184,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
         var entity = GetEntityCore(box, slot);
         if (entity.Species == 0)
             throw new InvalidOperationException("Cannot edit an empty slot.");
+        // Names are checked against the game's charset before any field is written: a name the
+        // save cannot hold is mapped (half/full width) or refused, never silently dropped.
+        if (edit.Nickname is { Length: > 0 } typedNickname && !string.Equals(entity.Nickname, typedNickname, StringComparison.Ordinal))
+            edit = edit with { Nickname = NameCharset.FitNickname(entity, typedNickname) };
+        if (edit.OriginalTrainer is { Length: > 0 } typedOt && !string.Equals(entity.OriginalTrainerName, typedOt, StringComparison.Ordinal))
+            edit = edit with { OriginalTrainer = NameCharset.FitTrainerName(entity, typedOt) };
 
         var changed = false;
         if (edit.Species is { } species && entity.Species != species)
@@ -187,7 +222,11 @@ public sealed class SaveEngineSession : ISaveEngineSession
                 changed = true;
             }
         }
-        if (edit.Ability is { } ability && entity.Ability != ability)
+        // The id alone matching is not enough from Gen 5 on: a mon saved by an older build
+        // (or another tool) can hold the hidden ability id over a regular slot, and choosing
+        // that ability again must repair the slot instead of being skipped (issue #72).
+        if (edit.Ability is { } ability && (entity.Ability != ability
+            || (entity is not (G3PKM or G4PKM) && AbilitySlotSync.IsStale(entity, _save.Personal.GetFormEntry(entity.Species, entity.Form), ability))))
         {
             // Gen 3 stores the ability slot in the IV word (the Ability cache getter
             // is read-only) and Gen 4 derives it from the PID: both need their own
@@ -225,7 +264,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
             }
             else
             {
-                entity.Ability = ability;
+                AbilitySlotSync.Apply(entity, _save.Personal.GetFormEntry(entity.Species, entity.Form), ability);
                 changed = true;
             }
         }
@@ -234,10 +273,12 @@ public sealed class SaveEngineSession : ISaveEngineSession
             entity.HeldItem = item;
             changed = true;
         }
-        if (edit.Move1 is { } m1 && entity.Move1 != m1) { SetMoveFresh(entity, 0, m1); changed = true; }
-        if (edit.Move2 is { } m2 && entity.Move2 != m2) { SetMoveFresh(entity, 1, m2); changed = true; }
-        if (edit.Move3 is { } m3 && entity.Move3 != m3) { SetMoveFresh(entity, 2, m3); changed = true; }
-        if (edit.Move4 is { } m4 && entity.Move4 != m4) { SetMoveFresh(entity, 3, m4); changed = true; }
+        // A move past the game's own table (a Generation 8 move on a FireRed Pokémon) would be
+        // written as an id the game cannot read: it is left out, as the romhack sessions do.
+        if (edit.Move1 is { } m1 && entity.Move1 != m1 && StoresMove(m1)) { SetMoveFresh(entity, 0, m1); changed = true; }
+        if (edit.Move2 is { } m2 && entity.Move2 != m2 && StoresMove(m2)) { SetMoveFresh(entity, 1, m2); changed = true; }
+        if (edit.Move3 is { } m3 && entity.Move3 != m3 && StoresMove(m3)) { SetMoveFresh(entity, 2, m3); changed = true; }
+        if (edit.Move4 is { } m4 && entity.Move4 != m4 && StoresMove(m4)) { SetMoveFresh(entity, 3, m4); changed = true; }
         if (edit.IVs is { Count: 6 } ivs)
         {
             var values = ClampAll(ivs.ToArray(), TrainingCapsOf(entity).IvMax);
@@ -661,43 +702,42 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public IReadOnlyList<string> GameNames =>
         [.. EncounterDatabase.ConcreteVersions(_save.Version).Select(GameInfo.GetVersionName)];
 
+    /// <summary>The bundled living dex file made for this save's exact game family, or null
+    /// when none is shipped. Chosen by entity context, not generation: Sword/Shield, Brilliant
+    /// Diamond/Shining Pearl and Legends: Arceus are all generation 8 but store different
+    /// Pokémon formats (PK8, PB8, PA8), and so do Let's Go (PB7) and Z-A (PA9).</summary>
+    public string? LivingDexBundle => LivingDexBundles.FileFor(_save.Context);
+
     public int PlaceLivingDex(byte[] compressedBundle)
     {
         ThrowIfDisposed();
-        using var input = new MemoryStream(compressedBundle);
-        using var inflate = new System.IO.Compression.GZipStream(input, System.IO.Compression.CompressionMode.Decompress);
-        using var raw = new MemoryStream();
-        inflate.CopyTo(raw);
-        raw.Position = 0;
-        using var reader = new BinaryReader(raw);
+        // Everything is parsed and checked before the first write: a bundle made for another
+        // game is refused whole, never half-applied and never written as a foreign format.
+        var mons = LivingDexBundles.Read(compressedBundle, _save.Context, _save.PKMType);
         var capacity = _save.BoxCount * _save.BoxSlotCount;
         var placed = 0;
-        var bundleGeneration = reader.ReadInt32(); // header: generation, then count
-        if (bundleGeneration != _save.Generation)
-            return 0; // wrong bundle for this game: refuse, write nothing
-        var count = reader.ReadInt32();
-        for (var i = 0; i < count; i++)
+        foreach (var mon in mons)
         {
-            var species = reader.ReadUInt16();
-            var length = reader.ReadInt32();
-            var data = reader.ReadBytes(length);
             if (placed >= capacity) break;
-            var mon = EntityFormat.GetFromBytes(data, _save.Context);
-            if (mon is null || mon.Species == 0 || mon.Species != species) continue;
             _save.SetBoxSlotAtIndex(mon, placed / _save.BoxSlotCount, placed % _save.BoxSlotCount, ImportNone);
             placed++;
         }
         return placed;
     }
 
-    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false)
+    public IReadOnlyList<(int Box, int Slot)> PreviewSortOrder(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false)
     {
         ThrowIfDisposed();
+        return [.. SortedSources(criteria, boxes, reverse, detach: false).Mons.Select(m => (m.Box, m.Slot))];
+    }
+
+    // The order a sort writes, read once from the target boxes in stable storage order. The
+    // preview and the write share it, so what the Sort screen shows is what lands.
+    private (List<int> Boxes, List<(PKM Mon, int Box, int Slot)> Mons) SortedSources(SortCriteria criteria, IReadOnlyList<int>? boxes, bool reverse, bool detach)
+    {
         var targetBoxes = boxes ?? Enumerable.Range(0, _save.BoxCount).ToList();
         var slotsPerBox = _save.BoxSlotCount;
-
-        // Read every mon from the target boxes once, in stable storage order.
-        var mons = new List<PKM>(targetBoxes.Count * slotsPerBox);
+        var mons = new List<(PKM Mon, int Box, int Slot)>(targetBoxes.Count * slotsPerBox);
         var orderedBoxes = targetBoxes.Where(b => (uint)b < (uint)_save.BoxCount).OrderBy(b => b).ToList();
         foreach (var box in orderedBoxes)
             for (var slot = 0; slot < slotsPerBox; slot++)
@@ -706,7 +746,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
                 // PKHeX entities can be backed by the save's mutable storage. Sorting
                 // rewrites that same storage, so every source must be detached before
                 // the first destination write or later entries can turn into garbage.
-                if (mon.Species != 0) mons.Add(mon.Clone());
+                if (mon.Species != 0) mons.Add((detach ? mon.Clone() : mon, box, slot));
             }
 
         int TypeRank(PKM mon) => PersonalTypes.First(mon.PersonalInfo); // dex type order runs types 0..17
@@ -714,17 +754,28 @@ public sealed class SaveEngineSession : ISaveEngineSession
 
         mons = criteria switch
         {
-            SortCriteria.DexNumber => mons.OrderBy(m => m.Species).ThenBy(m => m.Form).ThenBy(m => m.TID16).ToList(),
-            SortCriteria.Alphabetical => mons.OrderBy(m => GameInfo.Strings.specieslist[m.Species], StringComparer.OrdinalIgnoreCase)
-                .ThenBy(m => m.Species).ToList(),
-            SortCriteria.LevelDesc => mons.OrderByDescending(m => m.CurrentLevel).ThenBy(m => m.Species).ToList(),
-            SortCriteria.IvTotalDesc => mons.OrderByDescending(m => m.IVTotal).ThenBy(m => m.Species).ToList(),
-            SortCriteria.Type => mons.OrderBy(TypeRank).ThenBy(m => m.Species).ThenBy(m => m.Form).ToList(),
-            SortCriteria.AgeOldest => mons.OrderBy(MetAge).ThenBy(m => m.Species).ToList(),
-            SortCriteria.ShinyFirst => mons.OrderByDescending(m => m.IsShiny ? 1 : 0).ThenBy(m => m.Species).ThenBy(m => m.Form).ToList(),
+            SortCriteria.DexNumber => mons.OrderBy(m => m.Mon.Species).ThenBy(m => m.Mon.Form).ThenBy(m => m.Mon.TID16).ToList(),
+            SortCriteria.Alphabetical => mons.OrderBy(m => GameInfo.Strings.specieslist[m.Mon.Species], StringComparer.OrdinalIgnoreCase)
+                .ThenBy(m => m.Mon.Species).ToList(),
+            SortCriteria.LevelDesc => mons.OrderByDescending(m => m.Mon.CurrentLevel).ThenBy(m => m.Mon.Species).ToList(),
+            SortCriteria.IvTotalDesc => mons.OrderByDescending(m => m.Mon.IVTotal).ThenBy(m => m.Mon.Species).ToList(),
+            SortCriteria.Type => mons.OrderBy(m => TypeRank(m.Mon)).ThenBy(m => m.Mon.Species).ThenBy(m => m.Mon.Form).ToList(),
+            SortCriteria.AgeOldest => mons.OrderBy(m => MetAge(m.Mon)).ThenBy(m => m.Mon.Species).ToList(),
+            SortCriteria.ShinyFirst => mons.OrderByDescending(m => m.Mon.IsShiny ? 1 : 0).ThenBy(m => m.Mon.Species).ThenBy(m => m.Mon.Form).ToList(),
+            SortCriteria.OriginalTrainer => mons.OrderBy(m => m.Mon.OriginalTrainerName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(m => m.Mon.TID16).ThenBy(m => m.Mon.Species).ThenBy(m => m.Mon.Form).ToList(),
             _ => mons,
         };
         if (reverse) mons.Reverse();
+        return (orderedBoxes, mons);
+    }
+
+    public int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false)
+    {
+        ThrowIfDisposed();
+        var slotsPerBox = _save.BoxSlotCount;
+        var (orderedBoxes, sources) = SortedSources(criteria, boxes, reverse, detach: true);
+        var mons = sources.Select(m => m.Mon).ToList();
 
         // Compact: write back into the target boxes front-first, then blank the tails.
         var placed = 0;
@@ -897,11 +948,11 @@ public sealed class SaveEngineSession : ISaveEngineSession
                     break;
                 }
                 case "nickname":
-                    entity.SetNickname(value);
+                    entity.SetNickname(value.Length == 0 ? value : NameCharset.FitNickname(entity, value));
                     changed = true;
                     break;
                 case "ot" or "trainer":
-                    SetOriginalTrainerName(entity, value);
+                    SetOriginalTrainerName(entity, value.Length == 0 ? value : NameCharset.FitTrainerName(entity, value));
                     changed = true;
                     break;
             }
@@ -997,6 +1048,15 @@ public sealed class SaveEngineSession : ISaveEngineSession
     {
         ThrowIfDisposed();
         var entity = GetEntityCore(box, slot);
+        if (_ranchRecord is not null && box == 0 && slot == 0)
+        {
+            // The Bank edits a PK4 view; keep the original Ranch-only ownership tail
+            // instead of silently replacing the native entry with that portable view.
+            var native = new RK4(_ranchRecord.ToArray());
+            entity.WriteDecryptedDataStored(native.Data[..entity.SIZE_STORED]);
+            native.RefreshChecksum();
+            entity = native;
+        }
         var data = new byte[entity.SIZE_PARTY];
         entity.WriteDecryptedDataParty(data);
         var safeName = string.Concat(entity.FileName.Select(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_' or ' ' ? c : '_'));
@@ -1376,7 +1436,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
                 .OrderBy(c => c.Mon.MetDate?.DayNumber ?? int.MaxValue)
                 .ThenBy(c => c.Box).ThenBy(c => c.Slot).ToList();
             var first = ordered[0].Mon;
-            var route = GameInfo.GetLocationName(false, first.MetLocation, first.Format, first.Generation, first.Version)
+            var route = LocationNames.Of(first, first.MetLocation, false)
                 ?? $"#{first.MetLocation}";
             for (var i = 0; i < ordered.Count; i++)
             {
@@ -1507,6 +1567,9 @@ public sealed class SaveEngineSession : ISaveEngineSession
         }
         var conversion = CrossFormatConverter.Convert(imported, _save, out refusal);
         if (conversion is null) return null;
+        HistoryTripPlan? trip = null;
+        if (HistorySource?.Invoke() is { } history)
+            (conversion, trip) = PokemonHistoryService.Apply(history, imported, conversion, _save);
         if (conversion.Backwards && !allowBackwards)
         {
             refusal = "Only the transfer flow can take a Pokémon back to an older game, because it shows what the downgrade changes.";
@@ -1520,11 +1583,104 @@ public sealed class SaveEngineSession : ISaveEngineSession
                 return null;
             }
             InsertParty(conversion.Entity, ImportReceived);
+            QueueHistory(trip, conversion.Entity);
             return conversion;
         }
         // Received, so the save's dex registers it the way the game would.
         _save.SetBoxSlotAtIndex(conversion.Entity, box, slot, ImportReceived);
+        QueueHistory(trip, conversion.Entity);
         return conversion;
+    }
+
+    /// <summary>
+    /// Pokémon History for this session: the store while the player has it on, else null (the
+    /// default: transfers behave exactly as without it). Imports read it to restore a Pokémon
+    /// coming back to a format it has been in; what they moved is remembered only by
+    /// <see cref="CommitHistory"/>, which the write paths call once the save is written, so a dry
+    /// run (a transfer preview, the hex editor, a refused write) never leaves a trace.
+    /// </summary>
+    public Func<IPokemonHistoryStore?>? HistorySource { get; set; }
+
+    private readonly List<(HistoryTripPlan Trip, PKM Landed)> _pendingHistory = [];
+
+    /// <summary>Holds a transfer for the history until the save that took it is written.</summary>
+    internal void QueueHistory(HistoryTripPlan? trip, PKM landed)
+    {
+        if (trip is not null) _pendingHistory.Add((trip, landed.Clone()));
+    }
+
+    /// <summary>The transfers waiting for this save's write, for tests and diagnostics.</summary>
+    internal int PendingHistoryCount => _pendingHistory.Count;
+
+    public void CommitHistory()
+    {
+        if (_pendingHistory.Count == 0) return;
+        if (HistorySource?.Invoke() is { } store)
+        {
+            var now = DateTimeOffset.Now;
+            foreach (var (trip, landed) in _pendingHistory)
+            {
+                try { PokemonHistoryService.Commit(store, trip, landed, now); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    // History is a keepsake: a full disk never stops the save itself from being written.
+                }
+            }
+        }
+        _pendingHistory.Clear();
+    }
+
+    public IReadOnlyList<JournalMon> GetJournalRoster()
+    {
+        ThrowIfDisposed();
+        var roster = new List<JournalMon>();
+        void Add(PKM mon)
+        {
+            if (mon.Species == 0 || mon.IsEgg) return;
+            // What the game never rewrites, so a Pokémon is still itself after it levels or evolves.
+            var key = string.Join(':', mon.PID, mon.EncryptionConstant, mon.TID16, mon.SID16, mon.OriginalTrainerName,
+                mon.IV_HP, mon.IV_ATK, mon.IV_DEF, mon.IV_SPA, mon.IV_SPD, mon.IV_SPE);
+            string? met = null;
+            if (mon.MetLocation != 0 || mon.Format >= 3)
+                met = LocationNames.Of(mon, mon.MetLocation, false);
+            roster.Add(new JournalMon(key, mon.Species, mon.Form, mon.CurrentLevel,
+                mon.IsNicknamed ? mon.Nickname : null, string.IsNullOrWhiteSpace(met) ? null : met));
+        }
+        for (var slot = 0; slot < _save.PartyCount; slot++) Add(_save.GetPartySlotAtIndex(slot));
+        for (var box = 0; box < _save.BoxCount; box++)
+        for (var slot = 0; slot < _save.BoxSlotCount; slot++)
+            Add(_save.GetBoxSlotAtIndex(box, slot));
+        return roster;
+    }
+
+    public SaveBadges? GetBadges()
+    {
+        ThrowIfDisposed();
+        try
+        {
+            return _save switch
+            {
+                SAV1 gen1 => SaveBadges.FromMask(BadgeSet.Kanto, gen1.Badges),
+                // Johto's eight in the low byte, Kanto's in the next.
+                SAV2 gen2 => SaveBadges.FromMask(BadgeSet.JohtoKanto, gen2.Badges),
+                SAV3FRLG frlg => SaveBadges.FromMask(BadgeSet.Kanto, frlg.Badges),
+                SAV3RS or SAV3E => SaveBadges.FromMask(BadgeSet.Hoenn, ((SAV3)_save).Badges),
+                SAV4HGSS hgss => SaveBadges.FromMask(BadgeSet.JohtoKanto, hgss.Badges | (hgss.Badges16 << 8)),
+                SAV4Sinnoh sinnoh => SaveBadges.FromMask(BadgeSet.Sinnoh, sinnoh.Badges),
+                SAV5BW bw => SaveBadges.FromMask(BadgeSet.Unova, bw.Misc.Badges),
+                SAV5B2W2 b2w2 => SaveBadges.FromMask(BadgeSet.Unova2, b2w2.Misc.Badges),
+                SAV6XY xy => SaveBadges.FromMask(BadgeSet.Kalos, xy.Badges),
+                SAV6AO oras => SaveBadges.FromMask(BadgeSet.Hoenn, oras.Badges),
+                SAV8SWSH swsh => SaveBadges.FromMask(BadgeSet.Galar, swsh.Badges),
+                // Brilliant Diamond / Shining Pearl keep eight system flags, read as a count.
+                SAV8BS bdsp => SaveBadges.Counted(bdsp.FlagWork.BadgeCount(), BadgeSet.Sinnoh),
+                _ => null,
+            };
+        }
+        catch (Exception error) when (error is ArgumentException or IndexOutOfRangeException or InvalidOperationException)
+        {
+            return null; // a layout the badge offsets do not fit
+        }
     }
 
     public TrainerInfo GetTrainer()
@@ -1536,6 +1692,9 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public void SetTrainer(TrainerInfo trainer)
     {
         ThrowIfDisposed();
+        // Checked before anything is written, so a refused name leaves the save untouched.
+        if (!string.Equals(_save.OT, trainer.Name, StringComparison.Ordinal) && trainer.Name.Length > 0)
+            trainer = trainer with { Name = NameCharset.FitForSave(_save, trainer.Name, NameField.TrainerName, _save.MaxStringLengthTrainer) };
         if (_save is SAV3 sav3 && !string.Equals(_save.OT, trainer.Name, StringComparison.Ordinal))
             PrefillTrainerName3(sav3.SmallBlock.OriginalTrainerTrash, sav3.Japanese);
         _save.OT = trainer.Name;
@@ -1591,8 +1750,20 @@ public sealed class SaveEngineSession : ISaveEngineSession
             return false;
         }
 
+        // A profile name typed elsewhere may not exist in this game's charset (Latin on a
+        // Japanese Gen 1-3 save): mapped, or refused before anything changes.
+        var ownerName = profile?.OriginalTrainer ?? _save.OT;
+        if (ownerName.Length > 0 && !string.Equals(ownerName, _save.OT, StringComparison.Ordinal))
+        {
+            try { ownerName = NameCharset.FitTrainerName(entity, ownerName); }
+            catch (InvalidOperationException error)
+            {
+                failure = error.Message;
+                return false;
+            }
+        }
         var wasShiny = entity.IsShiny;
-        SetOriginalTrainerName(entity, profile?.OriginalTrainer ?? _save.OT, _save);
+        SetOriginalTrainerName(entity, ownerName, _save);
         entity.TID16 = (ushort)Math.Clamp(profile?.TID ?? _save.TID16, 0, ushort.MaxValue);
         entity.SID16 = entity.Format < 3 || entity.VC
             ? (ushort)0
@@ -1709,7 +1880,10 @@ public sealed class SaveEngineSession : ISaveEngineSession
     public IReadOnlyList<string> GetItemNames()
     {
         ThrowIfDisposed();
-        return GameInfo.Strings.GetItemStrings(_save.Context, _save.Version);
+        var names = GameInfo.Strings.GetItemStrings(_save.Context, _save.Version);
+        // Legends: Z-A's table ends in ids PKHeX leaves without a string at all. Every reader
+        // treats an empty name as "no such item", so an unnamed id is handed over as one.
+        return names.Contains(null!) ? [.. names.Select(name => name ?? "")] : names;
     }
 
     public IReadOnlyList<int> GetPouchLegalItems(string pouchName)
@@ -1839,7 +2013,8 @@ public sealed class SaveEngineSession : ISaveEngineSession
                     entity.Species == 0 ? string.Empty : SpeciesName.GetSpeciesName(entity.Species, (int)LanguageID.English),
                     entity.Species == 0 ? string.Empty : entity.Nickname,
                     entity.Species == 0 ? 0 : entity.CurrentLevel,
-                    facility is IDaycareExperience experience ? experience.GetDaycareEXP(slot) : null));
+                    facility is IDaycareExperience experience ? experience.GetDaycareEXP(slot) : null,
+                    entity.Species, entity.Form, entity.IsShiny));
             }
 
             result.Add(new DaycareFacility(
@@ -2002,7 +2177,55 @@ public sealed class SaveEngineSession : ISaveEngineSession
             BPMax: MaxBattlePoints,
             SupportsCoins: SupportsCoins,
             Coins: SupportsCoins ? ReadCoins() : 0,
-            CoinsMax: _save.MaxCoins);
+            CoinsMax: _save.MaxCoins,
+            SupportsWatts: SupportsWatts,
+            Watts: SupportsWatts ? ReadWatts() : 0,
+            WattsMax: MaxSevenDigits,
+            SupportsFestaCoins: _save is SAV7,
+            FestaCoins: _save is SAV7 s7 ? s7.Festa.FestaCoins : 0,
+            FestaCoinsMax: MaxSevenDigits,
+            SupportsLeaguePoints: SupportsLeaguePoints,
+            LeaguePoints: SupportsLeaguePoints ? (int)Math.Min(((SAV9SV)_save).LeaguePoints, MaxSevenDigits) : 0,
+            LeaguePointsMax: MaxSevenDigits,
+            SupportsBlueberryPoints: SupportsBlueberryPoints,
+            BlueberryPoints: SupportsBlueberryPoints ? (int)Math.Min(((SAV9SV)_save).BlueberryPoints, MaxSevenDigits) : 0,
+            BlueberryPointsMax: MaxSevenDigits);
+    }
+
+    /// <summary>Watts, Festival Coins, League Points and Blueberry Points all show seven
+    /// digits in-game; PKHeX caps Festival Coins and Sword/Shield Watts there too.</summary>
+    private const int MaxSevenDigits = 9_999_999;
+
+    private bool SupportsWatts => _save is SAV4HGSS or SAV8SWSH;
+
+    // Scarlet/Violet keep both as u32 blocks. The Indigo Disk adds the Blueberry one, so an
+    // older save has nowhere to keep them; a block not yet typed (as on a blank save) holds no value.
+    private bool SupportsLeaguePoints => HasUInt32Block(SaveBlockAccessor9SV.KLeaguePoints);
+    private bool SupportsBlueberryPoints => HasUInt32Block(SaveBlockAccessor9SV.KBlueberryPoints);
+
+    private bool HasUInt32Block(uint key) =>
+        _save is SAV9SV sv && sv.Blocks.TryGetBlock(key, out var block) && block.Type == SCTypeCode.UInt32;
+
+    private int ReadWatts() => _save switch
+    {
+        SAV4HGSS hgss => (int)Math.Min(hgss.PokewalkerWatts, MaxSevenDigits),
+        SAV8SWSH sw => (int)Math.Min(sw.MyStatus.Watt, MaxSevenDigits),
+        _ => 0,
+    };
+
+    private void WriteWatts(int value)
+    {
+        var clamped = Math.Clamp(value, 0, MaxSevenDigits);
+        switch (_save)
+        {
+            case SAV4HGSS hgss: hgss.PokewalkerWatts = (uint)clamped; break;
+            case SAV8SWSH sw:
+                sw.MyStatus.Watt = (uint)clamped;
+                // The lifetime total never sits below what is held, as in the game.
+                if (sw.GetRecord(Record8.WattTotal) < clamped)
+                    sw.SetRecord(Record8.WattTotal, clamped);
+                break;
+        }
     }
 
     public void SetTrainerStats(TrainerStatsEdit edit)
@@ -2019,6 +2242,15 @@ public sealed class SaveEngineSession : ISaveEngineSession
             WriteBattlePoints(bp);
         if (edit.Coins is int coins && SupportsCoins)
             WriteCoins(coins);
+        if (edit.Watts is int watts && SupportsWatts)
+            WriteWatts(watts);
+        // Festival Coins' setter also keeps the lifetime total in step with the coins spent.
+        if (edit.FestaCoins is int festa && _save is SAV7 s7)
+            s7.Festa.FestaCoins = Math.Clamp(festa, 0, MaxSevenDigits);
+        if (edit.LeaguePoints is int lp && SupportsLeaguePoints)
+            ((SAV9SV)_save).LeaguePoints = (uint)Math.Clamp(lp, 0, MaxSevenDigits);
+        if (edit.BlueberryPoints is int bbp && SupportsBlueberryPoints)
+            ((SAV9SV)_save).BlueberryPoints = (uint)Math.Clamp(bbp, 0, MaxSevenDigits);
     }
 
     private int ReadBattlePoints() => _save switch
@@ -2105,7 +2337,7 @@ public sealed class SaveEngineSession : ISaveEngineSession
         ThrowIfDisposed();
         ValidateCoordinates(box, slot);
         var e = GetEntityCore(box, slot);
-        string Loc(bool egg, ushort loc) => GameInfo.GetLocationName(egg, loc, e.Format, e.Generation, e.Version) ?? $"#{loc}";
+        string Loc(bool egg, ushort loc) => LocationNames.Of(e, loc, egg) is { Length: > 0 } name ? name : $"#{loc}";
         var met = e.MetDate;
         var eggDate = e.EggMetDate;
         return new MetInfo(
@@ -2237,6 +2469,10 @@ public sealed class SaveEngineSession : ISaveEngineSession
         var list = FormConverter.GetFormList((ushort)species, strings.Types, strings.forms, _save.Context);
         return Luminescent.LumiData.IsLumi(_save) ? Luminescent.LumiData.FormList((ushort)species, list, strings.Types, strings.forms) : list;
     }
+
+    public bool StoresAnyAbility => _save.Generation >= 4;
+
+    public bool StoresMove(int move) => move == 0 || (move > 0 && move <= _save.MaxMoveID);
 
     public IReadOnlyList<int> GetAbilityChoices(int species, int form)
     {
@@ -2680,13 +2916,62 @@ public sealed class SaveEngineSession : ISaveEngineSession
         return PersonalTypes.Of(_save.Personal.GetFormEntry(species, form));
     }
 
+    public bool PackListBoxes()
+    {
+        ThrowIfDisposed();
+        if (_save is not (SAV1 or SAV2)) return false;
+        var packed = false;
+        for (var box = 0; box < _save.BoxCount; box++)
+        {
+            var stored = Enumerable.Range(0, _save.BoxSlotCount).Select(slot => _save.GetBoxSlotAtIndex(box, slot)).ToArray();
+            var present = stored.Where(pk => pk.Species != 0).ToArray();
+            // Already a list: every Pokémon sits before every empty slot.
+            if (stored.Take(present.Length).All(pk => pk.Species != 0)) continue;
+            for (var slot = 0; slot < stored.Length; slot++)
+                _save.SetBoxSlotAtIndex(slot < present.Length ? present[slot] : _save.BlankPKM, box, slot, ImportNone);
+            packed = true;
+        }
+        return packed;
+    }
+
     public ReadOnlyMemory<byte> Serialize()
     {
         ThrowIfDisposed();
-        return SramPadding.Restore(_save.Write().Span, _originalBytes);
+        var written = _save.Write().ToArray();
+        if (_save is SAV3)
+            KeepUntouchedExtraSectorFooters(written, _originalBytes);
+        return SramPadding.Restore(written, _originalBytes);
     }
 
-    public bool ValidateUnchangedRoundTrip() => Serialize().Span.SequenceEqual(_originalBytes);
+    /// <summary>
+    /// PKHeX stamps a checksum at 0xFF4 of the four extra Gen 3 sectors (Hall of Fame,
+    /// e-Reader / Trainer Hill, Recorded Battle) on every write. Emerald's recorded battle
+    /// (sector 31) keeps its own checksum inside its data and leaves 0xFF4 at zero, so a
+    /// vanilla save holding a recorded battle never round-tripped: the structural guard then
+    /// called it a corrupting layout and locked it read-only (GitHub #22). When a sector's
+    /// data is untouched, its original footer is handed back; an edited sector keeps
+    /// PKHeX's checksum.
+    /// </summary>
+    private static void KeepUntouchedExtraSectorFooters(byte[] written, byte[] originalFile)
+    {
+        const int sectorSize = 0x1000, footer = 0xFF4, firstExtra = 0x1C000;
+        // PKHeX keeps some emulator footers itself (the written image then has the file's length).
+        var decoded = RetroArchSaveContainer.Decode(originalFile);
+        var original = decoded.Length == written.Length ? decoded : SramPadding.Trim(decoded);
+        if (original.Length != written.Length || written.Length < firstExtra + 4 * sectorSize)
+            return;
+        for (var sector = firstExtra; sector < firstExtra + 4 * sectorSize; sector += sectorSize)
+        {
+            if (!written.AsSpan(sector, footer).SequenceEqual(original.AsSpan(sector, footer)))
+                continue;
+            original.AsSpan(sector + footer, sectorSize - footer).CopyTo(written.AsSpan(sector + footer));
+        }
+    }
+
+    public bool ValidateUnchangedRoundTrip()
+    {
+        return Serialize().Span.SequenceEqual(_originalBytes);
+    }
 
     // ── Pokémon Compass (S/V romhack v2.1.x) ──
     // Compass keeps the vanilla S/V save format and adds SCBlocks keyed by FNV-1a

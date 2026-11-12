@@ -5,6 +5,9 @@ using PKForge.Domain;
 
 namespace PKForge.App.ViewModels;
 
+/// <summary>What Save changes did: written to the file, nothing to write, or refused.</summary>
+public enum EditSaveResult { Saved, Unchanged, Refused }
+
 public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
 {
     private readonly IDocumentPicker _picker;
@@ -45,6 +48,25 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     [ObservableProperty] private int _selectedSlot = -1;
     [ObservableProperty] private string _status = "NO STORAGE CONNECTED - PRESS ACCESS STORAGE";
     [ObservableProperty] private bool _isBusy;
+
+    // The last status that reported a write which happened ("Saved.", "Copied 2 Pokémon to the
+    // Bank."): such a line is good news without having to name its restore point.
+    private string? _wroteStatus;
+
+    /// <summary>How the box screen's notice shows <see cref="Status"/>.</summary>
+    public NoticeTone StatusTone => StatusNotice.ToneOf(Status, wrote: _wroteStatus is not null && Status == _wroteStatus);
+
+    /// <summary>
+    /// Reports a write that happened. The restore point it made is never named: it is in
+    /// Restore points for whoever needs it. Said again even when the words are the same as the
+    /// last notice, so a second "Saved." is not silent.
+    /// </summary>
+    public void ReportWrite(string message)
+    {
+        _wroteStatus = message;
+        if (Status == message) OnPropertyChanged(nameof(Status));
+        else Status = message;
+    }
 
     // Structured connection facts for the blueprint chips (never merged into one status blob).
     [ObservableProperty] private string _connectedName = "";
@@ -122,7 +144,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         }
         catch (Exception error)
         {
-            Status = $"Could not open save: {error.Message}";
+            Status = $"Could not open the save. {ErrorText.Plain(error)}";
         }
         finally
         {
@@ -168,6 +190,8 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         EditOt = detail.OriginalTrainer;
         EditGender = detail.Gender.ToString();
         EditShiny = detail.IsShiny;
+        _pristineEdits = PendingEdits();
+        OnPropertyChanged(nameof(HasPendingEdits));
 
         // A fresh sweep already holds this verdict and its full report text, so the
         // cursor info answers instantly; otherwise analyze just this slot off-thread.
@@ -202,6 +226,35 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         });
     }
 
+    private string _pristineEdits = string.Empty;
+
+    /// <summary>Every editor field that Save changes writes, as one comparable value.</summary>
+    private string PendingEdits() => string.Join('\u001f',
+        EditSpecies, EditNickname, EditLevel, EditFriendship, EditNature, EditAbility, EditHeldItem,
+        EditMove1, EditMove2, EditMove3, EditMove4, EditIvs, EditEvs, EditBall, EditOt, EditGender, EditShiny);
+
+    /// <summary>
+    /// True while the editor holds a change that Save changes has not written. Selecting
+    /// another Pokémon refills the fields, so a screen about to do that asks first.
+    /// </summary>
+    public bool HasPendingEdits => Selected is { IsEmpty: false } && PendingEdits() != _pristineEdits;
+
+    /// <summary>Puts the editor's fields back to what the selected Pokémon holds.</summary>
+    public void DiscardPendingEdits()
+    {
+        if (HasPendingEdits && SelectedSlot >= 0) SelectSlot(SelectedSlot);
+    }
+
+    /// <summary>Raised when Save changes ends, with what became of the edit.</summary>
+    public event Action<EditSaveResult>? EditSaveFinished;
+
+    protected override void OnPropertyChanged(System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        if (e.PropertyName is { } name && name.StartsWith("Edit", StringComparison.Ordinal) && name != nameof(EditStats))
+            base.OnPropertyChanged(new System.ComponentModel.PropertyChangedEventArgs(nameof(HasPendingEdits)));
+    }
+
     [RelayCommand]
     private async Task SaveEditAsync()
     {
@@ -211,6 +264,7 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         if (HardcoreMode.Blocks(SaveAction.EditMon, out var hardcoreStatus))
         {
             Status = hardcoreStatus;
+            EditSaveFinished?.Invoke(EditSaveResult.Refused);
             return;
         }
         var engineSession = _sessions.CurrentSession;
@@ -219,15 +273,18 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         if (engineSession is null || session is null || detail is null || detail.IsEmpty)
         {
             Status = "Nothing to save.";
+            EditSaveFinished?.Invoke(EditSaveResult.Refused);
             return;
         }
 
+        var result = EditSaveResult.Refused;
         try
         {
             IsBusy = true;
             var edit = new EntityEdit(
                 Species: ParseInt(EditSpecies),
-                Nickname: EditNickname.Length == 0 ? null : EditNickname,
+                // An emptied field takes the nickname off: the Pokémon goes back to its species name.
+                Nickname: EditNickname,
                 Level: ParseInt(EditLevel),
                 Friendship: ParseInt(EditFriendship),
                 Nature: ParseInt(EditNature),
@@ -259,27 +316,37 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             }
 
             var updated = engineSession.ReadEntity(detail.Box, detail.Slot);
-            var askedAbility = ParseInt(EditAbility);
-            if (askedAbility is { } wanted && updated.Ability != wanted)
-                Status = $"Ability did not stick: asked for {wanted}, the mon holds {updated.Ability}. This is the diagnostic the developer needs.";
+            // Some formats store an ability slot rather than an ability, so a pick outside the
+            // species' own ones cannot be held. Said with the result, where the player reads it.
+            var abilityNote = ParseInt(EditAbility) is { } wanted && updated.Ability != wanted
+                ? " The ability did not stick: this game cannot store that one on this Pokémon."
+                : "";
             var index = Array.FindIndex(_slots, x => x.Box == detail.Box && x.Slot == detail.Slot);
             if (index >= 0)
                 _slots[index] = _slots[index] with { Species = updated.Species, Nickname = updated.Nickname, IsShiny = updated.IsShiny, Form = updated.Form, HeldItem = updated.HeldItem };
             OnPropertyChanged(nameof(VisibleSlots));
             SelectSlot(detail.Slot);
 
-            Status = receipt.Changed
-                ? $"Saved. Restore point {ShortBackupId(receipt)} · {receipt.WrittenSha256[..8]}…"
-                : "Nothing changed - no write, no restore point.";
+            if (receipt.Changed) ReportWrite("Saved." + abilityNote);
+            else Status = "No changes to save." + abilityNote;
+            result = receipt.Changed ? EditSaveResult.Saved : EditSaveResult.Unchanged;
+        }
+        catch (PKForge.Engine.NameNotStorableException refused)
+        {
+            // Refused before any field was written: the editor keeps what was typed, so the
+            // name can be corrected, and the message names the characters the game lacks.
+            Status = refused.Message;
         }
         catch (Exception error)
         {
             DiscardPartialEdits();
-            Status = $"Write aborted: {error.Message}";
+            AppLog.Error("edit", "Save changes aborted", error);
+            Status = $"Not saved. {ErrorText.Plain(error)}";
         }
         finally
         {
             IsBusy = false;
+            EditSaveFinished?.Invoke(result);
         }
     }
 
@@ -298,6 +365,16 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         OnPropertyChanged(nameof(BoxLabel));
         BumpMutationGeneration();
     }
+
+    /// <summary>
+    /// The open save's slots as they are now. <see cref="Save"/> is the picture taken when the
+    /// save was opened and is stale from the first write on, so whatever looks for an empty
+    /// slot asks here: a second arrival must not be given the room the first one took.
+    /// </summary>
+    public IReadOnlyList<SlotSummary> LiveSlots => _sessions.CurrentSession?.Snapshot.Slots ?? Save?.Slots ?? [];
+
+    /// <summary>How many slots one box of the open save holds: 30, or 20 in the Game Boy games.</summary>
+    public int BoxCapacity => Save?.Slots.Count(s => s.Box == 0) is > 0 and var capacity ? capacity : 30;
 
     /// <summary>Re-reads the grid from the session service's current save (after a restore or detected-save open).</summary>
     public void RefreshFromCurrentSession()
@@ -448,7 +525,13 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         try
         {
             IsBusy = true;
-            var outcome = await Task.Run(() => operation(engineSession));
+            var packed = false;
+            var outcome = await Task.Run(() =>
+            {
+                var result = operation(engineSession);
+                if (result.Success) packed = engineSession.PackListBoxes();
+                return result;
+            });
             if (!outcome.Success)
             {
                 // A refused edit (Make mine on an event gift, say) leaves the player on the same
@@ -484,8 +567,10 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             {
                 _sessions.MarkWritten(session.Document.DocumentId, candidate);
                 BumpMutationGeneration();
+                engineSession.CommitHistory(); // the trips happened: the save holding them is written
             }
 
+            if (packed) RefreshAllSlots();
             if (refreshSlot)
             {
                 var updated = engineSession.ReadEntity(BoxIndex, slot);
@@ -502,16 +587,16 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
                 OnPropertyChanged(nameof(VisibleSlots));
                 SelectSlot(slot);
             }
-            Status = receipt.Changed
-                ? $"{outcome.Message} · restore point {ShortBackupId(receipt)}"
-                : $"{outcome.Message} Nothing changed - no write, no restore point.";
+            if (receipt.Changed) ReportWrite(outcome.Message);
+            // "Already legal." says it all; anything else gets the plain answer that nothing moved.
+            else Status = outcome.Message.StartsWith("Already", StringComparison.OrdinalIgnoreCase) ? outcome.Message : "Nothing changed.";
             return true;
         }
         catch (Exception error)
         {
             DiscardPartialEdits();
             AppLog.Error("edit", $"Edit aborted ({action})", error);
-            Status = $"Aborted: {error.Message}";
+            Status = $"Not saved. {ErrorText.Plain(error)}";
             return false;
         }
         finally
@@ -662,6 +747,31 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         AnnounceMarks(null);
     }
 
+    /// <summary>
+    /// A held still on a slot closes the hand on the whole selection: the press that began
+    /// there is taken back as a mark or unmark, and the Pokémon under the cursor joins the
+    /// group. Returns how many Pokémon the hand now holds.
+    /// </summary>
+    public int GatherMarks()
+    {
+        if (PendingRectangle is { } pressed)
+        {
+            PendingRectangle = null;
+            if (!_marks.Contains(BoxIndex, pressed.From)) _marks.Toggle(_slots, BoxIndex, pressed.From);
+        }
+        OnPropertyChanged(nameof(MarkedCount));
+        return _marks.Count;
+    }
+
+    /// <summary>The first <paramref name="max"/> marked Pokémon, in mark order: what the hand shows of a carried group.</summary>
+    public IReadOnlyList<SlotSummary> MarkedSummaries(int max) =>
+    [
+        .. _marks.Ordered.Take(max)
+            .Select(mark => _slots.FirstOrDefault(s => s.Box == mark.Box && s.Slot == mark.Slot))
+            .OfType<SlotSummary>()
+            .Where(s => s.Species is not null),
+    ];
+
     public void ExtendRectangle(int slot)
     {
         if (PendingRectangle is not { } r || slot < 0) return;
@@ -701,10 +811,12 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         var targets = new Queue<SlotRef>(SlotPlanning.FreeSlotsFrom(_slots, start));
         var marked = _marks.Ordered;
         var moved = 0;
+        var leftParty = 0;
         foreach (var (box, slot) in marked)
         {
             if (!targets.TryDequeue(out var target)) break;
-            session.MoveSlot(box, slot, target.Box, target.Slot);
+            // The party closes up behind each Pokémon that leaves it (marks run in slot order).
+            session.MoveSlot(box, box == -1 ? slot - leftParty++ : slot, target.Box, target.Slot);
             moved++;
         }
         var leftBehind = marked.Count - moved;
@@ -722,21 +834,29 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
     public Task<bool> BulkReleaseAsync() => BulkReleaseAsync(null);
 
     /// <summary>Releases only the given slots (or every marked mon when null). One backup, one write.</summary>
-    public Task<bool> BulkReleaseAsync(IReadOnlyList<(int Box, int Slot)>? only) => RunMutationAsync(session =>
+    public Task<bool> BulkReleaseAsync(IReadOnlyList<(int Box, int Slot)>? only)
     {
         var targets = only ?? _marks.Ordered;
-        foreach (var (box, slot) in targets)
-            session.ReleaseSlot(box, slot);
-        return new GenerationOutcome(true, $"Released {targets.Count} Pokémon. Bye-bye!");
-    }, Math.Max(0, SelectedSlot), action: SaveAction.Release).ContinueWith(t =>
-    {
-        RefreshAllSlots();
-        // Marks that no longer point at a Pokémon go; the ones that stayed (a partial
-        // transfer) stay marked so the player can see what did not make it.
-        _marks.Prune(_slots);
-        OnPropertyChanged(nameof(MarkedCount));
-        return t.Result;
-    }, TaskScheduler.FromCurrentSynchronizationContext());
+        return RunMutationAsync(session =>
+        {
+            SlotReleases.ReleaseAll(session, targets);
+            return new GenerationOutcome(true, $"Released {targets.Count} Pokémon. Bye-bye!");
+        }, Math.Max(0, SelectedSlot), action: SaveAction.Release).ContinueWith(t =>
+        {
+            // The party and a Game Boy box close up behind whoever left: the marks follow
+            // their own Pokémon, never the one that slid into a freed slot.
+            if (t.Result) _marks.Released(targets, ListBoxes);
+            RefreshAllSlots();
+            // Marks that no longer point at a Pokémon go; the ones that stayed (a partial
+            // transfer) stay marked so the player can see what did not make it.
+            _marks.Prune(_slots);
+            OnPropertyChanged(nameof(MarkedCount));
+            return t.Result;
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    /// <summary>The Game Boy games keep a box as a list: whatever leaves it, the rest close up.</summary>
+    private bool ListBoxes => Save?.Generation is 1 or 2;
 
     /// <summary>True when the marks would take every Pokémon out of the party.</summary>
     public bool MarksEmptyTheParty()
@@ -855,11 +975,20 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
             IsBusy = true;
             _movesInFlight++;
             engineSession.MoveSlot(source.Box, source.Slot, target.Box, target.Slot);
+            // A Game Boy box closes the gap the move left: the Pokémon dropped on a far empty
+            // slot lands at the end of the list, as it would in the game's own PC.
+            var packed = engineSession.PackListBoxes();
             // The verdicts already swept describe the slots before the move.
             BumpMutationGeneration();
+            if (packed)
+            {
+                RefreshAllSlots();
+                if (target.Box >= 0 && engineSession.ReadEntity(target.Box, target.Slot).IsEmpty)
+                    target = (target.Box, Math.Max(0, _slots.Count(x => x.Box == target.Box && x.Species is not null) - 1));
+            }
             // Show the move at once: the grid would otherwise keep the old slots until the
             // write below returns, the Pokémon drawn in both places and then gone from one.
-            foreach (var (box, slot) in new[] { (source.Box, source.Slot), (target.Box, target.Slot) })
+            foreach (var (box, slot) in packed ? [] : new[] { (source.Box, source.Slot), (target.Box, target.Slot) })
             {
                 var updated = engineSession.ReadEntity(box, slot);
                 var index = Array.FindIndex(_slots, x => x.Box == box && x.Slot == slot);
@@ -889,14 +1018,21 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
                 $"Move {(carried is { } summary ? summary.Nickname ?? $"#{summary.Species}" : "Pokémon")}: {SlotLabel(source.Box, source.Slot)} -> {SlotLabel(target.Box, target.Slot)}").AsTask());
             if (receipt.Changed)
                 _sessions.MarkWritten(documentId, candidate);
-            Status = receipt.Changed
-                ? $"MOVED · restore point {ShortBackupId(receipt)}"
-                : "Nothing changed - no write, no restore point.";
+            Status = receipt.Changed ? "Moved." : "No changes to save.";
         }
         catch (Exception error)
         {
             AppLog.Error("edit", "Move aborted", error);
-            Status = $"Move aborted: {error.Message}";
+            // Nothing was written, so the grid goes back to what the file holds. Left as it
+            // was, it kept showing the move, and the next edit of any kind would have written it.
+            var (keepBox, keepSlot) = (BoxIndex, SelectedSlot);
+            DiscardPartialEdits();
+            if (_sessions.Current is not null)
+            {
+                BoxIndex = Math.Min(keepBox, Math.Max(0, BoxCount - 1));
+                if (keepSlot >= 0) SelectSlot(keepSlot);
+            }
+            Status = $"Not moved. {ErrorText.Plain(error)}";
         }
         finally
         {
@@ -949,6 +1085,8 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
         if (next > BoxCount - 1) next = -1;
         else if (next < -1) next = BoxCount - 1;
         PendingRectangle = null; // a rectangle belongs to one page
+        PerfTrace.Mark("box");
+        PerfTrace.Mark("box.settle");
         BoxIndex = next;
         SelectedSlot = -1;
         Selected = null;
@@ -963,9 +1101,6 @@ public partial class BoxBrowserViewModel : ObservableObject, IBoxPager
 
     private static string EditorSubject(Domain.EntityDetail detail) =>
         string.IsNullOrWhiteSpace(detail.Nickname) ? "Pokémon" : detail.Nickname;
-
-    private static string ShortBackupId(Domain.SaveWriteReceipt receipt) =>
-        receipt.BackupId.Length == 0 ? "(none)" : $"{receipt.BackupId[..Math.Min(13, receipt.BackupId.Length)]}…";
 
     private static int[]? ParseIntList(string text)
     {

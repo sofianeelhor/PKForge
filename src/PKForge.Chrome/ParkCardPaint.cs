@@ -87,11 +87,12 @@ public static class ParkCardPaint
 
     /// <summary>The "Leave the park" link under the buttons, for touch.</summary>
     public static SKRect LeaveRect(SKRect r, float unit) =>
-        SKRect.Create(r.Right - 28f * unit - 406f * unit, r.Bottom - 50f * unit, 406f * unit, 36f * unit);
+        SKRect.Create(r.Right - 28f * unit - 199f * unit, r.Bottom - 50f * unit, 199f * unit, 36f * unit);
 
     /// <summary>The "Find in its box" link, left of the leave link, for touch.</summary>
+    // Under the action buttons, beside the leave link: further left it ran into the FRIENDS row (QA 2026-11-12).
     public static SKRect FindRect(SKRect r, float unit) =>
-        SKRect.Create(LeaveRect(r, unit).Left - 330f * unit, r.Bottom - 50f * unit, 320f * unit, 36f * unit);
+        SKRect.Create(r.Right - 28f * unit - 406f * unit, r.Bottom - 50f * unit, 199f * unit, 36f * unit);
 
     /// <param name="selected">0–3 the action buttons, 4 the leave link, 5 the find link; in the berry or game choice, 0–4 the choices and 5 Back.</param>
     public static void PaintCard(SKCanvas c, SKRect r, Card card, SKImage? portrait, int selected, SKTypeface face, float unit, Menu menu = Menu.Actions,
@@ -110,7 +111,7 @@ public static class ParkCardPaint
         using (var hint = new SKFont(face, 22f * unit))
         {
             var spot = PageTabRect(r, Pages.Count, unit);
-            var chip = SKRect.Create(spot.Left + 4f * unit, spot.Top + 6f * unit, hint.MeasureText("L R  pages") + 24f * unit, spot.Height - 16f * unit);
+            var chip = SKRect.Create(spot.Left + 4f * unit, spot.Top + 6f * unit, hint.MeasureFallback("L R  pages") + 24f * unit, spot.Height - 16f * unit);
             using (var back = Fill(StoragePaint.Well.WithAlpha(230))) c.DrawRoundRect(chip, 10f * unit, 10f * unit, back);
             Text(c, "L R  pages", chip.Left + 12f * unit, chip.MidY, hint, EditorPaint.Label);
         }
@@ -289,16 +290,32 @@ public static class ParkCardPaint
         }
     }
 
-    /// <summary>The dialogue box: framed portrait, the speaker's tab, and the text so far.</summary>
+    /// <summary>How many lines of text the dialogue box shows at once.</summary>
+    public const int DialogueLines = 4;
+
+    private static float DialogueTextLeft(SKRect r, bool hasPortrait, float unit) => r.Left + (hasPortrait ? 322f : 40f) * unit;
+
+    /// <summary>
+    /// <paramref name="text"/> cut into the pages the dialogue box can show, one box-full
+    /// each. A long explanation used to be cut after its fourth line with no way to read on.
+    /// </summary>
+    public static IReadOnlyList<string> DialoguePages(SKRect r, string text, bool hasPortrait, SKTypeface face, float unit)
+    {
+        using var body = new SKFont(face, 34f * unit);
+        var lines = Wrap(text, body, r.Right - 48f * unit - DialogueTextLeft(r, hasPortrait, unit));
+        // Wrapping is greedy, word by word: a page joined back with spaces wraps into the same lines.
+        var pages = lines.Chunk(DialogueLines).Select(page => string.Join(' ', page)).ToArray();
+        return pages.Length == 0 ? [""] : pages;
+    }
+
+    /// <summary>The dialogue box: framed portrait, the speaker's tab, and the text so far.
+    /// <paramref name="more"/> draws the arrow that promises another page.</summary>
     public static void PaintDialogue(SKCanvas c, SKRect r, string speaker, string text, SKImage? portrait, bool more, long time, SKTypeface face, float unit)
     {
         Frame(c, r, unit);
-        var info = r.Left + 40f * unit;
+        var info = DialogueTextLeft(r, portrait is not null, unit);
         if (portrait is not null)
-        {
             Portrait(c, SKRect.Create(r.Left + 28f * unit, r.Top + 30f * unit, 268f * unit, 268f * unit), portrait, unit);
-            info = r.Left + 322f * unit;
-        }
         var nameTab = SKRect.Create(info, r.Top + 30f * unit, 420f * unit, 60f * unit);
         Tab(c, nameTab, StoragePaint.BannerTop, StoragePaint.BannerBottom, Pksm.Ink, unit);
         using var big = new SKFont(face, 32f * unit);
@@ -306,7 +323,7 @@ public static class ParkCardPaint
         using var body = new SKFont(face, 34f * unit);
         var lines = Wrap(text, body, r.Right - 48f * unit - info);
         var y = nameTab.Bottom + 46f * unit;
-        foreach (var line in lines.Take(4))
+        foreach (var line in lines.Take(DialogueLines))
         {
             Text(c, line, info, y, body, EditorPaint.Value, r.Right - info);
             y += 48f * unit;
@@ -400,7 +417,7 @@ public static class ParkCardPaint
         foreach (var word in text.Split(' '))
         {
             var next = line.Length == 0 ? word : line + " " + word;
-            if (line.Length > 0 && font.MeasureText(next) > width) { lines.Add(line); line = word; }
+            if (line.Length > 0 && font.MeasureFallback(next) > width) { lines.Add(line); line = word; }
             else line = next;
         }
         if (line.Length > 0) lines.Add(line);
@@ -616,20 +633,20 @@ public static class ParkCardPaint
 
     internal static void Text(SKCanvas c, string text, float x, float midY, SKFont font, SKColor color, float maxWidth = float.MaxValue)
     {
-        if (font.MeasureText(text) > maxWidth)
+        if (font.MeasureFallback(text) > maxWidth)
         {
-            while (text.Length > 1 && font.MeasureText(text + "…") > maxWidth) text = text[..^1];
+            while (text.Length > 1 && font.MeasureFallback(text + "…") > maxWidth) text = text[..^1];
             text += "…";
         }
         using var paint = new SKPaint { Color = color, IsAntialias = true };
         font.GetFontMetrics(out var m);
-        c.DrawText(text, x, midY - (m.Ascent + m.Descent) / 2, SKTextAlign.Left, font, paint);
+        c.DrawTextFallback(text, x, midY - (m.Ascent + m.Descent) / 2, SKTextAlign.Left, font, paint);
     }
 
     public static void Centered(SKCanvas c, string text, float x, float midY, SKFont font, SKColor color)
     {
         using var paint = new SKPaint { Color = color, IsAntialias = true };
         font.GetFontMetrics(out var m);
-        c.DrawText(text, x, midY - (m.Ascent + m.Descent) / 2, SKTextAlign.Center, font, paint);
+        c.DrawTextFallback(text, x, midY - (m.Ascent + m.Descent) / 2, SKTextAlign.Center, font, paint);
     }
 }

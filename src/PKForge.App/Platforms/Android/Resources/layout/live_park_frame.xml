@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- One frame of the living Poképark's film. -->
 <ImageView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/pokepark_frame"
+    android:id="@+id/live_park_frame"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:scaleType="centerCrop" android:contentDescription="@string/pokepark_widget_description" />
+    android:scaleType="fitXY" android:importantForAccessibility="no" />

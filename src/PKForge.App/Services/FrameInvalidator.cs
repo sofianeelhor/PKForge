@@ -7,12 +7,14 @@ namespace PKForge.App.Services;
 /// When a whole box of sprites finishes loading at once, the canvas repaints once -
 /// not once per sprite - and background callbacks are marshalled to the UI thread safely.
 /// </summary>
-public sealed class FrameInvalidator(SKCanvasView view)
+public sealed class FrameInvalidator(SKCanvasView view, Action? requested = null)
 {
     private int _pending;
 
     public void Request()
     {
+        // Told on every request, coalesced or not, from whichever thread asked.
+        requested?.Invoke();
         // If a repaint is already queued, drop this one: the pending paint will show
         // whatever finished in the meantime. Only the first request schedules work.
         if (Interlocked.Exchange(ref _pending, 1) == 1) return;

@@ -1,4 +1,3 @@
-using PKForge.App.Services;
 using PKForge.App.Theme;
 using PKForge.Domain;
 
@@ -150,8 +149,8 @@ public static class MoveDetailsEditor
             var verdict = legality.RelearnAt(i);
             return new PickItem(i, $"Slot {i + 1} · {Name(move)}", Detail: LegalityAssistUi.VerdictText(verdict) is { Length: > 0 } text ? text : null)
             {
-                Tag = verdict is null || move == 0 ? null : verdict.Valid ? "Legal" : "Illegal",
-                TagColor = verdict is { Valid: false } ? UiTokens.Bad : UiTokens.Green,
+                Tag = verdict is null || move == 0 ? null : verdict.Valid ? "Legal" : verdict.LegalIfHatched ? "If hatched" : "Illegal",
+                TagColor = verdict is { Valid: false } ? verdict.LegalIfHatched ? UiTokens.Warn : UiTokens.Bad : UiTokens.Green,
             };
         }).ToList();
         var slotChoice = await PickerMenu.ShowAsync(host, "Relearn moves", choices);

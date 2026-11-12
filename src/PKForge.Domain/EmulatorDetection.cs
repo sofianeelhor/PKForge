@@ -14,6 +14,18 @@ public enum EmulatorKind
     PizzaBoyGbc = 8,
     /// <summary>Citra MMJ (weihuoya fork, org.citra.emu): same SDMC layout as Azahar, rooted at citra-emu/.</summary>
     CitraMmj = 9,
+    /// <summary>
+    /// One save file the player picked with "Open a save file" (a persisted SAF document
+    /// grant, not a folder): kept as a watched root whose TreeId is the document URI, so it
+    /// stays on the shelf across launches until the player unlinks it.
+    /// </summary>
+    LinkedFile = 10,
+    /// <summary>My Boy! (com.fastemulator.gba): raw .sav battery saves in MyBoy/save on shared storage.</summary>
+    MyBoy = 11,
+    /// <summary>My OldBoy! (com.fastemulator.gbc): raw .sav battery saves in MyOldBoy/save on shared storage.</summary>
+    MyOldBoy = 12,
+    /// <summary>PokeDaisy (mGBA and melonDS front end): standard .sav/.srm saves in the folder chosen at its setup.</summary>
+    PokeDaisy = 13,
 }
 
 /// <summary>A persistable SAF folder grant, opaque to the domain layer.</summary>
@@ -37,8 +49,13 @@ public sealed record DetectedSave(
     string? RomFileName = null,
     string? FolderHint = null,
     ResolvedSaveIdentity? Identity = null,
-    string? Language = null)
+    string? Language = null,
+    bool IsCopy = false,
+    int? TrainerId = null)
 {
+    // IsCopy: found in a backup or hidden folder, or named as a backup (see SaveNoise). It
+    // starts in Hidden saves rather than on the shelf, until the player shows it.
+
     /// <summary>
     /// The name handed to the engine: the chosen game's label, so the edition of a
     /// shared layout (FireRed vs LeafGreen, Ruby vs Sapphire) follows the user's choice
@@ -51,6 +68,9 @@ public sealed record DetectedSave(
 
     /// <summary>Label used for box-art lookup (never a custom name).</summary>
     public string? ArtLabel => Identity is { } identity ? identity.ArtLabel : Guess is { } guess ? guess.ArtLabel : GameLabel;
+
+    /// <summary>The player's own art key for this save (<see cref="CustomGameArt"/>), or null.</summary>
+    public string? CustomArtKey => Identity?.ArtKey;
 }
 
 /// <summary>Selects a folder through the host platform, persisting read/write access.</summary>
@@ -71,6 +91,14 @@ public interface IFolderFileAccess
 
     /// <summary>Creates a file with that name in the folder, or overwrites the existing one.</summary>
     ValueTask WriteFileAsync(string treeId, string fileName, ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a NEW file in the folder of the granted document <paramref name="documentId"/>,
+    /// under <paramref name="fileName"/> or a free name next to it; never overwrites. Returns
+    /// the name written. Throws <see cref="NotSupportedException"/> where that folder cannot be reached.
+    /// </summary>
+    ValueTask<string> WriteBesideAsync(string documentId, string fileName, ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This file's folder cannot be written to.");
 }
 
 /// <summary>Scans a granted emulator folder for parseable Pokémon saves.</summary>

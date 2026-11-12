@@ -72,6 +72,22 @@ internal static class SummaryInk
         return width;
     }
 
+    /// <summary>The ink a line covers, relative to its left end on the baseline (as drawn left-aligned).</summary>
+    public static SKRect Bounds(string text, float size, bool bold = false)
+    {
+        var ink = SKRect.Empty;
+        var left = 0f;
+        foreach (var (run, face) in Runs(text))
+        {
+            var font = Font(face, size, bold);
+            var advance = font.MeasureText(run, out var bounds);
+            bounds.Offset(left, 0);
+            if (!bounds.IsEmpty) ink = ink.IsEmpty ? bounds : SKRect.Union(ink, bounds);
+            left += advance;
+        }
+        return ink;
+    }
+
     /// <summary>Draws one line. <paramref name="baseline"/> is the text baseline.</summary>
     public static float Draw(SKCanvas c, string text, float x, float baseline, float size, SKColor color,
         bool bold = false, SKTextAlign align = SKTextAlign.Left)

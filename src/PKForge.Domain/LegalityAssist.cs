@@ -70,8 +70,12 @@ public sealed record LegalityFixPreview(
 }
 
 /// <summary>One learned-move slot's verdict: <paramref name="Reason"/> is how it is learned
-/// ("Level Up", "TM") or why it is not.</summary>
-public sealed record MoveVerdict(int Move, bool Valid, string Reason);
+/// ("Level Up", "TM") or why it is not. <paramref name="LegalIfHatched"/>: invalid for the matched
+/// encounter, but an egg move of its line, so legal had it hatched from an egg.</summary>
+public sealed record MoveVerdict(int Move, bool Valid, string Reason, bool LegalIfHatched = false)
+{
+    public const string IfHatchedReason = "Legal if it hatched from an egg";
+}
 
 /// <summary>Per-slot verdicts for the four current moves and the four relearn moves.</summary>
 public sealed record MoveLegality(bool Supported, IReadOnlyList<MoveVerdict> Moves, IReadOnlyList<MoveVerdict> Relearn)

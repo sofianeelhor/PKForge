@@ -7,10 +7,44 @@ namespace PKForge.App.Services;
 public static class GameArt
 {
     // Bumped whenever bundled art changes so on-device caches never serve stale images.
-    private const string AssetVersion = "v10";
+    private const string AssetVersion = "v11";
     public static Task<string?> GetIconAsync(string gameLabel) => GetAsync("gameart", gameLabel);
     public static Task<string?> GetHeroAsync(string gameLabel) => GetAsync("gamehero", gameLabel);
     public static Task<string?> GetLogoAsync(string gameLabel) => GetAsync("gamelogo", gameLabel);
+
+    /// <summary>The player's own art (Edit game > Game art).</summary>
+    public static ICustomGameArtStore? Custom => IPlatformApplication.Current?.Services.GetService<ICustomGameArtStore>();
+
+    /// <summary>A save's cartridge art: the player's own image, else the bundled art of its game.</summary>
+    public static async Task<string?> GetIconAsync(DetectedSave save) =>
+        CustomPath(save.CustomArtKey, GameArtKind.Cartridge) ?? (save.ArtLabel is { } art ? await GetIconAsync(art) : null);
+
+    /// <summary>A save's title logo: the player's own image, else the bundled logo of its game.</summary>
+    public static async Task<string?> GetLogoAsync(DetectedSave save) =>
+        CustomPath(save.CustomArtKey, GameArtKind.Logo) ?? (save.ArtLabel is { } art ? await GetLogoAsync(art) : null);
+
+    /// <summary>A save's wide banner: only the player's own (bundled heroes crop badly, see GameHeroBackdrop).</summary>
+    public static string? GetHero(DetectedSave save) => CustomPath(save.CustomArtKey, GameArtKind.Hero);
+
+    /// <summary>
+    /// The player's image as a cache copy named after its write time: image views cache by path,
+    /// so a replaced image gets a new path and is never served stale.
+    /// </summary>
+    public static string? CustomPath(string? key, GameArtKind kind)
+    {
+        if (Custom?.PathOf(key, kind) is not { } source) return null;
+        try
+        {
+            var stamp = File.GetLastWriteTimeUtc(source).Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var cache = Path.Combine(FileSystem.CacheDirectory, $"custom-art-{key}-{CustomGameArt.NameOf(kind)}-{stamp}.png");
+            if (!File.Exists(cache)) File.Copy(source, cache, overwrite: true);
+            return cache;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return null; // the default art stands in
+        }
+    }
 
     private static async Task<string?> GetAsync(string folder, string gameLabel)
     {
@@ -41,6 +75,9 @@ public static class GameArt
 
     private static string GetAssetSlug(string name) => name switch
     {
+        // Engine names whose plain slug is awkward share one asset with their family.
+        "Heart and Soul 2.0" => "heart-and-soul",
+        "R.O.W.E." => "rowe",
         _ => string.Concat(name.ToLowerInvariant().Select(c => char.IsAscii(c) && char.IsLetterOrDigit(c) ? c : '-')),
     };
 }
@@ -82,6 +119,10 @@ public partial class SecondScreenState : ObservableObject
 
     /// <summary>The Living Dex Autopilot's payload: its route map.</summary>
     [ObservableProperty] private LivingDexRoute? _autopilotRoute;
+
+    /// <summary>The compare screen's payload: the side it has in focus, for the inspector. Its own
+    /// field, so the Bank's <see cref="Inspected"/> is still there when the comparison closes.</summary>
+    [ObservableProperty] private InspectorContent? _compared;
 }
 
 /// <summary>What the inspector shows for a surface that drives it: the mon (null = empty slot),

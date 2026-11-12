@@ -46,12 +46,12 @@ internal static class TypePlates
         public View()
         {
             InputTransparent = true;
-            PaintSurface += (_, args) =>
+            PaintSurface += PaintGuard.Wrap("TypePlates this", (_, args) =>
             {
                 var c = args.Surface.Canvas;
                 c.Clear(SKColors.Transparent);
                 if (_type is { } type) Paint(c, new SKRect(0, 0, args.Info.Width, args.Info.Height), type);
-            };
+            });
         }
 
         public int? Type

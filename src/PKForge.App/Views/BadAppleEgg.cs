@@ -58,7 +58,7 @@ public sealed class BadAppleEgg : IPadHandler
         App.Suspended += Close;
 
         _canvas = new SKCanvasView { EnableTouchEvents = true };
-        _canvas.PaintSurface += Paint;
+        _canvas.PaintSurface += PaintGuard.Wrap("BadAppleEgg.Paint", Paint);
         _canvas.Touch += (_, args) =>
         {
             args.Handled = true;

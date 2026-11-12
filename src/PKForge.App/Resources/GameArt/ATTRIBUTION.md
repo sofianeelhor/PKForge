@@ -49,3 +49,45 @@ were re-picked by hand from SteamGridDB by the project owner, replacing the
 automatically fetched set. Source art remains SteamGridDB community submissions under
 their respective licenses; individual asset credits stay on steamgriddb.com. Hero
 banners (`GameHero/`) are unchanged. Bundled art cache version bumped to v7.
+
+# ROM hack art (November 2026)
+
+Provided by the project maintainer from community sources and converted to the bundled
+formats (cartridge: trimmed and fit into 256x256 on transparency; logo: trimmed and fit
+to about 640x340, never upscaled past 2x). One line per file:
+
+- `GameArt/black-pearl-emerald.png`: Black Pearl Emerald cartridge. Source: provided by the maintainer.
+- `GameArt/crystal-advance-redux.png`: Crystal Advance Redux cartridge. Source: provided by the maintainer.
+- `GameArt/elite-redux.png`: Elite Redux cartridge (title screen). Source: provided by the maintainer.
+- `GameArt/emerald-enhanced.png`: Emerald Enhanced cartridge. Source: provided by the maintainer.
+- `GameArt/emerald-ex.png`: Emerald Ex cartridge (title screen). Source: provided by the maintainer.
+- `GameArt/emerald-exceeded.png`: Emerald Exceeded cartridge (box art). Source: provided by the maintainer.
+- `GameArt/emerald-seaglass.png`: Emerald Seaglass cartridge (box art). Source: provided by the maintainer.
+- `GameArt/fire-emerald.png`: Fire Emerald cartridge (promo art). Source: provided by the maintainer.
+- `GameArt/fire-red-extended.png`: Fire Red Extended cartridge (box art). Source: provided by the maintainer.
+- `GameArt/heart-and-soul.png`: Heart and Soul cartridge. Source: provided by the maintainer.
+- `GameArt/lazarus.png`: Lazarus cartridge. Source: provided by the maintainer.
+- `GameArt/lucid.png`: Lucid cartridge (box art). Source: provided by the maintainer.
+- `GameArt/origin-heartgold.png`: Origin HeartGold cartridge (opening art). Source: provided by the maintainer.
+- `GameArt/perfect-emerald.png`: Perfect Emerald cartridge (title screen). Source: provided by the maintainer.
+- `GameArt/quetzal.png`: Quetzal cartridge. Source: provided by the maintainer.
+- `GameArt/recharged-yellow.png`: Recharged Yellow cartridge (box art). Source: provided by the maintainer.
+- `GameArt/rowe.png`: R.O.W.E. cartridge (box art). Source: provided by the maintainer.
+- `GameArt/soul-gold.png`: Soul Gold cartridge (box art). Source: provided by the maintainer.
+- `GameArt/team-rocket-edition.png`: Team Rocket Edition cartridge. Source: provided by the maintainer.
+- `GameLogo/crystal-advance-redux.png`: Crystal Advance Redux logo. Source: provided by the maintainer.
+- `GameLogo/elite-redux.png`: Elite Redux logo. Source: provided by the maintainer.
+- `GameLogo/emerald-enhanced.png`: Emerald Enhanced logo. Source: provided by the maintainer.
+- `GameLogo/emerald-exceeded.png`: Emerald Exceeded logo. Source: provided by the maintainer.
+- `GameLogo/fire-red-extended.png`: Fire Red Extended logo. Source: provided by the maintainer.
+- `GameLogo/heart-and-soul.png`: Heart and Soul logo. Source: provided by the maintainer.
+- `GameLogo/lazarus.png`: Lazarus logo. Source: provided by the maintainer.
+- `GameLogo/lucid.png`: Lucid logo. Source: provided by the maintainer.
+- `GameLogo/origin-heartgold.png`: Origin HeartGold logo. Source: provided by the maintainer.
+- `GameLogo/quetzal.png`: Quetzal logo. Source: provided by the maintainer.
+- `GameLogo/recharged-yellow.png`: Recharged Yellow logo. Source: provided by the maintainer.
+- `GameLogo/rowe.png`: R.O.W.E. logo. Source: provided by the maintainer.
+- `GameLogo/team-rocket-edition.png`: Team Rocket Edition logo. Source: provided by the maintainer.
+
+Engine names map to these files by slug (`GameArt.GetAssetSlug`): "Heart and Soul 2.0"
+uses `heart-and-soul` and "R.O.W.E." uses `rowe`. Bundled art cache version bumped to v11.

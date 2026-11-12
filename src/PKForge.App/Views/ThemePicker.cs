@@ -40,7 +40,7 @@ public sealed class ThemePicker : IPadPagingHandler
         _cursor = Math.Max(0, _themes.ToList().FindIndex(theme => theme.Id == _currentId));
 
         _canvas = new SKCanvasView { EnableTouchEvents = true };
-        _canvas.PaintSurface += Paint;
+        _canvas.PaintSurface += PaintGuard.Wrap("ThemePicker.Paint", Paint);
         _canvas.Touch += Touch;
         _pacer = new FramePacer(new FrameInvalidator(_canvas));
         var window = new Border { Content = _canvas, StrokeThickness = 0, BackgroundColor = Colors.Transparent, Margin = new Thickness(40, 16) };

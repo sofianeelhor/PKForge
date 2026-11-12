@@ -29,14 +29,23 @@ internal static class UnboundFormat
     public const int PartyMonSize = 100;
 
     public const int StreamSections = 8; // section ids 5..12
-    public const int StreamPayloadOffset = 4; // 4-byte header, then 0xFF0 payload
+    /// <summary>Each storage section carries 0xFF0 bytes of PokemonStorage (the CFRU
+    /// window); the 4 bytes before the footer are padding outside the checksum.</summary>
     public const int StreamPayloadSize = 0xFF0;
+    /// <summary>PokemonStorage opens with the u32 currentBox; box 0 slot 0 follows it.
+    /// The storage is continuous across sections: section 6 starts mid-record (proven on
+    /// the Radical Red save, same CFRU engine), not after another 4-byte header.</summary>
+    public const int StreamBoxArea = 4;
     public const int PcMonSize = 58;
     public const int BoxSlotCount = 30;
 
     public const int PresetSection = 0;
     public const int PresetOffset = 0xB0;
-    public const int PresetChecksumLength = 0xADC; // the game only covers this window
+    /// <summary>Section 0's CFRU window (sizeof(SaveBlock2)). PUSE's map gives 0xADC; on
+    /// the real saves both agree because 0xADC..0xF24 is zero. The session uses whichever
+    /// window the stored checksum proves.</summary>
+    public const int PresetChecksumLength = 0xF24;
+    public const int PresetChecksumLengthPuse = 0xADC;
     public const int ChecksumLength = 0xFF4; // standard sector window (u32 aligned)
 
     /// <summary>Live (highest save index) physical offset of every section id.</summary>
@@ -73,29 +82,30 @@ internal static class UnboundFormat
         return result;
     }
 
-    /// <summary>The PC stream: payloads of sections 5..12 (live copies) concatenated.</summary>
+    /// <summary>PokemonStorage as the game lays it out: the 0xFF0-byte windows of the
+    /// live sections 5..12 concatenated (currentBox first, then the boxes).</summary>
     public static byte[] ReadStream(ReadOnlySpan<byte> data, int[] sections)
     {
         var stream = new byte[StreamSections * StreamPayloadSize];
         var cursor = 0;
         for (var id = 5; id <= 12; id++)
         {
-            data[(sections[id] + StreamPayloadOffset)..(sections[id] + StreamPayloadOffset + StreamPayloadSize)]
-                .CopyTo(stream.AsSpan(cursor));
+            data.Slice(sections[id], StreamPayloadSize).CopyTo(stream.AsSpan(cursor));
             cursor += StreamPayloadSize;
         }
         return stream;
     }
 
-    /// <summary>Writes the stream back into the live section copies and fixes their checksums.</summary>
+    /// <summary>Writes the storage back, one 0xFF0 window per live section, and fixes each
+    /// section's checksum over that window. The padding and footer are never written.</summary>
     public static void WriteStream(byte[] data, int[] sections, ReadOnlySpan<byte> stream)
     {
         var cursor = 0;
         for (var id = 5; id <= 12; id++)
         {
             var off = sections[id];
-            stream.Slice(cursor, StreamPayloadSize).CopyTo(data.AsSpan(off + StreamPayloadOffset));
-            WriteChecksum(data, off, ChecksumLength);
+            stream.Slice(cursor, StreamPayloadSize).CopyTo(data.AsSpan(off));
+            WriteChecksum(data, off, StreamPayloadSize);
             cursor += StreamPayloadSize;
         }
     }

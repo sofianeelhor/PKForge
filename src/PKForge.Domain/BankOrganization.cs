@@ -338,6 +338,28 @@ public static class BankPlacement
         return placements;
     }
 
+    /// <summary>
+    /// <see cref="Reorder(int?, IReadOnlyList{BankEntry})"/> around locked boxes: the ordered
+    /// entries flow into the slots of unlocked boxes only, stepping over every locked box, so a
+    /// whole-bank sort or compaction leaves a locked shelf exactly as it is. The caller passes
+    /// only entries from unlocked boxes.
+    /// </summary>
+    public static IReadOnlyList<(Guid Id, int Box, int Slot)> Reorder(
+        int? box, IReadOnlyList<BankEntry> ordered, IReadOnlySet<int> lockedBoxes)
+    {
+        if (lockedBoxes.Count == 0) return Reorder(box, ordered);
+        var placements = new List<(Guid Id, int Box, int Slot)>(ordered.Count);
+        var current = box ?? 0;
+        var slot = 0;
+        foreach (var entry in ordered)
+        {
+            if (slot == IBankService.SlotsPerBox) (current, slot) = (current + 1, 0);
+            while (lockedBoxes.Contains(current)) current++;
+            placements.Add((entry.Id, current, slot++));
+        }
+        return placements;
+    }
+
     /// <summary>How many of the placements actually land somewhere new - what a sort will move.</summary>
     public static int ChangedCount(
         IReadOnlyList<(Guid Id, int Box, int Slot)> placements, IReadOnlyList<BankEntry> all)

@@ -130,18 +130,33 @@ internal static class CfruEntity
     }
 
     /// <summary>Why <paramref name="entity"/> cannot enter the CFRU game whose snapshot reports
-    /// <paramref name="snapshotTag"/> (it crosses as a PK3, like the import itself), or null when
-    /// it can or the tag names no CFRU game.</summary>
+    /// <paramref name="snapshotTag"/> (read through <see cref="CfruPk3.Source"/>, like the import
+    /// itself), or null when it can or the tag names no CFRU game.</summary>
     public static string? ImportRefusal(PKM entity, string snapshotTag)
     {
+        Land(entity, snapshotTag, out var refusal, null);
+        return refusal;
+    }
+
+    /// <summary>What changes for <paramref name="entity"/> to fit the CFRU game whose snapshot
+    /// reports <paramref name="snapshotTag"/> (an ability the hack does not give it); empty when
+    /// nothing does, it is refused, or the tag names no CFRU game.</summary>
+    public static IReadOnlyList<string> ImportAdjustments(PKM entity, string snapshotTag)
+    {
+        var adjustments = new List<string>();
+        return Land(entity, snapshotTag, out _, adjustments) ? adjustments : [];
+    }
+
+    private static bool Land(PKM entity, string snapshotTag, out string? refusal, List<string>? adjustments)
+    {
+        refusal = null;
         var unbound = snapshotTag == UnboundEngineSession.SnapshotTag;
         var profile = Array.Find(Profiles, p => p.SnapshotTag == snapshotTag);
-        if (!unbound && profile is null) return null;
-        if ((entity as PK3 ?? EntityConverter.ConvertToType(entity, typeof(PK3), out _) as PK3) is not { } pk3) return null;
-        string? refusal;
-        if (unbound) UnboundEngineSession.Landing(pk3, out refusal);
-        else CfruEngineSession.Landing(pk3, profile!.Data, profile.GameName, out refusal);
-        return refusal;
+        if (!unbound && profile is null) return false;
+        if (CfruPk3.Source(entity) is not { } source) return false;
+        return unbound
+            ? UnboundEngineSession.Landing(source, out refusal, adjustments) is not null
+            : CfruEngineSession.Landing(source, profile!.Data, profile.GameName, out refusal, adjustments) is not null;
     }
 
     private static readonly CfruGameProfile[] Profiles = [RadicalRedEngineSession.Profile, GsChroniclesEngineSession.Profile];
@@ -180,10 +195,10 @@ internal static class CfruEntity
         return session;
     }
 
-    private const uint RetailSignature = 0x0801_2025;
+    internal const uint RetailSignature = 0x0801_2025;
 
     /// <summary>One slot's 14 sections, empty but for footers (id, signature, save index).</summary>
-    private static byte[] BlankImage(uint signature)
+    internal static byte[] BlankImage(uint signature)
     {
         var image = new byte[RadicalRedFormat.FileSize];
         for (var id = 0; id < RadicalRedFormat.SectionCount; id++)

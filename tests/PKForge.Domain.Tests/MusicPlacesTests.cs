@@ -57,4 +57,45 @@ public sealed class MusicPlacesTests
         Assert.Equal("Same as menus", MusicPlaces.Describe(MusicPlace.ParkDay, MusicSource.Default, Library));
         Assert.Equal("Ecruteak", MusicPlaces.Describe(MusicPlace.ParkNight, MusicSource.Of(["c"]), Library));
     }
+
+    [Fact]
+    public void Home_boxes_and_bank_follow_the_menus_until_given_their_own_music()
+    {
+        foreach (var place in new[] { MusicPlace.Home, MusicPlace.Boxes, MusicPlace.Bank })
+        {
+            Assert.Equal([0, 1, 2], Playlist(place, [])!);
+            Assert.Equal("Same as menus", MusicPlaces.Describe(place, MusicSource.Default, Library));
+        }
+        var sources = new Dictionary<MusicPlace, MusicSource> { [MusicPlace.Menus] = MusicSource.Of(["a"]), [MusicPlace.Bank] = MusicSource.Of(["c"]) };
+        Assert.Equal([0], Playlist(MusicPlace.Home, sources)!);
+        Assert.Equal([2], Playlist(MusicPlace.Bank, sources)!);
+    }
+
+    [Fact]
+    public void A_shuffle_place_plays_the_whole_library_shuffled_whatever_the_order()
+    {
+        var sources = new Dictionary<MusicPlace, MusicSource> { [MusicPlace.Boxes] = MusicSource.Shuffle };
+        MusicSource Of(MusicPlace p) => sources.GetValueOrDefault(p, MusicSource.Default);
+        Assert.Equal([0, 1, 2], Playlist(MusicPlace.Boxes, sources)!);
+        Assert.True(MusicPlaces.Shuffles(MusicPlace.Boxes, Of, MusicOrder.InOrder));
+        Assert.False(MusicPlaces.Shuffles(MusicPlace.Home, Of, MusicOrder.InOrder));
+        Assert.True(MusicPlaces.Shuffles(MusicPlace.Home, Of, MusicOrder.Shuffle));
+        sources[MusicPlace.Menus] = MusicSource.Shuffle;
+        Assert.True(MusicPlaces.Shuffles(MusicPlace.Bank, Of, MusicOrder.InOrder));
+        Assert.Equal(MusicSourceKind.Shuffle, MusicSource.Parse(MusicSource.Shuffle.Serialize()).Kind);
+        Assert.Equal("Shuffle", MusicPlaces.Describe(MusicPlace.Boxes, MusicSource.Shuffle, Library));
+    }
+
+    [Fact]
+    public void Volume_steps_by_ten_within_bounds_and_full_volume_is_unchanged()
+    {
+        Assert.Equal(1f, MusicPlaces.Gain(MusicPlaces.DefaultVolume));
+        Assert.Equal(0f, MusicPlaces.Gain(0));
+        Assert.Equal(0.25f, MusicPlaces.Gain(50));
+        Assert.Equal(100, MusicPlaces.StepVolume(100, 1));
+        Assert.Equal(0, MusicPlaces.StepVolume(0, -1));
+        Assert.Equal(70, MusicPlaces.StepVolume(80, -1));
+        Assert.Equal(40, MusicPlaces.StepVolume(33, 1));
+        Assert.Equal(100, MusicPlaces.ClampVolume(250));
+    }
 }

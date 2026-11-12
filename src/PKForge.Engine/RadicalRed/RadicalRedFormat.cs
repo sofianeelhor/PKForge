@@ -6,8 +6,8 @@ namespace PKForge.Engine.RadicalRed;
 /// Pokémon Radical Red (CFRU engine on a FireRed base) save layout.
 ///
 /// Ground truth: the owner's champion save (128 KiB, 151 PC mons), the CFRU engine's
-/// own source (save.c / pokemon.h / pokemon_storage_system.c), and the triage scripts
-/// in cases/radical-red/10-triage. The file keeps the retail GBA envelope — 32 sectors
+/// own source (save.c / pokemon.h / pokemon_storage_system.c), and byte-level triage of
+/// that save. The file keeps the retail GBA envelope — 32 sectors
 /// of 0x1000, footer at +0xFF4 (id u16, checksum u16, signature u32, save index u32),
 /// sections 0-13 duplicated across two rotating slots — and the retail signature
 /// 0x08012025 (Unbound stamps 0x01121999 instead; there is no Radical Red magic).
@@ -220,8 +220,26 @@ internal static class RadicalRedFormat
         if (count > 6)
             return false;
         if (count == 0)
-            return true;
+            return !RawRegionErased(data) && !FirstBoxRecordIsEncryptedPk3(data, sections);
         var species = BinaryPrimitives.ReadUInt16LittleEndian(data[(party + PartyOffset + 0x20)..]);
         return RadicalRedData.IsKnownSpecies(species);
     }
+
+    /// <summary>
+    /// Fire Red Extended shares the CFRU windows but keeps vanilla 80-byte ENCRYPTED PK3
+    /// records in its boxes, where Radical Red packs 58-byte plaintext ones. With an empty
+    /// party, the first stored records tell them apart (see <see cref="RecognizedHacks.StoredRecordsAreEncryptedPk3"/>).
+    /// </summary>
+    private static bool FirstBoxRecordIsEncryptedPk3(ReadOnlySpan<byte> data, int[] sections) =>
+        RecognizedHacks.StoredRecordsAreEncryptedPk3(ReadStream(data, sections), StreamBoxArea);
+
+    /// <summary>
+    /// Radical Red writes its raw sectors 30/31 (the last boxes, zeroed footers) with the
+    /// save; a CFRU-window save whose sectors 30 and 31 are still erased flash came from
+    /// another hack (Fire Red Extended leaves 28-31 at 0xFF). With an empty party nothing
+    /// else tells them apart, so such a save is not claimed: it falls to the stock parser,
+    /// whose layout guard keeps it read-only, rather than being written as Radical Red.
+    /// </summary>
+    private static bool RawRegionErased(ReadOnlySpan<byte> data) =>
+        data.Slice(RawRegionFile, 2 * SectorSize).IndexOfAnyExcept((byte)0xFF) < 0;
 }

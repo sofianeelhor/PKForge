@@ -134,9 +134,38 @@ public sealed class TransferService(
         ArgumentNullException.ThrowIfNull(target);
         using var session = await OpenTargetAsync(target, cancellationToken).ConfigureAwait(false);
         var snapshot = session.Snapshot;
-        foreach (var slot in slots)
-            session.ReleaseSlot(slot.Box, slot.Slot);
+        SlotReleases.ReleaseAll(session, [.. slots.Select(slot => (slot.Box, slot.Slot))]);
         await WriteTargetAsync(target, snapshot, session, changeDescription, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Opens any detected game as a throwaway session (read fresh from its file), for an
+    /// edit that is not a Pokémon transfer (the Item Bank's bag moves). The caller disposes it.</summary>
+    public Task<ISaveEngineSession> OpenGameAsync(DetectedSave target, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        return OpenTargetAsync(target, cancellationToken);
+    }
+
+    /// <summary>
+    /// Writes a session opened by <see cref="OpenGameAsync"/> through the same safe path as every
+    /// transfer (validate, restore point, atomic write). When the game written is the one open in
+    /// the app, its live session is reopened from what was written, so it never writes stale bytes back.
+    /// A failure once the save is written throws <see cref="SaveAlreadyWrittenException"/>, so a caller
+    /// never undoes what went with the write (an Item Bank move) when the save already holds it.
+    /// </summary>
+    public async Task WriteGameAsync(DetectedSave target, SaveSnapshot snapshot, ISaveEngineSession session, string changeDescription,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        var receipt = await WriteTargetAsync(target, snapshot, session, changeDescription, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (receipt.Changed && sessions.Current?.Document.DocumentId == target.DocumentId) sessions.RevertToBaseline();
+        }
+        catch (Exception error)
+        {
+            throw new SaveAlreadyWrittenException($"The open game could not be reloaded from the file ({error.Message}): reopen it before editing.", error);
+        }
     }
 
     /// <summary>Writes a throwaway target session back through the safe path (validate, backup, atomic write).</summary>
@@ -146,14 +175,17 @@ public sealed class TransferService(
         var candidate = session.Serialize();
         var receipt = await writer.WriteAsync(target.DocumentId, snapshot, candidate, changeDescription, cancellationToken).ConfigureAwait(false);
         if (receipt.Changed)
+        {
             sessions.MarkWritten(target.DocumentId, candidate);
+            session.CommitHistory(); // only now that the save holding the trips is written
+        }
         return receipt;
     }
 
     /// <summary>Why the entity cannot enter the target (the species or file names itself), else the generic refusal.</summary>
     internal static string Refusal(ReadOnlyMemory<byte> entityBytes, string nickname, SaveSnapshot snapshot, string targetLabel, string? format = null) =>
         TransferCompatibility.ExplainRefusal(entityBytes.ToArray(), nickname, snapshot.Format, snapshot.Generation, targetLabel, format)
-            ?? $"{nickname} cannot enter {targetLabel}.";
+            ?? $"{nickname} can't go to {targetLabel}: PKForge can't convert it for that game.";
 
     /// <summary>The target save's slots, read fresh, so the player can choose where a batch starts.</summary>
     public async Task<IReadOnlyList<SlotSummary>> ReadSlotsAsync(DetectedSave target, CancellationToken cancellationToken = default)

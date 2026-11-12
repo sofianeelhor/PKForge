@@ -31,6 +31,20 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
     private readonly View _sidePanel;
     private ScrollView? _editorScroll;
     private EditorFocusTarget[] EditorFocusTargets = [];
+    private readonly StatusToast _toast = new();
+    // The bag says what each write did in its own panel: the page's notice stays quiet meanwhile.
+    private bool _bagOpen;
+    private Button? _saveButton;
+    private string? _saveButtonLook;
+    private EditSaveResult? _saveFlash;
+    private int _saveFlashTurn;
+    private bool _leavePromptOpen;
+    // The marked Pokémon carried as one group: A held still picks them up, L/R turn the
+    // pages with them, A sets them down.
+    private bool _groupHeld;
+    private bool _groupAwaitsRelease;
+    private int _holdTurn;
+    private const int HoldToGrabMs = 450;
     private Grid _hostGrid = null!;
     private long _partyPulseStart = Environment.TickCount64;
     private IDispatcherTimer? _partyPulseTimer;
@@ -52,7 +66,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
     /// <summary>The party cursor breathes: a light repaint loop that only runs on the party view.</summary>
     private void EnsurePartyPulse()
     {
-        if (_partyPulseTimer is not null || _viewModel.SelectedSlot < 0) return;
+        if (_partyPulseTimer is not null || _viewModel.SelectedSlot < 0 || !MotionSetting.Decorative) return;
         _partyPulseStart = Environment.TickCount64;
         _partyPulseTimer = Dispatcher.CreateTimer();
         _partyPulseTimer.Interval = TimeSpan.FromMilliseconds(45);
@@ -68,12 +82,13 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
 
     public BoxBrowserPage(BoxBrowserViewModel viewModel, ISpriteService sprites, ThemeService theme)
     {
+        PerfTrace.Track(this);
         _viewModel = viewModel;
         _viewModel.ConfirmHackRisk = async _ =>
         {
             var choice = await PadMenu.ShowAsync(_hostGrid, RomHackNotice.Title, RomHackNotice.Warning,
                 new PadOption(RomHackNotice.EditOption, Glyph: "!", Accent: UiTokens.Bad,
-                    Detail: "Your edit is saved now. A restore point is made first. Change this later from Home."),
+                    Detail: "Saves your edit now. Restore points can undo it."),
                 new PadOption("Cancel", IconPath: "back", Detail: "Nothing is written."));
             return choice == RomHackNotice.EditOption;
         };
@@ -85,13 +100,13 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
 
         _canvas = new SKCanvasView { EnableTouchEvents = true };
         _frame = new FrameInvalidator(_canvas);
-        _canvas.PaintSurface += Paint;
+        _canvas.PaintSurface += PaintGuard.Wrap("The storage grid", Paint);
         _canvas.Touch += Touch;
 
         // The box header rides above the well: the slanted name banner between two chevrons.
         // Touch mirrors the games: the chevrons page the boxes, the name opens the box manager.
         _boxBar = new SKCanvasView { HeightRequest = Design(HeaderDesignHeight), Margin = new Thickness(0, 0, 0, Design(28)) };
-        _boxBar.PaintSurface += PaintBoxBar;
+        _boxBar.PaintSurface += PaintGuard.Wrap("The box header", PaintBoxBar);
         var boxBarTap = new TapGestureRecognizer();
         boxBarTap.Tapped += (_, args) => TapBoxBar(args.GetPosition(_boxBar)?.X ?? _boxBar.Width / 2);
         _boxBar.GestureRecognizers.Add(boxBarTap);
@@ -99,7 +114,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         // In the box manager the three cards are touch targets: neighbors browse (or swap
         // the held box), the middle card marks the box.
         _boxNeighbors = new SKCanvasView { HeightRequest = 100, IsVisible = false };
-        _boxNeighbors.PaintSurface += PaintBoxNeighbors;
+        _boxNeighbors.PaintSurface += PaintGuard.Wrap("The box manager", PaintBoxNeighbors);
         var neighborTap = new TapGestureRecognizer();
         neighborTap.Tapped += (_, args) => TapBoxNeighbors(args.GetPosition(_boxNeighbors)?.X ?? _boxNeighbors.Width / 2);
         _boxNeighbors.GestureRecognizers.Add(neighborTap);
@@ -142,33 +157,75 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         Grid.SetRow(_footerHost, 3);
 
         _hostGrid = new Grid { Children = { root } };
+        _hostGrid.Add(_toast);
         Content = _hostGrid;
 
-        viewModel.PropertyChanged += (_, args) =>
+        ViewModelChanged += (_, args) =>
         {
+            // This screen has no readout: what an action reports is shown as a short notice.
+            if (args.PropertyName is nameof(BoxBrowserViewModel.Status) && !_bagOpen) _toast.Show(_viewModel.Status, _viewModel.StatusTone);
+            if (args.PropertyName is nameof(BoxBrowserViewModel.HasPendingEdits)) RefreshSaveButton();
             if (args.PropertyName is nameof(BoxBrowserViewModel.Save) or nameof(BoxBrowserViewModel.BoxIndex)
                 or nameof(BoxBrowserViewModel.SelectedSlot) or nameof(BoxBrowserViewModel.VisibleSlots))
             {
                 // The locks follow the box's contents, not the cursor.
                 if (args.PropertyName is not nameof(BoxBrowserViewModel.SelectedSlot)) RefreshLockedSlots();
                 _canvas.InvalidateSurface();
-                _boxBar.InvalidateSurface();
+                // The header names the box, not the slot: a cursor step leaves it as it is.
+                if (args.PropertyName is not nameof(BoxBrowserViewModel.SelectedSlot)) _boxBar.InvalidateSurface();
             }
             // The footer's labels follow the selection ("Select box" / "Unmark box", the count).
             if (args.PropertyName is nameof(BoxBrowserViewModel.MarkedCount) or nameof(BoxBrowserViewModel.SelectMode)
                 or nameof(BoxBrowserViewModel.BoxIndex) or nameof(BoxBrowserViewModel.VisibleSlots))
             {
                 _boxBar.InvalidateSurface();
-                if (_viewModel.SelectMode && !_boxManageMode && !_editorFocusMode) SetSelectFooter();
+                // Through RefreshFooter: a carried group keeps its own footer when the box changes.
+                if (_viewModel.SelectMode && !_boxManageMode && !_editorFocusMode) RefreshFooter();
             }
             if (args.PropertyName is nameof(BoxBrowserViewModel.CarrySource) && !_viewModel.SelectMode && !_boxManageMode && !_editorFocusMode)
                 SetStorageFooter(); // Grab ↔ Place, Back ↔ Cancel
         };
-        theme.PropertyChanged += (_, args) =>
-        {
-            if (args.PropertyName is nameof(ThemeService.SkAccent))
-                _canvas.InvalidateSurface();
-        };
+        AttachToViewModel();
+    }
+
+    // The view model and the theme are singletons and this page is built for every opened
+    // save: the page listens through one relay that is let go once the page is popped, so
+    // a closed box screen is never kept alive (nor repainted) by the singletons.
+    private event System.ComponentModel.PropertyChangedEventHandler? ViewModelChanged;
+    private bool _attachedToViewModel;
+
+    private void RelayViewModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args) =>
+        ViewModelChanged?.Invoke(sender, args);
+
+    private void OnThemeChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is nameof(ThemeService.SkAccent))
+            _canvas.InvalidateSurface();
+    }
+
+    private void AttachToViewModel()
+    {
+        if (_attachedToViewModel) return;
+        _attachedToViewModel = true;
+        _viewModel.PropertyChanged += RelayViewModelChanged;
+        _viewModel.EditSaveFinished += FlashSaveButton;
+        _theme.PropertyChanged += OnThemeChanged;
+    }
+
+    private void DetachFromViewModel()
+    {
+        if (!_attachedToViewModel) return;
+        _attachedToViewModel = false;
+        _viewModel.PropertyChanged -= RelayViewModelChanged;
+        _viewModel.EditSaveFinished -= FlashSaveButton;
+        _theme.PropertyChanged -= OnThemeChanged;
+    }
+
+    /// <summary>Popped (Back to Home, or replaced): the relay lets go. A push on top keeps it.</summary>
+    protected override void OnNavigatedFrom(NavigatedFromEventArgs args)
+    {
+        base.OnNavigatedFrom(args);
+        if (args.NavigationType != NavigationType.Push) DetachFromViewModel();
     }
 
     /// <summary>Draws the box header: the name banner, and a chevron each way when a box is there.</summary>
@@ -193,7 +250,10 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 ? headerSession.GetBoxName(_viewModel.BoxIndex)
                 : $"Box {_viewModel.BoxIndex + 1:00}";
         if (_boxManageMode) boxName = _boxHeld ? $"Holding · {boxName}" : $"Manage · {boxName}";
-        else if (_viewModel.SelectMode) boxName = $"{boxName} · marked {_viewModel.MarkedInCurrentBox}/{_viewModel.MarkedCount}";
+        // The header says what the selection can do next: "hold to carry" cannot be guessed.
+        else if (_groupHeld) boxName = $"{boxName} · A sets down {_viewModel.MarkedCount}";
+        else if (_viewModel.SelectMode && _viewModel.MarkedCount > 0) boxName = $"{boxName} · {_viewModel.MarkedCount} · hold A to carry";
+        else if (_viewModel.SelectMode) boxName = $"{boxName} · A marks, hold to sweep";
         StoragePaint.BoxHeader(canvas, bounds, boxName, font,
             canPrev: _viewModel.BoxIndex > 0,
             canNext: _viewModel.BoxIndex < _viewModel.BoxCount - 1, unit);
@@ -233,7 +293,8 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 PksmPaint.CenterText(canvas, "LOCK", rect.Right - 22, rect.Bottom - 8, label,
                     SKColors.White, Pksm.Illegal, SKTextAlign.Center);
 
-            var slots = Enumerable.Range(0, BoxGridRenderer.Columns * BoxGridRenderer.Rows)
+            // A Gen 1 or 2 box holds 20, not 30: reading past its end threw and took the app down.
+            var slots = Enumerable.Range(0, Math.Min(BoxGridRenderer.Columns * BoxGridRenderer.Rows, _viewModel.BoxCapacity))
                 .Select(slot => session.ReadEntity(box, slot)).ToArray();
             var dotW = (rect.Width - 12) / BoxGridRenderer.Columns;
             var dotH = (rect.Height - 24) / BoxGridRenderer.Rows;
@@ -252,7 +313,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                     canvas.DrawCircle(x, y, radius * 0.65f, slots[slot].IsShiny ? shiny : occupied);
                     continue;
                 }
-                using var image = SKImage.FromBitmap(sprite);
+                var image = Services.SpriteImages.Of(sprite);
                 var scale = Math.Min(radius * 2 / image.Width, radius * 2 / image.Height);
                 var width = image.Width * scale;
                 var height = image.Height * scale;
@@ -270,14 +331,20 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         ("A", _viewModel.CarrySource is null ? "Grab" : "Place", null),
         ("-", "Multi-select", EnterSelectMode),
         ("LR", "Box", () => OnPadButton(PadButton.R)),
-        ("X", "Tools", () => _ = ShowToolsAsync()), ("Y", "Save data", () => _ = ShowSaveDataAsync()),
+        ("X", "Tools", () => ShowToolsAsync().Observe("box", ReportScreenError)), ("Y", "Save data", () => ShowSaveDataAsync().Observe("box", ReportScreenError)),
         ("+", "Menu", () => OpenCursorMenu()),
         ("B", _viewModel.CarrySource is null ? "Back" : "Cancel", () => OnPadButton(PadButton.B)));
 
+    private void SetGroupFooter() => _footerHost.Content = DsChrome.Footer(
+        ("A", $"Place ({_viewModel.MarkedCount})", () => _ = DropGroupAsync()),
+        ("LR", "Box", () => OnPadButton(PadButton.R)),
+        ("B", "Put back", () => OnPadButton(PadButton.B)));
+
     private void SetSelectFooter() => _footerHost.Content = DsChrome.Footer(
-        ("A", "Mark · hold for area", () => { OnPadButton(PadButton.A); OnPadReleased(PadButton.A); }),
+        // Short: the box header says what holding A does, and seven hints must fit the bar.
+        ("A", "Mark", () => { OnPadButton(PadButton.A); OnPadReleased(PadButton.A); }),
         ("Y", _viewModel.CurrentBoxFullyMarked ? "Unmark box" : "Select box", () => OnPadButton(PadButton.Y)),
-        ("X", $"Actions ({_viewModel.MarkedCount})", () => _ = ShowOrganizerMenuAsync()),
+        ("X", $"Actions ({_viewModel.MarkedCount})", () => ShowOrganizerMenuAsync().Observe("box", ReportScreenError)),
         ("+", "Boxes", EnterBoxManageMode),
         ("LR", "Box", () => OnPadButton(PadButton.R)),
         ("-", "Move mode", ExitSelectMode),
@@ -288,6 +355,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
     {
         if (_boxManageMode) SetBoxManageFooter();
         else if (_editorFocusMode) SetEditorFooter();
+        else if (_groupHeld) SetGroupFooter();
         else if (_viewModel.SelectMode) SetSelectFooter();
         else SetStorageFooter();
     }
@@ -304,6 +372,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
     private void ExitSelectMode()
     {
         _selectHeld = false;
+        _groupHeld = false;
         _viewModel.ExitSelectMode();
         ShowReady();
         RepaintStorage();
@@ -346,7 +415,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         ("B", "Done", ExitBoxManageMode),
         ("LR", _boxHeld ? "Swap" : "Browse", null),
         ("Y", _markedBoxes.Contains(_viewModel.BoxIndex) ? "Deselect" : "Select", ToggleMarkedBox),
-        ("X", "Box actions", () => _ = ShowBoxBulkActionsAsync()));
+        ("X", "Box actions", () => ShowBoxBulkActionsAsync().Observe("box", ReportScreenError)));
 
     // ── Hardcore mode ─────────────────────────────────────────────────────────
     // One guard per surface, never a condition buried inside a flow. Allowed()/Menu()
@@ -441,13 +510,13 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                     new PadOption(RomHackNotice.ReadOnlyOption, IconPath: "box",
                         Detail: "Look at boxes and party. Nothing is ever written."),
                     new PadOption(RomHackNotice.EditOption, Glyph: "!", Accent: UiTokens.Bad,
-                        Detail: "Restore points are still made. Change this later from Home."));
+                        Detail: "Restore points can undo any edit. Change this later from Home."));
                 if (choice == RomHackNotice.EditOption) _viewModel.AcceptHackRisk();
                 break;
             case LayoutRiskKind.CorruptingLayout when CorruptingExplained.Add(documentId):
                 await PadMenu.ShowAsync(_hostGrid, RomHackNotice.CorruptingTitle,
                     $"PKForge can show this save but will not write it: {risk.Reason}\n" +
-                    "Writing it with the retail layout would break the file, so there is no way to edit it at your own risk.", "OK");
+                    "Writing it would break the file, so there is no way to edit it at your own risk.", "OK");
                 break;
         }
     }
@@ -508,7 +577,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             editor.IsVisible = hasSelection;
             idle.IsVisible = !hasSelection;
         }
-        _viewModel.PropertyChanged += (_, args) =>
+        ViewModelChanged += (_, args) =>
         {
             if (args.PropertyName is nameof(BoxBrowserViewModel.Selected))
                 SwapPanels();
@@ -516,6 +585,111 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         SwapPanels();
 
         return EditorShell(new Grid { Children = { idle, editor } });
+    }
+
+    /// <summary>
+    /// Save changes says where the edit stands: quiet while there is nothing to save, lit
+    /// when a change is waiting, green for a moment once it is in the file, red when the
+    /// save was refused.
+    /// </summary>
+    private void RefreshSaveButton()
+    {
+        if (_saveButton is not { } button) return;
+        (string text, Color fill, Color edge, Color ink) = _saveFlash switch
+        {
+            EditSaveResult.Saved => ("Saved ✓", UiTokens.Green, UiTokens.Green, Colors.White),
+            EditSaveResult.Refused => ("Not saved", UiTokens.Bad, UiTokens.Bad, Colors.White),
+            _ => _viewModel.HasPendingEdits
+                ? ("Save changes", EditorPaint.CyanFill.ToMauiColor(), EditorPaint.Cyan.ToMauiColor(), EditorPaint.ChipInk.ToMauiColor())
+                : ("No changes to save", UiTokens.ToolFill, UiTokens.ToolEdge, UiTokens.Ink1),
+        };
+        if (_saveButtonLook == text) return;
+        _saveButtonLook = text;
+        button.Text = text;
+        var index = Array.FindIndex(EditorFocusTargets, target => ReferenceEquals(target.View, button));
+        if (index >= 0)
+            EditorFocusTargets[index] = EditorFocusTargets[index] with
+            {
+                OriginalBackground = fill, OriginalTextColor = ink, OriginalBorder = edge,
+            };
+        button.Background = null;
+        button.BackgroundColor = fill;
+        button.TextColor = ink;
+        if (!_editorFocusMode || index != _editorFocusIndex) button.BorderColor = edge;
+    }
+
+    private async void FlashSaveButton(EditSaveResult result)
+    {
+        if (result == EditSaveResult.Unchanged) return;
+        try
+        {
+            var turn = ++_saveFlashTurn;
+            _saveFlash = result;
+            RefreshSaveButton();
+            await Task.Delay(result == EditSaveResult.Saved ? 1600 : 2600);
+            if (turn != _saveFlashTurn) return;
+            _saveFlash = null;
+            RefreshSaveButton();
+        }
+        catch (Exception error)
+        {
+            // async void: an escaping exception would close the app for a button's flash.
+            AppLog.Warn("editor", $"The save button flash stopped: {error.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Asks what to do with an edit that was not saved, before something refills the editor.
+    /// True when the caller may go on: the edit was saved or given up. False to stay put.
+    /// </summary>
+    private async Task<bool> SettlePendingEditsAsync()
+    {
+        if (!_viewModel.HasPendingEdits) return true;
+        if (_leavePromptOpen) return false;
+        _leavePromptOpen = true;
+        try
+        {
+            // A Gen 1 mon that was never nicknamed (or one whose nickname is empty) has no
+            // nickname to show: the dialog names its species instead of nobody.
+            var name = _viewModel.Selected is { } mon
+                ? Kit.Tidy(string.IsNullOrWhiteSpace(mon.Nickname) ? mon.SpeciesName : mon.Nickname)
+                : "This Pokémon";
+            if (string.IsNullOrWhiteSpace(name)) name = "This Pokémon";
+            var choice = await PadMenu.ShowAsync(_hostGrid, "Unsaved changes",
+                $"{name} has changes that are not in your save yet.",
+                "Save changes", "Discard changes", "Keep editing");
+            switch (choice)
+            {
+                case "Save changes":
+                    await _viewModel.SaveEditCommand.ExecuteAsync(null);
+                    return !_viewModel.HasPendingEdits;
+                case "Discard changes":
+                    _viewModel.DiscardPendingEdits();
+                    return true;
+                default:
+                    return false;
+            }
+        }
+        finally { _leavePromptOpen = false; }
+    }
+
+    /// <summary>
+    /// A widget or a shortcut wants to take the player elsewhere: the same question as leaving with
+    /// B when an edit is not saved yet. True when the link may go on.
+    /// </summary>
+    internal Task<bool> SettleBeforeLinkAsync() => SettlePendingEditsAsync();
+
+    private async Task SettleThenAsync(Action next)
+    {
+        if (await SettlePendingEditsAsync()) next();
+    }
+
+    /// <summary>The system back button leaves the screen like B does, after the same question.</summary>
+    protected override bool OnBackButtonPressed()
+    {
+        if (!_viewModel.HasPendingEdits) return base.OnBackButtonPressed();
+        _ = SettleThenAsync(() => _ = Navigation.PopAsync());
+        return true;
     }
 
     private void EnterEditorFocusMode()
@@ -592,6 +766,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                     button.Background = null;
                     Kit.SetButtonFocus(button, false, target.OriginalBackground, target.OriginalTextColor);
                     if (target.OriginalBorder is not null) button.BorderColor = target.OriginalBorder;
+                    if (ReferenceEquals(button, _saveButton)) button.BorderWidth = 1.5;
                     break;
             }
         }
@@ -605,6 +780,12 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 border.Background = EditorFocusBrush;
                 border.Stroke = EditorPaint.Cyan.ToMauiColor();
                 SetFocusedCaptions(border, true);
+                break;
+            // Save changes keeps its own colour under the cursor: the colour is how it says
+            // whether there is something to save and whether the save went through.
+            case Button button when ReferenceEquals(button, _saveButton):
+                button.BorderColor = EditorPaint.ChipInk.ToMauiColor();
+                button.BorderWidth = 4;
                 break;
             case Button button:
                 button.Background = EditorFocusBrush;
@@ -630,136 +811,91 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             await ShowOrganizerMenuAsync();
             return;
         }
-        // Box-level bulk tools run on the stock engine only: romhack sessions refuse
-        // sort/batch ops, so their entries are hidden instead of failing mid-flow.
-        var boxTools = _sessionsFor()?.SupportsBoxTools == true;
-        var options = new List<PadOption>
+        while (_sessionsFor() is { } session)
         {
-            new("Multi-select (- button)", IconPath: "select", Detail: "Mark several Pokémon to move, copy or edit them together."),
-            new("Box manager…", IconPath: "box", Detail: "Reorder, copy, lock or empty whole boxes."),
-        };
-        options.AddRange(Menu(
-            Allowed(SaveAction.CreateMon, new("Import .pk files", IconPath: "import", Detail: "Pick Pokémon files to fill this box's empty slots.")),
-            Allowed(SaveAction.CreateMon, new("Import Showdown team", IconPath: "script", Detail: "Paste Showdown sets, see their legality, then place them in empty slots.")),
-            new("Export box to Showdown", IconPath: "script", Detail: "This box as Showdown text to copy or share."),
-            Allowed(SaveAction.CreateMon, new("Generate Living Dex", IconPath: "create", Detail: "Replaces every box with one legal Pokémon of each species.")),
-            new("How to get a Pokémon…", IconPath: "map", Detail: "How to obtain a species in the game you are editing."),
-            new("Find held item…", IconPath: "item", Detail: "See which Pokémon hold an item and go to one."),
-            new("IV ranking…", IconPath: "stats", Detail: "Every Pokémon sorted by its IVs; pick one to go to it."),
-            Allowed(SaveAction.CreateMon, new("Egg factory…", IconPath: "egg", Detail: "Fill empty PC slots with eggs: one of each species, or one species.")),
-            new("Day Care / Nursery", IconPath: "daycare", Detail: "See who is at the Day Care and withdraw them to the PC.")));
-        if (_sessionsFor() is { } honeySession && PKForge.Engine.HoneyTreeService.IsSupported(honeySession))
-            options.Add(new("Honey trees", IconPath: "tree", Detail: "See and change the honey trees, including your Munchlax trees."));
-        if (boxTools)
-        {
-            options.AddRange(Menu(
-                Allowed(SaveAction.BatchEdit, new("Battle prep", IconPath: "battle", Detail: "Heal, max PP or set levels for the party or every box.")),
-                Allowed(SaveAction.BatchEdit, new("Batch editor", IconPath: "batch", Detail: "Change level, IVs, EVs, healing and more on many Pokémon at once.")),
-                Allowed(SaveAction.BatchEdit, new("Batch rename / OT…", IconPath: "rename", Detail: "Reset nicknames, or make you the original trainer, on many Pokémon.")),
-                Allowed(SaveAction.CreateMon, new("Random team…", IconPath: "dice", Detail: "Roll a random legal team into the party or empty box slots."))));
-        }
-        options.AddRange(Menu(
-            Allowed(SaveAction.BatchEdit, new("Presets…", IconPath: "preset", Detail: "One change, like Level 100 or perfect IVs, on a box or all boxes.")),
-            new("Trainer profiles…", IconPath: "profile", Detail: "Save trainer details and give them to Pokémon as their original trainer."),
-            new("Legality check", IconPath: "check", Detail: "Check every Pokémon in the save and repair the illegal ones."),
-            new("Audit report", IconPath: "report", Detail: "Find cloned Pokémon and impossible values across the save."),
-            new("Nuzlocke report", IconPath: "skull", Detail: "The first catch on each route, from where each Pokémon was met."),
-            new("Collection dex…", IconPath: "pokedex", Detail: "Living dex tracker for the Bank and this save, normal and shiny.")));
-        if (boxTools)
-            options.Add(new("Sort boxes…", IconPath: "sort", Detail: "Order this box or all boxes by dex number, level, type and more."));
-        var choice = await PadMenu.ShowAsync(_hostGrid, "Storage tools", Note(null), options.ToArray());
-        switch (choice)
-        {
-            case "Multi-select (- button)":
-                EnterSelectMode();
-                return;
-            case "Import .pk files":
-                await BulkImportAsync();
-                return;
-            case "Import Showdown team":
-                await ImportShowdownTeamAsync();
-                return;
-            case "Export box to Showdown":
-                await ExportBoxShowdownAsync();
-                return;
-            case "Generate Living Dex":
-                await GenerateLivingDexAsync();
-                return;
-            case "How to get a Pokémon…":
+            // Box-level bulk tools run on the stock engine only: romhack sessions refuse
+            // sort/batch ops, so their entries are hidden instead of failing mid-flow.
+            var groups = StorageToolsMenu.Build(new StorageToolsCapabilities(
+                BoxTools: session.SupportsBoxTools,
+                CreateMon: Guard.Allows(SaveAction.CreateMon),
+                BatchEdit: Guard.Allows(SaveAction.BatchEdit),
+                LivingDex: session.LivingDexBundle is not null));
+            var shelves = groups.Select(g => new HubShelf(g.Title, [.. g.Rows.Select(r => new HubTile(r.Title, r.Detail, r.Icon, r.Short))])).ToList();
+            var (opened, tab, row) = await ToolHubScreen.ShowAsync(_hostGrid, shelves, () => BoxCardOf(session), _toolsTab, _toolsRow);
+            (_toolsTab, _toolsRow) = (tab, row);
+            if (!opened) return;
+            switch (groups[tab].Rows[row].Entry)
             {
-                // Game-scoped on purpose: this is "how do I get it in the game I'm editing".
-                // The all-games answer lives in the bank/living dex.
-                var session = _sessionsFor();
-                if (session is not null)
+                // These turn the boxes into another mode: the hub steps aside for good.
+                case StorageTool.MultiSelect: EnterSelectMode(); return;
+                case StorageTool.BoxManager: EnterBoxManageMode(); return;
+                case StorageTool.SortBoxes: await ShowSortMenuAsync(); break;
+                case StorageTool.ImportFiles: await BulkImportAsync(); break;
+                case StorageTool.ImportShowdown: await ImportShowdownTeamAsync(); break;
+                case StorageTool.RandomTeam: await ShowRandomTeamAsync(); break;
+                case StorageTool.EggFactory: await ShowEggFactoryAsync(); break;
+                case StorageTool.LivingDex: await GenerateLivingDexAsync(); break;
+                case StorageTool.DayCare: await DaycareEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case StorageTool.BatchEditor: await RunBatchEditorAsync(); break;
+                case StorageTool.BattlePrep: await ShowBattlePrepAsync(); break;
+                case StorageTool.Presets: await ShowPresetsMenuAsync(); break;
+                case StorageTool.Rename: await ShowBatchRenameAsync(); break;
+                case StorageTool.TrainerProfiles: await ShowTrainerProfilesAsync(); break;
+                // Game-scoped on purpose: "how do I get it in the game I am editing". The
+                // all-games answer lives in the Collection dex.
+                case StorageTool.HowToGet:
                     await EncounterGallery.ShowGameScopedAsync(_hostGrid, _viewModel, session, () => _canvas.InvalidateSurface());
-                return;
-            }
-            case "Find held item…":
-                await FindHeldItemAsync();
-                return;
-            case "IV ranking…":
-                await ShowIvRankingAsync();
-                return;
-            case "Battle prep":
-                await ShowBattlePrepAsync();
-                return;
-            case "Egg factory…":
-                await ShowEggFactoryAsync();
-                return;
-            case "Honey trees":
+                    break;
+                case StorageTool.FindItem: await FindHeldItemAsync(); break;
+                case StorageTool.IvRanking: await ShowIvRankingAsync(); break;
+                case StorageTool.CollectionDex:
                 {
-                    var session = _sessionsFor();
-                    if (session is not null)
-                        await HoneyTreeEditor.ShowAsync(_hostGrid, session, _viewModel);
-                    return;
+                    var services = IPlatformApplication.Current?.Services;
+                    var data = services?.GetService<IGameDataService>();
+                    var sprites = services?.GetService<ISpriteService>();
+                    if (data is not null && sprites is not null)
+                        await CollectionDexPage.ShowAsync(_hostGrid, _viewModel, data, sprites);
+                    break;
                 }
-            case "Day Care / Nursery":
-                {
-                    var session = _sessionsFor();
-                    if (session is not null)
-                        await DaycareEditor.ShowAsync(_hostGrid, session, _viewModel);
-                    return;
-                }
-            case "Batch editor":
-                await RunBatchEditorAsync();
-                return;
-            case "Batch rename / OT…":
-                await ShowBatchRenameAsync();
-                return;
-            case "Random team…":
-                await ShowRandomTeamAsync();
-                return;
-            case "Presets…":
-                await ShowPresetsMenuAsync();
-                return;
-            case "Trainer profiles…":
-                await ShowTrainerProfilesAsync();
-                return;
-            case "Legality check":
-                await ShowLegalityCheckAsync();
-                return;
-            case "Audit report":
-                await ShowAuditReportAsync();
-                return;
-            case "Nuzlocke report":
-                await ShowNuzlockeReportAsync();
-                return;
-            case "Box manager…":
-                EnterBoxManageMode();
-                return;
-            case "Sort boxes…":
-                await ShowSortMenuAsync();
-                return;
-            case "Collection dex…":
-            {
-                var services = IPlatformApplication.Current?.Services;
-                var data = services?.GetService<IGameDataService>();
-                var sprites = services?.GetService<ISpriteService>();
-                if (data is not null && sprites is not null)
-                    await CollectionDexPage.ShowAsync(_hostGrid, _viewModel, data, sprites);
-                return;
+                case StorageTool.LegalityCheck: await ShowLegalityCheckAsync(); break;
+                case StorageTool.AuditReport: await ShowAuditReportAsync(); break;
+                case StorageTool.NuzlockeReport: await ShowNuzlockeReportAsync(); break;
+                case StorageTool.ExportShowdown: await ExportBoxShowdownAsync(); break;
             }
         }
+    }
+
+    // Where Storage tools was left: coming back from a tool lands on the same tile.
+    private int _toolsTab;
+    private int _toolsRow;
+
+    /// <summary>The card on top of Storage tools: the box shown now, what it holds, its first Pokémon.</summary>
+    private SaveDataCard BoxCardOf(ISaveEngineSession session)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var box = Math.Max(0, _viewModel.BoxIndex);
+        var slots = _viewModel.LiveSlots;
+        var here = slots.Where(slot => slot.Box == box).ToList();
+        var held = here.Where(slot => slot.Species is not null).OrderBy(slot => slot.Slot).ToList();
+        var everywhere = slots.Count(slot => slot.Box >= 0 && slot.Species is not null);
+        var facts = new List<(string, string)>
+        {
+            ("In this box", $"{held.Count}/{here.Count}"),
+            ("Shiny here", held.Count(slot => slot.IsShiny).ToString(inv)),
+            ("All boxes", everywhere.ToString("N0", inv)),
+            ("Empty slots", slots.Count(slot => slot.Box >= 0 && slot.Species is null).ToString("N0", inv)),
+        };
+        var seats = new List<(SKImage, SKRect)>();
+        foreach (var slot in held.Take(6))
+        {
+            if (_sprites.TryGetShowdownIcon(slot.Look, () => MainThread.BeginInvokeOnMainThread(ToolHubScreen.Repaint), out var sheet, out var cell))
+            {
+                if (sheet is not null) seats.Add((SpriteImages.Of(sheet), new SKRect(cell.Left, cell.Top, cell.Right, cell.Bottom)));
+                else if (_sprites.GetSprite(slot.Look) is { } sprite) seats.Add((SpriteImages.Of(sprite), new SKRect(0, 0, sprite.Width, sprite.Height)));
+            }
+        }
+        var game = string.IsNullOrEmpty(_viewModel.ConnectedName) ? "Storage" : _viewModel.ConnectedName;
+        return new SaveDataCard(game, session.GetBoxName(box), -1, facts, seats);
     }
 
     /// <summary>Game-style box ordering lives directly in storage: the current box is
@@ -798,7 +934,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
 
     private void UpdateBoxManagePulse()
     {
-        if (_boxManageMode && _boxHeld) _boxManagePulseTimer?.Start();
+        if (_boxManageMode && _boxHeld && MotionSetting.Decorative) _boxManagePulseTimer?.Start();
         else _boxManagePulseTimer?.Stop();
     }
 
@@ -871,8 +1007,8 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var box = _viewModel.BoxIndex;
         if (!_markedBoxes.Remove(box)) _markedBoxes.Add(box);
         _viewModel.Status = _markedBoxes.Count == 0
-            ? "BOX MANAGER - no boxes selected"
-            : $"Box manager - {_markedBoxes.Count} box(es) selected";
+            ? "Box manager - no boxes selected"
+            : $"Box manager - {Count(_markedBoxes.Count, "box", "boxes")} selected";
         SetBoxManageFooter();
         _boxNeighbors.InvalidateSurface();
     }
@@ -884,15 +1020,16 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var noun = selected.Length == 1 ? $"box {selected[0] + 1:00}" : $"{selected.Length} selected boxes";
         var emptyLabel = _markedBoxes.Count > 0 ? "Empty selected boxes" : "Empty all boxes";
         var choice = await PadMenu.ShowAsync(_hostGrid, $"Box actions · {noun}",
-            Note("No selection means the current box. Every write creates a restore point."),
+            Note("No selection means the current box."),
             Menu(
-                new PadOption("Select Pokémon in these boxes", IconPath: "select", Detail: "Mark every Pokémon in these boxes in multi-select."),
-                new PadOption("Mark all boxes", IconPath: "selectall", Detail: "Select every box for the actions in this menu."),
-                new PadOption("Lock / Unlock box(es)", IconPath: "padlock", Detail: "Locked boxes are skipped by sorting, batch edits and emptying."),
-                Allowed(SaveAction.Duplicate, new("Copy box(es)…", IconPath: "copy", Detail: "Copy these boxes over other boxes, replacing what is there.")),
-                new PadOption("Delete box(es) (rescue Pokémon)", IconPath: "delete", Detail: "Removes the boxes; their Pokémon move to free slots first."),
-                new PadOption(emptyLabel, IconPath: "clear", Detail: "Releases every Pokémon in the boxes. The party is not touched."),
+                new PadOption("Select Pokémon in these boxes", IconPath: "select", Detail: "Then act on them in multi-select."),
+                new PadOption("Mark all boxes", IconPath: "selectall", Detail: "For the actions below."),
+                new PadOption("Lock / Unlock box(es)", IconPath: "padlock", Detail: "Sorting, batch edits and emptying skip locked ones."),
+                Allowed(SaveAction.Duplicate, new("Copy box(es)…", IconPath: "copy", Detail: "Over other boxes, replacing what is there.")),
+                new PadOption("Delete box(es) (rescue Pokémon)", IconPath: "delete", Detail: "Their Pokémon move to free slots first."),
+                new PadOption(emptyLabel, IconPath: "clear", Detail: "Releases their Pokémon; the party stays."),
                 new PadOption("Clear box marks", IconPath: "deselect"),
+                new PadOption("Save box(es) as .pk files…", IconPath: "folder", Detail: "One per Pokémon; nothing is replaced."),
                 // Name/wallpaper act on the box under the cursor (PKHeX SAV_BoxLayout edits one box at a time).
                 _sessionsFor() is { } layoutSession && Engine.BoxLayoutService.SupportsNames(layoutSession)
                     ? new PadOption(BoxLayoutEditor.RenameLabel, IconPath: "rename") : null,
@@ -932,6 +1069,13 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             _boxNeighbors.InvalidateSurface();
             return;
         }
+        if (choice == "Save box(es) as .pk files…")
+        {
+            var boxes = selected.ToHashSet();
+            await SavePkFilesAsync([.. _viewModel.AllSlots.Where(s => boxes.Contains(s.Box) && s.Species is > 0)
+                .OrderBy(s => s.Box).ThenBy(s => s.Slot).Select(s => (s.Box, s.Slot))], noun);
+            return;
+        }
         if (choice == "Lock / Unlock box(es)")
         {
             var docId = DocumentId;
@@ -939,7 +1083,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             var lockedCount = 0;
             foreach (var box in selected)
                 if (Protection.ToggleBox(docId, box)) lockedCount++;
-            _viewModel.Status = $"Box locks updated - {Protection.LockedBoxes(docId).Count} box(ES) locked";
+            _viewModel.Status = $"{Count(Protection.LockedBoxes(docId).Count, "box", "boxes")} locked.";
             SetBoxManageFooter();
             _boxNeighbors.InvalidateSurface();
             return;
@@ -947,18 +1091,20 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var lockedTargets = selected.Where(box => DocumentId is not null && Protection.IsBoxLocked(DocumentId!, box)).ToList();
         if ((choice == "Empty selected boxes" || choice == "Delete box(es) (rescue Pokémon)") && lockedTargets.Count > 0)
         {
-            _viewModel.Status = $"{lockedTargets.Count} target box(ES) are locked";
+            _viewModel.Status = lockedTargets.Count == 1
+                ? $"Box {lockedTargets[0] + 1} is locked. Unlock it first."
+                : $"{lockedTargets.Count} of these boxes are locked. Unlock them first.";
             return;
         }
         if (choice == emptyLabel && choice == "Empty selected boxes")
         {
             var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Empty selected boxes?",
-                $"Release every Pokémon in {selected.Length} box(es). A restore point is created first.", "Empty");
+                $"Every Pokémon in {Count(selected.Length, "box", "boxes")} is released. Restore points can undo it.", "Empty");
             if (!confirmed) return;
             await _viewModel.RunMutationAsync(session =>
             {
                 foreach (var box in selected) session.ClearBox(box);
-                return new GenerationOutcome(true, $"Emptied {selected.Length} box(es).");
+                return new GenerationOutcome(true, $"Emptied {Count(selected.Length, "box", "boxes")}.");
             }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false, action: SaveAction.Release);
         }
         else if (choice == "Empty all boxes")
@@ -970,7 +1116,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 return;
             }
             var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Empty every box?",
-                "Release every boxed Pokémon. Party Pokémon are untouched. A restore point is created first.", "Empty all");
+                "Every boxed Pokémon is released; the party stays. Restore points can undo it.", "Empty all");
             if (!confirmed) return;
             await _viewModel.RunMutationAsync(session =>
             {
@@ -986,11 +1132,11 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             var start = Array.IndexOf(starts, targetChoice);
             if (start < 0) return;
             var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Replace destination boxes?",
-                $"Copy {selected.Length} box(es) starting at box {start + 1:00}. Destination contents will be replaced.", "Copy");
+                $"{Count(selected.Length, "box", "boxes")} copied from box {start + 1:00} on, replacing what is there.", "Copy");
             if (!confirmed) return;
             await _viewModel.RunMutationAsync(session =>
             {
-                var copies = selected.Select(source => Enumerable.Range(0, BoxGridRenderer.Columns * BoxGridRenderer.Rows)
+                var copies = selected.Select(source => Enumerable.Range(0, _viewModel.BoxCapacity)
                     .Where(slot => !session.ReadEntity(source, slot).IsEmpty)
                     .Select(slot => (Slot: slot, Export: session.ExportSlot(source, slot))).ToArray()).ToArray();
                 for (var i = 0; i < copies.Length; i++)
@@ -999,7 +1145,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                     foreach (var copy in copies[i])
                         session.ImportSlot(start + i, copy.Slot, copy.Export.Data, copy.Export.Format);
                 }
-                return new GenerationOutcome(true, $"Copied {copies.Length} box(es) starting at box {start + 1:00}.");
+                return new GenerationOutcome(true, $"Copied {Count(copies.Length, "box", "boxes")} from box {start + 1:00} on.");
             }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false, action: SaveAction.Duplicate);
         }
         else if (choice == "Delete box(es) (rescue Pokémon)")
@@ -1008,12 +1154,12 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 ? "Every box is selected: rescued Pokémon have nowhere to go, so they are released."
                 : "Pokémon are rescued into free slots first.";
             var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Delete selected boxes?",
-                $"Remove {selected.Length} box(es) from the order. {rescueNote}", "Delete");
+                $"{Count(selected.Length, "box", "boxes")} leave the order. {rescueNote}", "Delete");
             if (!confirmed) return;
             await _viewModel.RunMutationAsync(session =>
             {
                 foreach (var box in selected.OrderByDescending(x => x)) session.DeleteBox(box);
-                return new GenerationOutcome(true, $"Removed {selected.Length} box(es) from the order.");
+                return new GenerationOutcome(true, $"Deleted {Count(selected.Length, "box", "boxes")}.");
             }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false, action: SaveAction.Move);
         }
         else return;
@@ -1172,24 +1318,25 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         {
             new(_viewModel.CurrentBoxFullyMarked ? $"Unmark {page}" : $"Select all in {page}", IconPath: "selectall"),
             new("Select all boxes", IconPath: "all"),
-            new($"Invert {page}", IconPath: "invert", Detail: "Swap marked and unmarked Pokémon here."),
+            new($"Invert {page}", IconPath: "invert", Detail: "Swap marked and unmarked."),
         };
         if (count > 0)
         {
             options.Add(new("Clear marks", IconPath: "deselect"));
             options.AddRange(Menu(
                 new PadOption("Move to box…", IconPath: "move"),
-                new PadOption("Move to Bank", IconPath: "bank", Detail: "They leave this save and are stored in the Bank."),
-                Allowed(SaveAction.Duplicate, new("Copy to Bank", IconPath: "bank", Detail: "Copies go to the Bank; the originals stay here.")),
-                new PadOption("Move to another game…", IconPath: "send", Detail: "They leave this save and join another linked game."),
-                Allowed(SaveAction.Duplicate, new("Copy to another game…", IconPath: "copy", Detail: "Copies join another linked game; the originals stay here.")),
-                Allowed(SaveAction.Duplicate, new("Duplicate", IconPath: "copy", Detail: "Clone the marked Pokémon into the first free box slots.")),
-                new PadOption("Export (.pk files)", IconPath: "export", Detail: "Share each marked Pokémon as its own file."),
+                new PadOption("Move to Bank", IconPath: "bank", Detail: "They leave this save."),
+                Allowed(SaveAction.Duplicate, new("Copy to Bank", IconPath: "bank", Detail: "The originals stay here.")),
+                new PadOption("Move to another game…", IconPath: "send", Detail: "They leave this save."),
+                Allowed(SaveAction.Duplicate, new("Copy to another game…", IconPath: "copy", Detail: "The originals stay here.")),
+                Allowed(SaveAction.Duplicate, new("Duplicate", IconPath: "copy", Detail: "Into the first free box slots.")),
+                new PadOption("Export (.pk files)", IconPath: "export", Detail: "Share each as its own file."),
+                new PadOption("Save .pk files to a folder", IconPath: "folder", Detail: "One per Pokémon; nothing is replaced."),
                 new PadOption("Release", IconPath: "release")));
             options.AddRange(BulkOptions());
         }
-        options.Add(new("Mark Pokémon holding…", IconPath: "item", Detail: "Find Pokémon holding an item, then mark them or go to one."));
-        options.Add(new("Box manager…", IconPath: "box", Detail: "Reorder, copy, lock or empty whole boxes."));
+        options.Add(new("Mark Pokémon holding…", IconPath: "item", Detail: "Pick an item, then mark them or go to one."));
+        options.Add(new("Box manager…", IconPath: "box", Detail: "Reorder, copy, lock or empty."));
         options.Add(new("Back to move mode", IconPath: "confirm", Detail: "Leave multi-select."));
 
         var choice = await PadMenu.ShowAsync(_hostGrid, $"Multi-select · {count} marked",
@@ -1257,6 +1404,9 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 _viewModel.Status = $"Exported {paths.Count} Pokémon.";
                 break;
             }
+            case "Save .pk files to a folder":
+                await SavePkFilesAsync(_viewModel.MarkedSlots, $"{count} marked");
+                break;
             case "Release":
                 await ReleaseSelectionAsync();
                 break;
@@ -1289,10 +1439,10 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         if (!copy && _viewModel.MarksEmptyTheParty()) { _viewModel.Status = PartyNeedsOne; return; }
 
         var count = _viewModel.MarkedCount;
-        var verb = copy ? "COPY" : "MOVE";
         var currentDoc = IPlatformApplication.Current?.Services.GetService<ISaveSessionService>()?.Current?.Document.DocumentId;
         var target = await SavePickerSheet.PickAsync(_hostGrid, picker.Saves,
-            $"{verb} selection to game", copy ? $"{count} Pokémon are copied; the originals stay" : $"{count} Pokémon leave this save", currentDoc);
+            copy ? $"Copy {Count(count, "Pokémon", "Pokémon")} to…" : $"Move {Count(count, "Pokémon", "Pokémon")} to…",
+            copy ? "The originals stay here." : "They leave this save.", currentDoc);
         if (target is null)
         {
             if (picker.Saves.Count == 0)
@@ -1305,18 +1455,16 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         try { targetSlots = await transfer.ReadSlotsAsync(target); }
         catch (Exception error) when (error is InvalidDataException or IOException or InvalidOperationException)
         {
-            _viewModel.Status = $"Could not read {target.GameLabel}: {error.Message}";
+            _viewModel.Status = $"Could not read {target.GameLabel}. {Domain.ErrorText.Plain(error)}";
             return;
         }
         var placement = await StartSlotPicker.PickAsync(_hostGrid, $"Where in {target.GameLabel}?", targetSlots, count);
         if (placement is null) return;
         var startAt = placement.Start;
 
-        var confirm = await PadMenu.ConfirmAsync(_hostGrid, $"{verb} selection?",
-            (copy
-                ? $"Copies of {count} Pokémon join {target.GameLabel}; the originals stay here. If one cannot enter that format, none are copied."
-                : $"{count} Pokémon will leave this save and join {target.GameLabel}. If one cannot enter that format, all stay here.")
-            + $" They land in {StartSlotPicker.Describe(targetSlots, startAt, count)}.",
+        var confirm = await PadMenu.ConfirmAsync(_hostGrid, copy ? $"Copy to {target.GameLabel}?" : $"Move to {target.GameLabel}?",
+            $"They land in {StartSlotPicker.Describe(targetSlots, startAt, count)}. "
+            + (copy ? "If one can't go, none are copied." : "If one can't go, all stay here."),
             copy ? "Copy all" : "Move all");
         if (!confirm) return;
 
@@ -1324,14 +1472,15 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         // batch (per-mon prompts over N mons would be a questionnaire).
         var marked = _viewModel.MarkedSlots.ToArray();
         var firstExport = session.ExportSlot(marked[0].Box, marked[0].Slot);
-        var firstPreview = await transfer.PreviewAsync(firstExport.Data, firstExport.FileName, target, startAt: startAt);
+        var firstPreview = await transfer.PreviewAsync(firstExport.Data, MonName(marked[0].Box, marked[0].Slot), target, startAt: startAt);
         if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, firstPreview,
-                $"1 of {count} Pokémon", target.GameLabel)) return;
+                count == 1 ? MonName(marked[0].Box, marked[0].Slot) : $"{MonName(marked[0].Box, marked[0].Slot)} (1 of {count})", target.GameLabel)) return;
 
         // All or none: the other game takes the whole batch in one write, then a move empties
         // these slots in one write, and a failed release takes the batch back out of that game.
         var items = marked.Select(m => session.ExportSlot(m.Box, m.Slot))
-            .Select(export => new PKForge.Engine.TransferItem(export.Data, export.Format, export.FileName)).ToArray();
+            .Select((export, i) => new PKForge.Engine.TransferItem(export.Data, export.Format, MonName(marked[i].Box, marked[i].Slot))).ToArray();
+        var leaving = PortalSources(marked);
         IReadOnlyList<SlotRef> landed = [];
         var outcome = await PKForge.Engine.BankTransfers.MoveAsync(items.Length, target.GameLabel,
             async () =>
@@ -1347,8 +1496,46 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 return null;
             });
         if (outcome.Success && copy) _viewModel.ClearMarksQuietly();
-        _viewModel.Status = outcome.Message;
+        if (outcome.Success) _viewModel.ReportWrite(outcome.Message);
+        else _viewModel.Status = outcome.Message;
+        if (outcome.Success) PlayPortal(leaving);
     }
+
+    /// <summary>A marked Pokémon's name for a message: its nickname, else its species, never a file name.</summary>
+    private string MonName(int box, int slot)
+    {
+        if (_viewModel.Save?.Slots.FirstOrDefault(s => s.Box == box && s.Slot == slot) is { Nickname: { Length: > 0 } nick })
+            return Kit.Tidy(nick);
+        // The snapshot can lag behind the session: the exported Pokémon names itself.
+        if (_sessionsFor() is { } session && IPlatformApplication.Current?.Services.GetService<ISaveEngine>() is { } engine)
+        {
+            var export = session.ExportSlot(box, slot);
+            if (engine.TryDescribeEntity(export.Data, _viewModel.ConnectedName, export.Format) is { Nickname: { Length: > 0 } name })
+                return Kit.Tidy(name);
+        }
+        return "A Pokémon";
+    }
+
+    private static string Count(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
+
+    /// <summary>The Pokémon at <paramref name="slots"/> as the portal shows them leaving: read
+    /// before a transfer empties their slots.</summary>
+    private PortalSource[] PortalSources(IEnumerable<(int Box, int Slot)> slots)
+    {
+        var all = _viewModel.AllSlots;
+        var shown = _viewModel.BoxIndex;
+        return
+        [
+            .. slots.Take(PortalPaint.MaxMembers)
+                .Select(m => (Mark: m, Summary: all.FirstOrDefault(s => s.Box == m.Box && s.Slot == m.Slot)))
+                .Where(x => x.Summary is { Species: not null })
+                .Select(x => new PortalSource(x.Summary!, shown >= 0 && x.Mark.Box == shown ? x.Mark.Slot : null)),
+        ];
+    }
+
+    /// <summary>The transfer portal over the box, once a send has succeeded.</summary>
+    private void PlayPortal(PortalSource[] leaving) =>
+        PortalOverlay.Play(_hostGrid, _canvas, leaving, _sprites, BdspIcons.AppliesTo(_viewModel.Save?.Format), _viewModel.SelectedSlot);
 
     /// <summary>Clones every marked mon into the first free box slots. One write.</summary>
     private async Task DuplicateSelectionAsync()
@@ -1407,10 +1594,13 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             }
             deposits.Add(new BankDeposit(export.Data, info));
         }
+        var leaving = PortalSources(marked);
         var outcome = await PKForge.Engine.BankTransfers.DepositAsync(bank, deposits,
             copy ? null : async () => await _viewModel.BulkReleaseAsync(marked) ? null : _viewModel.Status);
         if (outcome.Success && copy) _viewModel.ClearMarksQuietly();
-        _viewModel.Status = outcome.Message;
+        if (outcome.Success) _viewModel.ReportWrite(outcome.Message);
+        else _viewModel.Status = outcome.Message;
+        if (outcome.Success) PlayPortal(leaving);
     }
 
     private async Task ReleaseSelectionAsync()
@@ -1425,12 +1615,14 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 .ToList();
             if (locked.Count > 0)
             {
-                _viewModel.Status = $"{locked.Count} marked mon(ES) are locked - unlock or unmark them";
+                _viewModel.Status = locked.Count == 1
+                    ? "A marked Pokémon is locked. Unlock or unmark it."
+                    : $"{locked.Count} marked Pokémon are locked. Unlock or unmark them.";
                 return;
             }
         }
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Release selection?",
-            $"Release all {_viewModel.MarkedCount} marked Pokémon? The current save state is kept as a restore point.",
+            $"Release all {_viewModel.MarkedCount} marked Pokémon? Restore points can undo it.",
             "Release all");
         if (!confirmed) return;
         await _viewModel.BulkReleaseAsync();
@@ -1502,36 +1694,46 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
     private async Task GenerateLivingDexAsync()
     {
         if (Denied(SaveAction.CreateMon)) return;
+        var session = _sessionsFor();
+        if (session is null) { _viewModel.Status = "No save connected."; return; }
+        // The bundle is chosen by the save's exact game: Sword/Shield, Legends: Arceus and
+        // Brilliant Diamond/Shining Pearl are all generation 8 but store different formats.
+        if (session.LivingDexBundle is not { } bundleName)
+        {
+            await PadMenu.ShowAsync(_hostGrid, "No living dex for this game",
+                "PKForge has no pre-made living dex for this game yet. Nothing was changed.", "OK");
+            return;
+        }
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Generate living dex?",
             "This OVERWRITES every box with one legal Pokémon of every species this game supports. " +
-            "The current save state is kept as a restore point. This can take several minutes.",
+            "Restore points can undo it.",
             "Fill my boxes");
         if (!confirmed) return;
 
-        var session = _sessionsFor();
-        if (session is null) { _viewModel.Status = "No save connected."; return; }
-        byte[]? bundle = null;
+        byte[] bundle;
         try
         {
-            await using var stream = await FileSystem.OpenAppPackageFileAsync($"dex/dex-g{session.Generation}.bin.gz");
+            await using var stream = await FileSystem.OpenAppPackageFileAsync($"dex/{bundleName}");
             using var memory = new MemoryStream();
             await stream.CopyToAsync(memory);
             bundle = memory.ToArray();
         }
         catch
         {
-            _viewModel.Status = "No living dex bundle for this generation yet.";
+            await PadMenu.ShowAsync(_hostGrid, "No living dex for this game",
+                "The living dex file for this game is missing from the app. Nothing was changed.", "OK");
             return;
         }
 
         var overlay = LoadingOverlay.Show(_hostGrid, "Filling the living dex…",
             "One of every species, copied from the pre-generated dex. This is a straight write.");
+        GenerationOutcome? outcome = null;
         try
         {
             await _viewModel.RunMutationAsync(s =>
             {
-                var outcome = ((ILegalizerService)IPlatformApplication.Current!.Services.GetRequiredService(typeof(ILegalizerService)))
-                    .FillLivingDex(s, bundle!);
+                outcome = ((ILegalizerService)IPlatformApplication.Current!.Services.GetRequiredService(typeof(ILegalizerService)))
+                    .FillLivingDex(s, bundle);
                 return outcome;
             }, Math.Max(0, _viewModel.SelectedSlot), action: SaveAction.CreateMon);
             _viewModel.RefreshAllSlots();
@@ -1541,144 +1743,10 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         {
             overlay.Close();
         }
-    }
-
-    /// <summary>Auto-sort: pick a criteria, pick a scope, one backed-up write compacts mons front.</summary>
-    private async Task ShowSortMenuAsync()
-    {
-        var choice = await PadMenu.ShowAsync(_hostGrid, "Sort", "How should the boxes be ordered?",
-            new PadOption("Dex number", IconPath: "pokedex"),
-            new PadOption("Alphabetical", IconPath: "alpha"),
-            new PadOption("Level (strongest first)", IconPath: "level"),
-            new PadOption("IV total (best first)", IconPath: "stats"),
-            new PadOption("Type", IconPath: "type"),
-            new PadOption("Age (oldest first)", IconPath: "calendar"),
-            new PadOption("Shiny first", IconPath: "shiny"));
-        if (choice is null) return;
-
-        var scope = await PadMenu.ShowAsync(_hostGrid, "Sort", "Which boxes?",
-            new PadOption("This box", IconPath: "box"),
-            new PadOption("All boxes", IconPath: "storage"));
-
-        var direction = await PadMenu.ShowAsync(_hostGrid, "Sort", "Which direction?",
-            new PadOption("Normal order", IconPath: "sort"),
-            new PadOption("Reversed", IconPath: "reverse"));
-        if (direction is null) return;
-        var reverse = direction == "Reversed";
-
-        var criteria = choice switch
-        {
-            "Alphabetical" => Domain.SortCriteria.Alphabetical,
-            "Level (strongest first)" => Domain.SortCriteria.LevelDesc,
-            "IV total (best first)" => Domain.SortCriteria.IvTotalDesc,
-            "Type" => Domain.SortCriteria.Type,
-            "Age (oldest first)" => Domain.SortCriteria.AgeOldest,
-            "Shiny first" => Domain.SortCriteria.ShinyFirst,
-            _ => Domain.SortCriteria.DexNumber,
-        };
-        IReadOnlyList<int>? boxes = scope == "This box" ? [_viewModel.BoxIndex] : null;
-
-        var directionNote = reverse ? " (reversed)" : "";
-        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Sort now?",
-            (scope == "This box"
-                ? "This box's Pokémon are reordered and compacted to the top."
-                : "Every box's Pokémon are pooled, ordered, and compacted from box 1. Empties gather at the end.")
-            + directionNote,
-            "Sort");
-        if (!confirmed) return;
-
-        var sorted = await _viewModel.RunMutationAsync(session =>
-        {
-            // Locked boxes keep their contents exactly where they are.
-            if (boxes is null && DocumentId is { } docId)
-            {
-                var locked = Protection.LockedBoxes(docId);
-                if (locked.Count > 0)
-                    boxes = Enumerable.Range(0, _viewModel.BoxCount).Where(box => !locked.Contains(box)).ToList();
-            }
-            var placed = session.SortBoxes(criteria, boxes, reverse);
-            return new GenerationOutcome(true, $"Sorted {placed} Pokémon{directionNote}.");
-        }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false, action: SaveAction.Move);
-        if (sorted)
-            _viewModel.RefreshAllSlots();
-        _canvas.InvalidateSurface();
-    }
-
-    /// <summary>One-tap preset packs: competitive, speedrun, casual - all through the batch editor.</summary>
-    private async Task ShowPresetsMenuAsync()
-    {
-        if (Denied(SaveAction.BatchEdit)) return;
-        var session = _sessionsFor();
-        if (session is null) return;
-        var caps = session.GetTrainingCaps();
-        var perfectLabel = caps.IvMax == 15 ? "6DV (perfect DVs)" : "6IV (perfect IVs)";
-        var scope = await PadMenu.ShowAsync(_hostGrid, "Presets", "Apply to which boxes?",
-            new PadOption("This box", IconPath: "box"),
-            new PadOption("All unlocked boxes", IconPath: "storage"));
-        if (scope is null) return;
-        IReadOnlyList<int>? boxes;
-        if (scope == "This box") boxes = [_viewModel.BoxIndex];
-        else
-        {
-            var docId = DocumentId;
-            var unlocked = Enumerable.Range(0, _viewModel.BoxCount)
-                .Where(box => docId is null || !Protection.IsBoxLocked(docId, box)).ToList();
-            if (unlocked.Count == 0) { _viewModel.Status = "Every box is locked"; return; }
-            boxes = unlocked;
-        }
-
-        var choice = await PadMenu.ShowAsync(_hostGrid, "Presets", "One backed-up write applies everything.",
-            new PadOption("Level 50 flat", IconPath: "level"),
-            new PadOption("Level 100", IconPath: "level"),
-            new PadOption(perfectLabel, IconPath: "stats"),
-            new PadOption("0 Attack IV (special)", IconPath: "stats", Detail: "Attack IV set to 0, for special attackers."),
-            new PadOption("0 Speed IV (Trick Room)", IconPath: "stats", Detail: "Speed IV set to 0, for Trick Room teams."),
-            new PadOption("Reset EVs", IconPath: "restore"),
-            new PadOption("Max friendship", IconPath: "heart"),
-            new PadOption("Hyper Train everything", IconPath: "train"),
-            new PadOption("Export box (Showdown)", IconPath: "script", Detail: "Share this box as a Showdown text file."),
-            new PadOption("Import Showdown sets to this box", IconPath: "script", Detail: "Paste Showdown sets, see their legality, then place them in empty slots."));
-        if (choice is null) return;
-
-        if (choice == "Export box (Showdown)")
-        {
-            await ExportBoxShowdownFromEngineAsync();
-            return;
-        }
-        if (choice == "Import Showdown sets to this box")
-        {
-            await ImportShowdownSetsToBoxAsync();
-            return;
-        }
-
-        IReadOnlyList<string> instructions = choice switch
-        {
-            "Level 50 flat" => ["Level=50"],
-            "Level 100" => ["Level=100"],
-            var perfect when perfect == perfectLabel =>
-                [.. new[] { "HP", "ATK", "DEF", "SPA", "SPD", "SPE" }.Select(stat => $"IV_{stat}={caps.IvMax}")],
-            "0 Attack IV (special)" => ["IV_ATK=0"],
-            "0 Speed IV (Trick Room)" => ["IV_SPE=0"],
-            "Reset EVs" => ["EV_HP=0", "EV_ATK=0", "EV_DEF=0", "EV_SPA=0", "EV_SPD=0", "EV_SPE=0"],
-            "Max friendship" => ["Friendship=255"],
-            "Hyper Train everything" => ["HyperTrain"],
-            _ => [],
-        };
-        if (instructions.Count == 0) return;
-
-        var scopeText = boxes.Count == _viewModel.BoxCount ? "every unlocked box" : $"box {_viewModel.BoxIndex + 1:00}";
-        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Apply preset?",
-            $"{choice} on {scopeText}. Backed up first.", "Apply");
-        if (!confirmed) return;
-        await _viewModel.RunMutationAsync(s =>
-        {
-            var touched = s.BatchApply(instructions, boxes);
-            return touched > 0
-                ? new GenerationOutcome(true, $"Preset applied to {touched} Pokémon.")
-                : new GenerationOutcome(false, "Nothing to edit there.");
-        }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false, action: SaveAction.BatchEdit);
-        _viewModel.RefreshAllSlots();
-        _canvas.InvalidateSurface();
+        // A refusal (a file made for another game, a damaged file) is said in a dialog,
+        // not only on the status line the player may not be looking at.
+        if (outcome is { Success: false } refused)
+            await PadMenu.ShowAsync(_hostGrid, "Living dex not generated", refused.Message, "OK");
     }
 
     private async Task ExportBoxShowdownFromEngineAsync()
@@ -1848,7 +1916,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 ? await PadMenu.ShowAsync(_hostGrid, "Legality check", $"All {results.Count} Pokémon are legal.", "OK")
                 : await PadMenu.ShowAsync(_hostGrid, "Legality check",
                     Note($"{illegal.Count} illegal of {results.Count}. The red-dotted slots in this box fail PKHeX's checks."),
-                    Menu(Allowed(SaveAction.EditMon, new("Legalize all illegal", IconPath: "fix", Detail: "Rewrite every illegal Pokémon in the save to its closest legal version.")),
+                    Menu(Allowed(SaveAction.EditMon, new("Legalize all illegal", IconPath: "fix", Detail: "Each flagged Pokémon gets its closest legal version.")),
                         new PadOption("Close", IconPath: "close")));
             if (choice == "Legalize all illegal")
                 await LegalizeAllIllegalAsync(illegal);
@@ -1873,7 +1941,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
 
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Legalize all illegal?",
             $"{illegal.Count} Pokémon will be rewritten to their closest legal versions. " +
-            "The current state stays available as a restore point.", "Legalize");
+            "Restore points can undo it.", "Legalize");
         if (!confirmed) return;
 
         var targets = illegal.Select(v => (v.Box, v.Slot)).ToList();
@@ -2075,7 +2143,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var data = IPlatformApplication.Current!.Services.GetRequiredService<IGameDataService>();
 
         var choice = await PadMenu.ShowAsync(_hostGrid, "Egg factory", "Every egg fills an empty PC slot. One backed-up write.",
-            new PadOption("One egg of every species", IconPath: "egg"),
+            new PadOption("One egg of every species", IconPath: "egg", Detail: "One per evolution line: an egg hatches as the first stage."),
             new PadOption("Pick a species…", IconPath: "pokedex"));
         if (choice is null) return;
 
@@ -2100,7 +2168,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var shiny = await PadMenu.ConfirmAsync(_hostGrid, "Shiny eggs?", "Every egg hatches shiny.", "Yes, shiny");
 
         var options = new Domain.EggOptions(maxIv, shiny);
-        var overlay = LoadingOverlay.Show(_hostGrid, "Generating eggs…", "The legalizer builds and egg-ifies each species offline.");
+        var overlay = LoadingOverlay.Show(_hostGrid, "Generating eggs…", "Each egg comes from the game's own egg encounter, checked by PKHeX.");
         try
         {
             var list = species;
@@ -2190,263 +2258,166 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             .Where(box => docId is null || !Protection.IsBoxLocked(docId, box))];
     }
 
+    // Where Save data was left: coming back from an editor lands on the same group and row.
+    private int _saveDataTab;
+    private int _saveDataRow;
+
     /// <summary>
-    /// The batch editor: stack operations as chips (level, IVs, EV spread, heal, training,
-    /// friendship, nicknames), then apply them to a scope - the organizer selection, one
-    /// box, or every box - in a single backed-up write. The PKHeX instruction strings are
-    /// shown before the write; experts can paste their own on top.
+    /// Save data: the trainer card at the left, the save's tools grouped by intent at the
+    /// right (<see cref="SaveDataMenu"/>). Closing a tool comes back here, on the same row.
     /// </summary>
-    private async Task RunBatchEditorAsync()
-    {
-        if (Denied(SaveAction.BatchEdit)) return;
-        var session = _sessionsFor();
-        if (session is null) return;
-        var caps = session.GetTrainingCaps();
-        var statKind = caps.IvMax == 15 ? "DVs" : "IVs";
-
-        // Scope first. Locked boxes refuse batch edits (same rule as sort and presets).
-        var scopeOptions = new List<PadOption>();
-        if (_viewModel.MarkedCount > 0)
-            scopeOptions.Add(new($"Selected Pokémon ({_viewModel.MarkedCount})", IconPath: "select"));
-        scopeOptions.Add(new("This box", IconPath: "box"));
-        scopeOptions.Add(new("All boxes", IconPath: "storage"));
-        var scope = await PadMenu.ShowAsync(_hostGrid, "Batch editor", "Apply to which Pokémon?", scopeOptions.ToArray());
-        if (scope is null) return;
-        var selection = scope.StartsWith("Selected", StringComparison.Ordinal);
-
-        IReadOnlyList<(int Box, int Slot)>? slots = null;
-        IReadOnlyList<int>? boxes = null;
-        if (selection)
-        {
-            var docId = DocumentId;
-            slots = _viewModel.MarkedSlots
-                .Where(m => docId is null || !Protection.IsBoxLocked(docId, m.Box))
-                .ToList();
-            if (slots.Count == 0) { _viewModel.Status = "Every marked box is locked"; return; }
-        }
-        else if (scope == "This box")
-        {
-            if (DocumentId is { } docId && _viewModel.BoxIndex >= 0 && Protection.IsBoxLocked(docId, _viewModel.BoxIndex))
-            {
-                _viewModel.Status = "This box is locked";
-                return;
-            }
-            boxes = [_viewModel.BoxIndex];
-        }
-        else
-        {
-            var docId = DocumentId;
-            boxes = Enumerable.Range(0, _viewModel.BoxCount)
-                .Where(box => docId is null || !Protection.IsBoxLocked(docId, box)).ToList();
-            if (boxes.Count == 0) { _viewModel.Status = "Every box is locked"; return; }
-        }
-
-        // Chip flow: each entry toggles; the menu re-opens until Apply or Cancel.
-        var level = false;
-        var maxIvs = false;
-        var heal = false;
-        var train = false;
-        var friendship = false;
-        var speciesNames = false;
-        var takeItems = false;
-        string[]? evSpread = null;
-        var evSummary = "none";
-        IReadOnlyList<string>? expertLines = null;
-        while (true)
-        {
-            PadOption Chip(string label, bool on, string icon) => new($"{(on ? "✓ " : "")}{label}", IconPath: icon);
-            var levelChip = Chip("Level = 100", level, "level");
-            var ivChip = Chip($"Max {statKind} ({caps.IvMax} everywhere)", maxIvs, "stats");
-            var evChip = new PadOption($"EV spread: {evSummary}", IconPath: "stats");
-            var healChip = Chip("Heal + PP Max", heal, "heart");
-            var trainChip = Chip("Hyper Train (legal $suggest)", train, "gears");
-            var friendChip = Chip("Max friendship", friendship, "heart");
-            var nameChip = Chip("Nicknames → species names", speciesNames, "script");
-            var itemChip = Chip("Remove held items", takeItems, "item");
-            var pick = await PadMenu.ShowAsync(_hostGrid, "Batch editor", "Toggle operations, then apply.",
-                levelChip, ivChip, evChip, healChip, trainChip, friendChip, nameChip, itemChip,
-                new PadOption("Expert instructions…", IconPath: "code", Detail: "Add your own PKHeX batch lines on top of the choices above."),
-                new PadOption("Apply", IconPath: "confirm"),
-                new PadOption("Cancel", IconPath: "close"));
-            if (pick is null or "Cancel") return;
-            if (pick == "Apply") break;
-            if (pick == levelChip.Label) level = !level;
-            else if (pick == ivChip.Label) maxIvs = !maxIvs;
-            else if (pick == healChip.Label) heal = !heal;
-            else if (pick == trainChip.Label) train = !train;
-            else if (pick == friendChip.Label) friendship = !friendship;
-            else if (pick == nameChip.Label) speciesNames = !speciesNames;
-            else if (pick == itemChip.Label) takeItems = !takeItems;
-            else if (pick == evChip.Label)
-            {
-                var spreads = new (string Label, string Summary, string[] Instructions)[]
-                {
-                    ("Physical sweeper (252 Atk / 252 Spe / 4 HP)", "Atk/Spe 252+4", ["EV_HP=4", "EV_ATK=252", "EV_SPE=252"]),
-                    ("Special sweeper (252 SpA / 252 Spe / 4 HP)", "SpA/Spe 252+4", ["EV_HP=4", "EV_SPA=252", "EV_SPE=252"]),
-                    ("Physical wall (252 HP / 252 Def / 4 SpD)", "HP/Def 252+4", ["EV_HP=252", "EV_DEF=252", "EV_SPD=4"]),
-                    ("Special wall (252 HP / 252 SpD / 4 Def)", "HP/SpD 252+4", ["EV_HP=252", "EV_SPD=252", "EV_DEF=4"]),
-                    ("Reset EVs (all zero)", "reset", ["EV_HP=0", "EV_ATK=0", "EV_DEF=0", "EV_SPA=0", "EV_SPD=0", "EV_SPE=0"]),
-                    ("Keep EVs as they are", "none", []),
-                };
-                var spreadPick = await PadMenu.ShowAsync(_hostGrid, "EV spread", "One spread replaces the previous choice.",
-                    spreads.Select(s => new PadOption(s.Label, IconPath: "stats")).ToArray());
-                var chosen = spreads.FirstOrDefault(s => s.Label == spreadPick);
-                if (chosen.Label is not null)
-                {
-                    evSpread = chosen.Instructions;
-                    evSummary = chosen.Summary;
-                }
-            }
-            else
-            {
-                var text = await TextPopup.ShowAsync(_hostGrid, "Expert instructions",
-                    $"One per line, PKHeX style, added on top of the chips:\nLevel=100\nIV_HP={caps.IvMax}\nShiny=Yes\nEV_ATK={caps.EvMax}");
-                if (!string.IsNullOrWhiteSpace(text))
-                    expertLines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            }
-        }
-
-        var plan = new List<string>();
-        if (level) plan.Add("Level=100");
-        if (maxIvs)
-            foreach (var stat in new[] { "HP", "ATK", "DEF", "SPA", "SPD", "SPE" })
-                plan.Add($"IV_{stat}={caps.IvMax}");
-        if (evSpread is { Length: > 0 }) plan.AddRange(evSpread);
-        if (heal)
-        {
-            // PP Ups first so Heal's built-in PP refill tops off at the raised maximum.
-            plan.AddRange(["Move1_PPUps=3", "Move2_PPUps=3", "Move3_PPUps=3", "Move4_PPUps=3", "Heal"]);
-        }
-        if (train) plan.Add("HyperTrain=$suggest");
-        if (friendship) plan.Add("Friendship=255");
-        if (speciesNames) plan.Add("IsNicknamed=false");
-        if (takeItems) plan.Add("HeldItem=0");
-        if (expertLines is not null) plan.AddRange(expertLines.Where(line => line.Length > 0));
-        if (plan.Count == 0) { _viewModel.Status = "No operations selected"; return; }
-
-        var mons = 0;
-        if (slots is not null)
-        {
-            mons = slots.Count(s => !session.ReadEntity(s.Box, s.Slot).IsEmpty);
-        }
-        else
-        {
-            foreach (var box in boxes!)
-            {
-                var slotCount = box == -1 ? 6 : BoxGridRenderer.Columns * BoxGridRenderer.Rows;
-                for (var slot = 0; slot < slotCount; slot++)
-                    if (!session.ReadEntity(box, slot).IsEmpty) mons++;
-            }
-        }
-        var scopeText = selection
-            ? $"{slots!.Count} selected Pokémon"
-            : boxes!.Count == 1
-                ? (_viewModel.BoxIndex == -1 ? "the party" : $"box {boxes[0] + 1:00}")
-                : (boxes.Count == _viewModel.BoxCount ? "every box" : $"{boxes.Count} unlocked boxes");
-
-        // Dry run first: the plan runs on copies so the confirm can say what would change
-        // and what would turn illegal before anything is written.
-        BatchDryRun? dryRun = null;
-        if (InfoPickers.Info is { } info)
-        {
-            var rehearsal = LoadingOverlay.Show(_hostGrid, "Checking…", "Trying the batch edit on copies first.");
-            try { dryRun = await Task.Run(() => info.DryRunBatch(session, plan, boxes, slots)); }
-            catch (Exception e) when (e is ArgumentException or InvalidOperationException) { }
-            finally { rehearsal.Close(); }
-        }
-        if (dryRun is { Targeted: > 0, Affected: 0 })
-        {
-            await PadMenu.ShowAsync(_hostGrid, "Nothing would change", $"The {dryRun.Targeted} Pokémon in {scopeText} already match every operation.", "OK");
-            return;
-        }
-        var impact = dryRun is null
-            ? $"Will apply {plan.Count} operation(s) to {mons} Pokémon in {scopeText}."
-            : $"{dryRun.Affected} of {dryRun.Targeted} Pokémon in {scopeText} would change." +
-              (dryRun.BecomeIllegal > 0 ? $"\n⚠ {dryRun.BecomeIllegal} would become ILLEGAL." : "\nNone would become illegal.") +
-              (dryRun.AlreadyIllegal > 0 ? $"\n{dryRun.AlreadyIllegal} of them are already illegal." : "");
-        var confirmed = await PadMenu.ConfirmAsync(_hostGrid, dryRun is { BecomeIllegal: > 0 } ? "Apply? some would turn illegal" : "Apply batch edit?",
-            $"{impact}\n{string.Join(" · ", plan)}\nOne backed-up write.",
-            "Apply");
-        if (!confirmed) return;
-
-        var ok = await _viewModel.RunMutationAsync(s =>
-        {
-            var touched = slots is not null ? s.BatchApplySlots(slots, plan) : s.BatchApply(plan, boxes);
-            return touched > 0
-                ? new GenerationOutcome(true, $"Batch applied to {touched} Pokémon (legality not re-checked).")
-                : new GenerationOutcome(false, "Nothing to edit in that scope.");
-        }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false, action: SaveAction.BatchEdit);
-        if (ok)
-            _viewModel.RefreshAllSlots();
-        _canvas.InvalidateSurface();
-    }
-
     private async Task ShowSaveDataAsync()
     {
-        var session = _sessionsFor();
-        if (session is null) return;
-        var options = Menu(
-            new PadOption("Trainer card", IconPath: "trainer"),
-            new PadOption("Bag & items", IconPath: "bag"),
-            new PadOption("Pokédex", IconPath: "pokedex"),
-            Allowed(SaveAction.EditTrainer, new("Fashion", IconPath: "box", Detail: "Unlock every outfit this save can legally own (X, Y, Sword and Shield).")),
-            new PadOption("Trainer records", IconPath: "records", Detail: "The game's own trainer records, view only."),
-            Allowed(SaveAction.WriteRawBytes, new("Byte manipulation", IconPath: "hex", Detail: "Edit the save file's raw bytes. Written once, when you close.")),
-            // Viewable in Hardcore mode; the editor itself refuses writes (EditWorld).
-            Engine.EventFlagService.IsSupported(session) ? new PadOption("Event flags", IconPath: "check", Detail: "Turn story and event flags on or off, and edit event values.") : null,
-            new PadOption("Wonder cards", IconPath: "events", Detail: "Mystery Gift events and the gift cards stored in this save."),
-            // Viewable in Hardcore mode; each world editor refuses writes itself.
-            WorldEventsMenu.HasAny(session) ? new PadOption("World & events", IconPath: "map", Detail: "Clocks, roaming Pokémon, one-time encounters and other world data.") : null,
-            new PadOption("Export modified save", IconPath: "export", Detail: "Share a copy of the edited save file."),
-            new PadOption("Restore points", IconPath: "history", Detail: "Backups made before each change; go back to one."),
-            new PadOption("Close save", IconPath: "quit")).ToList();
-        if (session.GetGrandUndergroundItems().Count != 0 && Guard.Allows(SaveAction.EditInventory))
-            options.Insert(2, new PadOption("Grand Underground", IconPath: "underground", Detail: "The Grand Underground items, kept apart from the Bag."));
-        if (session.SupportsCompassSettings && Guard.Allows(SaveAction.EditTrainer))
-            options.Insert(2, new PadOption("Compass settings", IconPath: "settings", Detail: "Pokémon Compass options such as exp share and level cap."));
-        var choice = await PadMenu.ShowAsync(_hostGrid, "Save data", Note(null), options.ToArray());
-        switch (choice)
+        // Started as a discarded task: a failure here used to vanish, Y doing nothing at all.
+        try { await ShowSaveDataCoreAsync(); }
+        catch (Exception error)
         {
-            case "Trainer card": await ShowTrainerCardAsync(); return;
-            case "Export modified save": await ExportModifiedSaveAsync(session); return;
-            case "Close save": await Navigation.PopAsync(); return;
-            case "Bag & items": await ShowBagAsync(); return;
-            case "Grand Underground": await GrandUndergroundEditor.ShowAsync(_hostGrid, session, _viewModel); return;
-            case "Compass settings": await ShowCompassSettingsAsync(session); return;
-            case "Pokédex": await ShowDexMenuAsync(); return;
-            case "Fashion": await ShowFashionAsync(); return;
-            case "Trainer records": await ShowTrainerRecordsAsync(); return;
-            case "Byte manipulation": await HexEditorPage.ShowAsync(_hostGrid, _viewModel, session); return;
-            case "Event flags": await EventFlagsEditor.ShowAsync(_hostGrid, session, _viewModel); return;
-            case "World & events": await WorldEventsMenu.ShowAsync(_hostGrid, session, _viewModel); return;
-            case "Wonder cards":
-            {
-                var wonderChoice = await PadMenu.ShowAsync(_hostGrid, "Wonder cards", Note(null),
-                    Menu(Allowed(SaveAction.InjectEvent, new PadOption("Event gallery", IconPath: "events", Detail: "Every Mystery Gift this save can receive.")),
-                        new PadOption("In-save inbox", IconPath: "inbox", Detail: "The Mystery Gift cards stored in this save, view only."),
-                        Engine.KeyItemEventService.IsSupported(session) ? new PadOption("Key item events", IconPath: "key", Detail: "Ticket events such as the Eon Ticket, Old Sea Map or Member Card.") : null,
-                        Engine.SaveBlockEditorService.IsSupported(session) ? new PadOption("Save blocks", IconPath: "blocks", Detail: "Browse save blocks and edit simple on/off and number values.") : null));
-                if (wonderChoice == "In-save inbox")
-                {
-                    await MysteryGiftInboxEditor.ShowAsync(_hostGrid, session);
-                    return;
-                }
-                if (wonderChoice == "Key item events")
-                {
-                    await KeyItemEventsEditor.ShowAsync(_hostGrid, session, _viewModel);
-                    return;
-                }
-                if (wonderChoice == "Save blocks")
-                {
-                    await SaveBlockEditor.ShowAsync(_hostGrid, session, _viewModel);
-                    return;
-                }
-                if (wonderChoice != "Event gallery") return;
-                await EventGallery.ShowAsync(_hostGrid, _viewModel, session, targetSlot: null, () => _canvas.InvalidateSurface());
-                return;
-            }
-            case "Restore points": await PushAsync<BackupHistoryPage>(); return;
+            AppLog.Error("save-data", "Save data could not be shown", error);
+            _viewModel.Status = $"Save data could not open. {Domain.ErrorText.Plain(error)}";
         }
+    }
+
+    private async Task ShowSaveDataCoreAsync()
+    {
+        while (_sessionsFor() is { } session)
+        {
+            var groups = SaveDataMenu.Build(SaveDataCapabilitiesOf(session));
+            var shelves = groups.Select(g => new HubShelf(g.Title, [.. g.Rows.Select(r => new HubTile(r.Title, r.Detail, r.Icon, r.Short))])).ToList();
+            var (opened, tab, row) = await ToolHubScreen.ShowAsync(_hostGrid, shelves, () => SaveDataCardOf(session), _saveDataTab, _saveDataRow);
+            (_saveDataTab, _saveDataRow) = (tab, row);
+            if (!opened) return;
+            switch (groups[tab].Rows[row].Entry)
+            {
+                case SaveDataEntry.TrainerCard: await ShowTrainerCardAsync(); break;
+                case SaveDataEntry.HallOfFame: await ShowHallOfFameAsync(session); break;
+                case SaveDataEntry.Pokedex: await ShowDexMenuAsync(); _saveDataDex = null; break;
+                case SaveDataEntry.TrainerRecords: await ShowTrainerRecordsAsync(); break;
+                case SaveDataEntry.Fashion: await ShowFashionAsync(); break;
+                case SaveDataEntry.Compass: await ShowCompassSettingsAsync(session); break;
+                case SaveDataEntry.Bag: await ShowBagAsync(); break;
+                case SaveDataEntry.PokeBeans: await PokeBeansEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.PoffinCase or SaveDataEntry.PokeblockCase: await ContestTreatsEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.Underground: await SinnohUndergroundEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.GrandUnderground: await GrandUndergroundEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.EventFlags: await EventFlagsEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.HoneyTrees: await HoneyTreeEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.Pokewalker: await PokewalkerEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.Raids: await RaidEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.ZygardeCells: await ZygardeCellEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.FestivalPlaza: await FestivalPlazaEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.SuperTraining: await SuperTrainingSaveEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.World: await WorldEventsMenu.ShowAsync(_hostGrid, _sessionsFor, _viewModel); break;
+                case SaveDataEntry.EventGallery:
+                    await EventGallery.ShowAsync(_hostGrid, _viewModel, session, targetSlot: null, () => _canvas.InvalidateSurface());
+                    break;
+                case SaveDataEntry.GiftInbox: await MysteryGiftInboxEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.KeyItemEvents: await KeyItemEventsEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.EReader: await EReaderEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.PalPark: await PalParkEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.SaveBlocks: await SaveBlockEditor.ShowAsync(_hostGrid, session, _viewModel); break;
+                case SaveDataEntry.Bytes: await HexEditorPage.ShowAsync(_hostGrid, _viewModel, session); break;
+                // These leave the screen, or hand over to the system: no coming back here.
+                case SaveDataEntry.Export: await ExportModifiedSaveAsync(session); return;
+                case SaveDataEntry.RestorePoints: await PushAsync<BackupHistoryPage>(); return;
+                case SaveDataEntry.Close: await Navigation.PopAsync(); return;
+            }
+        }
+    }
+
+    /// <summary>A menu opened from a button stopped on an error: say so instead of doing nothing.</summary>
+    private void ReportScreenError(Exception error) =>
+        _viewModel.Status = $"That screen could not open. {Domain.ErrorText.Plain(error)}";
+
+    /// <summary>
+    /// What Save data offers for this save. Each probe is fenced: a service that cannot read
+    /// this save (a ROM hack engine, a damaged block) leaves its entry out instead of keeping
+    /// the whole hub shut.
+    /// </summary>
+    private SaveDataCapabilities SaveDataCapabilitiesOf(ISaveEngineSession session)
+    {
+        var core = Fenced("core", () => Engine.SaveDataSupport.Of(session), Engine.SaveDataCoreSupport.All with { Pokedex = false, TrainerRecords = false, Bag = false, GiftInbox = false });
+        return new SaveDataCapabilities(
+            Fashion: Probe(nameof(SaveDataCapabilities.Fashion), () => session.SupportsLegalFashionUnlock && Guard.Allows(SaveAction.EditTrainer)),
+            Compass: Probe(nameof(SaveDataCapabilities.Compass), () => session.SupportsCompassSettings && Guard.Allows(SaveAction.EditTrainer)),
+            PokeBeans: Probe(nameof(SaveDataCapabilities.PokeBeans), () => session.GetPokeBeans().Count != 0),
+            GrandUnderground: Probe(nameof(SaveDataCapabilities.GrandUnderground), () => session.GetGrandUndergroundItems().Count != 0 && Guard.Allows(SaveAction.EditInventory)),
+            // Viewable in Hardcore mode; these editors refuse writes themselves.
+            EventFlags: Probe(nameof(SaveDataCapabilities.EventFlags), () => Engine.EventFlagService.IsSupported(session)),
+            World: Probe(nameof(SaveDataCapabilities.World), () => WorldEventsMenu.HasAny(session)),
+            // A save the event archive has no profile for (a ROM hack engine) would open onto an empty gallery.
+            EventGallery: Probe(nameof(SaveDataCapabilities.EventGallery), () => Guard.Allows(SaveAction.InjectEvent)
+                && IPlatformApplication.Current?.Services.GetService<IEventDatabaseService>()?.GetSaveProfile(session) is not null),
+            KeyItemEvents: Probe(nameof(SaveDataCapabilities.KeyItemEvents), () => Engine.KeyItemEventService.IsSupported(session)),
+            Bytes: Probe(nameof(SaveDataCapabilities.Bytes), () => Guard.Allows(SaveAction.WriteRawBytes)),
+            SaveBlocks: Probe(nameof(SaveDataCapabilities.SaveBlocks), () => Engine.SaveBlockEditorService.IsSupported(session)),
+            HoneyTrees: Probe(nameof(SaveDataCapabilities.HoneyTrees), () => Engine.HoneyTreeService.IsSupported(session)),
+            HallOfFame: Probe(nameof(SaveDataCapabilities.HallOfFame), () => Engine.HallOfFameService.IsSupported(session)),
+            Raids: Probe(nameof(SaveDataCapabilities.Raids), () => Engine.RaidService.IsSupported(session)),
+            PoffinCase: Probe(nameof(SaveDataCapabilities.PoffinCase), () => (Engine.TreatCaseService.GetKind(session) is Engine.TreatCaseKind.Poffins4 or Engine.TreatCaseKind.Poffins8b) && Guard.Allows(SaveAction.EditInventory)),
+            PokeblockCase: Probe(nameof(SaveDataCapabilities.PokeblockCase), () => (Engine.TreatCaseService.GetKind(session) is Engine.TreatCaseKind.PokeBlocks3 or Engine.TreatCaseKind.PokeBlocks6) && Guard.Allows(SaveAction.EditInventory)),
+            Underground: Probe(nameof(SaveDataCapabilities.Underground), () => Engine.SinnohUndergroundService.IsSupported(session) && Guard.Allows(SaveAction.EditInventory)),
+            ZygardeCells: Probe(nameof(SaveDataCapabilities.ZygardeCells), () => Engine.ZygardeCellService.IsSupported(session)),
+            FestivalPlaza: Probe(nameof(SaveDataCapabilities.FestivalPlaza), () => Engine.FestivalPlazaService.IsSupported(session)),
+            SuperTraining: Probe(nameof(SaveDataCapabilities.SuperTraining), () => Engine.SuperTrainingService.IsSupported(session)),
+            Pokewalker: Probe(nameof(SaveDataCapabilities.Pokewalker), () => Engine.PokewalkerService.IsSupported(session)),
+            EReader: Probe(nameof(SaveDataCapabilities.EReader), () => Engine.EReaderService.IsSupported(session)),
+            PalPark: Probe(nameof(SaveDataCapabilities.PalPark), () => Engine.PalParkService.IsSupported(session)),
+            TrainerCard: core.TrainerCard, Pokedex: core.Pokedex, TrainerRecords: core.TrainerRecords,
+            Bag: core.Bag, GiftInbox: core.GiftInbox);
+
+        bool Probe(string what, Func<bool> probe) => Fenced(what, probe, false);
+
+        static T Fenced<T>(string what, Func<T> probe, T fallback)
+        {
+            try { return probe(); }
+            catch (Exception error)
+            {
+                AppLog.Warn("save-data", $"{what} probe failed, entry hidden: {error.GetType().Name}: {error.Message}");
+                return fallback;
+            }
+        }
+    }
+
+    /// <summary>The trainer card Save data shows: the game, the trainer, the facts, the party.</summary>
+    private SaveDataCard SaveDataCardOf(ISaveEngineSession session)
+    {
+        var trainer = session.GetTrainer();
+        var stats = session.GetTrainerStats();
+        var facts = new List<(string, string)> { ("ID", trainer.TID.ToString("00000", System.Globalization.CultureInfo.InvariantCulture)) };
+        if (stats.SupportsPlayTime) facts.Add(("Play time", $"{stats.PlayTimeHours}:{stats.PlayTimeMinutes:00}"));
+        facts.Add(("Money", trainer.Money.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)));
+        // A hack engine with no dex cells would read 0 of every species: no Pokédex line then.
+        _saveDataDex ??= Engine.SaveDataSupport.Of(session).Pokedex ? CountDex(session) : (0, 0, 0);
+        if (_saveDataDex is { Total: > 0 } dex) facts.Add(("Pokédex", $"{dex.Caught}/{dex.Total}"));
+
+        var party = new List<(SKImage, SKRect)>();
+        foreach (var slot in session.Snapshot.Slots.Where(slot => slot.Box == -1 && slot.Species is not null).OrderBy(slot => slot.Slot))
+        {
+            if (_sprites.TryGetShowdownIcon(slot.Look, () => MainThread.BeginInvokeOnMainThread(ToolHubScreen.Repaint), out var sheet, out var cell))
+            {
+                if (sheet is not null) party.Add((SpriteImages.Of(sheet), new SKRect(cell.Left, cell.Top, cell.Right, cell.Bottom)));
+                else if (_sprites.GetSprite(slot.Look) is { } sprite) party.Add((SpriteImages.Of(sprite), new SKRect(0, 0, sprite.Width, sprite.Height)));
+            }
+        }
+        var name = string.IsNullOrEmpty(_viewModel.ConnectedName) ? "Save data" : _viewModel.ConnectedName;
+        return new SaveDataCard(name, trainer.Name, trainer.Gender, facts, party);
+    }
+
+    // Counted once per open save: walking every species on each repaint would be wasted work.
+    private (int Seen, int Caught, int Total)? _saveDataDex;
+
+    private static (int Seen, int Caught, int Total) CountDex(ISaveEngineSession session)
+    {
+        int seen = 0, caught = 0, total = 0;
+        for (var species = 1; species <= session.MaxSpeciesId; species++)
+        {
+            if (!session.IsDexSpecies(species)) continue;
+            total++;
+            var entry = session.GetDexEntry(species);
+            if (entry.Seen) seen++;
+            if (entry.Caught) caught++;
+        }
+        return (seen, caught, total);
     }
 
     /// <summary>Exports the live edited save through the Android share sheet.</summary>
@@ -2474,7 +2445,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         }
         catch (Exception error)
         {
-            _viewModel.Status = $"Save export failed: {error.Message}";
+            _viewModel.Status = $"Save export failed. {Domain.ErrorText.Plain(error)}";
         }
     }
 
@@ -2521,23 +2492,26 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         }
     }
 
+    /// <summary>One currency the open save keeps: its in-game name, value, cap, and the edit that sets it.</summary>
+    private sealed record Currency(string Name, int Value, int Max, Func<int, TrainerStatsEdit> Edit);
+
+    private static List<Currency> CurrenciesOf(TrainerStats stats)
+    {
+        var list = new List<Currency>();
+        if (stats.SupportsBP) list.Add(new("Battle Points", stats.BP, stats.BPMax, v => new(BP: v)));
+        if (stats.SupportsCoins) list.Add(new("Game Corner coins", stats.Coins, stats.CoinsMax, v => new(Coins: v)));
+        if (stats.SupportsWatts) list.Add(new("Watts", stats.Watts, stats.WattsMax, v => new(Watts: v)));
+        if (stats.SupportsFestaCoins) list.Add(new("Festival Coins", stats.FestaCoins, stats.FestaCoinsMax, v => new(FestaCoins: v)));
+        if (stats.SupportsLeaguePoints) list.Add(new("League Points", stats.LeaguePoints, stats.LeaguePointsMax, v => new(LeaguePoints: v)));
+        if (stats.SupportsBlueberryPoints) list.Add(new("Blueberry Points", stats.BlueberryPoints, stats.BlueberryPointsMax, v => new(BlueberryPoints: v)));
+        return list;
+    }
+
     /// <summary>Trainer card: view + edit name, IDs, money, gender - written safely like everything; view only in Hardcore.</summary>
     private async Task ShowTrainerCardAsync()
     {
         var session = _sessionsFor();
-        if (session is null) return;
-        var trainer = session.GetTrainer();
-
-        // Hardcore: a read-only card (locked fields, no SAVE), so there is nothing to refuse.
-        var readOnly = Guard.Blocks(SaveAction.EditTrainer);
-        var updated = await TrainerCardPopup.ShowAsync(_hostGrid, trainer, readOnly);
-        if (readOnly || updated is null || updated == trainer) return;
-
-        await _viewModel.RunMutationAsync(s =>
-        {
-            s.SetTrainer(updated);
-            return new GenerationOutcome(true, "Trainer card updated.");
-        }, Math.Max(0, _viewModel.SelectedSlot), action: SaveAction.EditTrainer);
+        if (session is not null) await ShowTrainerCardScreenAsync(session);
     }
 
     private async Task ShowFashionAsync()
@@ -2557,7 +2531,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             return;
         }
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Unlock legal fashion?",
-            "Unlock every outfit this Sword or Shield save can legitimately own. A restore point is created first.", "Unlock");
+            "Unlock every outfit this Sword or Shield save can legitimately own. Restore points can undo it.", "Unlock");
         if (!confirmed) return;
         await _viewModel.RunMutationAsync(s =>
         {
@@ -2575,7 +2549,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         {
             case "Unlock all clothes":
                 if (!await PadMenu.ConfirmAsync(_hostGrid, "Unlock all clothes?",
-                    "Unlock every outfit this X or Y save can own. A restore point is created first.", "Unlock")) return;
+                    "Unlock every outfit this X or Y save can own. Restore points can undo it.", "Unlock")) return;
                 await _viewModel.RunMutationAsync(s =>
                 {
                     s.UnlockAllLegalFashion();
@@ -2584,7 +2558,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 return;
             case "Max Style":
                 if (!await PadMenu.ConfirmAsync(_hostGrid, "Set Style to max?",
-                    "Lets you into every Lumiose boutique and restaurant without earning Style. A restore point is created first.", "Set")) return;
+                    "Lets you into every Lumiose boutique and restaurant without earning Style. Restore points can undo it.", "Set")) return;
                 await _viewModel.RunMutationAsync(s =>
                 {
                     s.SetStylePoints(byte.MaxValue);
@@ -2667,26 +2641,16 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var session = _sessionsFor();
         if (session is null) return;
         var data = IPlatformApplication.Current!.Services.GetRequiredService<IGameDataService>();
-        if (session.GetPokeBeans().Count != 0)
-        {
-            var choice = await PadMenu.ShowAsync(_hostGrid, "Bag & items", null,
-                new PadOption("Bag", IconPath: "bag"),
-                new PadOption("Poké Beans", IconPath: "item"));
-            if (choice is null) return;
-            if (choice == "Poké Beans")
-            {
-                await PokeBeansEditor.ShowAsync(_hostGrid, session, _viewModel);
-                return;
-            }
-        }
-        await BagEditor.ShowAsync(_hostGrid, session, _viewModel, data);
+        _bagOpen = true;
+        try { await BagEditor.ShowAsync(_hostGrid, session, _viewModel, data); }
+        finally { _bagOpen = false; }
     }
 
     /// <summary>
-    /// The bag editor overlay: the navy inventory world. Pockets are bag pills (cyan;
-    /// yellow-green rim and gold fill when active), items are white PixelUI rows with
-    /// round count discs. Tap a name for the exact-count sheet; left/right adjust the
-    /// selected count, shoulder L/R turn pockets, up/down walk rows, A activates.
+    /// The bag, as one painted screen in the app's art direction (<see cref="BagPaint"/>): the
+    /// pouch name in the box banner, the items in the box well, the pouches as slanted icon
+    /// tabs, the item under the cursor in a cyan-rimmed panel with its menu. As in the games,
+    /// left/right turn pouches, A opens the item's menu, B closes it.
     /// </summary>
     private sealed class BagEditor : IPadHandler
     {
@@ -2694,19 +2658,42 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         private readonly ISaveEngineSession _session;
         private readonly BoxBrowserViewModel _viewModel;
         private readonly IGameDataService _data;
-        private readonly ScrollView _scroll;
         private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly HorizontalStackLayout _pockets = new() { Spacing = 12, HorizontalOptions = LayoutOptions.Center };
-        private readonly VerticalStackLayout _rows = new() { Spacing = 4 };
+        private readonly SKCanvasView _canvas = new() { EnableTouchEvents = true };
+        private readonly ContentView _footer = new();
+
+        // Adding: the pouch's catalogue, narrowed by the search, and how many go in.
+        private bool _adding;
+        private string _query = "";
+        private List<int> _catalog = [];
+        private List<int> _matches = [];
+        private int _amount = 1;
+        private (int Cursor, int Scroll) _browseAt;
+
+        // The Item Bank: a second source while adding, and "Send to Item Bank" in the item's menu.
+        private readonly PKForge.Infrastructure.ItemBankStore? _bankStore;
+        private readonly bool _bankSupported;
+        private bool _fromBank;
+        private IReadOnlyList<ItemBankOffer> _offers = [];
+        private int _bankAmount = 1;
+        private readonly Dictionary<string, SKImage?> _art = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, SKImage?> _pouchIcons = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _artLoading = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, ItemLore?> _lore = new(StringComparer.Ordinal);
         private readonly int _slotSeed;
 
         private IReadOnlyList<BagPouch> _bag = [];
-        private List<BagRow> _itemRows = [];
-        private View _addRow = null!;
-        private View _presetRow = null!;
+        private BagHits? _hits;
         private Grid _overlay = null!;
         private int _pouchIndex;
         private int _cursor;
+        private int _scroll;
+        private bool _inMenu;
+        private BagAction _action = BagAction.Count;
+        private string _status = "";
+        private SKPoint? _pressedAt;
+        private float _dragRows;
+        private bool _dragged;
         private readonly Dictionary<(string Pouch, int Item), int> _pendingCounts = [];
         private readonly SemaphoreSlim _pendingWriteGate = new(1, 1);
         private int _pendingRevision;
@@ -2728,63 +2715,23 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             // render as #id and filtered every legal id out of ADD ITEM.
             _itemNames = session.GetItemNames();
             _slotSeed = slotSeed;
+            _bankStore = IPlatformApplication.Current?.Services.GetService<PKForge.Infrastructure.ItemBankStore>();
+            _bankSupported = _bankStore is not null && PKForge.Engine.ItemBankService.IsSupported(session);
 
-            var title = new HorizontalStackLayout
+            _canvas.PaintSurface += PaintGuard.Wrap("The bag", OnPaint);
+            _canvas.Touch += OnTouch;
+            SetFooter();
+            var screen = new Grid
             {
-                Spacing = 10,
-                Children =
-                {
-                    PksmIcons.Icon("bag", 22, PksmIcons.White),
-                    new Label
-                    {
-                        Text = "Bag",
-                        FontFamily = DsChrome.PixelFont,
-                        FontSize = UiTokens.TextHeading,
-                        TextColor = UiTokens.Ink0,
-                        VerticalTextAlignment = TextAlignment.Center,
-                    },
-                },
-            };
-
-            _scroll = new ScrollView { Content = _rows };
-
-            var hint = new Label
-            {
-                Text = "Left / right adjust · L / R change pouch · A opens exact count",
-                FontFamily = DsChrome.PixelFont,
-                FontSize = UiTokens.TextSmall,
-                TextColor = UiTokens.InkSoft,
-            };
-            // Live status INSIDE the bag window: outcomes must be visible here, not on
-            // the page footer hidden behind this overlay. Every async action reports.
-            BagStatus = new Label
-            {
-                Text = "",
-                FontFamily = DsChrome.PixelFont,
-                FontSize = UiTokens.TextSmall,
-                TextColor = UiTokens.Ink0,
-                LineBreakMode = LineBreakMode.WordWrap,
-                MaxLines = 2,
-            };
-
-            var body = new Grid
-            {
+                Padding = new Thickness(14, 12, 14, 0),
                 RowSpacing = 10,
-                RowDefinitions = [new(GridLength.Auto), new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto), new(GridLength.Auto)],
-                Children = { title, _pockets, _scroll, hint, BagStatus },
+                RowDefinitions = [new(GridLength.Star), new(GridLength.Auto)],
+                Children = { _canvas, _footer },
             };
-            Grid.SetRow(_pockets, 1);
-            Grid.SetRow(_scroll, 2);
-            Grid.SetRow(hint, 3);
-            Grid.SetRow(BagStatus, 4);
-
-            var window = Kit.Panel(body, padding: 14);
-            window.WidthRequest = Math.Min(host.Width > 0 ? host.Width - 24 : 560, 560);
-            window.HeightRequest = host.Height > 0 ? host.Height - 24 : 340;
-            window.HorizontalOptions = LayoutOptions.Center;
-            window.VerticalOptions = LayoutOptions.Center;
-            _overlay = Kit.AttachOverlay(host, window, () => _ = CloseAsync());
-            Kit.AnimateIn(window);
+            Grid.SetRow(_footer, 1);
+            // The bag covers the whole screen, on the app's grid like every other menu.
+            var window = new Grid { Children = { DsChrome.GridBackground(), screen } };
+            _overlay = Kit.AttachOverlay(host, window);
         }
 
         private async Task RunAsync()
@@ -2792,7 +2739,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             _bag = _session.GetBag();
             if (_bag.Count == 0)
             {
-                _viewModel.Status = "This game exposes no editable bag.";
+                _viewModel.Status = "This game's bag can't be edited here.";
                 await CloseAsync();
                 return;
             }
@@ -2808,15 +2755,263 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             }
         }
 
-        internal Label BagStatus = null!;
+        private void Invalidate() => MainThread.BeginInvokeOnMainThread(_canvas.InvalidateSurface);
+
+        /// <summary>The footer says what the buttons do in the mode the bag is in.</summary>
+        private void SetFooter() => _footer.Content = _adding && _bankSupported
+            ? DsChrome.Footer(
+                ("A", "Choose", () => OnPadButton(PadButton.A)),
+                ("<>", "Pouch", () => OnPadButton(PadButton.Right)),
+                ("Y", "Search", () => OnPadButton(PadButton.Y)),
+                ("X", _fromBank ? "Catalogue" : "Item Bank", () => OnPadButton(PadButton.X)),
+                ("B", "Back to bag", () => OnPadButton(PadButton.B)))
+            : _adding
+            ? DsChrome.Footer(
+                ("A", "Choose", () => OnPadButton(PadButton.A)),
+                ("<>", "Pouch", () => OnPadButton(PadButton.Right)),
+                ("Y", "Search", () => OnPadButton(PadButton.Y)),
+                ("B", "Back to bag", () => OnPadButton(PadButton.B)))
+            : DsChrome.Footer(
+                ("A", "Choose", () => OnPadButton(PadButton.A)),
+                ("<>", "Pouch", () => OnPadButton(PadButton.Right)),
+                ("Y", "Add item", () => OnPadButton(PadButton.Y)),
+                ("X", "Presets", () => OnPadButton(PadButton.X)),
+                ("B", "Back", () => OnPadButton(PadButton.B)));
+
+        private int ListCount => _adding ? _fromBank ? _offers.Count : _matches.Count : Items.Count;
+
+        private ItemBankOffer? CurrentOffer => _adding && _fromBank && _cursor < _offers.Count ? _offers[_cursor] : null;
+
+        /// <summary>A banked item's name in this game's words when it has it, else the name it was banked under.</summary>
+        private string OfferName(ItemBankOffer offer) => offer.Place is { } place ? ItemName(place.ItemId) : offer.Entry.Name;
+
+        private string? CurrentName => _adding && _fromBank
+            ? CurrentOffer is { } offer ? OfferName(offer) : null
+            : _adding
+            ? _cursor < _matches.Count ? ItemName(_matches[_cursor]) : null
+            : CurrentItem is { } item ? ItemName(item.Id) : null;
+
+        private int Owned(int id) => Items.FirstOrDefault(item => item.Id == id)?.Count ?? 0;
+
+        /// <summary>Y from the bag: the pouch's catalogue takes the list, the bag stays one B away.</summary>
+        private async Task EnterAddAsync()
+        {
+            if (Refuse()) return;
+            await FlushPendingAsync();
+            _browseAt = (_cursor, _scroll);
+            _adding = true;
+            _fromBank = false;
+            _query = "";
+            _amount = 1;
+            _inMenu = false;
+            _status = "";
+            BuildCatalog();
+            SetFooter();
+            Invalidate();
+        }
+
+        private void ExitAdd(int? onItem = null)
+        {
+            _adding = false;
+            _inMenu = false;
+            (_cursor, _scroll) = _browseAt;
+            if (onItem is { } id && Items.Select(item => item.Id).ToList().IndexOf(id) is >= 0 and var at) _cursor = at;
+            SetFooter();
+            Rebuild();
+        }
+
+        private void BuildCatalog()
+        {
+            var pouchName = _bag[_pouchIndex].Name;
+            if (_fromBank) { BuildOffers(); return; }
+            _catalog = [.. _session.GetPouchLegalItems(pouchName)
+                .Where(id => id < _itemNames.Count && _itemNames[id].Length > 0)
+                .OrderBy(id => _itemNames[id], StringComparer.CurrentCultureIgnoreCase)];
+            Filter();
+        }
+
+        /// <summary>The banked items for this pouch, then those this game cannot hold, each with why.</summary>
+        private void BuildOffers()
+        {
+            _offers = [];
+            if (_bankStore is null || !_bankSupported) return;
+            try
+            {
+                var places = PKForge.Engine.ItemBankService.Places(_session);
+                var family = PKForge.Engine.ItemBankService.Family(_session);
+                _offers = ItemBankOffers.ForPouch(_bankStore.Read(), _bag[_pouchIndex].Name, family,
+                    key => places.GetValueOrDefault(key));
+                // Only what this search matches, the same way the catalogue narrows.
+                var needle = ItemArt.Slug(_query.Trim());
+                if (needle.Length > 0)
+                    _offers = [.. _offers.Where(offer => ItemArt.Slug(OfferName(offer)).Contains(needle, StringComparison.Ordinal))];
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
+            {
+                _status = $"The Item Bank could not be read. {Domain.ErrorText.Plain(error)}";
+            }
+            _cursor = 0;
+            _scroll = 0;
+            _inMenu = false;
+        }
+
+        /// <summary>X while adding: the catalogue or the Item Bank.</summary>
+        private void ToggleSource()
+        {
+            if (!_bankSupported) return;
+            _fromBank = !_fromBank;
+            _amount = 1;
+            _status = "";
+            BuildCatalog();
+            SetFooter();
+            Invalidate();
+        }
+
+        /// <summary>Accents and spaces do not matter: "poke ba" finds Poké Ball.</summary>
+        private void Filter()
+        {
+            var needle = ItemArt.Slug(_query.Trim());
+            _matches = needle.Length == 0 ? _catalog : [.. _catalog.Where(id => ItemArt.Slug(_itemNames[id]).Contains(needle, StringComparison.Ordinal))];
+            _cursor = 0;
+            _scroll = 0;
+            _inMenu = false;
+        }
+
+        private async Task SearchAsync()
+        {
+            var typed = await TextPopup.ShowLineAsync(_host, "Search", "Part of the item's name", _query, confirm: "Search");
+            if (typed is null) return;
+            _query = typed;
+            if (_fromBank) BuildOffers(); else Filter();
+            Invalidate();
+        }
+
+        private void ChangeAmount(int delta)
+        {
+            _amount = Math.Clamp(_amount + delta, 1, 999);
+            Invalidate();
+        }
+
+        private async Task TypeAmountAsync()
+        {
+            if (CurrentName is not { } name) return;
+            var typed = await StatsPopup.ShowSingleAsync(_host, $"{name}: how many?", _amount, 999);
+            if (typed is { } value) { _amount = Math.Max(1, value); Invalidate(); }
+        }
+
+        /// <summary>Puts the chosen amount on top of what the bag holds, then shows it in the bag.</summary>
+        private async Task PutAsync()
+        {
+            if (_fromBank) { await WithdrawAsync(); return; }
+            if (Refuse() || _cursor >= _matches.Count) return;
+            var id = _matches[_cursor];
+            await WriteAsync(id, Owned(id) + _amount);
+            ExitAdd(onItem: id);
+        }
+
+        /// <summary>Takes the chosen amount out of the Item Bank into this pouch. The bag edit and the
+        /// bank write happen together: the bank takes the change inside the save's mutation, and gives
+        /// it back only if the save write itself fails, so an item is never lost nor doubled.</summary>
+        private async Task WithdrawAsync()
+        {
+            if (Refuse() || _bankStore is not { } store || CurrentOffer is not { } offer) return;
+            if (!offer.CanWithdraw) { Report(offer.Reason ?? "This game cannot hold it."); return; }
+            var name = OfferName(offer);
+            var amount = _amount;
+            ItemBank before;
+            try { before = store.Read(); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
+            {
+                Report($"The Item Bank could not be read. {Domain.ErrorText.Plain(error)}");
+                return;
+            }
+            var moved = 0;
+            ItemBank? after = null;
+            var generation = _viewModel.MutationGeneration;
+            var outcome = await _viewModel.RunMutationAsync(s =>
+            {
+                var taken = PKForge.Engine.ItemBankService.Withdraw(s, before, offer.Entry.Key, amount, out moved);
+                if (moved <= 0) return new GenerationOutcome(false, $"No room for {name}: the pouch is full or at this game's cap.");
+                store.Apply(before, taken);
+                after = taken;
+                return new GenerationOutcome(true, $"{name} ×{moved} from the Item Bank.");
+            }, _slotSeed, refreshSlot: false, action: SaveAction.EditInventory);
+            var bankWritten = after is not null;
+            // A failure after the save was written (refreshing the grid) keeps the move: the save holds it.
+            if (!outcome && bankWritten && _viewModel.MutationGeneration != generation) outcome = true;
+            if (!outcome && bankWritten) RestoreBank(store, after!, before);
+            if (!outcome) { Report(bankWritten ? "Not saved: the file was left as it was, the items stay banked." : _viewModel.Status); BuildOffers(); Invalidate(); return; }
+            Report(moved < Math.Min(amount, offer.Entry.Count)
+                ? $"{name} ×{moved} came out: this game stops there. The rest stays banked."
+                : $"Saved: {name} ×{moved} from the Item Bank.");
+            ExitAdd(onItem: offer.Place!.ItemId);
+        }
+
+        /// <summary>Sends the chosen amount of the item under the cursor to the Item Bank. The bank is
+        /// written first; the bag gives the items up only once that write has landed, and if the save
+        /// write then fails the bank goes back to what it held.</summary>
+        private async Task DepositAsync(BagItem item)
+        {
+            if (Refuse() || _bankStore is not { } store) return;
+            await FlushPendingAsync();
+            var pouchName = _bag[_pouchIndex].Name;
+            if (PKForge.Engine.ItemBankService.WhyKept(_session, pouchName, item.Id) is { } kept) { Report(kept); return; }
+            var name = ItemName(item.Id);
+            var amount = _bankAmount;
+            ItemBank before;
+            try { before = store.Read(); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
+            {
+                Report($"The Item Bank could not be read. {Domain.ErrorText.Plain(error)}");
+                return;
+            }
+            var moved = 0;
+            ItemBank? after = null;
+            var generation = _viewModel.MutationGeneration;
+            var outcome = await _viewModel.RunMutationAsync(s =>
+            {
+                var plan = PKForge.Engine.ItemBankService.PlanDeposit(s, pouchName, item.Id, amount);
+                var banked = before.Deposit(plan.Key, plan.Name, plan.Moved, string.Join("/", s.GameNames), s.Generation);
+                store.Apply(before, banked);
+                after = banked;
+                s.SetItemCount(pouchName, item.Id, plan.Remaining);
+                moved = plan.Moved;
+                return new GenerationOutcome(true, $"{name} ×{moved} sent to the Item Bank.");
+            }, _slotSeed, refreshSlot: false, action: SaveAction.EditInventory);
+            var bankWritten = after is not null;
+            // A failure after the save was written (refreshing the grid) keeps the move: the save holds it.
+            if (!outcome && bankWritten && _viewModel.MutationGeneration != generation) outcome = true;
+            if (!outcome && bankWritten) RestoreBank(store, after!, before);
+            Report(outcome ? $"Saved: {name} ×{moved} is in the Item Bank." : bankWritten
+                ? "Not saved: the file was left as it was, and the Item Bank too." : _viewModel.Status);
+            _bankAmount = 1;
+            Rebuild();
+        }
+
+        /// <summary>Undoes one move on the bank as it is now (anything else it took meanwhile stays).</summary>
+        private static void RestoreBank(PKForge.Infrastructure.ItemBankStore store, ItemBank after, ItemBank before)
+        {
+            try { store.Apply(after, before); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
+            {
+                AppLog.Error("item-bank", "The Item Bank could not be put back after a failed save write", error);
+            }
+        }
+
+        private void ChangeBankAmount(int delta)
+        {
+            var held = CurrentItem is { } item ? _pendingCounts.GetValueOrDefault((_bag[_pouchIndex].Name, item.Id), item.Count) : 1;
+            _bankAmount = Math.Clamp(_bankAmount + delta, 1, Math.Max(1, held));
+            Invalidate();
+        }
 
         private void Report(string message)
         {
-            MainThread.BeginInvokeOnMainThread(() => BagStatus.Text = message);
+            _status = message;
+            Invalidate();
         }
-        /// <summary>The Hardcore refusal inside the bag: the reason lands in the
-        /// window's own status line, never swallowed. Doubles as the no-op handler for
-        /// the disabled row buttons.</summary>
+
+        /// <summary>The Hardcore refusal inside the bag: the reason shows in the bag itself, never swallowed.</summary>
         private bool Refuse()
         {
             if (!HardcoreMode.Blocks(SaveAction.EditInventory, out var status)) return false;
@@ -2830,108 +3025,305 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         private string ItemName(int id) =>
             id < _itemNames.Count && _itemNames[id].Length > 0 ? _itemNames[id] : $"#{id}";
 
-        private async Task CyclePouchAsync(int delta)
-        {
-            if (_bag.Count == 0) return;
-            await FlushPendingAsync();
-            _pouchIndex = ((_pouchIndex + delta) % _bag.Count + _bag.Count) % _bag.Count;
-            _cursor = 0;
-            Rebuild();
-        }
+        private IReadOnlyList<BagItem> Items => _bag[_pouchIndex].Items;
 
-        private async Task PickPouchAsync()
-        {
-            var pouches = _bag.Select((p, i) => new PadOption($"{p.Name} ({p.Items.Count})", IconPath: "bag")).ToArray();
-            var choice = await PadMenu.ShowAsync(_host, "Pouch", null, pouches);
-            if (choice is null) return;
-            var index = Array.FindIndex(pouches, o => o.Label == choice);
-            if (index >= 0) { _pouchIndex = index; _cursor = 0; Rebuild(); }
-        }
+        private BagItem? CurrentItem => _cursor < Items.Count ? Items[_cursor] : null;
 
-        /// <summary>Re-reads the bag and rebuilds the switcher + rows (after every write or pouch switch).</summary>
+        /// <summary>Re-reads the bag after a write or a pouch change; the cursor stays in range.</summary>
         private void Rebuild()
         {
             _bag = _session.GetBag();
             if (_pouchIndex >= _bag.Count) _pouchIndex = 0;
-            var pouch = _bag[_pouchIndex];
-
-            // One compact switcher row instead of wrapping pills: Gen 4's eight pouches
-            // were eating half the window and hiding the bag. Arrows cycle; tapping the
-            // name opens the full pouch list; L/R on the pad do the same.
-            _pockets.Children.Clear();
-            var prev = Kit.MiniCapsule("<", UiTokens.BagCyan);
-            prev.Clicked += (_, _) => _ = CyclePouchAsync(-1);
-            var next = Kit.MiniCapsule(">", UiTokens.BagCyan);
-            next.Clicked += (_, _) => _ = CyclePouchAsync(+1);
-            var label = new Label
-            {
-                Text = $" {_bag[_pouchIndex].Name} ({pouch.Items.Count}) ",
-                FontFamily = DsChrome.PixelFont,
-                FontSize = 17,
-                FontAttributes = FontAttributes.Bold,
-                TextColor = UiTokens.Ink0,
-                HorizontalTextAlignment = TextAlignment.Center,
-                VerticalTextAlignment = TextAlignment.Center,
-                HorizontalOptions = LayoutOptions.Center,
-            };
-            var tapList = new TapGestureRecognizer();
-            tapList.Tapped += (_, _) => _ = PickPouchAsync();
-            label.GestureRecognizers.Add(tapList);
-            _pockets.Children.Add(prev);
-            _pockets.Children.Add(label);
-            _pockets.Children.Add(next);
-
-            _rows.Children.Clear();
-            _itemRows = [];
-            // Hardcore mode: the bag stays readable and the pouch switcher still works,
-            // but every editing affordance is disabled and says why.
-            var canEdit = Guard.CanEditInventory;
-            var icons = new List<Image>(pouch.Items.Count);
-            foreach (var item in pouch.Items)
-            {
-                var captured = item;
-                var shownCount = _pendingCounts.GetValueOrDefault((pouch.Name, item.Id), item.Count);
-                var icon = new Image { WidthRequest = 24, HeightRequest = 24, VerticalOptions = LayoutOptions.Center, InputTransparent = true };
-                icons.Add(icon);
-                var row = new BagRow(icon, ItemName(item.Id), shownCount)
-                {
-                    Tapped = canEdit ? () => _ = EditCountAsync(captured) : () => Refuse(),
-                    Minus = canEdit ? () => QueueNudge(captured, -1) : () => Refuse(),
-                    Plus = canEdit ? () => QueueNudge(captured, +1) : () => Refuse(),
-                };
-                _itemRows.Add(row);
-                _rows.Children.Add(row);
-            }
-
-            var add = Kit.Capsule("+  Add item", UiTokens.BagCyan);
-            add.FontSize = 14;
-            add.Margin = new Thickness(4, 6, 4, 2);
-            add.IsEnabled = canEdit;
-            add.Clicked += (_, _) => _ = AddItemAsync();
-            _addRow = add;
-            _rows.Children.Add(_addRow);
-
-            var presets = Kit.Capsule("Item presets", UiTokens.BagCyan);
-            presets.FontSize = 14;
-            presets.Margin = new Thickness(4, 2, 4, 2);
-            presets.IsEnabled = canEdit;
-            presets.Clicked += (_, _) => _ = ShowPresetsAsync();
-            _presetRow = presets;
-            _rows.Children.Add(_presetRow);
-
-            Highlight(_cursor);
-            _ = LoadIconsAsync(pouch.Items, icons);
-            Report(canEdit
-                ? $"{pouch.Name} - {pouch.Items.Count} kinds - name table {_itemNames.Count}"
-                : HardcoreMode.StatusLine);
+            _cursor = Math.Clamp(_cursor, 0, Math.Max(0, ListCount - 1));
+            if (ListCount == 0) _inMenu = false;
+            if (!Guard.CanEditInventory) _status = HardcoreMode.StatusLine;
+            KeepCursorInView();
+            Invalidate();
         }
 
-        private async Task LoadIconsAsync(IReadOnlyList<BagItem> items, IReadOnlyList<Image> targets)
+        private void OnPaint(object? sender, SKPaintSurfaceEventArgs args)
         {
-            var placeholder = ItemArt.PlaceholderPath();
-            var paths = await Task.WhenAll(items.Select(i => ItemArt.GetAsync(ItemName(i.Id))));
-            for (var i = 0; i < targets.Count && i < paths.Length; i++)
-                targets[i].Source = ImageSource.FromFile(paths[i] ?? placeholder);
+            var c = args.Surface.Canvas;
+            c.Clear(SKColors.Transparent);
+            if (_bag.Count == 0) return;
+            var pouch = _bag[_pouchIndex];
+            var pouches = _bag.Select(p =>
+            {
+                var look = BagPouchLooks.Of(p.Name);
+                return new BagScenePouch(look.Title, PouchIcon(look.Icon), p.Items.Count);
+            }).ToList();
+            // Only the rows on screen ask for their art: a catalogue can hold hundreds.
+            var first = _scroll;
+            var last = _scroll + VisibleRows;
+            BagSceneItem Row(int index, int id, int count)
+            {
+                var name = ItemName(id);
+                var lore = ItemLoreFor(name);
+                var art = index >= first && index <= last ? ItemImage(name) : null;
+                return new BagSceneItem(name, count, art, lore?.About, lore?.FirstSeen, lore?.HeldBy);
+            }
+            BagSceneItem OfferRow(ItemBankOffer offer, int index)
+            {
+                var name = OfferName(offer);
+                var from = offer.Entry.Origins.Count > 0 ? $" · from {offer.Entry.Origins[^1].Game}" : "";
+                var note = offer.Reason ?? $"×{offer.Entry.Count} banked · ×{Owned(offer.Place!.ItemId)} in {BagPouchLooks.Of(pouch.Name).Title}{from}";
+                var lore = ItemLoreFor(name);
+                var art = index >= first && index <= last ? ItemImage(name) : null;
+                return new BagSceneItem(name, offer.Entry.Count, art, lore?.About, lore?.FirstSeen, lore?.HeldBy,
+                    Dimmed: !offer.CanWithdraw, Note: note);
+            }
+            var items = _adding && _fromBank
+                ? _offers.Select(OfferRow).ToList()
+                : _adding
+                ? _matches.Select((id, i) => Row(i, id, Owned(id))).ToList()
+                : pouch.Items.Select((item, i) => Row(i, item.Id, _pendingCounts.GetValueOrDefault((pouch.Name, item.Id), item.Count))).ToList();
+            var scene = new BagScene(pouches, _pouchIndex, items, _cursor, _scroll, _inMenu, _action, Guard.CanEditInventory, _status,
+                _adding ? _query : null, _amount, _adding && _fromBank, BankAmountShown);
+            _hits = BagPaint.Paint(c, args.Info, scene, PixelTypeface());
+        }
+
+        private SKImage? PouchIcon(string name)
+        {
+            if (_pouchIcons.TryGetValue(name, out var known)) return known;
+            SKImage? image = null;
+            try
+            {
+                using var bitmap = SKBitmap.Decode(PksmIcons.GetPng(name, PksmIcons.White));
+                image = bitmap is null ? null : SKImage.FromBitmap(bitmap);
+            }
+            catch (Exception error) when (error is IOException or FileNotFoundException) { }
+            _pouchIcons[name] = image;
+            return image;
+        }
+
+        /// <summary>The item's art, fetched once in the background; the screen repaints when it lands.</summary>
+        private SKImage? ItemImage(string name)
+        {
+            if (_art.TryGetValue(name, out var image)) return image;
+            if (_artLoading.Add(name)) _ = LoadArtAsync(name);
+            return null;
+        }
+
+        /// <summary>The item's lore, asked for only when the item is under the cursor.</summary>
+        private ItemLore? ItemLoreFor(string name)
+        {
+            if (CurrentName != name) return null;
+            if (_lore.TryGetValue(name, out var lore)) return lore;
+            _lore[name] = null;
+            _ = LoadLoreAsync(name);
+            return null;
+        }
+
+        private async Task LoadLoreAsync(string name)
+        {
+            var lore = await ItemLoreSource.GetAsync(name);
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                _lore[name] = lore;
+                _canvas.InvalidateSurface();
+            });
+        }
+
+        private async Task LoadArtAsync(string name)
+        {
+            var path = await ItemArt.GetAsync(name) ?? ItemArt.PlaceholderPath();
+            SKImage? image = null;
+            try
+            {
+                using var bitmap = SKBitmap.Decode(path);
+                image = bitmap is null ? null : SKImage.FromBitmap(bitmap);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+            MainThread.BeginInvokeOnMainThread(() =>
+            {
+                _art[name] = image;
+                _canvas.InvalidateSurface();
+            });
+        }
+
+        private int VisibleRows => BagPaint.VisibleRows(new SKSizeI((int)_canvas.CanvasSize.Width, (int)_canvas.CanvasSize.Height), _adding);
+
+        private void KeepCursorInView()
+        {
+            var visible = VisibleRows;
+            if (_cursor < _scroll) _scroll = _cursor;
+            else if (_cursor >= _scroll + visible) _scroll = _cursor - visible + 1;
+            _scroll = Math.Clamp(_scroll, 0, Math.Max(0, ListCount - visible));
+        }
+
+        private void MoveCursor(int delta)
+        {
+            if (ListCount == 0) return;
+            _cursor = Math.Clamp(_cursor + delta, 0, ListCount - 1);
+            KeepCursorInView();
+            Invalidate();
+        }
+
+        private void MoveAction(int delta)
+        {
+            var actions = BagPaint.Actions(Scene());
+            if (actions.Count == 0) return;
+            var at = Math.Max(0, actions.ToList().IndexOf(_action));
+            _action = actions[(at + delta + actions.Count) % actions.Count];
+            Invalidate();
+        }
+
+        // Only what Actions() reads: whether the pouch has items.
+        private BagScene Scene() => new([], 0, [.. Enumerable.Range(0, ListCount).Select(_ => new BagSceneItem("", 0, null))],
+            _cursor, _scroll, _inMenu, _action, true, "", _adding ? _query : null, _amount, _adding && _fromBank, BankAmountShown);
+
+        // The bank row shows only for an item that may leave: never key items, HMs or unknown items.
+        private int BankAmountShown => !_adding && _bankSupported && CurrentItem is { } item
+            && PKForge.Engine.ItemBankService.WhyKept(_session, _bag[_pouchIndex].Name, item.Id) is null ? _bankAmount : 0;
+
+        private void OpenMenu(BagAction action)
+        {
+            _inMenu = true;
+            _action = action;
+            Invalidate();
+        }
+
+        private void CloseMenu()
+        {
+            _inMenu = false;
+            Invalidate();
+        }
+
+        private void Nudge(int delta)
+        {
+            if (_adding) { ChangeAmount(delta); return; }
+            if (_inMenu && _action == BagAction.Bank) { ChangeBankAmount(delta); return; }
+            if (CurrentItem is not { } item || Refuse()) return;
+            QueueNudge(item, delta);
+        }
+
+        private async Task RunActionAsync(BagAction action)
+        {
+            switch (action)
+            {
+                case BagAction.Count when _adding:
+                    await TypeAmountAsync();
+                    break;
+                case BagAction.Put:
+                    await PutAsync();
+                    break;
+                case BagAction.Count:
+                case BagAction.Exact:
+                    if (CurrentItem is { } item) await EditCountAsync(item);
+                    break;
+                case BagAction.Fill:
+                    if (CurrentItem is { } full && !Refuse()) await WriteAsync(full.Id, 999);
+                    break;
+                case BagAction.Remove:
+                    if (CurrentItem is { } gone) await RemoveAsync(gone);
+                    break;
+                case BagAction.Bank:
+                    if (CurrentItem is { } sent) await DepositAsync(sent);
+                    break;
+                case BagAction.Add:
+                    await EnterAddAsync();
+                    break;
+                case BagAction.Presets:
+                    if (!Refuse()) await ShowPresetsAsync();
+                    break;
+            }
+        }
+
+        private async Task RemoveAsync(BagItem item)
+        {
+            if (Refuse()) return;
+            var name = ItemName(item.Id);
+            if (!await PadMenu.ConfirmAsync(_host, $"Remove {name}?",
+                $"Every {name} leaves the bag. Restore points can undo it.", "Remove")) return;
+            await WriteAsync(item.Id, 0);
+        }
+
+        private async Task CyclePouchAsync(int delta)
+        {
+            if (_bag.Count == 0) return;
+            await SwitchPouchAsync(((_pouchIndex + delta) % _bag.Count + _bag.Count) % _bag.Count);
+        }
+
+        private async Task SwitchPouchAsync(int index)
+        {
+            await FlushPendingAsync();
+            if (index == _pouchIndex) return;
+            _pouchIndex = index;
+            _cursor = 0;
+            _scroll = 0;
+            _inMenu = false;
+            _status = "";
+            if (_adding) { _query = ""; BuildCatalog(); }
+            Rebuild();
+        }
+
+        /// <summary>Taps land on what was painted; a drag on the list scrolls it.</summary>
+        private void OnTouch(object? sender, SKTouchEventArgs args)
+        {
+            args.Handled = true;
+            if (_hits is not { } hits) return;
+            var at = args.Location;
+            switch (args.ActionType)
+            {
+                case SKTouchAction.Pressed:
+                    _pressedAt = at;
+                    _dragRows = 0;
+                    _dragged = false;
+                    return;
+                case SKTouchAction.Moved when _pressedAt is { } start && hits.List.Contains(start):
+                    var rows = (start.Y - at.Y) / hits.RowHeight;
+                    if (!_dragged && Math.Abs(start.Y - at.Y) < hits.RowHeight / 3) return;
+                    _dragged = true;
+                    var step = (int)(rows - _dragRows);
+                    if (step != 0)
+                    {
+                        _dragRows += step;
+                        _scroll = Math.Clamp(_scroll + step, 0, Math.Max(0, ListCount - hits.VisibleRows));
+                        _canvas.InvalidateSurface();
+                    }
+                    return;
+                case SKTouchAction.Released:
+                    var tapped = !_dragged;
+                    _pressedAt = null;
+                    if (tapped) OnTap(hits, at);
+                    return;
+                case SKTouchAction.Cancelled:
+                    _pressedAt = null;
+                    return;
+            }
+        }
+
+        private void OnTap(BagHits hits, SKPoint at)
+        {
+            if (hits.Previous.Contains(at)) { _ = CyclePouchAsync(-1); return; }
+            if (hits.Next.Contains(at)) { _ = CyclePouchAsync(+1); return; }
+            if (hits.Search.Contains(at)) { _ = SearchAsync(); return; }
+            for (var i = 0; i < hits.Tabs.Count; i++)
+                if (hits.Tabs[i].Contains(at)) { _ = SwitchPouchAsync(i); return; }
+            foreach (var (index, rect) in hits.Rows)
+            {
+                if (!rect.Contains(at)) continue;
+                // A tap picks the item; a second tap opens its menu.
+                if (index == _cursor && !_inMenu) OpenMenu(BagAction.Count);
+                else { _cursor = index; _inMenu = false; KeepCursorInView(); Invalidate(); }
+                return;
+            }
+            if (hits.Minus.Contains(at)) { _inMenu = true; _action = BagAction.Count; Nudge(-1); return; }
+            if (hits.Plus.Contains(at)) { _inMenu = true; _action = BagAction.Count; Nudge(+1); return; }
+            if (hits.BankMinus.Contains(at)) { _inMenu = true; _action = BagAction.Bank; ChangeBankAmount(-1); return; }
+            if (hits.BankPlus.Contains(at)) { _inMenu = true; _action = BagAction.Bank; ChangeBankAmount(+1); return; }
+            foreach (var (action, rect) in hits.Actions)
+            {
+                if (!rect.Contains(at)) continue;
+                // A tap selects the row, a second tap on it acts, as everywhere in the DA: a quick
+                // second tap after a screen change never runs a row that just slid under the finger.
+                var again = _inMenu && _action == action;
+                _inMenu = true;
+                _action = action;
+                Invalidate();
+                if (again) _ = RunActionAsync(action);
+                return;
+            }
         }
 
         private async Task EditCountAsync(BagItem item)
@@ -2940,7 +3332,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             await FlushPendingAsync();
             var name = ItemName(item.Id);
             var current = _session.GetBag().SelectMany(p => p.Items).FirstOrDefault(i => i.Id == item.Id)?.Count ?? item.Count;
-            var count = await StatsPopup.ShowSingleAsync(_host, $"{name} - quantity", current, 999);
+            var count = await StatsPopup.ShowSingleAsync(_host, $"{name}: how many?", current, 999);
             if (count is null) return;
             await WriteAsync(item.Id, count.Value);
         }
@@ -2949,15 +3341,15 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         /// one validation, restore point, and SAF write after the user pauses.</summary>
         private void QueueNudge(BagItem item, int delta)
         {
-            if (_cursor >= _itemRows.Count) return;
+            if (_cursor >= _bag[_pouchIndex].Items.Count) return;
             var pouchName = _bag[_pouchIndex].Name;
             var key = (pouchName, item.Id);
             var current = _pendingCounts.GetValueOrDefault(key, item.Count);
             var count = Math.Clamp(current + delta, 0, 999);
             if (count == current) return;
             _pendingCounts[key] = count;
-            _itemRows[_cursor].SetCount(count);
-            Report($"{ItemName(item.Id)} x{count} - saving…");
+            Invalidate();
+            Report($"{ItemName(item.Id)} ×{count}…");
             var revision = ++_pendingRevision;
             _ = SaveAfterPauseAsync(revision);
         }
@@ -2983,8 +3375,15 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                         s.SetItemCount(change.Pouch, change.Item, change.Count);
                     return new GenerationOutcome(true, $"Updated {changes.Length} item{(changes.Length == 1 ? "" : "s")}.");
                 }, _slotSeed, refreshSlot: false, action: SaveAction.EditInventory);
-                Report(outcome ? "Item quantity saved to file - restart the game to load it" : "Write failed - see status");
                 Rebuild();
+                // The game has its own ceiling (99 in most bags): say so instead of staying silent.
+                var capped = outcome ? changes.FirstOrDefault(change =>
+                    _bag.FirstOrDefault(p => p.Name == change.Pouch)?.Items.FirstOrDefault(i => i.Id == change.Item) is { } held
+                    && held.Count < change.Count) : default;
+                var cap = capped.Pouch is null ? 0 : _bag.First(p => p.Name == capped.Pouch).Items.First(i => i.Id == capped.Item).Count;
+                Report(!outcome ? "Not saved: the file was left as it was."
+                    : capped.Pouch is not null ? $"{ItemName(capped.Item)} stops at ×{cap} in this game."
+                    : "Saved. Restart the game to see it.");
                 return outcome;
             }
             finally
@@ -3005,54 +3404,8 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 stored = s.SetItemCount(pouchName, itemId, count);
                 return new GenerationOutcome(true, stored == 0 ? $"{name} removed." : $"{name} ×{stored}");
             }, _slotSeed, refreshSlot: false, action: SaveAction.EditInventory);
-            Report(outcome ? $"SAVED TO FILE: {(stored == 0 ? $"{name} REMOVED" : $"{name} x{stored}")} - RESTART GAME" : "WRITE FAILED - SEE STATUS");
+            Report(outcome ? $"Saved: {(stored == 0 ? $"{name} removed" : $"{name} ×{stored}")}. Restart the game to see it." : "Not saved: the file was left as it was.");
             Rebuild();
-        }
-
-        private async Task AddItemAsync()
-        {
-            await FlushPendingAsync();
-            var pouchName = _bag[_pouchIndex].Name;
-            var gameItems = _itemNames; // the open game's own table
-            var legalIds = _session.GetPouchLegalItems(pouchName)
-                .Where(id => id < gameItems.Count && gameItems[id].Length > 0)
-                .ToList();
-            if (legalIds.Count == 0)
-            {
-                Report($"No addable items in {pouchName} - tap the pouch name to switch");
-                return;
-            }
-
-            // Open the picker IMMEDIATELY with cached-or-placeholder art. The old flow
-            // blocked on fetching every sprite first, which on a cold cache read as
-            // "the button does nothing" for the better part of a minute.
-            var itemDirectory = System.IO.Path.Combine(FileSystem.AppDataDirectory, "items");
-            var placeholder = ItemArt.PlaceholderPath();
-            var legal = legalIds.Select(id =>
-            {
-                var cached = System.IO.Path.Combine(itemDirectory, ItemArt.Slug(gameItems[id]) + ".png");
-                return new PickItem(id, gameItems[id], File.Exists(cached) ? cached : placeholder);
-            }).ToList();
-            Report($"Adding to {pouchName} - {legal.Count} items");
-            _ = Task.Run(async () =>
-            {
-                foreach (var id in legalIds)
-                    await ItemArt.GetAsync(gameItems[id]);
-            });
-            PickItem? picked;
-            try
-            {
-                picked = await PickerMenu.ShowAsync(_host, $"Add - {pouchName}", legal);
-            }
-            catch (Exception ex)
-            {
-                Report($"Picker failed: {ex.GetType().Name}: {ex.Message}");
-                return;
-            }
-            if (picked is null) { Report("Cancelled"); return; }
-            var count = await StatsPopup.ShowSingleAsync(_host, $"{ItemName(picked.Id)} - quantity", 0, 999);
-            if (count is null) return;
-            await WriteAsync(picked.Id, count.Value);
         }
 
         private static readonly HashSet<string> BallNames = new(StringComparer.OrdinalIgnoreCase)
@@ -3094,7 +3447,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 }
                 catch (Exception ex)
                 {
-                    Report($"Preset error: {ex.Message}");
+                    Report($"The preset could not be applied. {Domain.ErrorText.Plain(ex)}");
                     await PadMenu.ShowAsync(_host, "Item preset error", ex.Message, "OK");
                 }
                 return;
@@ -3103,14 +3456,14 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             if (choice == "Remove every item in this pouch")
             {
                 var confirmed = await PadMenu.ConfirmAsync(_host, "Empty this pouch?",
-                    $"Every item in {_bag[_pouchIndex].Name} is removed. A restore point is created first.", "Empty");
+                    $"Every item in {BagPouchLooks.Of(_bag[_pouchIndex].Name).Title} is removed. Restore points can undo it.", "Empty");
                 if (!confirmed) return;
             }
 
             var changes = BuildPreset(choice);
             if (changes.Count == 0)
             {
-                Report("No compatible items for this preset");
+                Report("Nothing in this preset fits this game.");
                 return;
             }
 
@@ -3120,7 +3473,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                     s.SetItemCount(change.Pouch, change.Item, change.Count);
                 return new GenerationOutcome(true, $"Preset changed {changes.Count} items.");
             }, _slotSeed, refreshSlot: false, action: SaveAction.EditInventory);
-            Report(ok ? $"Preset applied - {changes.Count} items" : "Preset failed - see status");
+            Report(ok ? $"Preset applied: {changes.Count} items." : _viewModel.Status);
             Rebuild();
         }
 
@@ -3134,13 +3487,13 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 .Select(item => new ItemPresetEntry(pouch.Name, item.Id, names[item.Id], item.Count))).ToArray();
             if (entries.Length == 0)
             {
-                Report("No compatible items to save in a preset");
+                Report("Nothing in this bag can go in a preset.");
                 return;
             }
             var name = existing?.Name ?? await TextPopup.ShowLineAsync(_host, "Preset name", "Name your bag preset (60 characters max)");
             if (string.IsNullOrWhiteSpace(name)) return;
             store.Save(new ItemPreset(existing?.Id ?? Guid.NewGuid().ToString("N"), name, _session.Generation, entries));
-            Report($"Preset saved - {entries.Length} items");
+            Report($"Preset saved: {entries.Length} items.");
         }
 
         private async Task ShowPersonalPresetsAsync(PKForge.Infrastructure.ItemPresetStore store)
@@ -3213,7 +3566,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                         }
                         return new GenerationOutcome(true, $"Preset changed {changes.Count} items.");
                     }, _slotSeed, refreshSlot: false, action: SaveAction.EditInventory);
-                    Report(ok ? $"Preset applied - {changes.Count} items" : "Preset failed - see status");
+                    Report(ok ? $"Preset applied: {changes.Count} items." : _viewModel.Status);
                     Rebuild();
                     return;
                 }
@@ -3255,37 +3608,22 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             return result;
         }
 
-        private void Highlight(int index)
-        {
-            _cursor = Math.Clamp(index, 0, _itemRows.Count + 1);
-            for (var i = 0; i < _itemRows.Count; i++)
-                _itemRows[i].Selected = i == _cursor;
-            if (_addRow is Button capsule)
-                capsule.BackgroundColor = _cursor == _itemRows.Count ? UiTokens.ChoiceFillPress : UiTokens.ChoiceFill;
-            if (_presetRow is Button preset)
-                preset.BackgroundColor = _cursor == _itemRows.Count + 1 ? UiTokens.ChoiceFillPress : UiTokens.ChoiceFill;
-            var target = _cursor < _itemRows.Count ? (View)_itemRows[_cursor]
-                : _cursor == _itemRows.Count ? _addRow : _presetRow;
-            _ = _scroll.ScrollToAsync(target, ScrollToPosition.MakeVisible, false);
-        }
-
         public bool OnPadButton(PadButton button)
         {
             switch (button)
             {
                 case PadButton.Up:
-                    Highlight(_cursor - 1);
+                    if (_inMenu) MoveAction(-1); else MoveCursor(-1);
                     return true;
                 case PadButton.Down:
-                    Highlight(_cursor + 1);
+                    if (_inMenu) MoveAction(+1); else MoveCursor(+1);
                     return true;
                 case PadButton.Left:
-                    if (_cursor < _itemRows.Count)
-                        QueueNudge(_bag[_pouchIndex].Items[_cursor], -1);
-                    return true;
                 case PadButton.Right:
-                    if (_cursor < _itemRows.Count)
-                        QueueNudge(_bag[_pouchIndex].Items[_cursor], +1);
+                    var delta = button == PadButton.Left ? -1 : +1;
+                    // On the count row the arrows set the count; everywhere else they turn pouches.
+                    if (_inMenu && _action is BagAction.Count or BagAction.Bank) Nudge(delta);
+                    else _ = CyclePouchAsync(delta);
                     return true;
                 case PadButton.L:
                     _ = CyclePouchAsync(-1);
@@ -3294,15 +3632,22 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                     _ = CyclePouchAsync(+1);
                     return true;
                 case PadButton.A:
-                    if (_cursor < _itemRows.Count)
-                        _ = EditCountAsync(_bag[_pouchIndex].Items[_cursor]);
-                    else if (_cursor == _itemRows.Count)
-                        _ = AddItemAsync();
-                    else
-                        _ = ShowPresetsAsync();
+                    if (_inMenu) _ = RunActionAsync(_action);
+                    else if (ListCount > 0) OpenMenu(BagAction.Count);
+                    else if (_adding) _ = SearchAsync();
+                    else _ = EnterAddAsync();
+                    return true;
+                case PadButton.Y:
+                    _ = _adding ? SearchAsync() : EnterAddAsync();
+                    return true;
+                case PadButton.X:
+                    if (_adding) ToggleSource();
+                    else if (!Refuse()) _ = ShowPresetsAsync();
                     return true;
                 case PadButton.B:
-                    _ = CloseAsync();
+                    if (_inMenu) CloseMenu();
+                    else if (_adding) ExitAdd();
+                    else _ = CloseAsync();
                     return true;
                 default:
                     return true; // modal while open
@@ -3316,215 +3661,6 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             await FlushPendingAsync();
             _host.Remove(_overlay);
             _closed.TrySetResult();
-        }
-
-        // ── Row chrome, drawn locally in Skia from Pksm tokens ─────────────────
-
-        /// <summary>A pocket tab: the bag pill (cyan idle; yellow-green rim + gold fill active).</summary>
-        private sealed class BagPillTab : Grid
-        {
-            private readonly SKCanvasView _bg;
-            private bool _selected;
-
-            public Action? Tapped { get; set; }
-
-            public BagPillTab(string label)
-            {
-                HeightRequest = 30;
-                Margin = new Thickness(0, 0, 6, 6);
-                _bg = new SKCanvasView { InputTransparent = true };
-                _bg.PaintSurface += (_, args) =>
-                    PksmPaint.BagPill(args.Surface.Canvas, new SKRect(0, 2, args.Info.Width, args.Info.Height - 2), _selected);
-                Children.Add(_bg);
-                Children.Add(new Label
-                {
-                    Text = label,
-                    FontFamily = DsChrome.PixelFont,
-                    FontSize = UiTokens.TextSmall,
-                    TextColor = UiTokens.Ink0,
-                    VerticalTextAlignment = TextAlignment.Center,
-                    HorizontalTextAlignment = TextAlignment.Center,
-                    Margin = new Thickness(14, 0),
-                    InputTransparent = true,
-                });
-                var tap = new TapGestureRecognizer();
-                tap.Tapped += (_, _) => Tapped?.Invoke();
-                GestureRecognizers.Add(tap);
-            }
-
-            public bool Selected
-            {
-                set
-                {
-                    if (_selected == value) return;
-                    _selected = value;
-                    _bg.InvalidateSurface();
-                }
-            }
-        }
-
-        /// <summary>One inventory row: item sprite, white PixelUI name, count, count discs.</summary>
-        private sealed class BagRow : Grid
-        {
-            private readonly SKCanvasView _bg;
-            private readonly Label _counter;
-            private bool _selected;
-
-            public Action? Tapped { get; set; }
-            public Action? Minus { get; set; }
-            public Action? Plus { get; set; }
-
-            public BagRow(Image icon, string name, int count)
-            {
-                HeightRequest = 40;
-                ColumnDefinitions =
-                [
-                    new(new GridLength(32)),
-                    new(GridLength.Star),
-                    new(new GridLength(54)),
-                    new(new GridLength(36)),
-                    new(new GridLength(36)),
-                ];
-                _bg = new SKCanvasView { InputTransparent = true };
-                _bg.PaintSurface += (_, args) => DrawRow(args.Surface.Canvas, args.Info, _selected);
-
-                var label = new Label
-                {
-                    Text = name,
-                    FontFamily = DsChrome.PixelFont,
-                    FontSize = UiTokens.TextBody,
-                    TextColor = UiTokens.Ink0,
-                    VerticalTextAlignment = TextAlignment.Center,
-                    LineBreakMode = LineBreakMode.TailTruncation,
-                    InputTransparent = true,
-                };
-                _counter = new Label
-                {
-                    Text = $"×{count}",
-                    FontFamily = DsChrome.PixelFont,
-                    FontSize = UiTokens.TextBody,
-                    TextColor = UiTokens.InkSoft,
-                    VerticalTextAlignment = TextAlignment.Center,
-                    HorizontalTextAlignment = TextAlignment.End,
-                    InputTransparent = true,
-                };
-
-                Children.Add(_bg);
-                Grid.SetColumnSpan(_bg, 5);
-                Children.Add(icon);
-                Children.Add(label);
-                Children.Add(_counter);
-                Children.Add(CountDisc(minus: true, () => Minus?.Invoke()));
-                Children.Add(CountDisc(minus: false, () => Plus?.Invoke()));
-                Grid.SetColumn(icon, 0);
-                Grid.SetColumn(label, 1);
-                Grid.SetColumn(_counter, 2);
-                SetColumn((Microsoft.Maui.Controls.BindableObject)Children[4], 3);
-                SetColumn((Microsoft.Maui.Controls.BindableObject)Children[5], 4);
-
-                var tap = new TapGestureRecognizer();
-                tap.Tapped += (_, _) => Tapped?.Invoke();
-                GestureRecognizers.Add(tap);
-            }
-
-            public bool Selected
-            {
-                set
-                {
-                    if (_selected == value) return;
-                    _selected = value;
-                    _bg.InvalidateSurface();
-                }
-            }
-
-            public void SetCount(int count) => _counter.Text = $"×{count}";
-        }
-
-        /// <summary>The add-item row: a plus disc and the cyan invitation.</summary>
-        private sealed class AddRow : Grid
-        {
-            private readonly SKCanvasView _bg;
-            private bool _selected;
-
-            public Action? Tapped { get; set; }
-
-            public AddRow()
-            {
-                HeightRequest = 40;
-                ColumnDefinitions = [new(new GridLength(32)), new(GridLength.Star)];
-                _bg = new SKCanvasView { InputTransparent = true };
-                _bg.PaintSurface += (_, args) => DrawRow(args.Surface.Canvas, args.Info, _selected);
-                Children.Add(_bg);
-                Grid.SetColumnSpan(_bg, 2);
-                Children.Add(CountDisc(minus: false, () => Tapped?.Invoke()));
-                Children.Add(new Label
-                {
-                    Text = "Add item",
-                    FontFamily = DsChrome.PixelFont,
-                    FontSize = UiTokens.TextBody,
-                    TextColor = UiTokens.Ink0,
-                    VerticalTextAlignment = TextAlignment.Center,
-                    InputTransparent = true,
-                });
-                SetColumn((Microsoft.Maui.Controls.BindableObject)Children[1], 0);
-                SetColumn((Microsoft.Maui.Controls.BindableObject)Children[2], 1);
-                var tap = new TapGestureRecognizer();
-                tap.Tapped += (_, _) => Tapped?.Invoke();
-                GestureRecognizers.Add(tap);
-            }
-
-            public bool Selected
-            {
-                set
-                {
-                    if (_selected == value) return;
-                    _selected = value;
-                    _bg.InvalidateSurface();
-                }
-            }
-        }
-
-        /// <summary>A flat list row: soft stripe resting, the selected-button look under the pad cursor.</summary>
-        private static void DrawRow(SKCanvas canvas, SKImageInfo info, bool selected) =>
-            DsFolderButton.DrawListRow(canvas, info, selected);
-
-        /// <summary>The round count button: navy disc, cyan rim, cyan + or - arms.</summary>
-        private static Grid CountDisc(bool minus, Action onTap)
-        {
-            var disc = new Grid
-            {
-                HeightRequest = 32,
-                WidthRequest = 32,
-                VerticalOptions = LayoutOptions.Center,
-                HorizontalOptions = LayoutOptions.Center,
-            };
-            var canvas = new SKCanvasView { InputTransparent = true };
-            canvas.PaintSurface += (_, args) =>
-            {
-                var c = args.Surface.Canvas;
-                c.Clear(SKColors.Transparent);
-                var info = args.Info;
-                var radius = Math.Min(info.Width, info.Height) / 2f - 2f;
-                var cx = info.Width / 2f;
-                var cy = info.Height / 2f;
-                var r = new SKRect(cx - radius, cy - radius, cx + radius, cy + radius);
-                using var fill = new SKPaint { Color = Pksm.BagNavy, IsAntialias = true };
-                using var inner = new SKPaint { Color = Pksm.BagNavyDeep, IsAntialias = true };
-                using var rim = new SKPaint { Color = Pksm.LogoGrid, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f * (float)DeviceDisplay.MainDisplayInfo.Density };
-                using var arm = new SKPaint { Color = Pksm.Ink, IsAntialias = true };
-                c.DrawOval(r, fill);
-                c.DrawOval(SKRect.Inflate(r, -1.5f, -1.5f), inner);
-                c.DrawOval(r, rim);
-                var a = radius * 0.55f;
-                c.DrawRoundRect(new SKRect(cx - a, cy - 1.5f, cx + a, cy + 1.5f), 1.5f, 1.5f, arm);
-                if (!minus)
-                    c.DrawRoundRect(new SKRect(cx - 1.5f, cy - a, cx + 1.5f, cy + a), 1.5f, 1.5f, arm);
-            };
-            disc.Children.Add(canvas);
-            var tap = new TapGestureRecognizer();
-            tap.Tapped += (_, _) => onTap();
-            disc.GestureRecognizers.Add(tap);
-            return disc;
         }
     }
 
@@ -3545,6 +3681,14 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
     /// <summary>Every button on this screen, in one place.</summary>
     public bool OnPadButton(PadButton button)
     {
+        // An edit that was never saved is about to be dropped: leaving the editor (B, Start)
+        // or doing anything on the grid refills its fields. Ask first, then carry on.
+        if (_viewModel.HasPendingEdits && (!_editorFocusMode || button is PadButton.B or PadButton.Start))
+        {
+            _ = SettleThenAsync(() => OnPadButton(button));
+            return true;
+        }
+
         if (_boxManageMode)
         {
             switch (button)
@@ -3556,7 +3700,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                     if (_boxHeld) _ = ShiftHeldBoxAsync(1); else BrowseManagedBoxes(1);
                     return true;
                 case PadButton.Y: ToggleMarkedBox(); return true;
-                case PadButton.X: _ = ShowBoxBulkActionsAsync(); return true;
+                case PadButton.X: ShowBoxBulkActionsAsync().Observe("box", ReportScreenError); return true;
                 case PadButton.A:
                     _boxHeld = !_boxHeld;
                     _heldBox = _viewModel.BoxIndex;
@@ -3607,10 +3751,11 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             case PadButton.A: return ConfirmCursor();
             case PadButton.B:
                 if (_viewModel.CarrySource is not null) { _viewModel.CancelCarry(); _canvas.InvalidateSurface(); return true; }
+                if (CompareFlow.Cancel() is { } cancelled) { _viewModel.Status = cancelled; return true; }
                 _ = Navigation.PopAsync();
                 return true;
-            case PadButton.X: _ = ShowToolsAsync(); return true;
-            case PadButton.Y: _ = ShowSaveDataAsync(); return true;
+            case PadButton.X: ShowToolsAsync().Observe("box", ReportScreenError); return true;
+            case PadButton.Y: ShowSaveDataAsync().Observe("box", ReportScreenError); return true;
             case PadButton.Start: return OpenCursorMenu();
             case PadButton.Select: EnterSelectMode(); return true;
             default: return false;
@@ -3621,6 +3766,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
     /// box, X opens the actions, Start the box manager; L/R keep every mark.</summary>
     private bool OnSelectModeButton(PadButton button)
     {
+        if (_groupHeld) return OnGroupHeldButton(button);
         // Anything but steering ends an area gesture first, so no menu opens over a live span.
         if (_selectHeld && button is not (PadButton.A or PadButton.Up or PadButton.Down or PadButton.Left or PadButton.Right))
         {
@@ -3643,12 +3789,18 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 _viewModel.SelectSlot(slot);
                 _viewModel.BeginRectangle(slot);
                 _canvas.InvalidateSurface();
+                // Held still (no steering, no release) it becomes the carry, as in the games' PC.
+                var turn = ++_holdTurn;
+                Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(HoldToGrabMs), () =>
+                {
+                    if (turn == _holdTurn) TryCarryGroup();
+                });
                 return true;
             case PadButton.Y:
                 _viewModel.ToggleBoxMarks();
                 _canvas.InvalidateSurface();
                 return true;
-            case PadButton.X: _ = ShowOrganizerMenuAsync(); return true;
+            case PadButton.X: ShowOrganizerMenuAsync().Observe("box", ReportScreenError); return true;
             case PadButton.Start: EnterBoxManageMode(); return true;
             case PadButton.B:
                 if (_viewModel.MarkedCount > 0) { _viewModel.ClearMarks(); _canvas.InvalidateSurface(); }
@@ -3657,6 +3809,68 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             case PadButton.Select: ExitSelectMode(); return true;
             default: return false;
         }
+    }
+
+    /// <summary>A is still down on the slot it was pressed on: the hand takes every marked Pokémon.</summary>
+    private void TryCarryGroup()
+    {
+        var byPad = _selectHeld;
+        if (!(byPad || _touchDragSlot >= 0) || !_viewModel.SelectMode || _groupHeld) return;
+        if (_viewModel.PendingRectangle is not { } pressed || pressed.From != pressed.To) return; // an area is being swept
+        var count = _viewModel.GatherMarks();
+        _selectHeld = false;
+        _touchDragSlot = -1;
+        if (count == 0)
+        {
+            RepaintStorage();
+            return;
+        }
+        _groupHeld = true;
+        _groupAwaitsRelease = true; // pad or finger, the press that picked them up is still down
+        SetGroupFooter();
+        _viewModel.Status = $"Carrying {count} Pokémon.";
+        RepaintStorage();
+    }
+
+    private bool OnGroupHeldButton(PadButton button)
+    {
+        switch (button)
+        {
+            case PadButton.Up: _viewModel.MoveCursor(FocusDirection.Up); break;
+            case PadButton.Down: _viewModel.MoveCursor(FocusDirection.Down); break;
+            case PadButton.Left: _viewModel.MoveCursor(FocusDirection.Left); break;
+            case PadButton.Right: _viewModel.MoveCursor(FocusDirection.Right); break;
+            case PadButton.L: _viewModel.PreviousBox(); break;
+            case PadButton.R: _viewModel.NextBox(); break;
+            case PadButton.A:
+                // The press that picked them up is still down: it is not the one that sets them down.
+                if (!_groupAwaitsRelease) _ = DropGroupAsync();
+                break;
+            case PadButton.B:
+            case PadButton.Select:
+                _groupHeld = false;
+                RefreshFooter();
+                _viewModel.Status = $"Put back. {_viewModel.MarkedCount} still marked.";
+                break;
+        }
+        RepaintStorage();
+        return true;
+    }
+
+    /// <summary>Sets the carried group down: free slots from the cursor on, in one write.</summary>
+    private async Task DropGroupAsync()
+    {
+        if (!_groupHeld) return;
+        if (_viewModel.BoxIndex < 0)
+        {
+            _viewModel.Status = "A group cannot be set down in the party. Turn to a box with L/R.";
+            return;
+        }
+        if (_viewModel.MarksEmptyTheParty()) { _viewModel.Status = PartyNeedsOne; return; }
+        _groupHeld = false;
+        await _viewModel.BulkMoveAsync(new SlotRef(_viewModel.BoxIndex, Math.Max(0, _viewModel.SelectedSlot)));
+        RefreshFooter();
+        RepaintStorage();
     }
 
     private bool MoveSelectCursor(FocusDirection direction)
@@ -3669,6 +3883,11 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
 
     public void OnPadReleased(PadButton button)
     {
+        if (button == PadButton.A)
+        {
+            _groupAwaitsRelease = false;
+            _holdTurn++; // let go before the hold was long enough to carry
+        }
         if (button != PadButton.A || !_selectHeld) return;
         _selectHeld = false;
         _viewModel.CommitRectangle();
@@ -3703,7 +3922,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             _canvas.InvalidateSurface();
             return true;
         }
-        _ = OfferAddPokemonAsync(slot);
+        OfferAddPokemonAsync(slot).Observe("box", ReportScreenError);
         return true;
     }
 
@@ -3732,9 +3951,9 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var slots = _viewModel.VisibleSlots;
         _viewModel.SelectSlot(slot);
         if (slot < slots.Count && slots[slot].Species is not null)
-            _ = ShowMonActionsAsync(slot);
+            ShowMonActionsAsync(slot).Observe("box", ReportScreenError);
         else
-            _ = OfferAddPokemonAsync(slot);
+            OfferAddPokemonAsync(slot).Observe("box", ReportScreenError);
         return true;
     }
 
@@ -3790,6 +4009,43 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         EnterEditorFocusMode();
     }
 
+    /// <summary>This slot as a pick for <see cref="CompareFlow"/>.</summary>
+    private async Task CompareSlotAsync(int slot)
+    {
+        var session = _sessionsFor();
+        if (session is null || IPlatformApplication.Current?.Services.GetService<IMonSummaryService>() is not { } summaries) return;
+        var box = _viewModel.BoxIndex;
+        var where = (string.IsNullOrEmpty(_viewModel.ConnectedName) ? "" : _viewModel.ConnectedName + " · ") + (box == -1 ? "Party" : $"Box {box + 1:00}");
+        _viewModel.Status = await CompareFlow.ChooseAsync(_hostGrid, _sprites, () => SummaryLoaders.FromSlot(session, summaries, box, slot, true), where, ComparePlace(slot));
+    }
+
+    /// <summary>Where the Pokémon at <paramref name="slot"/> of the shown box lives, for <see cref="CompareFlow"/>.</summary>
+    private string ComparePlace(int slot) =>
+        $"save:{IPlatformApplication.Current?.Services.GetService<ISaveSessionService>()?.Current?.Document.DocumentId}|{_viewModel.BoxIndex}|{slot}";
+
+    /// <summary>The Pokémon becomes the home-screen Partner widget's: a read-only copy, the save is not changed.</summary>
+    private async Task SetWidgetPartnerAsync(int slot)
+    {
+        var services = IPlatformApplication.Current!.Services;
+        var document = services.GetService<ISaveSessionService>()?.Current?.Document;
+        if (_sessionsFor() is not { } session || document is null) return;
+        var origin = HomeWidgetStore.Last is { } last && last.DocumentId == document.DocumentId ? last.Name : document.DisplayName;
+        var export = await Task.Run(() => session.ExportSlot(_viewModel.BoxIndex, slot));
+        var partner = await Task.Run(() => HomeWidgets.PartnerFrom(export.Data, export.Format, origin, null, document.DocumentId));
+        if (partner is null) { _viewModel.Status = "This Pokémon can't be a partner."; return; }
+        await HomeWidgets.SetPartnerAsync(partner);
+        _viewModel.Status = HomeWidgets.HasAny(HomeWidgetKind.Partner)
+            ? $"{partner.Name} is your partner on the home screen."
+            : $"{partner.Name} is your partner. Add the Partner widget from Settings › Home-screen widgets.";
+        await WidgetMenu.OfferOnceAsync(_hostGrid, HomeWidgetKind.Partner, $"{partner.Name} can keep you company on your home screen: the Partner widget shows it, asleep at night.");
+    }
+
+    /// <summary>The open save's Day Care, for the egg widget's tap.</summary>
+    public async Task ShowDaycareFromLinkAsync()
+    {
+        if (_sessionsFor() is { } session) await DaycareEditor.ShowAsync(_hostGrid, session, _viewModel);
+    }
+
     /// <summary>What you can do with the mon under the cursor. Editing is live in the side panel already.</summary>
     private async Task ShowMonActionsAsync(int slot)
     {
@@ -3800,30 +4056,32 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var options = new List<PadOption>();
         if (verdict is { Valid: false })
         {
-            options.Add(new("Explain legality", IconPath: "info", Detail: "Why this Pokémon is flagged, with fixes when there are any."));
+            options.Add(new("Explain legality", IconPath: "info", Detail: "Why it is flagged, and how to fix it."));
             options.AddRange(Menu(
                 Allowed(SaveAction.EditMon, new("Legalize this one", IconPath: "fix", Detail: "Rewrite it to its closest legal version.")),
-                Allowed(SaveAction.EditMon, new("Legalize all illegal", IconPath: "fix", Detail: "Rewrite every illegal Pokémon in the save to its closest legal version."))));
+                Allowed(SaveAction.EditMon, new("Legalize all illegal", IconPath: "fix", Detail: "Each flagged Pokémon gets its closest legal version."))));
         }
         options.AddRange(Menu(
             new PadOption("Summary", IconPath: "info"),
+            CompareFlow.Option(ComparePlace(slot)),
             new PadOption("Edit", IconPath: "editor"),
             Allowed(SaveAction.EditMon, new("Evolve…", IconPath: "evolve")),
-            new PadOption("Send to Poképark", IconPath: "park", Detail: "Adds it to the Poképark visitors. The save is not changed."),
-            new PadOption("Move", IconPath: "move", Detail: "Pick it up and carry it to another slot."),
-            Allowed(SaveAction.Duplicate, new("Duplicate", IconPath: "copy", Detail: "Clone it into the next empty slot here.")),
-            new PadOption("Send to Bank", IconPath: "bank", Detail: "It leaves this save and is stored in the Bank."),
-            Allowed(SaveAction.Duplicate, new("Copy to Bank", IconPath: "copy", Detail: "A copy goes to the Bank; the original stays here.")),
-            new PadOption("Send to another game…", IconPath: "send", Detail: "It leaves this save and joins another linked game."),
-            Allowed(SaveAction.Duplicate, new("Copy to another game…", IconPath: "copy", Detail: "A copy joins another linked game; the original stays here.")),
-            new PadOption("Export .pk file", IconPath: "export", Detail: "Share this Pokémon as a file."),
-            new PadOption("Show as Showdown set", IconPath: "script", Detail: "Its set as Showdown text you can copy."),
-            new PadOption("Show as QR code", IconPath: "qr", Detail: "Its Showdown set as a QR code."),
-            new PadOption("Show as .pk QR", IconPath: "qr", Detail: "The whole Pokémon as a QR code that PKForge can scan into the Bank."),
-            new PadOption("RNG / IVs", IconPath: "dice", Detail: "See its PID and IVs, and change its nature without losing shininess."),
+            new PadOption("Send to Poképark", IconPath: "park", Detail: "A visit only: the save is not changed."),
+            new PadOption("Set as widget partner", IconPath: "park", Detail: "It stays here; the home-screen widget shows it."),
+            new PadOption("Move", IconPath: "move", Detail: "Carry it to another slot."),
+            Allowed(SaveAction.Duplicate, new("Duplicate", IconPath: "copy", Detail: "Into the next empty slot.")),
+            new PadOption("Send to Bank", IconPath: "bank", Detail: "It leaves this save."),
+            Allowed(SaveAction.Duplicate, new("Copy to Bank", IconPath: "copy", Detail: "The original stays here.")),
+            new PadOption("Send to another game…", IconPath: "send", Detail: "It leaves this save."),
+            Allowed(SaveAction.Duplicate, new("Copy to another game…", IconPath: "copy", Detail: "The original stays here.")),
+            new PadOption("Export .pk file", IconPath: "export", Detail: "Share it as a file."),
+            new PadOption("Show as Showdown set", IconPath: "script", Detail: "Text you can copy."),
+            new PadOption("Show as QR code", IconPath: "qr", Detail: "Its Showdown set, to scan."),
+            new PadOption("Show as .pk QR", IconPath: "qr", Detail: "The whole Pokémon, for PKForge to scan into the Bank."),
+            new PadOption("RNG / IVs", IconPath: "dice", Detail: "PID and IVs; change its nature, keep its shininess."),
             new PadOption("Lock / Unlock release", IconPath: "padlock", Detail: "A locked Pokémon cannot be released."),
             new PadOption("Release", IconPath: "release"),
-            new PadOption("Release to the Wilds", IconPath: "release", Detail: "It leaves the save and lives on in the wild lands around the Poképark. It may come back to visit.")));
+            new PadOption("Release to the Wilds", IconPath: "release", Detail: "It lives on near the Poképark, and may come back to visit.")));
         var choice = await PadMenu.ShowAsync(_hostGrid, nickname,
             Note(verdict is { Valid: false } ? verdict.Problem : null), options.ToArray());
         switch (choice)
@@ -3851,8 +4109,14 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             case "Send to Poképark":
                 _viewModel.Status = IPlatformApplication.Current!.Services.GetRequiredService<PokeparkService>().AddSaveVisitor(_viewModel.BoxIndex, slot);
                 return;
+            case "Set as widget partner":
+                await SetWidgetPartnerAsync(slot);
+                return;
             case "Summary":
                 await OpenSummaryAsync(slot);
+                return;
+            case var compare when CompareFlow.Is(compare):
+                await CompareSlotAsync(slot);
                 return;
             case "Edit":
                 EnterEditorFocusMode();
@@ -3935,7 +4199,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 var locked = Protection.ToggleMon(docId, _viewModel.BoxIndex, slot, pid);
                 RefreshLockedSlots();
                 _canvas.InvalidateSurface();
-                _viewModel.Status = locked ? "Mon locked - release blocked" : "Mon unlocked";
+                _viewModel.Status = locked ? "Locked: it can't be released." : "Unlocked.";
                 return;
             }
             case "Release":
@@ -3959,11 +4223,17 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var service = IPlatformApplication.Current?.Services.GetService<IEvolutionService>();
         if (session is null || service is null || _viewModel.IsBusy) return;
         var box = _viewModel.BoxIndex;
-        var request = await EvolutionCard.RunAsync(_hostGrid, session, box, slot);
-        if (request is null) return;
-        var ok = await _viewModel.RunMutationAsync(s => service.Evolve(s, box, slot, request), slot,
+        var choice = await EvolutionCard.RunAsync(_hostGrid, session, box, slot);
+        if (choice is null) return;
+        var ok = await _viewModel.RunMutationAsync(s => service.Evolve(s, box, slot, choice.Request), slot,
             changeDescription: "Evolve", action: SaveAction.EditMon);
         _canvas.InvalidateSurface();
+        // Written: with Animations on Full the evolution scene says it; otherwise the box does.
+        if (ok && MotionSetting.Decorative)
+        {
+            await EvolutionOverlay.PlayAsync(_hostGrid, choice, _sprites);
+            return;
+        }
         await PadMenu.ShowAsync(_hostGrid, ok ? "Congratulations!" : "Evolution failed", _viewModel.Status, "OK");
     }
 
@@ -4029,7 +4299,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 ? _viewModel.Save?.Slots.Where(x => x.Box == _viewModel.BoxIndex)
                     .Select(x => x.Slot).Distinct().OrderBy(x => x)
                     .Select(s => (_viewModel.BoxIndex, Slot: s)).ToArray()
-                    ?? Enumerable.Range(0, 30).Select(s => (_viewModel.BoxIndex, Slot: s)).ToArray()
+                    ?? Enumerable.Range(0, _viewModel.BoxCapacity).Select(s => (_viewModel.BoxIndex, Slot: s)).ToArray()
                 : null; // all boxes: the engine walks every slot itself
         var affected = slots?.Length ?? -1;
 
@@ -4038,7 +4308,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             "Nickname and OT changes are NOT legality-re-checked afterwards.", "Apply");
         if (!confirmed) return;
 
-        var overlay = LoadingOverlay.Show(_hostGrid, "Applying…", "One write, one restore point.");
+        var overlay = LoadingOverlay.Show(_hostGrid, "Applying…", "One write for the whole batch.");
         try
         {
             if (op.StartsWith("Reset nicknames", StringComparison.Ordinal))
@@ -4085,25 +4355,43 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var countChoice = await PadMenu.ShowAsync(_hostGrid, "Team size", null, "1", "2", "3", "4", "5", "6");
         if (countChoice is null || !int.TryParse(countChoice, out var count)) return;
         var levelChoice = await PadMenu.ShowAsync(_hostGrid, "Level band", null,
-            "Lv 50", "Lv 100", "Wild card (5-70)");
+            "Lv 5", "Lv 50", "Lv 100", "Wild card (5-70)", "Pick a level…");
         if (levelChoice is null) return;
-        var (lo, hi) = levelChoice switch
+        int lo, hi;
+        if (levelChoice == "Pick a level…")
         {
-            "Lv 50" => (50, 50),
-            "Lv 100" => (100, 100),
-            _ => (5, 70),
-        };
+            var typed = await TextPopup.ShowLineAsync(_hostGrid, "Team level", "1 to 100", "50");
+            if (typed is null) return;
+            if (!int.TryParse(typed, out var level) || level is < 1 or > 100)
+            {
+                _viewModel.Status = "A level is a number from 1 to 100.";
+                return;
+            }
+            (lo, hi) = (level, level);
+        }
+        else
+        {
+            (lo, hi) = levelChoice switch
+            {
+                "Lv 5" => (5, 5),
+                "Lv 50" => (50, 50),
+                "Lv 100" => (100, 100),
+                _ => (5, 70),
+            };
+        }
         var filters = await PadMenu.ShowAsync(_hostGrid, "Filters", null,
             "No restrictions", "No legendaries", "No duplicates", "No legendaries, no duplicates");
         if (filters is null) return;
         var noLegendaries = filters.Contains("legendary", StringComparison.OrdinalIgnoreCase);
         var noDuplicates = filters.Contains("duplicate", StringComparison.OrdinalIgnoreCase);
 
-        // The game's own pool: species the engine can produce for this save.
+        // The game's own pool: only species this game holds. Ids below the save's highest
+        // one are not all in it (Sword has no Bulbasaur line without its DLC data), and a
+        // species the game lacks can never be generated, so it would silently drop out.
         var max = session.MaxSpeciesId;
         var pool = new List<int>(max);
         for (var species = 1; species <= max; species++)
-            if (species < data.SpeciesNames.Count && data.SpeciesNames[species].Length > 0)
+            if (species < data.SpeciesNames.Count && data.SpeciesNames[species].Length > 0 && session.IsDexSpecies(species))
                 pool.Add(species);
         var options = new RandomTeamOptions(count, lo, hi, noLegendaries, noDuplicates, AllowNfe: true);
         var team = RandomTeamPlanner.Plan(pool, new HashSet<int>(), options, Random.Shared);
@@ -4117,38 +4405,53 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         try
         {
             var generated = new List<(byte[] Data, int Level, string Name, string? Format)>();
+            var missed = new List<string>();
             foreach (var (species, level) in team)
             {
                 var mon = await Task.Run(() => legalizer.GenerateData(session,
                     new GenerationRequest(species, level, Shiny: false, null, null, null, null)));
                 if (mon is not null) generated.Add((mon.Data, level, data.SpeciesNames[species], mon.Info.Format));
+                else missed.Add(data.SpeciesNames[species]);
             }
             if (generated.Count == 0) { _viewModel.Status = "The legalizer could not build this team."; return; }
+            // Said after the write: the player rolled six and must know which ones are not there.
+            var shortfall = missed.Count == 0 ? "" : $" Could not be built for this game: {string.Join(", ", missed)}.";
 
             if (placement == "Into the party")
             {
                 var ok = await _viewModel.RunMutationAsync(s =>
                 {
-                    for (var i = 0; i < generated.Count; i++)
-                        s.ImportSlot(-1, i, generated[i].Data, generated[i].Format);
-                    return new GenerationOutcome(true, $"Random team of {generated.Count} now in the party.");
+                    // The party only takes newcomers while it has room; it never gives a member up.
+                    var joined = 0;
+                    foreach (var mon in generated)
+                    {
+                        if (!s.ImportSlot(-1, joined, mon.Data, mon.Format)) break;
+                        joined++;
+                    }
+                    return joined == 0
+                        ? new GenerationOutcome(false, "The party is full. Move a Pokémon to a box first, or roll into the boxes.")
+                        : new GenerationOutcome(true, (joined < generated.Count
+                            ? $"{joined} of {generated.Count} joined the party, then it was full."
+                            : $"Random team of {joined} now in the party.") + shortfall);
                 }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false, action: SaveAction.CreateMon);
                 if (!ok) return;
             }
             else
             {
-                var empties = _viewModel.Save?.Slots.Where(x => x.Box >= 0 && x.Species is null)
-                    .Select(x => (x.Box, x.Slot)).Take(generated.Count).ToArray();
-                if (empties is null || empties.Length < generated.Count)
+                var empties = SlotPlanning.FreeSlotsFrom(_viewModel.LiveSlots, null).Take(generated.Count).ToArray();
+                if (empties.Length < generated.Count)
                 {
                     _viewModel.Status = $"Not enough empty box slots ({generated.Count} needed).";
                     return;
                 }
                 var ok = await _viewModel.RunMutationAsync(s =>
                 {
+                    // Checked again on the save itself: a roll never replaces a stored Pokémon.
+                    if (empties.Any(room => !s.ReadEntity(room.Box, room.Slot).IsEmpty))
+                        return new GenerationOutcome(false, "The boxes changed while the team was being built. Roll again.");
                     for (var i = 0; i < generated.Count; i++)
                         s.ImportSlot(empties[i].Box, empties[i].Slot, generated[i].Data, generated[i].Format);
-                    return new GenerationOutcome(true, $"Random team of {generated.Count} placed in the boxes.");
+                    return new GenerationOutcome(true, $"Random team of {generated.Count} placed in the boxes." + shortfall);
                 }, Math.Max(0, _viewModel.SelectedSlot), refreshSlot: false, action: SaveAction.CreateMon);
                 if (!ok) return;
             }
@@ -4176,7 +4479,8 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
 
         var currentDoc = IPlatformApplication.Current?.Services.GetService<ISaveSessionService>()?.Current?.Document.DocumentId;
         var target = await SavePickerSheet.PickAsync(_hostGrid, picker.Saves,
-            "Send to game", $"{nickname} → pick the destination (the mon leaves this box)", currentDoc);
+            copyInsteadOfMove ? $"Copy {nickname} to…" : $"Send {nickname} to…",
+            copyInsteadOfMove ? "The original stays here." : "It leaves this save.", currentDoc);
         if (target is null)
         {
             if (picker.Saves.Count == 0)
@@ -4185,10 +4489,8 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         }
 
         var verb = copyInsteadOfMove ? "Copy" : "Move";
-        var confirm = await PadMenu.ConfirmAsync(_hostGrid, $"{verb} to another game?",
-            copyInsteadOfMove
-                ? $"A copy of {nickname} joins {target.GameLabel}; the original stays here."
-                : $"{nickname} will leave this box and join {target.GameLabel} (box space permitting).", verb);
+        var confirm = await PadMenu.ConfirmAsync(_hostGrid, $"{verb} to {target.GameLabel}?",
+            $"{nickname} lands in its first free box slot.", verb);
         if (!confirm) return;
 
         var export = session.ExportSlot(_viewModel.BoxIndex, slot);
@@ -4196,15 +4498,65 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         // step before the write. Same-generation sends show an empty diff.
         var preview = await transfer.PreviewAsync(export.Data, nickname, target);
         if (!await Services.TransferPreviewPrompt.ConfirmAsync(_hostGrid, preview, nickname, target.GameLabel)) return;
+        var leaving = PortalSources([(_viewModel.BoxIndex, slot)]);
         var outcome = await transfer.SendToGameAsync(export.Data, nickname, target);
-        _viewModel.Status = outcome.Message;
-        if (!outcome.Success || copyInsteadOfMove) return;
+        if (!outcome.Success) { _viewModel.Status = outcome.Message; return; }
+        if (copyInsteadOfMove) _viewModel.ReportWrite(outcome.Message);
+        if (copyInsteadOfMove)
+        {
+            PlayPortal(leaving);
+            return;
+        }
 
         await _viewModel.RunMutationAsync(s =>
         {
             s.ReleaseSlot(_viewModel.BoxIndex, slot);
             return new GenerationOutcome(true, $"{nickname} moved to {target.GameLabel}.");
         }, slot, action: SaveAction.Move);
+        // It is in the other game either way; the portal plays once this slot has had its say.
+        PlayPortal(leaving);
+    }
+
+    /// <summary>
+    /// "Save .pk files to a folder": each Pokémon as PKHeX exports it (its name, its format's
+    /// extension) into a picked folder; a name already there gets " (2)", " (3)"... so nothing
+    /// in the folder is replaced. The save itself is only read.
+    /// </summary>
+    private async Task SavePkFilesAsync(IReadOnlyList<(int Box, int Slot)> slots, string label)
+    {
+        var session = _sessionsFor();
+        if (session is null) return;
+        if (slots.Count == 0)
+        {
+            _viewModel.Status = "Nothing to save — no Pokémon there.";
+            return;
+        }
+        var services = IPlatformApplication.Current?.Services;
+        var picker = services?.GetService<IFolderPicker>();
+        var files = services?.GetService<IFolderFileAccess>();
+        if (picker is null || files is null) return;
+        if (await Services.PkforgeFolderExports.TryAsync(_hostGrid, label, () => slots.Select(s => session.ExportSlot(s.Box, s.Slot)).Select(e => new PkFile(e.FileName, e.Data)).ToArray()) is { } inFolder)
+        {
+            _viewModel.Status = inFolder;
+            return;
+        }
+        var folder = await picker.PickFolderAsync();
+        if (folder is null) return;
+        var overlay = LoadingOverlay.Show(_hostGrid, "Saving .pk files…", $"Writing to {folder.DisplayName}.");
+        try
+        {
+            var exports = slots.Select(s => session.ExportSlot(s.Box, s.Slot)).Select(e => new PkFile(e.FileName, e.Data)).ToArray();
+            var written = await Task.Run(() => PkFileExport.WriteAsync(files, folder.TreeId, exports));
+            _viewModel.Status = $"{written} .pk file{(written == 1 ? "" : "s")} from {label} saved to {folder.DisplayName}.";
+        }
+        catch (Exception error)
+        {
+            _viewModel.Status = $"Saving failed. {Domain.ErrorText.Plain(error)}";
+        }
+        finally
+        {
+            overlay.Close();
+        }
     }
 
     /// <summary>Writes the decrypted .pk* file and hands it to Android's share sheet.</summary>
@@ -4226,7 +4578,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         }
         catch (Exception error)
         {
-            _viewModel.Status = $"Export failed: {error.Message}";
+            _viewModel.Status = $"Export failed. {Domain.ErrorText.Plain(error)}";
         }
     }
 
@@ -4269,14 +4621,16 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var info = engine.TryDescribeEntity(export.Data, _viewModel.ConnectedName, export.Format);
         if (info is null)
         {
-            _viewModel.Status = "Could not read this mon for the bank.";
+            _viewModel.Status = $"{nickname} could not be read for the Bank. Nothing was sent.";
             return;
         }
 
+        var leaving = PortalSources([(_viewModel.BoxIndex, slot)]);
         if (copyInsteadOfMove)
         {
             bank.Add(export.Data, info);
-            _viewModel.Status = $"{nickname} copied to the Bank. The original stays in the game.";
+            _viewModel.ReportWrite($"{nickname} copied to the Bank.");
+            PlayPortal(leaving);
             return;
         }
 
@@ -4289,7 +4643,11 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 return new GenerationOutcome(true, $"{nickname} deposited in the Bank.");
             }, slot, changeDescription: $"Deposit {nickname} in the Bank ({BoxBrowserViewModel.SlotLabel(box, slot)})",
                 action: SaveAction.Move) ? null : _viewModel.Status);
-        if (outcome.Success) _canvas.InvalidateSurface();
+        if (outcome.Success)
+        {
+            _canvas.InvalidateSurface();
+            PlayPortal(leaving);
+        }
         else _viewModel.Status = outcome.Message;
     }
 
@@ -4303,7 +4661,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             var rng = session.GetRngInfo(_viewModel.BoxIndex, slot);
             if (!Protection.CanRelease(docId, _viewModel.BoxIndex, slot, rng.Pid))
             {
-                _viewModel.Status = $"{nickname} is locked - unlock it first";
+                _viewModel.Status = $"{nickname} is locked. Unlock it first.";
                 return;
             }
         }
@@ -4326,7 +4684,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             return;
         }
         var confirmed = await PadMenu.ConfirmAsync(_hostGrid, "Release?",
-            $"Release {nickname} back into the wild? The current save state is kept as a restore point.",
+            $"Release {nickname} back into the wild? Restore points can undo it.",
             "Release");
         if (!confirmed) return;
         await Release();
@@ -4351,10 +4709,15 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        AttachToViewModel();
+        MusicMenu.Enter(MusicPlace.Boxes);
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Push(this);
+        PortalOverlay.Warm(_hostGrid);
         // The mode gates this whole screen, so the strip says so the moment it opens.
         if (HardcoreMode.IsOn) _viewModel.Status = HardcoreMode.StatusLine;
         _ = CheckLayoutRiskAsync();
+        // The egg widget and "Open last save" follow the save opened last (read only).
+        _ = HomeWidgets.CaptureOpenSaveAsync();
         // The lower screen's inspector follows this box's cursor while the page is in front.
         _secondClaim ??= IPlatformApplication.Current?.Services.GetService<SecondScreenState>()?.Routes.CreateClaim(SecondScreenOwner.Box);
         _secondClaim?.Activate();
@@ -4366,9 +4729,14 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
 
     protected override void OnDisappearing()
     {
+        PerfTrace.Mark("home");
         if (_boxManageMode) ExitBoxManageMode();
         if (_selectHeld) { _selectHeld = false; _viewModel.CommitRectangle(); }
+        _ = HomeWidgets.CaptureOpenSaveAsync();
+        PortalOverlay.Stop();
+        EvolutionOverlay.Stop();
         base.OnDisappearing();
+        MusicMenu.Leave(MusicPlace.Boxes);
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Remove(this);
         _secondClaim?.Release();
     }
@@ -4445,7 +4813,10 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         // Gen 1/2 have no natures: the row would edit nothing.
         nature.IsVisible = (_sessionsFor()?.Generation ?? 3) >= 3;
         var ability = FocusBorder(NamedPicker("ABILITY", nameof(BoxBrowserViewModel.EditAbility), data.AbilityNames,
-            AbilityItems, shaded: false), "ABILITY", async () => await OpenNamedPickerAsync("ABILITY", nameof(BoxBrowserViewModel.EditAbility), AbilityItems));
+            AbilityItems, shaded: false, shownName: () =>
+                _viewModel.Selected is { IsEmpty: false, AbilityName: { Length: > 0 } hackName } shown
+                && GetVmString(nameof(BoxBrowserViewModel.EditAbility)) == shown.Ability.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    ? hackName : null), "ABILITY", async () => await OpenNamedPickerAsync("ABILITY", nameof(BoxBrowserViewModel.EditAbility), AbilityItems));
         var item = FocusBorder(NamedPicker("HELD ITEM", nameof(BoxBrowserViewModel.EditHeldItem), new LiveNames(() => SaveItemNames(data)),
             () => ItemsWithIcons(SaveItemNames(data)), shaded: true, open: OpenItem), "Held item", OpenItem);
         // Abilities start in Gen 3 and held items in Gen 2; Gen 1 stores neither.
@@ -4497,6 +4868,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var legalize = FocusButton(EditorTool("Legalize"), "LEGALIZE");
         legalize.Clicked += async (_, _) =>
         {
+            if (!await SettlePendingEditsAsync()) return;
             var slot = _viewModel.SelectedSlot;
             if (slot < 0) return;
             var overlay = LoadingOverlay.Show(_hostGrid, "Legalizing…", "Finding the closest real, legal version of this Pokémon.");
@@ -4511,6 +4883,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var makeMine = FocusButton(EditorTool("Make mine"), "MAKE MINE");
         makeMine.Clicked += async (_, _) =>
         {
+            if (!await SettlePendingEditsAsync()) return;
             var slot = _viewModel.SelectedSlot;
             if (slot < 0) return;
             await _viewModel.RunMutationAsync(s => s.MakeMine(_viewModel.BoxIndex, slot), slot);
@@ -4527,6 +4900,9 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var save = FocusButton(EditorTool("Save changes", primary: true), "SAVE CHANGES");
         save.Margin = new Thickness(Design(28), Design(8), Design(28), Design(8));
         save.SetBinding(Button.CommandProperty, nameof(BoxBrowserViewModel.SaveEditCommand));
+        _saveButton = save;
+        _saveButtonLook = null;
+        RefreshSaveButton();
 
         var met = FocusButton(EditorTool("Met / origin"), "MET / ORIGIN");
         met.Clicked += async (_, _) => await RunSubEditorAsync(MetOriginEditor.ShowAsync, "Met / origin updated");
@@ -4549,6 +4925,8 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         trainers.Clicked += async (_, _) => await RunSubEditorAsync(MonFieldsEditor.TrainersAsync, "Trainers updated");
         var techRecords = FocusButton(EditorTool("Tech records"), "TECH RECORDS");
         techRecords.Clicked += async (_, _) => await RunSubEditorAsync(MonFieldsEditor.TechRecordsAsync, "Tech records updated");
+        var eggTools = FocusButton(EditorTool("Egg"), "EGG");
+        eggTools.Clicked += async (_, _) => await RunSubEditorAsync(EggEditor.ShowAsync, "Egg updated");
 
         // The D-pad walks the stops in the order the panel shows them.
         string[] visualOrder =
@@ -4573,7 +4951,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         [
             "LEGALIZE", "MAKE MINE", "SHOWDOWN", "EXPORT .PK", "QR", "MET / ORIGIN",
             "MOVE DETAILS", "MOVE SHOP", "POTENTIAL", "COSMETICS", "AWARDS", "RIBBON ALBUM",
-            "FORM & SHINY", "TRAINERS", "TECH RECORDS",
+            "FORM & SHINY", "TRAINERS", "TECH RECORDS", "EGG",
         ];
         var actionIndices = actionCaptions.Select(IndexOfCaption).ToArray();
         var legalizeIndex = actionIndices[0];
@@ -4605,7 +4983,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             RowSpacing = Design(16),
             Margin = new Thickness(Design(28), Design(4), Design(28), 0),
         };
-        var actionButtons = new[] { legalize, makeMine, showdown, exportPk, qr, met, moveDetails, moveShop, potential, cosmetics, awards, ribbonAlbum, formShiny, trainers, techRecords };
+        var actionButtons = new[] { legalize, makeMine, showdown, exportPk, qr, met, moveDetails, moveShop, potential, cosmetics, awards, ribbonAlbum, formShiny, trainers, techRecords, eggTools };
         for (var i = 0; i < actionButtons.Length; i++)
         {
             var button = actionButtons[i];
@@ -5091,7 +5469,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             card.IsVisible = changed || facts.BelowMetLevel;
         }
 
-        _viewModel.PropertyChanged += (_, args) =>
+        ViewModelChanged += (_, args) =>
         {
             if (args.PropertyName is nameof(BoxBrowserViewModel.EditLevel) or nameof(BoxBrowserViewModel.Selected)
                 or nameof(BoxBrowserViewModel.EditSpecies) or nameof(BoxBrowserViewModel.EditIvs) or nameof(BoxBrowserViewModel.EditEvs))
@@ -5135,6 +5513,8 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         // ribbon album all mutate the live session as they go - before the write funnel
         // ever sees them - so Hardcore mode stops them at this one door.
         if (Denied(SaveAction.EditMon)) return;
+        // These editors work on the stored Pokémon and reselect it when they close.
+        if (!await SettlePendingEditsAsync()) return;
         var slot = _viewModel.SelectedSlot;
         var session = _sessionsFor();
         if (slot < 0 || session is null) return;
@@ -5216,10 +5596,25 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
 
     /// <summary>A tappable name field: caption + current value as a name, opens the searchable picker (or the Pokédex).</summary>
     private View NamedPicker(string caption, string vmProperty, IReadOnlyList<string> names, Func<List<PickItem>>? itemsFactory, bool openPokedex = false, bool shaded = false,
-        Func<Task>? open = null, View? leading = null)
+        Func<Task>? open = null, View? leading = null, Func<string?>? shownName = null)
     {
         var value = EditorValueLabel();
-        value.SetBinding(Label.TextProperty, new Binding(vmProperty, converter: new IdNameConverter(names)));
+        if (shownName is null)
+            value.SetBinding(Label.TextProperty, new Binding(vmProperty, converter: new IdNameConverter(names)));
+        else
+        {
+            // The engine names this value itself (a ROM hack's own ability): its name wins
+            // while the field still holds what was read.
+            var converter = new IdNameConverter(names);
+            void Refresh() => value.Text = shownName()
+                ?? converter.Convert(GetVmString(vmProperty), typeof(string), null, System.Globalization.CultureInfo.InvariantCulture) as string ?? "";
+            ViewModelChanged += (_, args) =>
+            {
+                if (args.PropertyName == vmProperty || args.PropertyName is nameof(BoxBrowserViewModel.Selected))
+                    Refresh();
+            };
+            Refresh();
+        }
         View content = leading is null ? value : new HorizontalStackLayout { Spacing = Design(14), Children = { leading, value } };
         var chip = RowChrome(caption, content, shaded, EditorChevron());
 
@@ -5297,7 +5692,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
     /// lets you pick, the wrong item.
     /// </summary>
     private IReadOnlyList<string> SaveItemNames(IGameDataService data) =>
-        _sessionsFor()?.GetItemNames() is { Count: > 0 } names ? names : data.ItemNames;
+        _sessionsFor()?.GetHeldItemNames() is { Count: > 0 } names ? names : data.ItemNames;
 
     /// <summary>A name list read afresh on every lookup, for bindings made once but shown for whichever save is open.</summary>
     private sealed class LiveNames(Func<IReadOnlyList<string>> source) : IReadOnlyList<string>
@@ -5343,8 +5738,18 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
             return;
         }
         StopPartyPulse();
-        BoxGridRenderer.Paint(args.Surface.Canvas, args.Info, _viewModel, _sprites, _theme, _frame.Request, _lockedSlots, _hand, BoxWallpaper());
+        BoxGridRenderer.Paint(args.Surface.Canvas, args.Info, _viewModel, _sprites, _theme, _frame.Request, _lockedSlots, _hand, BoxWallpaper(),
+            _groupHeld ? _viewModel.MarkedCount : 0, _wellLayer);
+        PerfTrace.Since("open", "open.firstpaint");
+        PerfTrace.Since("box", "box.switch.firstpaint");
+        if ((_sprites as SpriteService)?.PendingLoads == 0)
+        {
+            PerfTrace.Since("open.settle", "open.settled");
+            PerfTrace.Since("box.settle", "box.switch.settled");
+        }
     }
+
+    private readonly WellLayer _wellLayer = new();
 
     /// <summary>Locked-mon badges for the current box; refreshed on box/mutation changes, never per frame.</summary>
     private void RefreshLockedSlots()
@@ -5377,6 +5782,16 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         if (slot < 0) return;
         // Touch: first tap selects (summary + editor), tapping the selected mon again grabs it,
         // next tap places. Empty slot with empty hands opens the add sheet.
+        if (_viewModel.HasPendingEdits)
+        {
+            // Selecting refills the editor: the tap first settles what was typed there.
+            _ = SettleThenAsync(() =>
+            {
+                _viewModel.SelectSlot(slot);
+                _canvas.InvalidateSurface();
+            });
+            return;
+        }
         var wasSelected = _viewModel.SelectedSlot == slot;
         _viewModel.SelectSlot(slot);
         if (_viewModel.CarrySource is not null)
@@ -5396,7 +5811,7 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         var slots = _viewModel.VisibleSlots;
         if (slot < slots.Count && slots[slot].Species is null)
         {
-            _ = OfferAddPokemonAsync(slot);
+            OfferAddPokemonAsync(slot).Observe("box", ReportScreenError);
             return;
         }
         if (wasSelected && _viewModel.BeginCarry())
@@ -5413,6 +5828,21 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
     {
         args.Handled = true;
         var slot = TouchSlot(args.Location);
+        if (_groupHeld)
+        {
+            // Carrying a group: the slot tapped is where it is set down. The finger that picked
+            // the group up is still on the glass: lifting it must not set the group down again.
+            if (args.ActionType is SKTouchAction.Released or SKTouchAction.Cancelled)
+            {
+                if (_groupAwaitsRelease) _groupAwaitsRelease = false;
+                else if (args.ActionType == SKTouchAction.Released && slot >= 0)
+                {
+                    _viewModel.SelectSlot(slot);
+                    _ = DropGroupAsync();
+                }
+            }
+            return;
+        }
         switch (args.ActionType)
         {
             case SKTouchAction.Pressed:
@@ -5420,14 +5850,22 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
                 _touchDragSlot = slot;
                 _viewModel.SelectSlot(slot);
                 _viewModel.BeginRectangle(slot);
+                // A finger held still carries the selection, like A held on the pad.
+                var turn = ++_holdTurn;
+                Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(HoldToGrabMs), () =>
+                {
+                    if (turn == _holdTurn) TryCarryGroup();
+                });
                 break;
             case SKTouchAction.Moved:
                 if (_touchDragSlot < 0 || slot < 0 || slot == _touchDragSlot) return;
+                _holdTurn++;
                 _touchDragSlot = slot;
                 _viewModel.SelectSlot(slot);
                 _viewModel.ExtendRectangle(slot);
                 break;
             case SKTouchAction.Released or SKTouchAction.Cancelled:
+                _holdTurn++;
                 if (_touchDragSlot < 0) return;
                 _touchDragSlot = -1;
                 _viewModel.CommitRectangle();
@@ -5445,10 +5883,10 @@ public sealed partial class BoxBrowserPage : ContentPage, IPadPagingHandler, IPa
         // whole sheet - with the reason on screen instead of an empty menu.
         if (await DeniedAsync(SaveAction.CreateMon)) return;
         var choice = await PadMenu.ShowAsync(_hostGrid, $"Add a Pokémon · slot {slot + 1}", null,
-            new PadOption("Create a Pokémon", IconPath: "create", Detail: "Pick a species and details; it is built legal for this game."),
-            new PadOption("Paste a Showdown set", IconPath: "script", Detail: "Turn a Showdown set into a legal Pokémon in this slot."),
-            new PadOption("Import .pk file", IconPath: "import", Detail: "Load a Pokémon file into this slot."),
-            new PadOption("From event database", IconPath: "events", Detail: "Put a Mystery Gift Pokémon in this slot."));
+            new PadOption("Create a Pokémon", IconPath: "create", Detail: "Built legal for this game."),
+            new PadOption("Paste a Showdown set", IconPath: "script", Detail: "It becomes a legal Pokémon here."),
+            new PadOption("Import .pk file", IconPath: "import", Detail: "Into this slot."),
+            new PadOption("From event database", IconPath: "events", Detail: "A Mystery Gift Pokémon."));
         switch (choice)
         {
             case "Create a Pokémon":

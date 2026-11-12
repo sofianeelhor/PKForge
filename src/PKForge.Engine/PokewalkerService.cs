@@ -12,6 +12,9 @@ namespace PKForge.Engine;
 public sealed record PokewalkerCourse(int Index, string Name, bool Unlocked, bool AvailableForLanguage,
     bool IsSpecial, IReadOnlyList<string> Encounters);
 
+/// <summary>The Pokémon the save pairs with the Pokéwalker (PKHeX's read-only "Pokéwalker" misc slot).</summary>
+public sealed record PokewalkerPokemon(ushort Species, byte Form, bool Shiny, string Nickname, string SpeciesName, int Level);
+
 public sealed record PokewalkerState(uint Steps, uint Watts, IReadOnlyList<PokewalkerCourse> Courses);
 
 /// <summary>
@@ -89,6 +92,25 @@ public static class PokewalkerService
         var save = Require(session);
         save.PokewalkerCoursesSetAll(SAV4HGSS.GetPossiblePokewalkerCourseUnlock(save.Language));
         return GetState(session);
+    }
+
+    /// <summary>
+    /// The Pokémon paired with the Pokéwalker, read through PKHeX's own misc slot
+    /// (<c>Extensions.GetExtraSlots4</c>: <c>SAV4HGSS.WalkerPair</c>, stored format, not writable),
+    /// so the offset stays PKHeX's. Null when the slot is empty or does not hold a valid Pokémon.
+    /// </summary>
+    public static PokewalkerPokemon? GetPairedPokemon(ISaveEngineSession session)
+    {
+        var save = Require(session);
+        var slot = save.GetExtraSlots().FirstOrDefault(s => s.Type == StorageSlotType.Pokéwalker);
+        if (slot is null)
+            return null;
+        var pk = slot.Read(save);
+        if (pk.Species == 0 || pk.Species > save.MaxSpeciesID || !pk.ChecksumValid)
+            return null;
+        var language = save.Language == 0 ? (int)LanguageID.English : save.Language;
+        var species = SpeciesName.GetSpeciesName(pk.Species, language);
+        return new PokewalkerPokemon(pk.Species, pk.Form, pk.IsShiny, pk.IsNicknamed ? pk.Nickname : species, species, pk.CurrentLevel);
     }
 
     private static SAV4HGSS? TryGetSave(ISaveEngineSession session) =>

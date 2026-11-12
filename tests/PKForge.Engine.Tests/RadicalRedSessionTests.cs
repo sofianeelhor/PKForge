@@ -19,7 +19,7 @@ public sealed class RadicalRedSessionTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "PKForge.sln")))
             directory = directory.Parent;
-        var path = directory is null ? null : Path.Combine(directory.FullName, ".local-testdata", "radicalred-champ.sav");
+        var path = directory is null ? null : Path.Combine(directory.FullName, ".local-testdata", "thor", "retroarch", "mGBA", "Radical-red-champ.sav");
         return path is not null && File.Exists(path) ? path : null;
     }
 
@@ -69,7 +69,7 @@ public sealed class RadicalRedSessionTests
     }
 
     [Fact]
-    public void PcStreamHoldsThe151GroundTruthMons()
+    public void PcStreamHoldsThe152GroundTruthMons()
     {
         using var session = OpenGroundTruth();
         if (session is null) return;
@@ -79,15 +79,19 @@ public sealed class RadicalRedSessionTests
         for (var slot = 0; slot < session.BoxSlotCount; slot++)
             if (!session.ReadEntity(box, slot).IsEmpty)
                 mons++;
-        Assert.Equal(151, mons);
+        Assert.Equal(152, mons);
 
-        var kirlia = session.ReadEntity(0, 0);
+        Assert.Equal(942, session.ReadEntity(0, 0).Species); // Maschiff
+        var kirlia = session.ReadEntity(0, 15);
         Assert.Equal(281, kirlia.Species); // national id: the ROM stores Hoenn-internal 393
         Assert.Equal("Kirlia", kirlia.SpeciesName);
         Assert.Equal("Kirlia", kirlia.Nickname);
 
-        // Boxes 0-5 hold the 151 mons; box 6 has the stragglers, box 7+ are empty.
-        Assert.False(session.ReadEntity(0, 26).IsEmpty);
+        // Boxes 0-5 hold most of them (box 0 has gaps at 24/26/29); box 6 has four
+        // stragglers, box 7+ are empty.
+        Assert.False(session.ReadEntity(0, 25).IsEmpty);
+        Assert.True(session.ReadEntity(0, 26).IsEmpty);
+        Assert.Equal(4, Enumerable.Range(0, 30).Count(slot => !session.ReadEntity(6, slot).IsEmpty));
         Assert.True(session.ReadEntity(7, 0).IsEmpty);
         Assert.True(session.ReadEntity(21, 29).IsEmpty); // raw sector-30/31 box, empty here
     }
@@ -158,7 +162,7 @@ public sealed class RadicalRedSessionTests
         using var session = OpenGroundTruth();
         if (session is null) return;
         var original = File.ReadAllBytes(GroundTruth()!);
-        Assert.True(session.DuplicateSlot(0, 0, 0, 3));
+        Assert.True(session.DuplicateSlot(0, 15, 0, 24));
 
         var bytes = session.Serialize().ToArray();
         // Section 13's spare tail (the CFRU parasite past its 0x450 window) is preserved.
@@ -167,8 +171,8 @@ public sealed class RadicalRedSessionTests
         Assert.Equal(parasite, bytes.AsSpan(sections[13] + 0x450, 0xFF4 - 0x450).ToArray());
 
         using var reopened = new RadicalRedEngineSession(bytes);
-        Assert.Equal(281, reopened.ReadEntity(0, 3).Species); // the duplicated Kirlia
-        Assert.Equal(152, CountMons(reopened));
+        Assert.Equal(281, reopened.ReadEntity(0, 24).Species); // the duplicated Kirlia
+        Assert.Equal(153, CountMons(reopened));
     }
 
     [Fact]
@@ -177,10 +181,10 @@ public sealed class RadicalRedSessionTests
         using var session = OpenGroundTruth();
         if (session is null) return;
 
-        session.ReleaseSlot(0, 4); // an occupied slot (box 0 has gaps at 3/11/24)
+        session.ReleaseSlot(0, 4); // an occupied slot (box 0 has gaps at 24/26/29)
         using var released = new RadicalRedEngineSession(session.Serialize());
         Assert.True(released.ReadEntity(0, 4).IsEmpty);
-        Assert.Equal(150, CountMons(released));
+        Assert.Equal(151, CountMons(released));
 
         released.MoveSlot(-1, 0, 1, 15); // party Terapagos into an empty PC slot
         using var moved = new RadicalRedEngineSession(released.Serialize());
@@ -213,12 +217,13 @@ public sealed class RadicalRedSessionTests
     {
         using var session = OpenGroundTruth();
         if (session is null) return;
-        var export = session.ExportSlot(0, 0);
+        var export = session.ExportSlot(0, 15);
         Assert.EndsWith(".pk3rr", export.FileName);
 
-        Assert.False(session.ImportSlot(2, 29, new byte[8])); // garbage never imports
-        Assert.True(session.ImportSlot(2, 29, export.Data, export.Format));
-        var imported = session.ReadEntity(2, 29);
+        Assert.True(session.ReadEntity(7, 0).IsEmpty);
+        Assert.False(session.ImportSlot(7, 0, new byte[8])); // garbage never imports
+        Assert.True(session.ImportSlot(7, 0, export.Data, export.Format));
+        var imported = session.ReadEntity(7, 0);
         Assert.Equal(281, imported.Species);
         Assert.Equal("Kirlia", imported.Nickname);
     }

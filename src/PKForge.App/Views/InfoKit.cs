@@ -1,8 +1,6 @@
-using Microsoft.Maui.Controls.Shapes;
 using PKForge.App.Theme;
 using PKForge.Domain;
 using SkiaSharp;
-using SkiaSharp.Views.Maui;
 using SkiaSharp.Views.Maui.Controls;
 
 namespace PKForge.App.Views;
@@ -21,8 +19,6 @@ public static class InfoKit
     private static readonly Color StellarColor = Color.FromArgb("#3E8FB0");
 
     public static Color TypeColor(int type) => type == TypeFacts.Stellar ? StellarColor : TypePalette.ForType(type);
-
-    private static Color TypeInk(int type) => type == TypeFacts.Stellar ? Colors.White : TypePalette.ForegroundForType(type);
 
     /// <summary>A fixed-width type plate ("FIRE", see <see cref="TypePlates"/>) so badge columns line up down a list.</summary>
     public static Border TypeBadge(int? type = null, double width = 60)
@@ -72,7 +68,7 @@ public static class InfoKit
             VerticalOptions = LayoutOptions.Center;
             _category = category;
             IsVisible = category is not null;
-            PaintSurface += (_, args) => Draw(args.Surface.Canvas, args.Info);
+            PaintSurface += PaintGuard.Wrap("InfoKit this", (_, args) => Draw(args.Surface.Canvas, args.Info));
         }
 
         public MoveCategory? Category

@@ -83,7 +83,8 @@ public static class ClockRepairService
     public static Gen3ClockState ArmInGameReset(ISaveEngineSession session)
     {
         Require(session);
-        ((SaveEngineSession)session).RepairRTC();
+        // Require() only accepts a PKHeX-backed Ruby/Sapphire/Emerald session.
+        if (session is SaveEngineSession engine) engine.RepairRTC();
         return GetState(session);
     }
 

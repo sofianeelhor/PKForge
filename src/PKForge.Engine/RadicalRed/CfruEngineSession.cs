@@ -244,7 +244,8 @@ internal class CfruEngineSession : ISaveEngineSession
             mon.Friendship,
             mon.PartyStats ?? Game.ComputeStats(mon),
             mon.CurrentHp,
-            Traits: look.Traits);
+            Traits: look.Traits,
+            MoveNames: HackNames.UnmappedMoves(moves, Game.MoveToNational, Game.MoveName));
 
         static EntityDetail Empty(int box, int slot) => new(box, slot, true, 0, string.Empty, 0, string.Empty, 0, 0, 0, 0, 0, 0, 0, 0, [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], false, 0, string.Empty);
     }
@@ -253,6 +254,7 @@ internal class CfruEngineSession : ISaveEngineSession
 
     public void ApplyEdit(int box, int slot, EntityEdit edit)
     {
+        edit = NameCharset.FitGen3Edit(edit); // charset first: a name the game cannot hold is refused, not emptied
         var mon = TryMon(box, slot) ?? throw new InvalidOperationException("Cannot edit an empty slot.");
         var location = box == -1 ? null : ResolveSlot(box, slot);
         var before = mon.Buffer.AsSpan(mon.Offset, mon.Size).ToArray();
@@ -466,12 +468,17 @@ internal class CfruEngineSession : ISaveEngineSession
         {
             // Moving into the party appends, exactly like the games.
             if (PartyCount >= 6) throw new InvalidOperationException("The party is full.");
+            // An empty or unreadable box slot has no party form to build.
+            if (fromBox != -1 && !source.CanEnterParty)
+                throw new InvalidOperationException("That box slot holds no Pokémon that can join the party.");
             var party = PartyMon(PartyCount);
             CopyBetween(sourceView, party);
             BinaryPrimitives.WriteUInt32LittleEndian(_data.AsSpan(PartyBase + PartyCountOffset), (uint)(PartyCount + 1));
             if (fromBox == -1) CompactPartyFrom(fromSlot); // party-to-party: reorder in place
             else ClearSlot(fromBox, fromSlot);
             CommitSection(PartySection);
+            // The box slot it left is written too, or the file keeps it in both places.
+            if (fromBox != -1) CommitPc(ResolveSlot(fromBox, fromSlot));
             return;
         }
 
@@ -479,7 +486,11 @@ internal class CfruEngineSession : ISaveEngineSession
         var destination = PcMon(target);
         var destinationBytes = new byte[destination.Size];
         destination.Buffer.AsSpan(destination.Offset, destination.Size).CopyTo(destinationBytes);
-        var occupied = destination.LooksValid;
+        // Any non-empty occupant is a Pokémon to keep: LooksValid rejects EXP 0, which a
+        // level-1 Pokémon stores, and treating it as empty overwrote it.
+        var occupied = !destination.IsEmpty;
+        if (source.Party && occupied && !destination.CanEnterParty)
+            throw new InvalidOperationException("The Pokémon in that box slot cannot be read, so it cannot swap into the party.");
 
         // The source lands in the destination (converting formats when crossing the
         // party/PC boundary); the previous occupant, if any, lands back in the source.
@@ -522,6 +533,9 @@ internal class CfruEngineSession : ISaveEngineSession
     {
         if (box == -1)
         {
+            // An empty party slot has nothing to release: compacting from it would remove
+            // the last real member, or write a count of 0xFFFFFFFF on an empty party.
+            if ((uint)slot >= (uint)PartyCount) return;
             CompactPartyFrom(slot);
             CommitSection(PartySection);
             return;
@@ -584,21 +598,17 @@ internal class CfruEngineSession : ISaveEngineSession
             return ImportOwn(box, slot, fileBytes);
         var entity = EntityBytes.Parse(fileBytes, format);
         if (entity is null || entity.Species == 0) return false;
-        if (entity is not PK3)
-        {
-            var converted = EntityConverter.ConvertToType(entity, typeof(PK3), out _) as PK3;
-            if (converted is null) return false;
-            entity = converted;
-        }
-        var pk3 = (PK3)entity;
-        if (Landing(pk3, Game, _profile.GameName, out _) is not { } ids) return false;
+        if (CfruPk3.Source(entity) is not { } source) return false;
+        if (Landing(source, Game, _profile.GameName, out _) is not { } ids) return false;
 
         if (box == -1)
         {
             if (PartyCount >= 6) return false;
-            var party = PartyMon(PartyCount);
-            _data.AsSpan(party.Offset, PartyMonSize).Clear();
-            FromPk3(pk3, ids, party);
+            // Built as a box record first, then withdrawn like the game does: the party
+            // tail (level, stats, current HP, PP) is computed, never left at zero.
+            var boxed = new RadicalRedMon(new byte[PcMonSize], 0, false, Game);
+            FromPkm(source, ids, boxed);
+            Withdraw(boxed.Buffer, PartyMon(PartyCount));
             BinaryPrimitives.WriteUInt32LittleEndian(_data.AsSpan(PartyBase + PartyCountOffset), (uint)(PartyCount + 1));
             CommitSection(PartySection);
             return true;
@@ -608,39 +618,61 @@ internal class CfruEngineSession : ISaveEngineSession
         if (location is null) return false;
         var target = PcMon(location.Value);
         target.Buffer.AsSpan(target.Offset, PcMonSize).Clear();
-        FromPk3(pk3, ids, target);
+        FromPkm(source, ids, target);
         CommitPc(location);
         return true;
     }
 
-    /// <summary>The hack ids <paramref name="pk3"/> lands with in this game, or null with the
+    /// <summary>The hack ids <paramref name="pkm"/> lands with in this game, or null with the
     /// reason one of its national ids has no counterpart in <paramref name="game"/>'s tables.</summary>
-    internal static CfruPk3.Inbound? Landing(PK3 pk3, ICfruGameData game, string gameName, out string? refusal) =>
-        CfruPk3.FromPk3(pk3, gameName, game.SpeciesFromNational, game.MoveFromNational, game.ItemFromNational,
-            game.AbilityIds, ball => RadicalRedMon.TryStoreBall(ball, out var stored) ? stored : -1, out refusal);
+    internal static CfruPk3.Inbound? Landing(PKM pkm, ICfruGameData game, string gameName, out string? refusal,
+        List<string>? adjustments = null) =>
+        CfruPk3.FromPkm(pkm, gameName, game.SpeciesFromNational, game.MoveFromNational, game.ItemFromNational,
+            game.AbilityIds, ball => RadicalRedMon.TryStoreBall(ball, out var stored) ? stored : -1, out refusal, adjustments);
 
-    private void FromPk3(PK3 pk3, CfruPk3.Inbound ids, RadicalRedMon target)
+    /// <summary>Generation 3's "in-game trade" met location.</summary>
+    private const int InGameTradeLocation = 254;
+
+    /// <summary>
+    /// A CFRU game reads nature, gender, shininess and ability slot from the PID alone. A
+    /// Generation 3 or 4 PID already says the same; a later one, or one whose parity picks the
+    /// other slot in the hack's table, is solved again for what the Pokémon shows.
+    /// </summary>
+    private void FitPid(PKM pkm, CfruPk3.Inbound ids, RadicalRedMon target)
+    {
+        var nature = (int)pkm.StatAlignment;
+        int? gender = pkm.Gender is 0 or 1 ? pkm.Gender : null;
+        if (target.Nature == nature && target.IsShiny == pkm.IsShiny
+            && (ids.AbilitySlot is not { } slot || (target.Pid & 1) == slot)
+            && (gender is null || Game.GenderOf(target.Pid, target.Species) == gender))
+            return;
+        RerollPid(target, nature, pkm.IsShiny, gender, ids.AbilitySlot);
+    }
+
+    private void FromPkm(PKM pkm, CfruPk3.Inbound ids, RadicalRedMon target)
     {
         target.Species = ids.Species;
-        target.Pid = pk3.PID;
-        target.Otid = pk3.ID32;
-        target.Nickname = pk3.Nickname.Length > 0 ? pk3.Nickname : Game.SpeciesName(ids.Species);
-        target.Language = Math.Clamp(pk3.Language, 1, 5);
+        target.Pid = pkm.PID;
+        target.Otid = pkm.ID32;
+        target.Nickname = pkm.Nickname.Length > 0 ? pkm.Nickname : Game.SpeciesName(ids.Species);
+        target.Language = Math.Clamp(pkm.Language, 1, 5);
         target.SanityFlags = 2; // hasSpecies
         target.HeldItem = ids.HeldItem;
-        target.Experience = Math.Max(pk3.EXP, 1u);
+        target.Experience = Math.Max(pkm.EXP, 1u);
         target.Moves = ids.Moves;
         Span<int> ivs = stackalloc int[6]; // PKHeX order: HP, Atk, Def, Spe, SpA, SpD
-        pk3.GetIVs(ivs);
+        pkm.GetIVs(ivs);
         target.IVs = [ivs[0], ivs[1], ivs[2], ivs[4], ivs[5], ivs[3]]; // -> app order HP, Atk, Def, SpA, SpD, Spe
-        target.EVs = [pk3.EV_HP, pk3.EV_ATK, pk3.EV_DEF, pk3.EV_SPA, pk3.EV_SPD, pk3.EV_SPE];
+        target.EVs = [pkm.EV_HP, pkm.EV_ATK, pkm.EV_DEF, pkm.EV_SPA, pkm.EV_SPD, pkm.EV_SPE];
         target.Ball = ids.Ball;
         target.HiddenAbility = ids.HiddenAbility;
-        target.IsEgg = pk3.IsEgg;
+        target.IsEgg = pkm.IsEgg;
         target.Friendship = 70;
-        target.MetLocation = pk3.MetLocation;
-        target.MetInfo = pk3.MetLevel & 0x7F; // origin-game bits are not portable
-        WriteOtName(target, pk3.OriginalTrainerName);
+        // A later generation's met location indexes another region's map table.
+        target.MetLocation = pkm.Format == 3 ? pkm.MetLocation : InGameTradeLocation;
+        target.MetInfo = pkm.MetLevel & 0x7F; // origin-game bits are not portable
+        WriteOtName(target, pkm.OriginalTrainerName);
+        FitPid(pkm, ids, target);
         if (target.Party)
         {
             target.Buffer[target.Offset + 0x54] = (byte)target.Level;
@@ -788,6 +820,8 @@ internal class CfruEngineSession : ISaveEngineSession
 
         if (box == -1)
         {
+            if (PartyCount >= 6)
+                return new GenerationOutcome(false, "The party is full.");
             var party = PartyMon(PartyCount);
             CopyBetween(mon, party);
             BinaryPrimitives.WriteUInt32LittleEndian(_data.AsSpan(PartyBase + PartyCountOffset), (uint)(PartyCount + 1));
@@ -934,6 +968,10 @@ internal class CfruEngineSession : ISaveEngineSession
         return SramPadding.Restore(_data, _originalBytes);
     }
 
+    public bool StoresAnyAbility => false;
+
+    public bool StoresMove(int move) => move == 0 || (move > 0 && Game.MoveFromNational(move) > 0);
+
     public IReadOnlyList<int> GetAbilityChoices(int species, int form)
     {
         // Species arrives as a national id (the UI's picker space).
@@ -950,8 +988,13 @@ internal class CfruEngineSession : ISaveEngineSession
         var names = new string[Game.MaxItemId + 1];
         for (var id = 0; id < names.Length; id++)
             names[id] = Game.ItemName(id);
-        return names;
+        return HackNames.WithNoItem(names);
     }
+
+    private string[]? _heldItemNames;
+
+    /// <summary>Held items are bridged to PKHeX's ids (ReadEntity, slot summaries); the bag keeps the ROM's.</summary>
+    public IReadOnlyList<string> GetHeldItemNames() => _heldItemNames ??= HackNames.NationalItems(Game.ItemFromNational);
 
     public IReadOnlyList<string> GetFormChoices(int species) => [""];
     public IReadOnlyList<int> GetSpeciesTypes(int species) => Game.TypesOf(species);
@@ -1113,6 +1156,19 @@ internal class CfruEngineSession : ISaveEngineSession
         if (layout.Name is null) return 0;
 
         var items = ReadPouch(layout);
+        var key = (ushort)SecurityKey;
+        // The run is rewritten from what was read. An item-shaped entry past the readable
+        // prefix (an id the table does not know, or a count out of range, stops the
+        // reader) would be erased by that rewrite, so the edit is refused instead.
+        var readable = items.Count;
+        for (var slot = readable; slot < layout.Capacity; slot++)
+        {
+            var offset = BagFileOffset(layout.Offset + slot * 4);
+            if (BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(offset)) != 0
+                && (ushort)(BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(offset + 2)) ^ key) != 0)
+                throw new InvalidOperationException(
+                    $"The {layout.Name} pocket holds an entry PKForge cannot read; editing it would erase the entries after it.");
+        }
         var index = items.FindIndex(item => item.Id == itemId);
         if (count <= 0)
         {
@@ -1129,11 +1185,10 @@ internal class CfruEngineSession : ISaveEngineSession
             items.Add(new BagItem(itemId, Math.Min(count, 999)));
         }
 
-        // Rebuild the whole run — entries, then zeroed slack — so no stale slot
-        // survives a removal, then mirror section 13 so the parasite's bag tail is
-        // identical in every rotating copy the console might load next.
-        var key = (ushort)SecurityKey;
-        for (var slot = 0; slot < layout.Capacity; slot++)
+        // Rebuild the list — entries, then the slot a removal freed — then mirror
+        // section 13 so the parasite's bag tail is identical in every rotating copy the
+        // console might load next. Slack past the list is left as found.
+        for (var slot = 0; slot < Math.Max(items.Count, readable); slot++)
         {
             var offset = BagFileOffset(layout.Offset + slot * 4);
             if (slot < items.Count)

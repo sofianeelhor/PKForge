@@ -45,17 +45,21 @@ public static class RoamerService
 
     public static IReadOnlyList<RoamerInfo> GetRoamers(ISaveEngineSession session)
     {
-        var save = ((SaveEngineSession)session).SaveFile;
+        if (session is not SaveEngineSession engine)
+            return [];
+        var save = engine.SaveFile;
         return Slots(session).Select((slot, i) => slot.Read(save, i)).ToArray();
     }
 
     /// <summary>New legal PID/IV (and full HP). <paramref name="shiny"/> searches for a shiny result.</summary>
     public static RoamerInfo Reroll(ISaveEngineSession session, int index, bool shiny)
     {
+        if (session is not SaveEngineSession engine)
+            throw new NotSupportedException("Roaming Pokémon can be rerolled only in retail saves.");
         var slots = Slots(session);
         ArgumentOutOfRangeException.ThrowIfNegative(index);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, slots.Count);
-        var save = ((SaveEngineSession)session).SaveFile;
+        var save = engine.SaveFile;
         var before = slots[index].Read(save, index);
         if (!before.CanReroll)
             throw new InvalidOperationException(before.Note ?? "This roamer cannot be rerolled.");

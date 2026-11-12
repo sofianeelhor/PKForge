@@ -75,7 +75,12 @@ public static class BoxLayoutService
         if (trimmed.Length == 0)
             throw new ArgumentException("A box name cannot be empty.", nameof(name));
         var max = GetNameMaxLength(session);
-        names.SetBoxName(box, trimmed.Length > max ? trimmed[..max] : trimmed);
+        var cut = trimmed.Length > max ? trimmed[..max] : trimmed;
+        // Checked against the save's charset first: a Latin name on a Japanese Gen 3 save is
+        // written full-width, and a name the game cannot show is refused instead of emptied.
+        // The Gen 3 Box (RS Box) name carries a prefix PKForge does not encode itself.
+        var fitted = save is SAV3RSBox ? cut : NameCharset.FitForSave(save, cut, NameField.BoxName, max);
+        names.SetBoxName(box, fitted);
         return GetBox(session, box);
     }
 
@@ -151,7 +156,7 @@ public static class BoxLayoutService
         EntityContext.Gen3 when FRLG.Contains(version) && index > 12 => "frlg",
         EntityContext.Gen3 => "rs",
 
-        EntityContext.Gen4 when index <= 16 => "dp",
+        EntityContext.Gen4 when DP.Contains(version) || index <= 16 => "dp",
         EntityContext.Gen4 when version == Pt => "pt",
         EntityContext.Gen4 when HGSS.Contains(version) => "hgss",
 

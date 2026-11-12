@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using PKForge.Domain;
 using PKHeX.Core;
 
@@ -24,11 +25,17 @@ internal readonly record struct SlotImage(SlotRef Slot, byte[] Bytes, bool Empty
 /// </summary>
 internal static class WriteSafety
 {
-    private sealed record Parsed(string Route, Func<IReadOnlyList<SlotImage>> Images, SaveFile? Stock);
+    /// <param name="ReadOnly">Why a hack engine that reads these bytes must not write them, or null.</param>
+    private sealed record Parsed(string Route, Func<IReadOnlyList<SlotImage>> Images, SaveFile? Stock, string? ReadOnly = null);
 
     private static Parsed? Parse(ReadOnlyMemory<byte> bytes)
     {
         var decoded = RetroArchSaveContainer.Decode(bytes.Span);
+        if (SaveParser.IsPokemonOriginHeartGold(decoded))
+        {
+            var session = new OriginHeartGold.OriginHeartGoldEngineSession(bytes);
+            return new Parsed("Origin HeartGold", () => session.SlotImages().ToList(), null);
+        }
         if (SaveParser.IsPokemonUnbound(decoded))
         {
             var session = new Unbound.UnboundEngineSession(bytes);
@@ -43,6 +50,41 @@ internal static class WriteSafety
         {
             var session = new RadicalRed.RadicalRedEngineSession(bytes);
             return new Parsed("Radical Red", () => session.SlotImages().ToList(), null);
+        }
+        if (SaveParser.IsPokemonRechargedYellow(decoded))
+        {
+            var session = new RechargedYellow.RechargedYellowEngineSession(bytes);
+            return new Parsed("Recharged Yellow", () => session.SlotImages().ToList(), null);
+        }
+        if (SaveParser.IsPokemonQuetzal(decoded))
+        {
+            var session = new Quetzal.QuetzalEngineSession(bytes);
+            return new Parsed("Quetzal", () => session.SlotImages().ToList(), null);
+        }
+        if (SaveParser.IsPokemonSoulGold(decoded))
+        {
+            var session = new SoulGold.SoulGoldEngineSession(bytes);
+            return new Parsed("Soul Gold", () => session.SlotImages().ToList(), null);
+        }
+        if (SaveParser.IsPokemonExpansion(decoded) && Exceeded.ExceededFormat.Matches(SramPadding.Trim(decoded)))
+        {
+            var session = new Exceeded.ExceededEngineSession(bytes, null);
+            return new Parsed(session.GameNames[0], () => session.SlotImages().ToList(), null);
+        }
+        if (SaveParser.IsPokemonExpansion(decoded))
+        {
+            var session = new Expansion.ExpansionEngineSession(bytes, null);
+            return new Parsed(session.GameNames[0], () => session.SlotImages().ToList(), null, session.ReadOnlyReason);
+        }
+        if (SaveParser.IsPokemonEliteRedux(decoded))
+        {
+            var session = new EliteRedux.EliteReduxEngineSession(bytes);
+            return new Parsed("Elite Redux", () => session.SlotImages().ToList(), null, session.ReadOnlyReason);
+        }
+        if (SaveParser.IsPokemonFireRedHack(decoded))
+        {
+            var session = new FireRedHacks.FireRedHackEngineSession(bytes);
+            return new Parsed(session.GameNames[0], () => session.SlotImages().ToList(), null);
         }
         if (!SaveParser.TryGetSaveFile(bytes.ToArray(), out var save) || save is null)
             return null;
@@ -94,13 +136,158 @@ internal static class WriteSafety
         Parsed? parsed;
         try { parsed = Parse(bytes); }
         catch (InvalidDataException) { return null; }
+        if (parsed?.ReadOnly is { } readOnly)
+            return new LayoutRisk(LayoutRiskKind.CorruptingLayout, readOnly);
         if (parsed?.Stock is not SAV3 save)
             return null; // recognized hack sessions and non-Gen-3 formats are layout-certain
+        if (UnsupportedKnownHack(bytes) is { } known)
+            return new LayoutRisk(LayoutRiskKind.CorruptingLayout, known);
         if (CorruptingLayout(bytes, save) is { } corrupting)
             return new LayoutRisk(LayoutRiskKind.CorruptingLayout, corrupting);
         if (ForeignSpecies(save) is { } hack)
             return new LayoutRisk(LayoutRiskKind.SuspectedHack, hack);
+        if (RetailWindowMismatch(bytes, save) is { } windows)
+            return new LayoutRisk(LayoutRiskKind.SuspectedHack, windows);
+        if (ForeignBag(save) is { } bag)
+            return new LayoutRisk(LayoutRiskKind.SuspectedHack, bag);
         return null;
+    }
+
+    /// <summary>
+    /// (0) A hack PKForge recognizes by its own structure but has no editor for (see
+    /// <see cref="RecognizedHacks"/>): R.O.W.E., Fire Red Extended, a Heart &amp; Soul build
+    /// in another layout… Its layout is certainly not vanilla, so it opens read-only under
+    /// its own name, and writing it with the retail layout is refused outright.
+    /// </summary>
+    private static string? UnsupportedKnownHack(ReadOnlyMemory<byte> bytes)
+    {
+        try { return RecognizedHacks.Identify(RetroArchSaveContainer.Decode(bytes.Span)) is { } hack ? RecognizedHacks.ReadOnlyReason(hack) : null; }
+        catch (InvalidDataException) { return null; }
+    }
+
+    /// <summary>
+    /// Bytes of each live sector the retail game itself checksums: SaveBlock2, the four
+    /// SaveBlock1 chunks, then PC storage (0x83D0 bytes in every Gen 3 handheld game).
+    /// </summary>
+    private static int[]? RetailWindows(SAV3 save) => save switch
+    {
+        SAV3E => [0xF2C, 0xF80, 0xF80, 0xF80, 0xF08, .. StorageWindows],
+        SAV3FRLG => [0xF24, 0xF80, 0xF80, 0xF80, 0xEE8, .. StorageWindows],
+        SAV3RS => [0x890, 0xF80, 0xF80, 0xF80, 0xC40, .. StorageWindows],
+        _ => null,
+    };
+
+    private static readonly int[] StorageWindows = [0xF80, 0xF80, 0xF80, 0xF80, 0xF80, 0xF80, 0xF80, 0xF80, 0x7D0];
+
+    /// <summary>
+    /// (4) A hack that keeps the retail sector envelope but grew a save block (newer
+    /// pokeemerald-expansion builds, Perfect Emerald, Soul Gold) checksums a sector over
+    /// more bytes than the retail game does. PKHeX checksums every sector over 0xF80, so
+    /// such a save still round-trips and passes (1); but the retail game would reject that
+    /// sector, so a vanilla cartridge cannot have written it. This holds even on a fresh
+    /// save with no Pokémon at all, where (3) has nothing to read.
+    /// </summary>
+    private static string? RetailWindowMismatch(ReadOnlyMemory<byte> bytes, SAV3 save)
+    {
+        if (RetailWindows(save) is not { } windows)
+            return null;
+        byte[] payload;
+        try { payload = SramPadding.Trim(RetroArchSaveContainer.Decode(bytes.Span)); }
+        catch (InvalidDataException) { return null; }
+        const int sectorSize = 0x1000, sectionCount = 14;
+        if (ActiveRetailSlot(payload) is not { } slot)
+            return null;
+        var slotStart = slot * sectionCount * sectorSize;
+        var mismatched = new List<int>();
+        for (var index = 0; index < sectionCount; index++)
+        {
+            var sector = payload.AsSpan(slotStart + index * sectorSize, sectorSize);
+            var id = BinaryPrimitives.ReadUInt16LittleEndian(sector[0xFF4..]);
+            if (id >= sectionCount)
+                return null; // not a slot this check understands; (1) and (2) already ran
+            if (Checksums.CheckSum32(sector[..windows[id]]) != BinaryPrimitives.ReadUInt16LittleEndian(sector[0xFF6..]))
+                mismatched.Add(id);
+        }
+        return mismatched.Count == 0
+            ? null
+            : $"section {string.Join(", ", mismatched.Order())} of this save is checksummed over more bytes than vanilla {save.Version} " +
+              "writes, so a ROM hack built on its layout most likely wrote it.";
+    }
+
+    /// <summary>The slot PKHeX reads (SAV3.GetActiveSlot): the one holding all 14 ids,
+    /// the newer footer when both do. Null when neither slot is complete.</summary>
+    private static int? ActiveRetailSlot(byte[] payload)
+    {
+        const int sectorSize = 0x1000, sectionCount = 14;
+        int? Zero(int slot)
+        {
+            var start = slot * sectionCount * sectorSize;
+            if (start + sectionCount * sectorSize > payload.Length)
+                return null;
+            var seen = 0;
+            int? zero = null;
+            for (var index = 0; index < sectionCount; index++)
+            {
+                var offset = start + index * sectorSize;
+                var id = BinaryPrimitives.ReadUInt16LittleEndian(payload.AsSpan(offset + 0xFF4));
+                if (id >= sectionCount) return null;
+                seen |= 1 << id;
+                if (id == 0) zero = offset;
+            }
+            return seen == (1 << sectionCount) - 1 ? zero : null;
+        }
+        var first = Zero(0);
+        var second = Zero(1);
+        if (first is null) return second is null ? null : 1;
+        if (second is null) return 0;
+        return SAV3BlockDetection.CompareFooters(payload, first.Value, second.Value);
+    }
+
+    /// <summary>
+    /// (5) Bag entries the retail game cannot hold: an item id past the game's last item, an
+    /// item in a pocket it never goes to, or a quantity of 0 or above 999. Expansion hacks
+    /// renumber the items and repack the pockets, so their bags read as nonsense through the
+    /// retail layout (Emerald Enhanced: a key item ×25091), and an empty slot whose quantity does
+    /// not decode to 0 means the security key is not where the retail game keeps it. Two such entries are required, so
+    /// one stray value from another editor never flags a vanilla save.
+    /// </summary>
+    private static string? ForeignBag(SAV3 save)
+    {
+        var anomalies = 0;
+        try
+        {
+            var bag = save.Inventory;
+            foreach (var pouch in bag.Pouches)
+            {
+                var legal = bag.Info.GetItems(pouch.Type);
+                foreach (var item in pouch.Items)
+                {
+                    if (item.Index == 0)
+                    {
+                        // The game stores an empty slot as quantity 0 sealed with the save's
+                        // security key, so it always decodes to 0. A hack that moved the key
+                        // (Emerald Enhanced: 0 at the retail offset) leaves every empty slot
+                        // decoding to its real key, even on a fresh save with an empty bag.
+                        // Blank saves other tools build leave the raw word at 0 (decoding to the
+                        // key itself), so only a word that is neither counts.
+                        var key = pouch.Type == InventoryType.PCItems ? 0 : (int)(save.SmallBlock.SecurityKey & 0xFFFF);
+                        if (item.Count != 0 && item.Count != key)
+                            anomalies++;
+                        continue;
+                    }
+                    if (item.Index > save.MaxItemID || legal.IndexOf((ushort)item.Index) < 0 || item.Count is <= 0 or > 999)
+                        anomalies++;
+                }
+            }
+        }
+        catch (Exception error) when (error is ArgumentException or IndexOutOfRangeException or InvalidOperationException)
+        {
+            return null;
+        }
+        return anomalies < 2
+            ? null
+            : $"{anomalies} bag entries hold items or quantities vanilla {save.Version} cannot have, " +
+              "so this is most likely a ROM hack built on its layout.";
     }
 
     /// <summary>
@@ -200,6 +387,12 @@ internal static class WriteSafety
             return "the number of Pokémon slots changed.";
 
         var partyInScope = scope?.Slots.Any(s => s.Box == -1) == true;
+        // The Game Boy games keep a box as a list without gaps: taking a Pokémon out of the
+        // middle moves every one after it up a slot. In a box the edit targets, slots may
+        // therefore shift; what the box held outside the targeted slots must still be in it.
+        var listBoxes = scope is not null && after.Stock is SAV1 or SAV2
+            ? scope.Slots.Where(s => s.Box >= 0).Select(s => s.Box).ToHashSet()
+            : [];
         for (var i = 0; i < a.Count; i++)
         {
             var old = a[i];
@@ -211,9 +404,16 @@ internal static class WriteSafety
             var changed = old.Empty != now.Empty || (!(old.Empty && now.Empty) && !old.Bytes.AsSpan().SequenceEqual(now.Bytes));
             if (!changed)
                 continue;
-            var allowed = scope.Slots.Contains(old.Slot) || (old.Slot.Box == -1 && partyInScope);
+            var allowed = scope.Slots.Contains(old.Slot) || (old.Slot.Box == -1 && partyInScope) || listBoxes.Contains(old.Slot.Box);
             if (!allowed)
                 return $"{Label(old.Slot)} changed although this edit did not target it.";
+        }
+        foreach (var box in listBoxes)
+        {
+            var held = b.Where(image => image.Slot.Box == box && !image.Empty).Select(image => Convert.ToHexString(image.Bytes)).ToList();
+            foreach (var image in a.Where(image => image.Slot.Box == box && !image.Empty && !scope!.Slots.Contains(image.Slot)))
+                if (!held.Remove(Convert.ToHexString(image.Bytes)))
+                    return $"Box {box + 1} would lose the Pokémon of slot {image.Slot.Slot + 1}, which this edit did not target.";
         }
         return null;
     }

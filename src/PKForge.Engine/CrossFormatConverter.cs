@@ -28,6 +28,8 @@ public static class CrossFormatConverter
 
     private static readonly Lazy<GameStrings> Strings = new(() => GameInfo.GetStrings("en"));
 
+    private static readonly Lock HandlerStamp = new();
+
     /// <summary>
     /// Converts <paramref name="source"/> into <paramref name="target"/>'s entity format.
     /// Returns null, with a plain-language <paramref name="refusal"/>, only when the Pokémon
@@ -43,18 +45,58 @@ public static class CrossFormatConverter
 
         var destType = target.PKMType;
         if (source.GetType() == destType)
-            return new TransferConversion(source, false, []);
+            return new TransferConversion(ReceivedBy(source.Clone(), target), false, []);
 
         refusal = ExplainImpossible(source, target);
         if (refusal is not null)
             return null;
 
-        // An official route wins whenever one exists; PKHeX already sanitizes those.
-        var forward = EntityConverter.ConvertToType(source, destType, out var result);
+        // Brilliant Diamond / Shining Pearl and Luminescent Platinum share one record: the
+        // bytes cross as they are, read against the destination's own tables.
+        if (source is PB8 && (destType == typeof(PB8) || destType == typeof(PB8LUMI)))
+        {
+            var data = new byte[source.SIZE_PARTY];
+            source.WriteDecryptedDataParty(data);
+            return new TransferConversion(ReceivedBy(destType == typeof(PB8LUMI) ? new PB8LUMI(data) : new PB8(data), target), false, []);
+        }
+
+        // An official route wins whenever one exists; PKHeX already sanitizes those. Its
+        // converters name the Pokémon's new handler after the trainer PKHeX loaded last, a
+        // global that nothing here ever set: arrivals came out handled by "PKHeX". The save
+        // taking the Pokémon is that trainer, for the length of the conversion.
+        PKM? forward;
+        EntityConverterResult result;
+        lock (HandlerStamp)
+        {
+            RecentTrainerCache.SetRecentTrainer(target);
+            forward = EntityConverter.ConvertToType(source, destType, out result);
+        }
         if (forward is not null && result is EntityConverterResult.Success or EntityConverterResult.None)
-            return new TransferConversion(forward, false, []);
+            return new TransferConversion(ReceivedBy(forward, target), false, []);
 
         return Downgrade(source, target);
+    }
+
+    /// <summary>
+    /// A Pokémon that arrives held by a handler is held by the receiving save's trainer: it is
+    /// back with its original trainer when that is this save's (as a trade home does in the game),
+    /// else this save's trainer is its handler. PKHeX names the handler only on the Gen 5 to 6 and
+    /// Virtual Console routes, from <see cref="RecentTrainerCache"/>, for the save converted into
+    /// then; every other route (the same format between two saves, HOME between Switch games, a
+    /// downgrade, a Pokémon History restore) carried that name on into the next save. A Pokémon
+    /// still with its original trainer (no current handler) is left as it is, so an import never
+    /// re-stamps it as traded; formats before Gen 6 and eggs record no handler. Returns
+    /// <paramref name="arrived"/>.
+    /// </summary>
+    internal static PKM ReceivedBy(PKM arrived, ITrainerInfo receiver)
+    {
+        if (arrived.Format < 6 || arrived.IsEgg || arrived.CurrentHandler == 0 || receiver.OT.Length == 0) return arrived;
+        // PB8 has the game's handler update without declaring IHandlerUpdate.
+        if (arrived is IHandlerUpdate handler) handler.UpdateHandler(receiver);
+        else if (arrived is PB8 bdsp) bdsp.UpdateHandler(receiver);
+        else return arrived;
+        arrived.RefreshChecksum();
+        return arrived;
     }
 
     /// <summary>
@@ -99,7 +141,7 @@ public static class CrossFormatConverter
 
         var context = new DowngradeContext(subject, pk, target, warnings);
         context.Sanitize();
-        return new TransferConversion(pk, true, warnings);
+        return new TransferConversion(ReceivedBy(pk, target), true, warnings);
     }
 
     /// <summary>One downgrade's working state: source, destination, and the running warning list.</summary>
@@ -444,7 +486,7 @@ public static class CrossFormatConverter
         }
 
         private string LocationLabel(ushort id, bool egg) =>
-            GameInfo.GetLocationName(egg, id, pk.Format, pk.Generation, pk.Version) is { Length: > 0 } name ? name : $"#{id}";
+            LocationNames.Of(pk, id, egg) is { Length: > 0 } name ? name : $"#{id}";
     }
 
     /// <summary>The location a traded-in Pokémon of unknown origin reads as, per generation.</summary>

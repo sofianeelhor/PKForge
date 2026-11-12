@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Microsoft.Maui.Controls.Shapes;
 using PKForge.App.Services;
 using PKForge.App.Theme;
 using PKForge.App.ViewModels;
@@ -14,7 +13,7 @@ namespace PKForge.App.Views;
 /// <summary>
 /// The Thor's second screen, a pure function of <see cref="SecondScreenState.Owner"/>:
 /// the Pokémon inspector (the shared <see cref="MonSummaryView"/>) following the box or
-/// Bank cursor, with its INFO / STATS / MOVES / ORIGIN / LEGAL pages turned by the tabs
+/// Bank cursor or the compare screen's focused side, with its INFO / STATS / MOVES / ORIGIN / LEGAL pages turned by the tabs
 /// here or SELECT in the Bank; the box overview while the full-screen summary shows the
 /// details on top; the Pokédex picker's species; the Poképark journal; hero art of the
 /// home shelf's highlighted game; idle branding when nobody claims it.
@@ -152,7 +151,8 @@ public sealed class SecondScreenBoxPage : ContentPage
             var showDex = owner == SecondScreenOwner.Pokedex && species is not null;
             var showOverview = owner == SecondScreenOwner.Summary && state?.Overview is not null;
             var bankDriven = owner == SecondScreenOwner.Bank;
-            var showSummary = bankDriven || (owner == SecondScreenOwner.Box && detail is { IsEmpty: false });
+            var compareDriven = owner == SecondScreenOwner.Compare && state?.Compared is not null;
+            var showSummary = bankDriven || compareDriven || (owner == SecondScreenOwner.Box && detail is { IsEmpty: false });
             var showHero = owner == SecondScreenOwner.Home && preview is not null;
             var showRoute = owner == SecondScreenOwner.Autopilot && state?.AutopilotRoute is not null;
 
@@ -163,6 +163,8 @@ public sealed class SecondScreenBoxPage : ContentPage
             {
                 if (bankDriven)
                     _inspector.Show(state!.Inspected?.Summary, state.Inspected?.LegalityPending == true, state.Inspected?.Caption, "EMPTY BANK SLOT");
+                else if (compareDriven)
+                    _inspector.Show(state!.Compared!.Summary, state.Compared.LegalityPending, state.Compared.Caption);
                 else
                     ShowBoxSummary(detail!);
             }
@@ -278,7 +280,7 @@ public sealed class SecondScreenBoxPage : ContentPage
     private View BuildOverview()
     {
         _overviewCanvas = new SKCanvasView { IsVisible = true };
-        _overviewCanvas.PaintSurface += PaintOverview;
+        _overviewCanvas.PaintSurface += PaintGuard.Wrap("SecondScreenBoxPage.PaintOverview", PaintOverview);
         return new Grid { IsVisible = false, Padding = new Thickness(14, 12), Children = { _overviewCanvas } };
     }
 
@@ -320,7 +322,9 @@ public sealed class SecondScreenBoxPage : ContentPage
         }
         canvas.Restore();
 
-        PksmPaint.CenterText(canvas, "SUMMARY ON THE TOP SCREEN  ·  L / R  NEXT POKéMON  ·  B  CLOSE",
+        // The Thor's top panel; on panels Android cannot tell apart (Gamma OS), the main one.
+        var arrangement = IPlatformApplication.Current?.Services.GetService<ISecondaryDisplayHost>()?.Arrangement ?? ScreenArrangement.MainOnTop;
+        PksmPaint.CenterText(canvas, $"SUMMARY ON {DualScreenLayout.MainScreenCaps(arrangement)}  ·  L / R  NEXT POKéMON  ·  B  CLOSE",
             info.Width / 2f, info.Height - hintHeight / 2, small, SKColors.White, shadow, SKTextAlign.Center);
     }
 
@@ -337,7 +341,7 @@ public sealed class SecondScreenBoxPage : ContentPage
         var scale = Math.Min(box.Width / bitmap.Width, box.Height / bitmap.Height);
         var w = bitmap.Width * scale;
         var h = bitmap.Height * scale;
-        using var image = SKImage.FromBitmap(bitmap);
+        var image = Services.SpriteImages.Of(bitmap);
         canvas.DrawImage(image, new SKRect(rect.MidX - w / 2, rect.MidY - h / 2, rect.MidX + w / 2, rect.MidY + h / 2), BoxGridRenderer.SpriteSampling);
     }
 

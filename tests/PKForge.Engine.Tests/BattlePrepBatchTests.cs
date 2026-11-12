@@ -90,6 +90,20 @@ public sealed class BattlePrepBatchTests
     }
 
     [Fact]
+    public void AnEmptiedNicknameTakesTheNicknameOff()
+    {
+        using var session = (SaveEngineSession)Seed();
+        session.ApplyEdit(0, 0, new EntityEdit(Nickname: "SPARKY"));
+        Assert.True(session.GetEntity(0, 0).IsNicknamed);
+
+        session.ApplyEdit(0, 0, new EntityEdit(Nickname: ""));
+
+        var detail = session.ReadEntity(0, 0);
+        Assert.False(session.GetEntity(0, 0).IsNicknamed);
+        Assert.Equal(detail.SpeciesName, detail.Nickname, ignoreCase: true);
+    }
+
+    [Fact]
     public void HyperTrainSuggestClearsFlagsBelowTheLevelGate()
     {
         using var session = Seed();

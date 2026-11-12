@@ -3,7 +3,6 @@ using PKForge.App.Services;
 using PKForge.App.Theme;
 using PKForge.Chrome;
 using SkiaSharp;
-using SkiaSharp.Views.Maui;
 using SkiaSharp.Views.Maui.Controls;
 
 namespace PKForge.App.Views;
@@ -85,7 +84,7 @@ public sealed class DialogueBox : IPadHandler
             WidthRequest = 18, HeightRequest = 12, InputTransparent = true, IsVisible = false,
             HorizontalOptions = LayoutOptions.End, VerticalOptions = LayoutOptions.End,
         };
-        arrow.PaintSurface += (_, args) =>
+        arrow.PaintSurface += PaintGuard.Wrap("DialogueBox arrow", (_, args) =>
         {
             var canvas = args.Surface.Canvas;
             canvas.Clear(SKColors.Transparent);
@@ -98,7 +97,7 @@ public sealed class DialogueBox : IPadHandler
             path.LineTo(w * 0.5f, h * 0.78f);
             path.Close();
             canvas.DrawPath(path, paint);
-        };
+        });
         return arrow;
     }
 

@@ -7,7 +7,7 @@ namespace PKForge.App.Views;
 
 /// <summary>
 /// Canvas-side game art for the Living Dex Autopilot: the bundled cartridge icon of a game
-/// (the same <see cref="GameArt.GetIconAsync"/> lookup, with its pair fallback, the Home shelf uses),
+/// (the same <see cref="GameArt.GetIconAsync(string)"/> lookup, with its pair fallback, the Home shelf uses),
 /// decoded once as a bitmap, and the PKSM pixel icons the plan rows speak with. When a game has no
 /// bundled art, <see cref="DrawGame"/> draws the generation-colored cartridge mark instead.
 /// </summary>

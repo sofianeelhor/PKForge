@@ -30,7 +30,7 @@ internal sealed class TouchScroller
     private float _grab;
     private bool _dragging;
     private readonly List<(long Ms, float Y)> _trail = [];
-    private IDispatcherTimer? _fling;
+    private Services.VsyncLoop? _fling;
     private IDispatcherTimer? _fade;
     private float _velocity; // units per ms
     private long _lastActive = long.MinValue / 2;
@@ -163,19 +163,16 @@ internal sealed class TouchScroller
         if (recent.Count < 2 || recent[^1].Ms == recent[0].Ms) return;
         _velocity = -(recent[^1].Y - recent[0].Y) / (recent[^1].Ms - recent[0].Ms);
         if (Math.Abs(_velocity) * 16 < _slop * 0.25f) return;
-        if (_fling is null)
+        // On each screen refresh, by the time that really passed: the glide is even, and as long
+        // as it was when a 16 ms timer stepped it.
+        _fling ??= new Services.VsyncLoop(elapsed =>
         {
-            _fling = _dispatcher.CreateTimer();
-            _fling.Interval = TimeSpan.FromMilliseconds(16);
-            _fling.Tick += (_, _) =>
-            {
-                var target = Math.Clamp(_offset() + _velocity * 16, 0, _max());
-                _velocity *= FlingFriction;
-                Touched();
-                _scrollTo(target);
-                if (target <= 0 || target >= _max() || Math.Abs(_velocity) * 16 < _slop * 0.05f) _fling!.Stop();
-            };
-        }
+            var target = Math.Clamp(_offset() + _velocity * elapsed, 0, _max());
+            _velocity *= MathF.Pow(FlingFriction, elapsed / 16f);
+            Touched();
+            _scrollTo(target);
+            return !(target <= 0 || target >= _max() || Math.Abs(_velocity) * 16 < _slop * 0.05f);
+        });
         _fling.Start();
     }
 }

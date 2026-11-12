@@ -81,7 +81,7 @@ public sealed class ValidateRoutingTests
     [Fact]
     public void RadicalRedGroundTruthSerializeOutputValidates()
     {
-        var path = LocalArtifact("radicalred-champ.sav");
+        var path = LocalArtifact("thor/retroarch/mGBA/Radical-red-champ.sav");
         if (path is null) return; // ground truth lives gitignored on the dev machine
 
         var engine = new SaveEngine();
@@ -98,7 +98,7 @@ public sealed class ValidateRoutingTests
     [Fact]
     public void UnboundGroundTruthSerializeOutputValidates()
     {
-        var path = LocalArtifact("unbound-v2111.srm");
+        var path = LocalArtifact("thor/retroarch/mGBA/Pokémon Unbound (v2.1.1.1).srm");
         if (path is null) return; // ground truth lives gitignored on the dev machine
 
         var engine = new SaveEngine();

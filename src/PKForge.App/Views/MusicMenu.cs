@@ -11,7 +11,10 @@ public static class MusicMenu
 {
     private static readonly (MusicPlace Place, string Name, string Detail)[] Places =
     [
-        (MusicPlace.Menus, "Menus", "Plays everywhere in PKForge outside the Poképark."),
+        (MusicPlace.Menus, "Menus", "Plays everywhere in PKForge that has no music of its own."),
+        (MusicPlace.Home, "Home", "Plays on the Home screen."),
+        (MusicPlace.Boxes, "Boxes", "Plays in the box browser."),
+        (MusicPlace.Bank, "Bank", "Plays in the Bank."),
         (MusicPlace.ParkDay, "Park by day", "Plays in the Poképark in the morning and the afternoon."),
         (MusicPlace.ParkNight, "Park by night", "Plays in the Poképark in the evening and at night."),
     ];
@@ -36,8 +39,15 @@ public static class MusicMenu
             [
                 new(music.IsOn ? "Pause" : "Play", IconPath: music.IsOn ? "pause" : "play"),
                 new("Skip to next track", IconPath: "skip"),
+                new($"Volume: {music.Volume}%", IconPath: "music", Detail: "How loud the music plays. Heard at once."),
                 .. Places.Select(p => new PadOption($"{p.Name}: {MusicPlaces.Describe(p.Place, music.SourceFor(p.Place), music.Library)}",
-                    IconPath: p.Place == MusicPlace.Menus ? "music" : "park", Detail: p.Detail)),
+                    IconPath: p.Place switch
+                    {
+                        MusicPlace.ParkDay or MusicPlace.ParkNight => "park",
+                        MusicPlace.Boxes => "box",
+                        MusicPlace.Bank => "bank",
+                        _ => "music",
+                    }, Detail: p.Detail)),
                 new($"Add music files ({music.Library.Count})", IconPath: "folder", Detail: "Pick audio files on your device to add to the library."),
                 new(music.Library.Count > 0 ? "Clear library" : "-", IconPath: "delete",
                     Detail: music.Library.Count > 0 ? "Empties the list. Your audio files stay on the device." : null),
@@ -53,6 +63,9 @@ public static class MusicMenu
             }
             switch (choice)
             {
+                case var v when v?.StartsWith("Volume: ", StringComparison.Ordinal) == true:
+                    await VolumeAsync(host, music);
+                    break;
                 case "Play": music.Play(); break;
                 case "Pause": music.Pause(); break;
                 case "Skip to next track": music.Skip(); break;
@@ -83,7 +96,38 @@ public static class MusicMenu
         }
     }
 
+    /// <summary>A screen with music of its own came to the front.</summary>
+    public static void Enter(MusicPlace place) =>
+        IPlatformApplication.Current?.Services.GetService<IMusicPlayer>()?.EnterPlace(place);
+
+    /// <summary>That screen left: the menus' music takes over, unless the next screen already
+    /// claimed the music (pages can appear before the previous one disappears).</summary>
+    public static void Leave(MusicPlace place)
+    {
+        if (IPlatformApplication.Current?.Services.GetService<IMusicPlayer>() is { } music && music.Place == place)
+            music.EnterPlace(MusicPlace.Menus);
+    }
+
     private static string PlaceName(MusicPlace place) => Places.First(p => p.Place == place).Name.ToLowerInvariant();
+
+    /// <summary>
+    /// The volume in steps of 10: picking one is heard at once and keeps the menu open on it, so
+    /// the player can try a few; B goes back.
+    /// </summary>
+    private static async Task VolumeAsync(Grid host, IMusicPlayer music)
+    {
+        var steps = Enumerable.Range(0, 100 / MusicPlaces.VolumeStep + 1).Select(i => 100 - i * MusicPlaces.VolumeStep).ToArray();
+        while (true)
+        {
+            var current = MusicPlaces.StepVolume(music.Volume, 0);
+            var options = steps.Select(v => new PadOption($"{v}%", IconPath: v == current ? "check" : "music",
+                Detail: v == 0 ? "Muted: the music keeps its place, silently." : null)).ToArray();
+            var choice = await PadMenu.ShowAtAsync(host, "Music volume", "Pick a volume; it is heard at once. B goes back.",
+                Array.IndexOf(steps, current), options);
+            if (choice is null || !int.TryParse(choice.TrimEnd('%'), out var volume)) return;
+            music.SetVolume(volume);
+        }
+    }
 
     /// <summary>
     /// A place's music: the default (the whole library for the menus, the menus' music for the
@@ -110,6 +154,7 @@ public static class MusicMenu
             };
             if (place != MusicPlace.Menus)
                 options.Add(Option("All tracks", source.Kind == MusicSourceKind.AllTracks, "music", "The whole library."));
+            options.Add(Option("Shuffle", source.Kind == MusicSourceKind.Shuffle, "shuffle", "The whole library, shuffled, whatever the play order."));
             options.Add(Option("Silence", source.Kind == MusicSourceKind.Silence, "close", "No music here."));
             for (var i = 0; i < library.Count; i++)
                 options.Add(Option(titles[i], ticked.Contains(library[i].DocumentId), "music"));
@@ -129,6 +174,7 @@ public static class MusicMenu
             music.SetSource(place, choice switch
             {
                 "Silence" => MusicSource.Silence,
+                "Shuffle" => MusicSource.Shuffle,
                 "All tracks" when place != MusicPlace.Menus => MusicSource.AllTracks,
                 _ => MusicSource.Default,
             });
@@ -146,7 +192,7 @@ public static class MusicMenu
         {
             var title = library[i].Title;
             seen[title] = seen.GetValueOrDefault(title) + 1;
-            titles[i] = seen[title] == 1 && title is not ("All tracks" or "Same as menus" or "Silence") ? title : $"{title} ({seen[title]})";
+            titles[i] = seen[title] == 1 && title is not ("All tracks" or "Same as menus" or "Silence" or "Shuffle") ? title : $"{title} ({seen[title]})";
         }
         return titles;
     }

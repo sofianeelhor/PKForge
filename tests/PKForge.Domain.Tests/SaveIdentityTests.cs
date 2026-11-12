@@ -120,6 +120,20 @@ public sealed class SaveIdentityResolverTests
     }
 
     [Fact]
+    public void ABackupCopyStartsHiddenAndStaysWhereThePlayerPutsIt()
+    {
+        // Nothing decided yet: off the shelf, in Hidden saves.
+        Assert.True(SaveIdentityResolver.Resolve(Emerald, null, isCopy: true).IsHidden);
+        // Shown by the player: on the shelf, scan after scan.
+        Assert.False(SaveIdentityResolver.Resolve(Emerald, new SaveIdentity("doc", KeepShown: true), isCopy: true).IsHidden);
+        // Hidden again by the player: their last word wins.
+        Assert.True(SaveIdentityResolver.Resolve(Emerald, new SaveIdentity("doc", Hidden: true, KeepShown: true), isCopy: true).IsHidden);
+        // An ordinary save is never hidden on its own.
+        Assert.False(SaveIdentityResolver.Resolve(Emerald, null).IsHidden);
+        Assert.False(new SaveIdentity("doc", KeepShown: true).IsEmpty);
+    }
+
+    [Fact]
     public void UnknownColorKeysAreIgnored()
     {
         Assert.Null(SaveIdentityResolver.Resolve(Emerald, new SaveIdentity("doc", ColorKey: "neon")).ColorKey);
@@ -282,6 +296,7 @@ public sealed class EmulatorSaveHintTests
     [InlineData("FireRed / LeafGreen", SaveLayoutFamily.FireRedLeafGreen)]
     [InlineData("Ruby / Sapphire", SaveLayoutFamily.RubySapphire)]
     [InlineData("Diamond / Pearl", SaveLayoutFamily.DiamondPearl)]
+    [InlineData("Red / Blue", SaveLayoutFamily.RedBlue)]
     public void AnUnplacedPairAsksOnceUntilChosen(string engineGame, SaveLayoutFamily family)
     {
         var guess = SaveIdentityRules.Guess(engineGame, 3, "main.sav", null, "main.sav");
@@ -293,10 +308,47 @@ public sealed class EmulatorSaveHintTests
     }
 
     [Theory]
+    [InlineData("Recharged Yellow", "recharged-yellow")]
+    [InlineData("Quetzal", "quetzal")]
+    [InlineData("Soul Gold", "soulgold")]
+    [InlineData("Origin HeartGold", "originheartgold")]
+    [InlineData("Elite Redux", "eliteredux")]
+    [InlineData("Fire Red Extended", "firered-extended")]
+    [InlineData("Crystal Advance Redux", "crystal-advance-redux")]
+    public void PickingAHacksOwnGameKeepsItsCartridgeArt(string engineGame, string choiceId)
+    {
+        var guess = SaveIdentityRules.Guess(engineGame, 3, "main.sav", null, "main.sav");
+        var resolved = SaveIdentityResolver.Resolve(guess, new SaveIdentity("doc", GameChoiceId: choiceId));
+        Assert.Equal($"Pokémon {engineGame}", resolved.GameLabel);
+        Assert.Equal($"Pokémon {engineGame}", resolved.ArtLabel);
+    }
+
+    [Fact]
+    public void RedBlueOffersEachCartridgeAndKeepsTheArtBlankUntilChosen()
+    {
+        var guess = SaveIdentityRules.Guess("Red / Blue", 1, "Pokemon Red.sav", null, "Pokemon Red.sav");
+        Assert.Equal("Pokémon Red / Blue", guess.Label);
+        Assert.Null(guess.ArtLabel);
+
+        var choices = SaveIdentityRules.ChoicesFor(guess.Family, guess.Label).Where(c => !c.IsHack).ToList();
+        Assert.Equal(["Pokémon Red", "Pokémon Blue (INT)", "Pokémon Green (JP)", "Pokémon Blue (JP)"], choices.Select(c => c.Label));
+        Assert.Equal(["Pokémon Red", "Pokémon Blue", "Pokémon Blue [INT]/Green [JP]", "Pokémon Blue [JP]"], choices.Select(c => c.ArtLabel));
+        Assert.All(choices, c => Assert.Equal(SaveFormat.Standard, SaveIdentityRules.FormatOfChoice(c.Id)));
+        Assert.Equal(SaveFormat.Standard, SaveIdentityRules.FormatOfChoice("hack-rb"));
+
+        var blue = choices.Single(c => c.Id == "blue-int");
+        var resolved = SaveIdentityResolver.Resolve(guess, new SaveIdentity("doc", GameChoiceId: blue.Id));
+        Assert.Equal("Pokémon Blue (INT)", resolved.GameLabel);
+        Assert.Equal("Pokémon Blue", resolved.ArtLabel);
+        Assert.False(SaveIdentityRules.NeedsEditionChoice(guess, blue.Id));
+    }
+
+    [Theory]
     [InlineData("LeafGreen")]
     [InlineData("Sapphire")]
     [InlineData("Pearl")]
     [InlineData("Emerald")]
+    [InlineData("Yellow")]
     public void AnIdentifiedEditionNeverAsks(string engineGame)
     {
         var guess = SaveIdentityRules.Guess(engineGame, 3, "main.sav", null, "main.sav");

@@ -91,6 +91,9 @@ public sealed record MonSummary(
     /// slot, empty slots included), or null when legality was not analyzed.</summary>
     public MoveLegality? MoveVerdicts { get; init; }
 
+    /// <summary>The identity Pokémon History knows this Pokémon by, or null when history cannot follow it.</summary>
+    public string? HistoryKey { get; init; }
+
     public int IvTotal => IVs.Sum();
     public int EvTotal => EVs.Sum();
     public int BaseTotal => BaseStats.Sum();

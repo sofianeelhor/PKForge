@@ -25,12 +25,12 @@ public static class ParkCaptionsPaint
             var text = caption.Text;
             using var font = fontFor(text, size);
             var most = screenWidth * .4f;
-            if (font.MeasureText(text, paint) > most)
+            if (font.MeasureFallback(text, paint) > most)
             {
-                while (text.Length > 1 && font.MeasureText(text + "…", paint) > most) text = text[..^1];
+                while (text.Length > 1 && font.MeasureFallback(text + "…", paint) > most) text = text[..^1];
                 text += "…";
             }
-            var width = font.MeasureText(text, paint) + size;
+            var width = font.MeasureFallback(text, paint) + size;
             var height = size * 1.35f;
             var rect = SKRect.Create(Math.Clamp(caption.X - width / 2, 4, screenWidth - width - 4), caption.Y - height, width, height);
             while (placed.Any(r => r.IntersectsWith(rect))) rect.Offset(0, -(height + 4));
@@ -38,7 +38,7 @@ public static class ParkCaptionsPaint
             paint.Color = new SKColor(16, 22, 30, (byte)(170 * caption.Alpha));
             c.DrawRoundRect(rect, height / 2, height / 2, paint);
             paint.Color = SKColors.White.WithAlpha((byte)(255 * caption.Alpha));
-            c.DrawText(text, rect.MidX, rect.Top + height * .76f, SKTextAlign.Center, font, paint);
+            c.DrawTextFallback(text, rect.MidX, rect.Top + height * .76f, SKTextAlign.Center, font, paint);
         }
     }
 

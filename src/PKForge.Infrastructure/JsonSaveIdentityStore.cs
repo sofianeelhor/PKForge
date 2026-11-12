@@ -34,6 +34,7 @@ public sealed class JsonSaveIdentityStore : ISaveIdentityStore
         {
             DisplayName = string.IsNullOrWhiteSpace(identity.DisplayName) ? null : identity.DisplayName.Trim(),
             ColorKey = SaveIdentityPalette.IsKnown(identity.ColorKey) ? identity.ColorKey : null,
+            ArtKey = CustomGameArt.IsValidKey(identity.ArtKey) ? identity.ArtKey : null,
         };
         lock (_gate)
         {
@@ -59,11 +60,7 @@ public sealed class JsonSaveIdentityStore : ISaveIdentityStore
         if (_path is null) return;
         try
         {
-            var directory = Path.GetDirectoryName(_path);
-            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-            var temp = _path + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(_entries.Values.ToList()));
-            File.Move(temp, _path, overwrite: true);
+            AtomicFile.WriteText(_path, JsonSerializer.Serialize(_entries.Values.ToList()));
         }
         catch (IOException) { } // names are a convenience; never fail a scan over them
         catch (UnauthorizedAccessException) { }
@@ -77,9 +74,10 @@ public sealed class JsonSaveIdentityStore : ISaveIdentityStore
         {
             // Entries written by older builds may carry only retired detection flags: drop them.
             foreach (var entry in JsonSerializer.Deserialize<List<SaveIdentity>>(File.ReadAllText(path)) ?? [])
-                if (!string.IsNullOrWhiteSpace(entry.DocumentId) && !entry.IsEmpty) entries[entry.DocumentId] = entry;
+                if (entry is not null && !string.IsNullOrWhiteSpace(entry.DocumentId) && !entry.IsEmpty) entries[entry.DocumentId] = entry;
         }
         catch (JsonException) { }
+        catch (NotSupportedException) { }
         catch (IOException) { }
         return entries;
     }

@@ -4,7 +4,6 @@ using PKForge.App.Theme;
 using PKForge.Chrome;
 using PKForge.Domain;
 using SkiaSharp;
-using SkiaSharp.Views.Maui.Controls;
 using SkiaSharp.Views.Maui;
 
 namespace PKForge.App.Views;
@@ -21,15 +20,17 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
     private readonly PokeparkTreasureStore _treasures;
     private readonly PokeparkDaycareService _daycare;
     private readonly PokeparkWildsStore _wilds;
+    private readonly PokeparkWeatherService _weather;
     private readonly HashSet<string> _restored = new();
     private IReadOnlyDictionary<string, (int Friendship, int Rivalry)> _relations = new Dictionary<string, (int, int)>();
-    private long _lastCareSave;
+    private long _lastCareSave, _lastWeatherCheck;
     private readonly PokeparkScene _scene;
     private const string CaptionsKey = "pkforge.pokepark.captions.v1";
     private readonly ParkCanvas _canvas = new();
     private readonly Grid _host;
     private readonly Label _status;
-    private readonly IDispatcherTimer _timer;
+    private readonly VsyncLoop _timer;
+    private float _sinceFrame;
     private readonly Stopwatch _clock = new();
     private readonly SemaphoreSlim _widgetPublishGate = new(1, 1);
     private readonly object _renderGate = new();
@@ -45,11 +46,11 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
     public PokeparkPage(PokeparkService park, ISpriteService sprites, PokeparkSpriteService walking,
         PokeparkNarrativeMemory narrativeMemory, PokeparkSocialService social,
         ParkOfflineJournalService offlineJournal, PokeparkCareStore care, PokeparkTreasureStore treasures,
-        PokeparkDaycareService daycare, PokeparkWildsStore wilds)
+        PokeparkDaycareService daycare, PokeparkWildsStore wilds, PokeparkWeatherService weather)
     {
         _park = park; _sprites = sprites; _walking = walking;
         _narrativeMemory = narrativeMemory; _social = social; _offlineJournal = offlineJournal; _care = care; _treasures = treasures;
-        _daycare = daycare; _wilds = wilds;
+        _daycare = daycare; _wilds = wilds; _weather = weather;
         _scene = new(sprites, walking) { NatureOf = park.NatureOf, ShowCaptions = Preferences.Default.Get(CaptionsKey, true) };
         LoadSky();
         Title = "Poképark";
@@ -60,6 +61,10 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
         _canvas.Touch += (_, e) =>
         {
             e.Handled = true;
+            // The first touch on a sleeping park only wakes it.
+            if (e.ActionType == SKTouchAction.Pressed && WakeUp()) { _swallowTouch = true; return; }
+            if (_swallowTouch) { if (e.ActionType is SKTouchAction.Released or SKTouchAction.Cancelled) _swallowTouch = false; return; }
+            _lastInput = _clock.ElapsedMilliseconds;
             if (!_menuOpen) OnTouch(e);
             // A finger lifted while a dialogue is open (a pat that opened one) is still let go of.
             else if (e.ActionType is SKTouchAction.Released or SKTouchAction.Cancelled) _touches.Remove(e.Id);
@@ -110,14 +115,15 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
         _elsewhere.TextColor = Color.FromRgb(0xf4, 0xc8, 0x4a); _elsewhere.FontSize = UiTokens.TextBody * .85; _elsewhere.LineBreakMode = LineBreakMode.TailTruncation;
         // At the very bottom, just above the button hints.
         _now.HorizontalTextAlignment = _elsewhere.HorizontalTextAlignment = TextAlignment.Center;
-        var bottom = new VerticalStackLayout { VerticalOptions = LayoutOptions.End, Children = { _nowPill, footer } };
+        var bottom = _bottom = new VerticalStackLayout { VerticalOptions = LayoutOptions.End, Children = { _nowPill, footer } };
         footer.VerticalOptions = LayoutOptions.Start;
+        // The resident card and dialogue box stand above the button hints, never over them.
+        footer.SizeChanged += (_, _) => PokeparkCardOverlay.ReservedBottom = footer.Height > 0 ? footer.Height : 0;
         _host = new Grid { Children = { _canvas.View, _statusPill, bottom } };
         Content = _host;
-        _timer = Dispatcher.CreateTimer();
-        // PMD frame durations count 60ths of a second.
-        _timer.Interval = TimeSpan.FromMilliseconds(16);
-        _timer.Tick += (_, _) =>
+        // PMD frame durations count 60ths of a second. The park ticks on the screen's own
+        // refresh, so its frames land evenly (a 16 ms timer drifted and skipped some).
+        _timer = new VsyncLoop(elapsed =>
         {
             if (_clock.ElapsedMilliseconds - _lastJournalUpdate >= 250)
             {
@@ -127,13 +133,26 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
                 PollHighlights();
                 UpdateNow();
                 UpdateMusic();
+                if (_clock.ElapsedMilliseconds - _lastWeatherCheck >= 600_000) { _lastWeatherCheck = _clock.ElapsedMilliseconds; _ = RefreshWeatherAsync(); }
             }
             if (_clock.ElapsedMilliseconds - _lastCareSave >= 30_000) SaveCare();
             CheckLongPress(_clock.ElapsedMilliseconds);
+            CheckScreensaver();
             // 60 frames a second while the camera moves or a finger is down, 30 otherwise: the PMD
-            // animations and the park's life look the same at 30, and it halves the drawing.
-            if (FullRate() || (++_frame & 1) == 0) _canvas.InvalidateSurface();
-        };
+            // animations and the park's life look the same at 30, and it halves the drawing. As a
+            // screensaver, slower still (and slowest with reduced motion), to spare the battery.
+            var moving = FullRate();
+            // A frame every stride sixtieths of a second, on a refresh: 60, 30 or fewer a second
+            // whatever the screen's own rate, and never more often when refreshes come late.
+            _sinceFrame += elapsed;
+            var period = ParkScreensaver.FrameStride(_asleep, moving, (int)MotionSetting.Level) * 1000f / 60f;
+            if (_sinceFrame >= period - 6f)
+            {
+                _sinceFrame = Math.Clamp(_sinceFrame - period, 0f, period / 2);
+                _canvas.InvalidateSurface();
+            }
+            return true;
+        });
     }
 
     // ── Highlights: something worth watching has started somewhere ──────────────
@@ -240,6 +259,73 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
         _scene.Notify("Snap! Photo saved to the album (Options)");
     }
 
+    // ── Screensaver: the park alone on the screen after a while with no input ──────────
+
+    private const string ScreensaverKey = "pkforge.pokepark.screensaver.v1";
+    private readonly VerticalStackLayout _bottom;
+    private long _lastInput;
+    private bool _asleep, _swallowTouch, _sleepSpectating;
+
+    private static int ScreensaverMinutes
+    {
+        get => Preferences.Default.Get(ScreensaverKey, 0);
+        set => Preferences.Default.Set(ScreensaverKey, value);
+    }
+
+    private void CheckScreensaver()
+    {
+        if (_asleep || _menuOpen || _touches.Count > 0 || _scene.Life.Game is not null) return;
+        if (!ParkScreensaver.ShouldSleep(ScreensaverMinutes, _lastInput, _clock.ElapsedMilliseconds)) return;
+        _asleep = true;
+        _statusPill.IsVisible = _bottom.IsVisible = false;
+        _scene.Screensaver = true;
+        // The camera wanders to whatever is happening, as when spectating.
+        _sleepSpectating = !_spectating;
+        if (_sleepSpectating) { _spectating = true; _watching = null; _watchingSince = 0; }
+        KeepScreenOn(true);
+        AppLog.Info("pokepark", "Screensaver on");
+    }
+
+    /// <summary>Any input: notes it, and wakes a sleeping park (true when it was asleep, so the
+    /// input only wakes it).</summary>
+    private bool WakeUp()
+    {
+        _lastInput = _clock.ElapsedMilliseconds;
+        if (!_asleep) return false;
+        _asleep = false;
+        _statusPill.IsVisible = _bottom.IsVisible = true;
+        _scene.Screensaver = false;
+        if (_sleepSpectating) { _spectating = false; _watching = null; }
+        _sleepSpectating = false;
+        KeepScreenOn(false);
+        return true;
+    }
+
+    // The screen stays on only while the park is a screensaver.
+    private static void KeepScreenOn(bool on)
+    {
+#if ANDROID
+        var window = Platform.CurrentActivity?.Window;
+        if (on) window?.AddFlags(Android.Views.WindowManagerFlags.KeepScreenOn);
+        else window?.ClearFlags(Android.Views.WindowManagerFlags.KeepScreenOn);
+#endif
+    }
+
+    private async Task ScreensaverAsync()
+    {
+        var choices = ParkScreensaver.Choices.Select(m => new PadOption(m == 0 ? "Off" : $"After {m} minutes",
+            Detail: m == ScreensaverMinutes ? "Current" : null)).ToArray();
+        var choice = await PadMenu.ShowAsync(_host, "Screensaver",
+            "With no touch or button for a while, the park hides its menus and runs on its own, following what happens. " +
+            "The screen stays on only then, and it draws fewer frames to spare the battery. Any touch or button wakes it.", choices);
+        if (choice is null) return;
+        var index = Array.FindIndex(choices, c => c.Label == choice);
+        if (index < 0) return;
+        ScreensaverMinutes = ParkScreensaver.Choices[index];
+        _lastInput = _clock.ElapsedMilliseconds;
+        _scene.Notify(ScreensaverMinutes == 0 ? "Screensaver off" : $"Screensaver after {ScreensaverMinutes} minutes with no input");
+    }
+
     private bool Offering => _offered is not null && _clock.ElapsedMilliseconds - _offeredAt < OfferFor;
 
     private void ToggleSpectate()
@@ -256,7 +342,6 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
         _scene.Notify("Spectating off");
     }
 
-    private int _frame;
     private (float X, float Y, float Scale) _lastView;
 
     private bool FullRate()
@@ -332,6 +417,8 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
         IPlatformApplication.Current?.Services.GetService<GamepadRouter>()?.Push(this);
         App.Resumed += Resume; App.Suspended += Suspend;
         _clock.Start(); _timer.Start();
+        _lastInput = _clock.ElapsedMilliseconds;
+        _ = RefreshWeatherAsync();
         // The persisted roster is cheap and gives the first paint immediately.
         // Initialization only scans on first use and refreshes this view afterwards.
         Reload();
@@ -347,6 +434,27 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
             _secondaryShowCts = new CancellationTokenSource();
             _ = ShowSecondaryJournalAsync(secondary, _secondaryShowCts.Token);
         }
+        if (PendingScreen is { } screen)
+        {
+            PendingScreen = null;
+            Dispatcher.Dispatch(async () => await OpenScreenAsync(screen));
+        }
+    }
+
+    /// <summary>A screen of the park a launcher widget asked for ("walker"); opened once the park is in front.</summary>
+    public string? PendingScreen { get; set; }
+
+    /// <summary>Opens one of the park's screens on behalf of a widget or a shortcut.</summary>
+    public async Task OpenScreenAsync(string screen)
+    {
+        if (screen != "walker") return;
+        // The park tells its "while you were away" stories first; the Pokéwalker opens after them.
+        await Task.Delay(1500);
+        for (var i = 0; i < 600 && _menuOpen && _active; i++) await Task.Delay(200);
+        if (!_active || _menuOpen) return;
+        _menuOpen = true;
+        try { await WalkerScreen.ShowAsync(_host, [.. await Task.Run(_park.LoadRoster)]); }
+        finally { _menuOpen = false; }
     }
 
     private static async Task ShowSecondaryJournalAsync(PKForge.Domain.ISecondaryDisplayHost host, CancellationToken cancellationToken)
@@ -357,6 +465,7 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
     }
     protected override void OnDisappearing()
     {
+        WakeUp();
         SaveCare();
         _offlineJournal.MarkCurrent();
         _active = false; _timer.Stop(); _clock.Stop();
@@ -374,6 +483,7 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
     private void Resume() { if (_active) { _clock.Start(); _timer.Start(); } }
     private void Suspend()
     {
+        WakeUp();
         SaveCare();
         _offlineJournal.MarkCurrent();
         _timer.Stop(); _clock.Stop(); if (WidgetDirty) _ = PublishWidgetAsync();
@@ -468,6 +578,8 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
                 residents.ToDictionary(a => a.Resident.Id, a => a.Care), lastSeen.LocalDateTime, DateTime.Now, new Random(), _scene.Life.OldFriends);
         }
         foreach (var mon in _scene.Residents) _restored.Add(mon.Id);
+        // Friendships are kept by who each resident is, so one that comes back finds its friends.
+        _social.Souls = _scene.Residents.ToDictionary(r => r.Id, r => r.Identity);
         _relations = _social.Relations(now);
         if (!_chronicleLoaded)
         {
@@ -544,25 +656,10 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
         if (!await _widgetPublishGate.WaitAsync(0).ConfigureAwait(false)) return;
         try
         {
+            // The widget paints its own scene from the roster, the journal and the residents'
+            // sprites (already loaded here); it never copies this page's camera view.
             var revision = Volatile.Read(ref _widgetRevision);
-            var frames = await Task.Run(() =>
-            {
-                var result = new List<byte[]>(PokeparkWidgetPublisher.FrameCount);
-                using var bitmap = new SKBitmap(PokeparkWidgetPublisher.FrameWidth, PokeparkWidgetPublisher.FrameHeight);
-                using var canvas = new SKCanvas(bitmap);
-                for (var frame = 0; frame < PokeparkWidgetPublisher.FrameCount; frame++)
-                {
-                    lock (_renderGate)
-                        _scene.DrawWidgetFrame(canvas, bitmap.Width, bitmap.Height, frame);
-                    using var image = SKImage.FromBitmap(bitmap);
-                    using var data = image.Encode(SKEncodedImageFormat.Png, 90);
-                    result.Add(data.ToArray());
-                }
-                return result;
-            }).ConfigureAwait(false);
-            try { PokeparkWidgetPublisher.Publish(frames); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            { Debug.WriteLine($"Poképark widget: {ex.Message}"); }
+            await PokeparkWidgetPublisher.RefreshAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
             Volatile.Write(ref _publishedWidgetRevision, revision);
         }
         finally { _widgetPublishGate.Release(); }
@@ -580,8 +677,9 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
                 PokeparkSource.Disabled => "Disabled",
                 _ => "Save + Bank"
             };
-            var options = new List<string> { "Today's goals", "Photo album", "Daycare", "How to play", "Park journal", "Time and weather", "Music", "Treasures",
-                "Auto-fill mode", "Invite Pokémon", "Empty park", "Widget help", "Credits", _scene.ShowCaptions ? "Captions: On" : "Captions: Off",
+            var options = new List<string> { "Today's goals", "Photo album", "Daycare", "Pokéwalker", "Home-screen widgets", "How to play", "Park journal", "Time and weather", "Music", "Treasures",
+                ScreensaverMinutes == 0 ? "Screensaver: Off" : $"Screensaver: {ScreensaverMinutes} min",
+                "Auto-fill mode", $"Auto-fill size: {_park.Settings.Count}", "Invite Pokémon", "Empty park", "Credits", _scene.ShowCaptions ? "Captions: On" : "Captions: Off",
                 ParkCanvas.UsesGpu ? "Drawing: GPU" : "Drawing: CPU" };
 #if DIAGNOSTIC
             // Frame times over the park, for measuring on a device.
@@ -625,6 +723,7 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
                 });
                 Reload();
             }
+            if (choice?.StartsWith("Auto-fill size", StringComparison.Ordinal) == true) await AutoFillSizeAsync();
             if (choice == "Invite Pokémon") await PokeparkCardOverlay.ShowDialogueAsync(_host, "Park guide", "Open a Pokémon’s action menu in your save boxes or Bank, then choose Send to Poképark. Its original stays right where it is.");
             else if (choice == "Empty park" && _scene.Residents.Count > 0 &&
                      await PadMenu.ConfirmAsync(_host, "Empty the park?", $"Remove all {_scene.Residents.Count} residents from Poképark? Their original Pokémon stay in their save or Bank.", "Empty park"))
@@ -632,14 +731,19 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
                 _park.RemoveAllVisitors();
                 Reload();
             }
-            else if (choice == "Widget help")
-                await PadMenu.ShowAsync(_host, "A meadow on your home screen", "Add PKForge Poképark in Cocoon's widget picker. Resize it to give your Pokémon more room. The full meadow shows a quiet, living moment; tap it to return here. Your residents are saved between visits.", "OK");
+            else if (choice == "Home-screen widgets")
+            {
+                _menuOpen = false;
+                await WidgetMenu.ShowAsync(_host, HomeWidgetTab.Pokepark);
+            }
             else if (choice == "Credits") { _menuOpen = false; await CreditsAsync(); }
             else if (choice == "Time and weather") await SkyAsync();
+            else if (choice?.StartsWith("Screensaver", StringComparison.Ordinal) == true) await ScreensaverAsync();
             else if (choice == "Music") await MusicMenu.ShowAsync(_host, _scene.Notify);
             else if (choice == "How to play") await GuideAsync();
             else if (choice == "Today's goals") await GoalsAsync();
             else if (choice == "Daycare") { _menuOpen = false; await DaycareAsync(); }
+            else if (choice == "Pokéwalker") await WalkerScreen.ShowAsync(_host, [.. _scene.Residents]);
             else if (choice == "Treasures")
             {
                 var found = _treasures.Load().OrderByDescending(t => t.Value).Select(t => $"{t.Key} ×{t.Value}").ToArray();
@@ -649,6 +753,22 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
             }
         }
         finally { _menuOpen = false; }
+    }
+
+    // How many residents auto-fill brings: everyone already there stays, a bigger size invites
+    // newcomers now, a smaller one only applies the next time auto-fill picks.
+    private async Task AutoFillSizeAsync()
+    {
+        var sizes = new[] { 3, 6, 9, 12, 15, 18, 24, PokeparkService.MaximumResidents }.Distinct().Where(n => n <= PokeparkService.MaximumResidents).ToArray();
+        var current = _park.Settings.Count;
+        var pick = await PadMenu.ShowAsync(_host, "Auto-fill size", $"How many Pokémon auto-fill puts in the park (now {current}, up to {PokeparkService.MaximumResidents}). Nobody already living here is sent away.",
+            sizes.Select(n => n == current ? $"{n} residents (current)" : $"{n} residents").ToArray());
+        if (pick is null || !int.TryParse(pick.Split(' ')[0], out var count) || count == current) return;
+        _park.SaveSettings(_park.Settings with { Count = count });
+        var arrived = await Task.Run(_park.TopUpAutoFill);
+        Reload();
+        _scene.Notify(arrived > 0 ? $"{arrived} new {(arrived == 1 ? "resident" : "residents")} moved in"
+            : count < _scene.Residents.Count ? $"Auto-fill size {count}: everyone here stays" : $"Auto-fill size {count}");
     }
 
     // The park's latest moments for the lower screen, newest first.
@@ -734,7 +854,7 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
                 if (guests.Length < PokeparkDaycareService.Capacity && _scene.Residents.Count > guests.Length)
                     options.Add(new PadOption("Leave a Pokémon here", IconPath: "park", Detail: $"{guests.Length} of {PokeparkDaycareService.Capacity} places taken."));
                 options.Add(new PadOption($"Write back to saves: {(writes ? "On" : "Off")}", IconPath: "settings",
-                    Detail: writes ? "EXP and eggs go back to your saves and Bank, where the game allows it. A restore point comes first." : "Everything that happens here stays in the park."));
+                    Detail: writes ? "EXP and eggs go back to your saves and Bank, where the game allows it." : "Everything that happens here stays in the park."));
                 options.Add(new PadOption("How the daycare works", IconPath: "info"));
                 var note = guests.Length == 0 ? "Blissey keeps the daycare by the cabin, and Audino helps." : $"Looking after {string.Join(", ", guests.Select(g => g.Name))}.";
                 var choice = await PadMenu.ShowAsync(_host, "Blissey's daycare", note, options.ToArray());
@@ -1102,17 +1222,6 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
         };
     }
 
-    private static ParkEnvironmentId HomeHabitat(ParkPokemon mon)
-    {
-        var types = HabitatCatalog.TypesFor(mon.Species, mon.Form);
-        if (types.Contains(ParkType.Water)) return ParkEnvironmentId.WaterfallLake;
-        if (types.Contains(ParkType.Fire) || types.Contains(ParkType.Ground))
-            return ParkEnvironmentId.EmberGrove;
-        if (types.Contains(ParkType.Flying) || types.Contains(ParkType.Ice) || types.Contains(ParkType.Rock))
-            return ParkEnvironmentId.SkySummit;
-        return ParkEnvironmentId.Commons;
-    }
-
     private async Task ShowJournalAsync()
     {
         var offline = _offlineJournal.Load().Journal.Select(e => (At: e.Timestamp, e.Text));
@@ -1333,8 +1442,8 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
             "One left hungry and worn out for too long falls unwell: it drags its feet and sweats, and the healers come to check on it. A berry from your hand puts it back on its feet.",
             "On dry evenings a Fire type may light a campfire, and the others come to sit round it until it dies down. Rain puts it out.",
             "Options, Today's goals: three small things to do each day. Do all three and the park throws a party, and you find something rare.",
-            "They have their own lives: friends, lovers, sworn rivals, troublemakers who steal and trip, and someone who stands up to them. The journal tells what happened; the lower screen follows the one you picked.",
-            "Options: Time and weather keeps the real clock and the day's weather, or lets you pick your own. Treasures lists what was dug up. Wild Pokémon wander in now and then: tap one to say hello.",
+            $"They have their own lives: friends, lovers, sworn rivals, troublemakers who steal and trip, and someone who stands up to them. The journal tells what happened; {DualScreenLayout.SecondScreenName(IPlatformApplication.Current?.Services.GetService<ISecondaryDisplayHost>()?.Arrangement ?? ScreenArrangement.MainOnTop)} follows the one you picked.",
+            "Options: Time and weather keeps the real clock and the day's weather, or lets you pick your own. Treasures lists what was dug up. Wild Pokémon wander in now and then: tap one to say hello, or to befriend it and bring it to your Bank. Options, Screensaver lets the park run on its own when you leave it be.",
         ];
         for (var i = 0; i < pages.Length; i++)
             await PokeparkCardOverlay.ShowDialogueAsync(_host, $"How to play  {i + 1}/{pages.Length}", pages[i]);
@@ -1353,15 +1462,46 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
     private async Task SkyAsync()
     {
         var phase = await PadMenu.ShowAsync(_host, "Time of day",
-            "Automatic follows your clock: mornings, evenings and nights come as they do outside. Or pick one and the park stays there.",
+            "Automatic follows this device's clock: mornings, evenings and nights come as they do outside. Nothing is sent anywhere. Or pick one and the park stays there.",
             "Automatic", "Morning", "Day", "Evening", "Night");
         if (phase is null) return;
+        var city = _weather.City;
         var weather = await PadMenu.ShowAsync(_host, "Weather",
-            "Automatic changes the sky a few times a day. Or pick one and it stays until you change it.",
-            "Automatic", "Sunny", "Cloudy", "Rain", "Storm");
+            "Automatic changes the sky a few times a day; nothing is sent anywhere. Real weather (optional) follows a city you type: only that name, " +
+            "then the city's coordinates, go to Open-Meteo, once an hour at most. Never your location. Or pick a sky and it stays.",
+            new PadOption("Automatic", Detail: "The park's own sky."),
+            new PadOption(city is null ? "Real weather: Off" : $"Real weather: {city}", Detail: "Sends only a city name."),
+            new PadOption("Sunny"), new PadOption("Cloudy"), new PadOption("Rain"), new PadOption("Storm"));
         if (weather is null) return;
-        Preferences.Default.Set(SkyKey, $"{(phase == "Automatic" ? "auto" : phase)}|{(weather == "Automatic" ? "auto" : weather)}");
+        var real = weather.StartsWith("Real weather", StringComparison.Ordinal);
+        if (real)
+        {
+            var typed = await TextPopup.ShowLineAsync(_host, "Real weather",
+                "City, e.g. Lyon (only this is sent)", city ?? "", confirm: "OK");
+            if (typed is null) return;
+            _weather.City = typed;
+            real = _weather.City is not null;
+        }
+        else _weather.City = null;
+        Preferences.Default.Set(SkyKey, $"{(phase == "Automatic" ? "auto" : phase)}|{(weather == "Automatic" || real ? "auto" : weather)}");
         LoadSky();
+        if (real)
+        {
+            var reading = await RefreshWeatherAsync();
+            _scene.Notify(reading is null
+                ? $"Could not read the weather in {_weather.City} right now: the park keeps its own sky"
+                : $"Real weather in {_weather.City}: {reading.Weather}");
+        }
+    }
+
+    // The real weather, when it is on: read again at most once an hour; offline, silently nothing.
+    private async Task<ParkWeatherReading?> RefreshWeatherAsync()
+    {
+        _scene.RealWeather = _weather.Current;
+        if (_weather.City is null) return null;
+        var reading = await _weather.RefreshAsync();
+        _scene.RealWeather = _weather.Current;
+        return reading;
     }
 
     // ── Games ────────────────────────────────────────────────────────────────
@@ -1527,6 +1667,8 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
         if (_scene.VisitorAt(location.X / _canvas.CanvasSize.Width, location.Y / _canvas.CanvasSize.Height) is { } wild)
         {
             if (ParkLife.IsKeeper(wild)) { if (!_menuOpen) MainThread.BeginInvokeOnMainThread(() => _ = DaycareAsync()); return; }
+            // A wild one (not a friend back from the Wilds): say hello, or try to catch it.
+            if (_scene.Life.CatchTarget(wild) is not null) { if (!_menuOpen) MainThread.BeginInvokeOnMainThread(() => _ = WildAsync(wild)); return; }
             var reply = _scene.Life.Befriend(wild);
             if (reply.Gift is { } gift) _treasures.Add(gift);
             var friend = _scene.Life.OldFriendOf(wild);
@@ -1560,17 +1702,116 @@ public sealed class PokeparkPage : ContentPage, IPadHandler, IPadStickHandler
         else _lastTapTime = now;
     }
 
+    // ── Catching a wild visitor ─────────────────────────────────────────────
+
+    private async Task WildAsync(string id)
+    {
+        if (_menuOpen || _scene.Life.CatchTarget(id) is not { } target) return;
+        _menuOpen = true;
+        try
+        {
+            var choice = await PadMenu.ShowAsync(_host, $"A wild {target.Name}{(target.Shiny ? " (shiny!)" : "")}", $"Level {target.Level}. {target.Hint}",
+                new PadOption("Say hello", IconPath: "park", Detail: "It may leave you a little gift, or run off."),
+                new PadOption("Try to befriend it", IconPath: "ball", Detail: $"Win it over and it comes with you, to your Bank as a legal Pokémon. {ParkCatch.Tries} tries at most."),
+                new PadOption("Leave it be"));
+            if (choice == "Say hello")
+            {
+                var reply = _scene.Life.Befriend(id);
+                if (reply.Gift is { } gift) _treasures.Add(gift);
+                if (reply.Line is { } line) await PokeparkCardOverlay.ShowDialogueAsync(_host, target.Name, line);
+                return;
+            }
+            if (choice != "Try to befriend it") return;
+            while (_scene.Life.CatchTarget(id) is { } now)
+            {
+                var approach = await PadMenu.ShowAsync(_host, $"Befriend the {now.Name}", $"{now.Hint} {now.TriesLeft} {(now.TriesLeft == 1 ? "try" : "tries")} left.",
+                    new PadOption("Offer a berry", IconPath: "berry", Detail: "For the curious and the hungry."),
+                    new PadOption("Crouch and wait", IconPath: "park", Detail: "For the shy and the calm."),
+                    new PadOption("Toss a ball to play", IconPath: "ball", Detail: "For the playful and the bold."));
+                var picked = approach switch
+                {
+                    "Offer a berry" => ParkApproach.Berry, "Crouch and wait" => ParkApproach.Wait, "Toss a ball to play" => ParkApproach.Ball, _ => (ParkApproach?)null
+                };
+                if (picked is not { } way) return;
+                var result = _scene.Life.TryCatch(id, way);
+                await PokeparkCardOverlay.ShowDialogueAsync(_host, now.Name, result.Line);
+                if (result.Outcome == ParkCatchOutcome.Caught && result.Target is { } caught)
+                {
+                    var outcome = await SendCaughtAsync(caught);
+                    await PokeparkCardOverlay.ShowDialogueAsync(_host, caught.Name, outcome);
+                    return;
+                }
+                if (result.Outcome == ParkCatchOutcome.Fled) return;
+            }
+        }
+        finally { _menuOpen = false; }
+    }
+
+    // A befriended wild one goes to the Bank as a legal Pokémon of a game the player picks:
+    // generated by the offline legalizer, as a wild encounter of that game would be.
+    private async Task<string> SendCaughtAsync(ParkCatchTarget caught)
+    {
+        var keepsake = new ParkTreasure($"a feather from a wild {caught.Name} that came along", 2);
+        if (HardcoreMode.Blocks(SaveAction.CreateMon, out _))
+        {
+            _treasures.Add(keepsake);
+            return $"Hardcore mode is on, so no Pokémon is made outside the games. The {caught.Name} leaves you a keepsake and goes back to the wild.";
+        }
+        var services = IPlatformApplication.Current!.Services;
+        var open = services.GetService<ISaveSessionService>()?.CurrentSession;
+        var eras = new[] { "Generation I", "Generation II", "Generation III", "Generation IV", "Generation V", "Generation VI", "Generation VII", "Generation VIII", "Generation IX" };
+        var options = new List<PadOption>();
+        var openName = open is null ? null : $"For {open.GameNames.FirstOrDefault() ?? "the open save"}";
+        if (openName is not null) options.Add(new PadOption(openName, IconPath: "game", Detail: "Made legal for your open save's game, with your trainer's details."));
+        options.AddRange(eras.Select(e => new PadOption(e, Detail: "A placeholder trainer (PKForge), editable later.")));
+        var game = await PadMenu.ShowAsync(_host, $"Where does {caught.Name} come from?",
+            "It goes to your Bank as a legal Pokémon of the game you pick, caught in a Poké Ball. If it cannot be legal there, it stays a keepsake.", [.. options]);
+        if (game is null)
+        {
+            _treasures.Add(keepsake);
+            return $"The {caught.Name} waves goodbye and leaves you a keepsake.";
+        }
+        var engine = services.GetRequiredService<ISaveEngine>();
+        var session = game == openName ? open! : engine.OpenBlankSession(Array.IndexOf(eras, game) + 1);
+        var legalizer = services.GetRequiredService<ILegalizerService>();
+        var overlay = LoadingOverlay.Show(_host, $"Welcoming {caught.Name}…", "The offline legalizer is at work.");
+        GeneratedEntity? made;
+        try
+        {
+            const int PokeBall = 4;
+            made = await Task.Run(() => legalizer.GenerateData(session, new GenerationRequest(caught.Species, caught.Level, caught.Shiny, null, null, PokeBall, null))
+                ?? (caught.Shiny ? null : legalizer.GenerateData(session, new GenerationRequest(caught.Species, null, false, null, null, null, null))));
+        }
+        catch (Exception e)
+        {
+            AppLog.Info("pokepark", $"Catch: generation failed: {e.Message}");
+            made = null;
+        }
+        finally { overlay.Close(); }
+        if (made is null)
+        {
+            _treasures.Add(keepsake);
+            return $"No legal {caught.Name} fits {(game == openName ? "that game" : game)}, so nothing was added. It leaves you a keepsake before heading home.";
+        }
+        var bank = services.GetRequiredService<IBankService>();
+        var entry = bank.Add(made.Data, made.Info with { SourceName = "Poképark" });
+        AppLog.Info("pokepark", $"Caught a wild {caught.Name} into the Bank");
+        return $"{caught.Name} is in your Bank, box {entry.Box + 1}, slot {entry.Slot + 1}.";
+    }
+
     // The left stick glides across the map, gently near the middle and faster as it leans;
     // the right stick zooms in (up) and out (down). A Pokémon picked with Left/Right is followed again.
     public void OnStick(float leftX, float leftY, float rightX, float rightY)
     {
         static float Curve(float value) => value * MathF.Abs(value);
+        if ((leftX != 0 || leftY != 0 || rightX != 0 || rightY != 0) && WakeUp()) return;
         if (leftX != 0 || leftY != 0 || rightY != 0) StopSpectating();
         _scene.Viewport.Stick(Curve(leftX), Curve(leftY), Curve(rightY));
     }
 
     public bool OnPadButton(PadButton button)
     {
+        if (WakeUp()) return true;
         switch (button)
         {
             case PadButton.B when _throwFor is not null || _digFor is not null: _throwFor = _digFor = null; UpdateStatus(); return true;

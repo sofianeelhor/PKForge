@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The picker's preview, and what shows until the first picture is painted: the painted preview PNG. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:clipToOutline="true"
+    android:background="@drawable/home_widget_background">
+    <ImageView android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="fitCenter" android:src="@drawable/walker_widget_preview_image"
+        android:contentDescription="@string/walker_widget_description" />
+</FrameLayout>

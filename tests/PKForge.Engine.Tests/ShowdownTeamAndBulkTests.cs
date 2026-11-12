@@ -34,7 +34,7 @@ public sealed class ShowdownTeamAndBulkTests
     [Fact]
     public void SplitCutsSetsWhereShowdownDoesAndDropsTeamHeaders()
     {
-        var sets = ShowdownTeamService.Split(Team.Replace("\n", "\r\n"));
+        var sets = ShowdownTeamService.Split(Team.ReplaceLineEndings("\r\n"));
         Assert.Equal(3, sets.Count);
         Assert.Equal([(ushort)Species.Pikachu, (ushort)Species.Garchomp, (ushort)Species.Bulbasaur], sets.Select(s => s.Set.Species));
         Assert.StartsWith("Pikachu @ Light Ball", sets[0].Text, StringComparison.Ordinal);

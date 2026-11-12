@@ -106,12 +106,37 @@ public sealed class MonInfoService : IMonInfoService
                 else source = new MoveLearn(LearnKind.Special);
                 result[move] = source;
             }
+            // Egg moves of its line it could only know by hatching: "possibly legal", not Illegal.
+            foreach (var move in EggOnlyMoves(pk, la, pk.Version == default ? save.Version : pk.Version))
+                if ((uint)move < (uint)all.Length && !all[move]) result[move] = new MoveLearn(LearnKind.EggIfHatched);
         }
         catch (Exception e) when (e is ArgumentException or InvalidOperationException or IndexOutOfRangeException)
         {
             return FallbackLearnset(pk, save);
         }
         return result;
+    }
+
+    /// <summary>
+    /// The egg moves its evolution line's base would know on hatching in <paramref name="version"/>,
+    /// when its matched encounter is not an egg: moves whose legality depends on the encounter.
+    /// Empty for hatched Pokémon (their egg moves are already judged); lines that do not breed
+    /// have no egg moves.
+    /// </summary>
+    internal static IReadOnlyCollection<ushort> EggOnlyMoves(PKM pk, LegalityAnalysis la, GameVersion version)
+    {
+        try
+        {
+            var enc = la.EncounterMatch;
+            if (enc.IsEgg || pk.IsEgg) return [];
+            var chain = la.Info.EvoChainsAllGens.Get(pk.Context);
+            var (species, form) = chain.Length > 0 ? (chain[^1].Species, chain[^1].Form) : (pk.Species, pk.Form);
+            return GameData.GetLearnSource(version).GetEggMoves(species, form).ToArray();
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or IndexOutOfRangeException)
+        {
+            return [];
+        }
     }
 
     /// <summary>

@@ -1,16 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The whole widget is one painted picture (ParkWidgetPaint), redrawn at the widget's own size. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/pokepark_root"
     android:layout_width="match_parent" android:layout_height="match_parent"
     android:padding="0dp" android:clipToOutline="true"
-    android:background="@drawable/pokepark_widget_background"
-    android:contentDescription="@string/pokepark_widget_description">
-    <ViewFlipper android:id="@+id/pokepark_frames"
+    android:background="@drawable/pokepark_widget_background">
+    <ImageView android:id="@+id/pokepark_frame"
         android:layout_width="match_parent" android:layout_height="match_parent"
-        android:autoStart="true" android:flipInterval="400" android:visibility="gone" />
-    <TextView android:id="@+id/pokepark_empty"
-        android:layout_width="match_parent" android:layout_height="match_parent"
-        android:gravity="center" android:padding="16dp"
-        android:text="@string/pokepark_widget_empty"
-        android:textColor="#355443" android:textSize="14sp" />
+        android:scaleType="fitXY"
+        android:contentDescription="@string/pokepark_widget_description" />
 </FrameLayout>

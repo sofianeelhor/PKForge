@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The living Poképark: a short painted film (LiveParkPaint). Its frames are added to the flipper on each
+     update; the launcher's ViewFlipper plays them while the home screen is visible and stops on its own
+     when it is not: no loop runs in PKForge. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/live_park_root"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:clipToOutline="true"
+    android:background="@drawable/pokepark_widget_background">
+    <ViewFlipper android:id="@+id/live_park_flipper"
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:autoStart="true" android:flipInterval="180" />
+</FrameLayout>

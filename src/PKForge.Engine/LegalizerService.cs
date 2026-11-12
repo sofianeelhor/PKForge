@@ -32,7 +32,9 @@ public sealed class LegalizerService : ILegalizerService
             return unbound.GenerateInto(box, slot, request);
         if (session is RadicalRed.CfruEngineSession radicalRed)
             return radicalRed.GenerateInto(box, slot, request);
-        var text = BuildShowdownText(request, ((SaveEngineSession)session).SaveFile.Context);
+        if (session is not SaveEngineSession engine)
+            return new GenerationOutcome(false, "Pokémon cannot be generated into this save.");
+        var text = BuildShowdownText(request, engine.SaveFile.Context);
         return GenerateFromShowdown(session, box, slot, text, request.AllowUnsupportedSpecies);
     }
 
@@ -66,7 +68,7 @@ public sealed class LegalizerService : ILegalizerService
                     "Generated (HaX): this species is unsupported in this game; no guarantee it works.");
         }
 
-        var result = GenerateLegal(engineSession, set);
+        var result = GenerateLegal(engineSession, set, out var evsLowered);
         if (result.Status is not LegalizationResult.Regenerated)
             return new GenerationOutcome(false,
                 result.Status switch
@@ -81,9 +83,9 @@ public sealed class LegalizerService : ILegalizerService
         var placed = PlaceGenerated(save, created, box, slot);
         if (placed is not null)
             return new GenerationOutcome(false, placed);
-        return new GenerationOutcome(true, analysis.Valid
+        return new GenerationOutcome(true, (analysis.Valid
             ? save.IsFromTrainer(created) ? "Generated - legal." : "Generated - legal (event OT)."
-            : "Generated (legality imperfect).");
+            : "Generated (legality imperfect).") + (evsLowered ? EvsLoweredNote : ""));
     }
 
     /// <summary>Places a generated mon: boxes overwrite the slot; the party appends
@@ -94,13 +96,13 @@ public sealed class LegalizerService : ILegalizerService
         {
             if (save.PartyCount >= 6)
                 return "The party is full.";
-            // Surgical append: the PartyData setter would also dex-mark, bump records,
-            // and rewrite handler data for every party member.
-            save.SetPartySlotAtIndex(created, Math.Min(save.PartyCount, 5), EntityImportSettings.None);
+            // Surgical append: the PartyData setter would also bump records and rewrite
+            // handler data for every party member. Only the newcomer's Pokédex entry is set.
+            save.SetPartySlotAtIndex(created, Math.Min(save.PartyCount, 5), NewcomerImport.For(save, created));
         }
         else
         {
-            save.SetBoxSlotAtIndex(created, box, slot, EntityImportSettings.None);
+            save.SetBoxSlotAtIndex(created, box, slot, NewcomerImport.For(save, created));
         }
         return null;
     }
@@ -172,7 +174,11 @@ public sealed class LegalizerService : ILegalizerService
     {
         var analysis = new LegalityAnalysis(current);
         if (current.IsEgg || current.WasEgg)
-            return save.Legalize(current.Clone(), analysis);
+        {
+            lock (TrainerGenerationLock)
+            using (new AutoModTrainerScope(save))
+                return save.Legalize(current.Clone(), analysis);
+        }
         if (RegenerateAtOrigin(save, current, analysis, shinyKind) is { } atOrigin)
             return atOrigin;
         // The analysis's best match for a broken caught Pokémon is often an egg (eggs fit any
@@ -181,6 +187,7 @@ public sealed class LegalizerService : ILegalizerService
 
         PKM repaired;
         lock (TrainerGenerationLock)
+        using (new AutoModTrainerScope(save))
         {
             var previous = EncounterMovesetGenerator.PriorityList;
             try
@@ -334,8 +341,9 @@ public sealed class LegalizerService : ILegalizerService
     }
 
     public GeneratedEntity? GenerateData(ISaveEngineSession session, GenerationRequest request) =>
-        GenerateDataFromShowdown(session, BuildShowdownText(request, ((SaveEngineSession)session).SaveFile.Context),
-            request.AllowUnsupportedSpecies);
+        session is SaveEngineSession engine
+            ? GenerateDataFromShowdown(session, BuildShowdownText(request, engine.SaveFile.Context), request.AllowUnsupportedSpecies)
+            : null;
 
     public GeneratedEntity? GenerateDataFromShowdown(ISaveEngineSession session, string showdownText,
         bool allowUnsupportedSpecies = false)
@@ -350,7 +358,7 @@ public sealed class LegalizerService : ILegalizerService
             if (!allowUnsupportedSpecies) return null;
             return BuildGeneratedEntity(BuildUnsupportedMon(save, set));
         }
-        var result = GenerateLegal(engineSession, set);
+        var result = GenerateLegal(engineSession, set, out _);
         if (result.Status is not LegalizationResult.Regenerated) return null;
 
         var created = ConvertForSave(save, result.Created);
@@ -406,38 +414,36 @@ public sealed class LegalizerService : ILegalizerService
             return new GenerationOutcome(false, "Eggs are only supported from Gen 3 onward here.");
 
         var placed = 0;
+        var lines = new HashSet<(ushort, byte)>();
         foreach (var id in species)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // An evolved species hatches as its line's first stage: one egg per line.
+            var (baseSpecies, baseForm) = EvolutionTree.GetEvolutionTree(save.Context).GetBaseSpeciesForm((ushort)Math.Clamp(id, 1, ushort.MaxValue), 0);
+            if (!lines.Add((baseSpecies, baseForm)))
+                continue;
             var slot = FindEmptySlot(save);
             if (slot is null)
                 return placed > 0
                     ? new GenerationOutcome(true, $"Generated {placed} eggs; storage is now full.")
                     : new GenerationOutcome(false, "No empty PC slots.");
 
-            var name = _strings.specieslist[Math.Clamp(id, 1, _strings.specieslist.Length - 1)];
-            var result = GenerateLegal(engineSession, new ShowdownSet(name));
-            if (result.Status is not LegalizationResult.Regenerated)
-                continue;
-            var egg = result.Created;
+            // A real egg, as the Day Care hands it over (the game's egg encounter, unhatched,
+            // with a full hatch counter), never a legalized level-100 Pokémon marked as an egg.
+            var criteria = EncounterCriteria.Unrestricted with
+            {
+                Shiny = options.Shiny ? Shiny.Always : Shiny.Random,
+            };
             if (options.MaxIv)
+                criteria = criteria with { IV_HP = 31, IV_ATK = 31, IV_DEF = 31, IV_SPA = 31, IV_SPD = 31, IV_SPE = 31 };
+            if (EggService.CreateEgg(save, baseSpecies, baseForm, criteria, out var kept) is not { } egg)
+                continue;
+            if (!kept)
             {
-                egg.SetIVs(0x7FFF_FFFF); // six 31s in the 30-bit packed representation
+                // The criteria could not be met by a generated egg: set them, as the factory always did.
+                if (options.MaxIv) egg.SetIVs(0x7FFF_FFFF);
+                if (options.Shiny && !egg.IsShiny) egg.SetShiny();
             }
-            if (options.Shiny && !egg.IsShiny)
-                egg.SetShiny();
-
-            egg.Nickname = "Egg";
-            egg.IsNicknamed = true;
-            egg.OriginalTrainerFriendship = (byte)EggStateLegality.GetMinimumEggHatchCycles(egg);
-            egg.MetLocation = 0;
-            if (save.Generation == 4)
-            {
-                egg.IsNicknamed = false;
-                egg.Version = save.Context.GetSingleGameVersion();
-                egg.EggLocation = 2000; // Daycare
-            }
-            egg.IsEgg = true;
             egg.RefreshChecksum();
             save.SetBoxSlotAtIndex(egg, slot.Value.Box, slot.Value.Slot, EntityImportSettings.None);
             placed++;
@@ -457,6 +463,35 @@ public sealed class LegalizerService : ILegalizerService
         return null;
     }
 
+    /// <summary>
+    /// <see cref="GenerateLegal"/>, then, for a Gen 3/4 set Auto-Legality could not make legal,
+    /// one more try with each EV capped at 100. PKHeX checks Gen 3/4 EVs against the experience
+    /// gained since the catch (EffortExpLegality): a fresh low-level Pokémon can only hold what
+    /// vitamins give, 100 per stat. <paramref name="evsLowered"/> tells the caller to say so.
+    /// </summary>
+    private APILegality.AsyncLegalizationResult GenerateLegal(SaveEngineSession session, ShowdownSet set, out bool evsLowered)
+    {
+        evsLowered = false;
+        var result = GenerateLegal(session, set);
+        if (result.Status is LegalizationResult.Regenerated || session.SaveFile.Generation is not (3 or 4)
+            || !set.EVs.Any(ev => ev > EffortValues.MaxVitamins34))
+            return result;
+
+        var requested = set.EVs.ToArray();
+        for (var i = 0; i < set.EVs.Length; i++)
+            set.EVs[i] = Math.Min(set.EVs[i], EffortValues.MaxVitamins34);
+        var capped = GenerateLegal(session, set);
+        if (capped.Status is LegalizationResult.Regenerated)
+        {
+            evsLowered = true;
+            return capped;
+        }
+        requested.CopyTo(set.EVs, 0);
+        return result;
+    }
+
+    private const string EvsLoweredNote = " EVs lowered to 100 per stat: a Pokémon this new can only have vitamin EVs in Gen 3/4.";
+
     private APILegality.AsyncLegalizationResult GenerateLegal(SaveEngineSession session, ShowdownSet set)
     {
         lock (TrainerGenerationLock)
@@ -474,6 +509,8 @@ public sealed class LegalizerService : ILegalizerService
             var previousOrder = APILegality.PriorityOrder;
             var previousGroups = EncounterMovesetGenerator.PriorityList;
             var useOwner = _ownershipSettings?.UseCurrentTrainerForGeneration ?? true;
+            // "Generated Pokémon obey trainer: OFF" asks for Auto-Legality's own trainers.
+            using var trainer = useOwner ? new AutoModTrainerScope(generationSave) : default;
             try
             {
                 // Auto-Legality tries eggs first, and an egg fits any request (any PID, any
@@ -569,7 +606,15 @@ public sealed class LegalizerService : ILegalizerService
 
         var save = engineSession.SaveFile;
         var capacity = save.BoxCount * save.BoxSlotCount;
-        var placed = engineSession.PlaceLivingDex(compressedBundle);
+        int placed;
+        try
+        {
+            placed = engineSession.PlaceLivingDex(compressedBundle);
+        }
+        catch (Exception error) when (error is InvalidOperationException or InvalidDataException or EndOfStreamException)
+        {
+            return new GenerationOutcome(false, error.Message);
+        }
         onProgress?.Invoke(placed, capacity);
         return placed == 0
             ? new GenerationOutcome(false, "The bundle held no compatible Pokémon; nothing was written.")

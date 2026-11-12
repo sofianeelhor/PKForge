@@ -486,6 +486,10 @@ public sealed class LivingDexExecutor(
         var done = 0;
         try
         {
+            // A locked Bank box is a finished shelf: the run stops before writing anything
+            // rather than fill it, rearrange it or take a Pokémon out of it.
+            if (bank is not null && LockedBankBoxTouched(staging, bank) is { } locked)
+                throw new LivingDexAbortException(BankBoxLocks.Refusal(locked));
             if (plan.DestinationKind == LivingDexSourceKind.Bank)
             {
                 // The Bank is the destination: it receives before any save lets go.
@@ -544,6 +548,8 @@ public sealed class LivingDexExecutor(
         }
 
         staging.Committed = true;
+        // Pokémon History learns the run's trips only now that every save holding them is written.
+        foreach (var (state, _) in written) state.Session.CommitHistory();
         var final = staging.Outcomes.Select(o => o.Status == LivingDexStepStatus.Staged ? o with { Status = LivingDexStepStatus.Done } : o).ToList();
         var filled = final.Count(o => o.Status == LivingDexStepStatus.Done && o.Step.Fills);
         var after = plan.CoveredBefore + filled;
@@ -553,6 +559,22 @@ public sealed class LivingDexExecutor(
             + (plan.Guides > 0 ? $" {plan.TargetCount - after} left to catch." : "");
         progress?.Report(new LivingDexProgress(LivingDexPhase.Finished, total, total, line));
         return new LivingDexRunResult(true, false, line, final, backups, plan.CoveredBefore, after);
+    }
+
+    /// <summary>The first locked Bank box the staged writes would add to, rearrange or release from.</summary>
+    private static int? LockedBankBoxTouched(LivingDexStaging staging, IBankService bank)
+    {
+        var locked = bank.LockedBoxes;
+        if (locked.Count == 0) return null;
+        if (staging.BankAdds.FirstOrDefault(add => locked.Contains(add.Slot.Box)) is { } add) return add.Slot.Box;
+        foreach (var (_, from, to) in staging.BankArranges)
+        {
+            if (from == to) continue;
+            if (locked.Contains(from.Box)) return from.Box;
+            if (locked.Contains(to.Box)) return to.Box;
+        }
+        var removing = staging.BankRemovals.ToHashSet();
+        return bank.GetAll().FirstOrDefault(e => removing.Contains(e.Id) && locked.Contains(e.Box))?.Box;
     }
 
     private void ArrangeBank(LivingDexStaging staging)

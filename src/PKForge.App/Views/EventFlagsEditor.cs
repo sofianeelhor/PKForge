@@ -255,7 +255,7 @@ public sealed class EventFlagsEditor : IPadHandler
     {
         var next = !entry.IsOn;
         var confirmed = await PadMenu.ConfirmAsync(_host, next ? "Set flag?" : "Clear flag?",
-            $"{entry.DisplayName}\n#{entry.Id} · {entry.Category} · {OnOff(entry.IsOn)} → {OnOff(next)}\n{Warning(entry)}A restore point is created first.",
+            $"{entry.DisplayName}\n#{entry.Id} · {entry.Category} · {OnOff(entry.IsOn)} → {OnOff(next)}\n{Warning(entry)}Restore points can undo it.",
             next ? "Set ON" : "Set OFF");
         if (!confirmed) return;
         var (bank, index) = (entry.Bank, entry.Index);
@@ -299,7 +299,7 @@ public sealed class EventFlagsEditor : IPadHandler
     {
         if (value == entry.Value) return;
         var confirmed = await PadMenu.ConfirmAsync(_host, "Change work?",
-            $"{entry.DisplayName}\n#{entry.Id} · {entry.Value} → {value}\n{Warning(entry)}A restore point is created first.", "Write");
+            $"{entry.DisplayName}\n#{entry.Id} · {entry.Value} → {value}\n{Warning(entry)}Restore points can undo it.", "Write");
         if (!confirmed) return;
         var index = entry.Index;
         if (await Write(s => EventFlagService.SetWork(s, index, value)))

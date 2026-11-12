@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the launcher shows before PKForge's first picture: the park's neutral face (no claim that it is empty), painted at 4x2, so a host
+     that photographs the widget early still keeps a real face. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:clipToOutline="true"
+    android:background="@drawable/pokepark_widget_background">
+    <ImageView android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="fitCenter" android:src="@drawable/live_park_widget_initial_image"
+        android:contentDescription="@string/live_park_widget_description" />
+</FrameLayout>

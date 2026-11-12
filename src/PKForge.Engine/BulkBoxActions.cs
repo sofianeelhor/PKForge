@@ -1,6 +1,5 @@
 using PKForge.Domain;
 using PKHeX.Core;
-using PKHeX.Core.AutoMod;
 
 namespace PKForge.Engine;
 

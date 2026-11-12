@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Android.App;
-using Android.Content.PM;
 using PKForge.Domain;
 
 #if ANDROID

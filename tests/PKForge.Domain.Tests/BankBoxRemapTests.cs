@@ -78,6 +78,18 @@ public sealed class BankBoxRemapTests
         Assert.Equal(listed.Count, listed.Distinct().Count());
         Assert.All(listed, asset => Assert.Contains(asset, bundled));
         Assert.All(listed, asset => Assert.Equal("art:" + asset, BankWallpaper.Art(asset).Id));
-        Assert.Equal(bundled.Count, listed.Count);
+        // PKHeX 26.10 (86afdc9f4) bundles 17 more pictures: Emerald's Walda wallpaper, Pokémon Box
+        // Ruby & Sapphire's extras (the last one is the empty "My Wallpaper" frame) and Colosseum /
+        // XD backdrops at another size (384x320). Offering them in the Bank picker is a visual
+        // choice left to the maintainer; every other bundled picture must still be listed.
+        Assert.Equal(bundled.Except(NotOfferedYet).Order(), listed.Order());
     }
+
+    private static readonly string[] NotOfferedYet =
+    [
+        "box_wp17e",
+        "box_wp17rs", "box_wp18rs", "box_wp19rs", "box_wp20rs", "box_wp21rs",
+        "box_wp01colo", "box_wp02colo", "box_wp03colo",
+        "box_wp01xd", "box_wp02xd", "box_wp03xd", "box_wp04xd", "box_wp05xd", "box_wp06xd", "box_wp07xd", "box_wp08xd",
+    ];
 }

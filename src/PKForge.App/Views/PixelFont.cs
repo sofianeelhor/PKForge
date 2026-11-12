@@ -87,6 +87,8 @@ public static class PixelFont
                     face = SKTypeface.Default;
                 }
                 Volatile.Write(ref _fallback, face);
+                // Every Skia painter falls back to it for glyphs NDS12 lacks (Japanese, full-width).
+                if (!ReferenceEquals(face, SKTypeface.Default)) PKForge.Chrome.TextFallback.Preferred = face;
             });
     }
 

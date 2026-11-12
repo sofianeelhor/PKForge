@@ -1,5 +1,4 @@
 using Android.Content;
-using Android.Net;
 using Android.OS;
 using PKForge.Domain;
 

@@ -196,7 +196,7 @@ public static class ParkEventPaint
         using var small = new SKFont(face, 44f * unit);
         using var big = new SKFont(face, 88f * unit);
         // A long headline gets smaller to fit beside the Pokémon.
-        big.Size = MathF.Min(big.Size, big.Size * (w - textX - 50f * unit) / MathF.Max(1, big.MeasureText(headline)));
+        big.Size = MathF.Min(big.Size, big.Size * (w - textX - 50f * unit) / MathF.Max(1, big.MeasureFallback(headline)));
         var slam = Back(t, 1150, 360);
         if (t >= 1150)
         {
@@ -303,9 +303,9 @@ public static class ParkEventPaint
     private static void Shadowed(SKCanvas c, string text, float x, float y, SKFont font, SKColor color, float unit)
     {
         using var paint = new SKPaint { IsAntialias = false, Color = new SKColor(0, 0, 0, 200) };
-        c.DrawText(text, x + 5f * unit, y + 5f * unit, SKTextAlign.Left, font, paint);
+        c.DrawTextFallback(text, x + 5f * unit, y + 5f * unit, SKTextAlign.Left, font, paint);
         paint.Color = color;
-        c.DrawText(text, x, y, SKTextAlign.Left, font, paint);
+        c.DrawTextFallback(text, x, y, SKTextAlign.Left, font, paint);
     }
 
     private static void Bars(SKCanvas c, int w, int h, float unit)
@@ -322,7 +322,7 @@ public static class ParkEventPaint
         var shown = Ease(t, ParkAt + 100, 380);
         if (shown <= 0) return;
         using var big = new SKFont(face, 50f * unit);
-        var width = Math.Max(620f * unit, big.MeasureText(eventName) + 90f * unit);
+        var width = Math.Max(620f * unit, big.MeasureFallback(eventName) + 90f * unit);
         var plate = SKRect.Create(40f * unit - (1 - shown) * (width + 60f * unit), 56f * unit + 30f * unit, width, 160f * unit);
         ParkCardPaint.Frame(c, plate, unit);
 

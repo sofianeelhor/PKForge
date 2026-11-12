@@ -1,4 +1,3 @@
-using PKForge.App.Theme;
 using PKForge.App.ViewModels;
 using PKForge.Domain;
 
@@ -23,8 +22,8 @@ public static class PokeBeansEditor
             }
 
             var options = beans.Select(bean => new PadOption($"{bean.Name} · {bean.Count}/{bean.MaxCount}"))
-                .Append(new PadOption("Fill every Bean stack", IconPath: "fill", Detail: "Every Bean goes to its maximum; a restore point is made first."))
-                .Append(new PadOption("Clear every Bean stack", IconPath: "clear", Detail: "Every Bean goes to 0; a restore point is made first."))
+                .Append(new PadOption("Fill every Bean stack", IconPath: "fill", Detail: "Every Bean goes to its maximum."))
+                .Append(new PadOption("Clear every Bean stack", IconPath: "clear", Detail: "Every Bean goes to 0."))
                 .ToArray();
             var choice = await EditorMenu.ShowAsync(host, "POKé BEANS", "Poké Pelago storage", options);
             if (choice is null) return;
@@ -34,7 +33,7 @@ public static class PokeBeansEditor
                 var filling = choice.StartsWith("Fill", StringComparison.Ordinal);
                 var verb = filling ? "Fill" : "Clear";
                 var confirmed = await PadMenu.ConfirmAsync(host, $"{verb} all beans?",
-                    filling ? "Every Poké Bean stack becomes 255. A restore point is created first." : "Every Poké Bean stack becomes 0. A restore point is created first.",
+                    filling ? "Every Poké Bean stack becomes 255. Restore points can undo it." : "Every Poké Bean stack becomes 0. Restore points can undo it.",
                     filling ? "Fill" : "Clear");
                 if (!confirmed) continue;
                 var success = await viewModel.RunMutationAsync(s =>

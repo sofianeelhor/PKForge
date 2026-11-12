@@ -35,7 +35,7 @@ public sealed class DexEntryView : SKCanvasView
     {
         _sprites = sprites;
         InputTransparent = true;
-        PaintSurface += OnPaint;
+        PaintSurface += PaintGuard.Wrap("DexEntryView.OnPaint", OnPaint);
     }
 
     /// <summary>Shows one species, read from the open save when there is one.</summary>

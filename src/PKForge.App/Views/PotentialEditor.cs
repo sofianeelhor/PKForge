@@ -1,4 +1,3 @@
-using PKForge.App.Services;
 using PKForge.App.Theme;
 using PKForge.Domain;
 using PKHeX.Core;

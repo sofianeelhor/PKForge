@@ -56,9 +56,9 @@ public sealed class TrainerOwnershipTests
         var engine = new SaveEngine();
         using var raw = engine.OpenBlankSession(generation);
         var session = (SaveEngineSession)raw;
-        // The Gen 1 blank is Japanese Blue: its OT charset rejects Latin letters.
-        var initialName = generation == 1 ? "タケル" : $"Gen{generation}";
-        var ownerName = generation == 1 ? "サトシ" : "Owner";
+        // Every blank is international (Gen 1 is Red, no longer Japanese Blue): Latin names fit.
+        var initialName = $"Gen{generation}";
+        var ownerName = "Owner";
         session.SetTrainer(new TrainerInfo(initialName, 100 + generation, 200 + generation, 0, generation % 2));
         Assert.Equal(initialName, session.GetTrainer().Name);
         var legalizer = new LegalizerService(new OwnershipSettings(enabled: true));

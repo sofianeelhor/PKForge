@@ -56,7 +56,7 @@ public sealed class BankWallpaperPicker : IPadPagingHandler
             }
 
         _canvas = new SKCanvasView { EnableTouchEvents = true };
-        _canvas.PaintSurface += Paint;
+        _canvas.PaintSurface += PaintGuard.Wrap("BankWallpaperPicker.Paint", Paint);
         _canvas.Touch += Touch;
         _frame = new FrameInvalidator(_canvas);
         _pacer = new FramePacer(_frame);

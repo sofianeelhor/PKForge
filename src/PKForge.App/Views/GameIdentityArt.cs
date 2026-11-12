@@ -29,7 +29,7 @@ public sealed class GameCartridgeMark : SKCanvasView
     {
         WidthRequest = 68;
         HeightRequest = 68;
-        PaintSurface += Paint;
+        PaintSurface += PaintGuard.Wrap("GameIdentityArt.Paint", Paint);
     }
 
     private void Paint(object? sender, SKPaintSurfaceEventArgs args)
@@ -65,7 +65,7 @@ public sealed class GameCartridgeMark : SKCanvasView
         var text = generation is >= 1 and <= 9 ? $"G{generation}" : "PK";
         using var font = new SKFont { Size = Math.Max(10, r.Height * 0.17f), Embolden = true };
         using var paint = new SKPaint { Color = Pksm.Ink, IsAntialias = false };
-        c.DrawText(text, r.Right - 8, r.Bottom - 8, SKTextAlign.Right, font, paint);
+        c.DrawTextFallback(text, r.Right - 8, r.Bottom - 8, SKTextAlign.Right, font, paint);
     }
 }
 
@@ -73,11 +73,15 @@ public sealed class GameCartridgeMark : SKCanvasView
 public sealed class GameHeroBackdrop : Grid
 {
     private readonly Image _logo;
+    private readonly Image _hero;
     private readonly Label _title;
     private readonly Label _meta;
 
     public GameHeroBackdrop()
     {
+        // The player's own wide banner (Edit game > Game art), when they set one: it fills the
+        // screen behind the logo, aspect kept. Bundled heroes stay unused (they crop badly).
+        _hero = new Image { Aspect = Aspect.AspectFill, InputTransparent = true, IsVisible = false };
         // Transparent SteamGridDB game logos: they sit perfectly on the square PKForge
         // grid where panoramic heroes would inevitably crop characters and backgrounds.
         _logo = new Image
@@ -112,12 +116,16 @@ public sealed class GameHeroBackdrop : Grid
             VerticalOptions = LayoutOptions.End,
             Children = { _title, _meta },
         };
+        Children.Add(_hero);
         Children.Add(_logo);
         Children.Add(copy);
     }
 
     public void SetGame(DetectedSave game)
     {
+        var hero = GameArt.GetHero(game);
+        _hero.Source = hero;
+        _hero.IsVisible = hero is not null;
         _title.Text = game.GameLabel;
         _meta.Text = "PKForge game library";
         _ = LoadLogoAsync(game);
@@ -129,7 +137,7 @@ public sealed class GameHeroBackdrop : Grid
         {
             // Art follows the game (detected or chosen), never the player's custom name;
             // an unnamed ROM hack has no logo and keeps the logo-grid scene.
-            var path = game.ArtLabel is { } art ? await GameArt.GetLogoAsync(art) : null;
+            var path = await GameArt.GetLogoAsync(game);
             // The selection can move while the package asset is copied to cache.
             if (_title.Text != game.GameLabel) return;
             _logo.Source = path;

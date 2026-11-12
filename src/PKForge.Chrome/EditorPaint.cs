@@ -98,7 +98,7 @@ public static class EditorPaint
     public static void PaintSection(SKCanvas c, SKRect r, string title, SKTypeface typeface, float unit)
     {
         using var font = new SKFont(typeface, 30f * unit);
-        var chipWidth = font.MeasureText(title) + 64f * unit;
+        var chipWidth = font.MeasureFallback(title) + 64f * unit;
         var left = r.Left + 16f * unit;
         var right = r.Right - 16f * unit;
         var cx = (left + right) / 2;
@@ -186,16 +186,16 @@ public static class EditorPaint
 
     private static void Text(SKCanvas c, string text, float x, float cy, SKFont font, SKColor color, float maxWidth = float.MaxValue)
     {
-        while (text.Length > 1 && font.MeasureText(text) > maxWidth) text = text[..^1];
+        while (text.Length > 1 && font.MeasureFallback(text) > maxWidth) text = text[..^1];
         using var paint = Fill(color);
         var m = font.Metrics;
-        c.DrawText(text, x, cy - (m.Ascent + m.Descent) / 2, SKTextAlign.Left, font, paint);
+        c.DrawTextFallback(text, x, cy - (m.Ascent + m.Descent) / 2, SKTextAlign.Left, font, paint);
     }
 
     private static void Centered(SKCanvas c, string text, float cx, float cy, SKFont font, SKColor color)
     {
         using var paint = Fill(color);
         var m = font.Metrics;
-        c.DrawText(text, cx, cy - (m.Ascent + m.Descent) / 2, SKTextAlign.Center, font, paint);
+        c.DrawTextFallback(text, cx, cy - (m.Ascent + m.Descent) / 2, SKTextAlign.Center, font, paint);
     }
 }

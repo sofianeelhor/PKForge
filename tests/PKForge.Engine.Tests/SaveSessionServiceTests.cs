@@ -11,6 +11,7 @@ namespace PKForge.Engine.Tests;
 /// when the save was opened), stay untouched for other documents, and hold a private
 /// copy of the written bytes.
 /// </summary>
+[Collection(nameof(LegalityEraCollection))] // opening a save sets the process-wide Game Boy era
 public sealed class SaveSessionServiceTests
 {
     private static string CorpusPath(string file)

@@ -1,6 +1,5 @@
 using Android.App;
 using Android.Content;
-using Android.Provider;
 using PKForge.Domain;
 
 namespace PKForge.App;
@@ -115,10 +114,17 @@ public sealed class AndroidDocumentPicker : Java.Lang.Object, IDocumentPicker
     private static string? QueryDisplayName(Android.Net.Uri uri)
     {
         var displayNameColumn = global::Android.Provider.IOpenableColumns.DisplayName;
-        using var cursor = Platform.AppContext.ContentResolver?.Query(uri, [displayNameColumn], null, null, null);
-        if (cursor is null || !cursor.MoveToFirst())
-            return null;
-        var index = cursor.GetColumnIndex(displayNameColumn);
-        return index >= 0 ? cursor.GetString(index) : null;
+        var cursor = Platform.AppContext.ContentResolver?.Query(uri, [displayNameColumn], null, null, null);
+        try
+        {
+            if (cursor is null || !cursor.MoveToFirst())
+                return null;
+            var index = cursor.GetColumnIndex(displayNameColumn);
+            return index >= 0 ? cursor.GetString(index) : null;
+        }
+        finally
+        {
+            ContentCursors.Release(cursor);
+        }
     }
 }

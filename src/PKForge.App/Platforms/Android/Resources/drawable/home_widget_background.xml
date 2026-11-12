@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Flat and opaque, so the painted scene reads the same on light and dark launchers. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#A8E0F8" />
+    <corners android:radius="16dp" />
+</shape>

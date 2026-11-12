@@ -24,6 +24,13 @@ public sealed class Spring(float value)
     /// <summary>Advances by <paramref name="dt"/> seconds. Lower <paramref name="damping"/> than 2√stiffness gives a bounce.</summary>
     public void Step(float dt, float stiffness = 420f, float damping = 41f)
     {
+        // With decorative motion off nothing glides: the value is where it is going. One
+        // check here covers every spring in the app (hand, cursors, cards, scrolling).
+        if (!MotionSetting.Decorative)
+        {
+            Snap(Target);
+            return;
+        }
         // Small sub-steps keep the integration stable through a dropped frame.
         var steps = Math.Max(1, (int)MathF.Ceiling(dt / (1f / 240f)));
         var h = dt / steps;

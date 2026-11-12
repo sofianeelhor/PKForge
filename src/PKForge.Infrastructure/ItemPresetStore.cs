@@ -8,9 +8,20 @@ namespace PKForge.Infrastructure;
 public sealed class ItemPresetStore(string path)
 {
     public IReadOnlyList<ItemPreset> Read() => File.Exists(path)
-        ? JsonSerializer.Deserialize(File.ReadAllText(path), ItemPresetJsonContext.Default.ListItemPreset)
-            ?? throw new InvalidDataException("The item preset library is unreadable.")
+        ? Clean(JsonSerializer.Deserialize(File.ReadAllText(path), ItemPresetJsonContext.Default.ListItemPreset)
+            ?? throw new InvalidDataException("The item preset library is unreadable."))
         : [];
+
+    /// <summary>Whether pulled bytes are a preset library this store can read (the folder mirror's check).</summary>
+    public static bool IsLibrary(byte[] bytes)
+    {
+        try { return JsonSerializer.Deserialize(bytes, ItemPresetJsonContext.Default.ListItemPreset) is not null; }
+        catch (Exception error) when (error is JsonException or NotSupportedException) { return false; }
+    }
+
+    /// <summary>Presets as JSON may lack parts (a null entry, no items): broken ones are dropped, missing lists read as empty.</summary>
+    internal static IReadOnlyList<ItemPreset> Clean(IEnumerable<ItemPreset?> presets) =>
+        [.. presets.Where(p => p is { Id: not null, Name: not null }).Select(p => p! with { Items = [.. (p.Items ?? []).Where(i => i is not null)] })];
 
     public void Save(ItemPreset preset)
     {
@@ -27,21 +38,28 @@ public sealed class ItemPresetStore(string path)
 
     public void Delete(string id) => Write(Read().Where(p => p.Id != id).ToArray());
 
+    /// <summary>The presets of <paramref name="incoming"/> this library lacks (by id), added in one
+    /// write; a name already taken gets a number. Existing presets are never changed.</summary>
+    public int Merge(IReadOnlyList<ItemPreset> incoming)
+    {
+        var presets = Read().ToList();
+        var added = 0;
+        foreach (var preset in Clean(incoming).Where(p => !string.IsNullOrWhiteSpace(p.Name)))
+        {
+            if (presets.Any(p => p.Id == preset.Id)) continue;
+            var name = preset.Name.Trim();
+            for (var n = 2; presets.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)); n++)
+                name = $"{preset.Name.Trim()} ({n})";
+            presets.Add(preset with { Name = name });
+            added++;
+        }
+        if (added > 0) Write(presets);
+        return added;
+    }
+
     private void Write(IReadOnlyList<ItemPreset> presets)
     {
-        var json = JsonSerializer.Serialize(presets.ToList(), ItemPresetJsonContext.Default.ListItemPreset);
-        var directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
-        Directory.CreateDirectory(directory);
-        var temporary = Path.Combine(directory, $".item-presets-{Guid.NewGuid():N}.tmp");
-        try
-        {
-            File.WriteAllText(temporary, json);
-            File.Move(temporary, path, overwrite: true);
-        }
-        finally
-        {
-            if (File.Exists(temporary)) File.Delete(temporary);
-        }
+        AtomicFile.WriteText(path, JsonSerializer.Serialize(presets.ToList(), ItemPresetJsonContext.Default.ListItemPreset));
     }
 }
 

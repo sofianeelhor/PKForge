@@ -82,6 +82,24 @@ public sealed class StorageMarks
         _marked.RemoveWhere(m => !live.Contains(m));
     }
 
+    /// <summary>
+    /// Forgets the marks of Pokémon that just left (released, sent to the Bank or another game)
+    /// and moves the others with what closed up behind them. A party closes up in every game,
+    /// and so does a Game Boy box (<paramref name="listBoxes"/>): without this, the Pokémon that
+    /// slid into a freed slot would inherit its mark, and the next action would take it instead.
+    /// </summary>
+    public void Released(IReadOnlyCollection<(int Box, int Slot)> released, bool listBoxes)
+    {
+        var gone = released.ToHashSet();
+        var kept = _marked.Where(m => !gone.Contains(m)).ToList();
+        _marked.Clear();
+        foreach (var (box, slot) in kept)
+        {
+            var closes = box == -1 || listBoxes;
+            _marked.Add((box, closes ? slot - gone.Count(g => g.Box == box && g.Slot < slot) : slot));
+        }
+    }
+
     /// <summary>Marks (or unmarks) every occupied slot of the rectangle spanned by two slots
     /// of one page - the hold-A / drag gesture.</summary>
     public void SetRectangle(IReadOnlyList<SlotSummary> slots, int box, int from, int to, int columns, bool mark) =>
@@ -111,5 +129,20 @@ public static class StorageRectangle
         var (top, bottom) = (Math.Min(from / columns, to / columns), Math.Max(from / columns, to / columns));
         var (col, row) = (slot % columns, slot / columns);
         return col >= left && col <= right && row >= top && row <= bottom;
+    }
+}
+
+/// <summary>Several Pokémon leaving one save in one edit.</summary>
+public static class SlotReleases
+{
+    /// <summary>
+    /// Releases every given slot. A party closes up as soon as one of its Pokémon leaves, so
+    /// its slots go from the last to the first: in storage order, the second index would
+    /// already point at the Pokémon after the one meant (and the last one past the party).
+    /// </summary>
+    public static void ReleaseAll(ISaveEngineSession session, IEnumerable<(int Box, int Slot)> slots)
+    {
+        foreach (var (box, slot) in slots.Distinct().OrderBy(s => s.Box).ThenByDescending(s => s.Slot))
+            session.ReleaseSlot(box, slot);
     }
 }

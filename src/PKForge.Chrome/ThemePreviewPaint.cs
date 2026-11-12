@@ -44,22 +44,20 @@ public static class ThemePreviewPaint
         using (var font = new SKFont(typeface, 6 * u))
         using (var ink = Fill(t.Bright))
         {
-            c.DrawText("Box 1", banner.MidX, banner.MidY + 2 * u, SKTextAlign.Center, font, ink);
-            c.DrawText("«", header.Left + 6 * u, header.MidY + 2 * u, SKTextAlign.Center, font, ink);
-            c.DrawText("»", header.Right - 6 * u, header.MidY + 2 * u, SKTextAlign.Center, font, ink);
+            c.DrawTextFallback("Box 1", banner.MidX, banner.MidY + 2 * u, SKTextAlign.Center, font, ink);
+            c.DrawTextFallback("«", header.Left + 6 * u, header.MidY + 2 * u, SKTextAlign.Center, font, ink);
+            c.DrawTextFallback("»", header.Right - 6 * u, header.MidY + 2 * u, SKTextAlign.Center, font, ink);
         }
 
         // The well, with a few Pokémon in its first slots.
         var well = SKRect.Create(r.Left + 4 * u, r.Top + 20 * u, 92 * u, 75 * u);
         using (var fill = Fill(t.Well)) c.DrawRoundRect(well, 4 * u, 4 * u, fill);
         using (var edge = Stroke(t.WellEdge, 0.8f * u)) c.DrawRoundRect(well, 4 * u, 4 * u, edge);
-        // Its slots, the cursor's light pool under the first one.
+        // Its slots.
         var cell = new SKSize(well.Width / 5, well.Height / 4);
         using (var slot = Fill(t.WellEdge.WithAlpha(0x60)))
             for (var i = 0; i < 20; i++)
                 c.DrawCircle(well.Left + (i % 5 + 0.5f) * cell.Width, well.Top + (i / 5 + 0.5f) * cell.Height, 3.2f * u, slot);
-        using (var pool = Fill(t.PoolLight.WithAlpha(110)))
-            c.DrawOval(SKRect.Create(well.Left + cell.Width * 0.15f, well.Top + cell.Height * 0.62f, cell.Width * 0.7f, cell.Height * 0.25f), pool);
 
         // The editor panel: name tab, rows on alternating bands, a section chip.
         var panel = SKRect.Create(r.Left + 100 * u, r.Top + 5 * u, 56 * u, 90 * u);
@@ -101,8 +99,8 @@ public static class ThemePreviewPaint
                 continue;
             }
             using (var band = Fill(t.Band.WithAlpha(i % 2 == 0 ? (byte)150 : (byte)60))) c.DrawRect(row, band);
-            c.DrawText("Nature", row.Left + 2 * u, row.MidY + 1.6f * u, SKTextAlign.Left, small, label);
-            c.DrawText("Timid", row.Left + 24 * u, row.MidY + 1.6f * u, SKTextAlign.Left, small, value);
+            c.DrawTextFallback("Nature", row.Left + 2 * u, row.MidY + 1.6f * u, SKTextAlign.Left, small, label);
+            c.DrawTextFallback("Timid", row.Left + 24 * u, row.MidY + 1.6f * u, SKTextAlign.Left, small, value);
         }
         c.Restore();
     }

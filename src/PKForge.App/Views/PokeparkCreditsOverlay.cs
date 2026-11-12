@@ -24,7 +24,7 @@ public sealed class PokeparkCreditsOverlay : IPadHandler
     private readonly IReadOnlyList<ParkCreditsPaint.Section> _sections;
     private readonly PokeparkSpriteService _sprites;
     private readonly SKBitmap? _logo;
-    private readonly IDispatcherTimer _timer;
+    private readonly Services.VsyncLoop _timer;
     private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
     private float _scroll, _contentHeight, _height;
     private long _lastTick, _heldUntil;
@@ -43,14 +43,17 @@ public sealed class PokeparkCreditsOverlay : IPadHandler
             if (entry.Sprite is { } look) sprites.Warm(look.Species, look.Form, look.Shiny, static () => { });
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
         _view.BackgroundColor = Colors.Transparent;
-        _view.PaintSurface += Paint;
+        _view.PaintSurface += PaintGuard.Wrap("PokeparkCreditsOverlay.Paint", Paint);
         _view.Touch += Touch;
         host.Add(_view);
         Grid.SetRowSpan(_view, Math.Max(1, host.RowDefinitions.Count));
         Grid.SetColumnSpan(_view, Math.Max(1, host.ColumnDefinitions.Count));
-        _timer = host.Dispatcher.CreateTimer();
-        _timer.Interval = TimeSpan.FromMilliseconds(16);
-        _timer.Tick += (_, _) => _view.InvalidateSurface();
+        // A frame on every screen refresh (see VsyncLoop).
+        _timer = new Services.VsyncLoop(_ =>
+        {
+            _view.InvalidateSurface();
+            return true;
+        });
         _timer.Start();
         App.Suspended += Close;
         _router?.Push(this);

@@ -1,4 +1,3 @@
-using PKForge.App.Services;
 using PKForge.Domain;
 
 namespace PKForge.App.Views;

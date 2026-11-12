@@ -1,5 +1,4 @@
 using PKForge.App.Services;
-using PKForge.App.Theme;
 using PKForge.Domain;
 using PKForge.Infrastructure;
 
@@ -134,7 +133,7 @@ public static class CollectionCenter
         catch (Exception error)
         {
             AppLog.Error("community", $"Deposit of {boxName} failed", error);
-            summary = $"Nothing was deposited: {error.Message}";
+            summary = $"Nothing was deposited. {Domain.ErrorText.Plain(error)}";
         }
         finally
         {

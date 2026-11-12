@@ -49,7 +49,8 @@ public sealed class LoadingOverlay
             },
         };
 
-        var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 440, padding: 18);
+        var window = Kit.OverlayWindow(host, content, preferredMaxWidth: 440, padding: 18, scroll: false);
+        window.WidthRequest = window.MaximumWidthRequest; // as wide as before, only as tall as its content
         _overlay = Kit.AttachOverlay(host, window, () => Cancellation.Cancel());
         _pad = new PadOverlay(() => Cancellation.Cancel(), () => Cancellation.Cancel());
     }

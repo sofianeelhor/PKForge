@@ -326,11 +326,15 @@ public static class MonFieldService
         {
             // The PID is tied to the IVs or the encounter (Gen 3/4 wild, Sword/Shield
             // overworld): rebuild at the same origin rather than leave it illegal. Kept only
-            // when it is still this trainer's mon, caught where it was.
+            // when it is still this trainer's mon, caught where it was, and still the kind of
+            // shiny asked for: an origin that only allows stars may rebuild a requested square
+            // as a legal star, which would silently swap the player's choice.
             var rebuilt = LegalizerService.LegalizeKeepingOrigin(engine.SaveFile, pk, shiny);
             if (rebuilt.Species == original.Species && rebuilt.ID32 == original.ID32
                 && rebuilt.MetLocation == original.MetLocation && rebuilt.WasEgg == original.WasEgg
-                && rebuilt.IsShiny == (kind != ShinyKind.None) && new LegalityAnalysis(rebuilt).Valid)
+                && rebuilt.IsShiny == (kind != ShinyKind.None)
+                && (kind == ShinyKind.None || ShinyOf(rebuilt).Kind == ShinyOf(pk).Kind)
+                && new LegalityAnalysis(rebuilt).Valid)
                 pk = rebuilt;
         }
         Write(engine, box, slot, pk);

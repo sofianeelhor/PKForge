@@ -19,13 +19,18 @@ internal static class EditorRows
 
     /// <summary>
     /// A length in mockup pixels (the 1920×1080 design) as device-independent units on this
-    /// display: exact on the Thor's 1920×1080 screen, scaled with the screen elsewhere.
+    /// display: exact on the Thor's 1920×1080 screen, scaled to fit the screen elsewhere.
     /// </summary>
     internal static double Design(double pixels)
     {
         var display = DeviceDisplay.MainDisplayInfo;
         var longSide = Math.Max(display.Width, display.Height);
-        return longSide <= 0 || display.Density <= 0 ? pixels / 2 : pixels * (longSide / 1920) / display.Density;
+        var shortSide = Math.Min(display.Width, display.Height);
+        if (longSide <= 0 || display.Density <= 0) return pixels / 2;
+        // The tighter of width and height: a 20:9 phone keeps the mockup's proportions
+        // instead of growing past its height (exactly 1 on the Thor's 16:9).
+        var fit = Math.Min(longSide / 1920, shortSide / 1080);
+        return pixels * fit / display.Density;
     }
 
     /// <summary>A row's height and text size (the mockup's 64 and 32 pixels).</summary>
@@ -80,13 +85,13 @@ internal static class EditorRows
     internal static View EditorSection(string title)
     {
         var view = new SKCanvasView { HeightRequest = EditorRowHeight, InputTransparent = true };
-        view.PaintSurface += (_, args) =>
+        view.PaintSurface += PaintGuard.Wrap("EditorRows view", (_, args) =>
         {
             var canvas = args.Surface.Canvas;
             canvas.Clear(SKColors.Transparent);
             var unit = Math.Min(args.Info.Width / EditorPaint.DesignWidth, args.Info.Height / 64f);
             EditorPaint.PaintSection(canvas, new SKRect(0, 0, args.Info.Width, args.Info.Height), title, BoxBrowserPage.PixelTypeface(), unit);
-        };
+        });
         return view;
     }
 

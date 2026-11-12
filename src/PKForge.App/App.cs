@@ -32,9 +32,15 @@ public sealed class App : Application
     public App()
     {
         Trace("App ctor");
+        var ctorWatch = System.Diagnostics.Stopwatch.StartNew();
 
         // Every page reads its chrome colors when it is built, so the scheme comes first.
         Services.ColorThemeSetting.ApplyStored();
+
+        // The keyboard resizes the window (MainActivity's SafeAreaListener pads it clear of the
+        // keyboard) instead of panning: a popup's text field and its Set button stay visible.
+        Microsoft.Maui.Controls.PlatformConfiguration.AndroidSpecific.Application.SetWindowSoftInputModeAdjust(
+            this, Microsoft.Maui.Controls.PlatformConfiguration.AndroidSpecific.WindowSoftInputModeAdjust.Resize);
 
         // Warm both Skia faces off the ctor: the party view paints before the first
         // save opens, and its cached nickname font must never pin the placeholder.
@@ -49,6 +55,7 @@ public sealed class App : Application
         Resources.Add(FontStyle(typeof(Button), Button.FontFamilyProperty));
         Resources.Add(FontStyle(typeof(Entry), Entry.FontFamilyProperty));
         Resources.Add(FontStyle(typeof(Editor), Editor.FontFamilyProperty));
+        Services.PerfTrace.Log("start.app-ctor", ctorWatch);
     }
 
     internal static void Trace(string message)
@@ -61,7 +68,9 @@ public sealed class App : Application
     private static NavigationPage CreateRoot(IServiceProvider services)
     {
         Trace("resolving HomePage");
+        var homeWatch = System.Diagnostics.Stopwatch.StartNew();
         var page = services.GetRequiredService<Views.HomePage>();
+        Services.PerfTrace.Log("start.home-resolve", homeWatch);
         Trace("HomePage resolved");
         return new NavigationPage(page)
         {
@@ -100,7 +109,12 @@ public sealed class App : Application
         {
             var services = IPlatformApplication.Current?.Services
                 ?? throw new InvalidOperationException("MAUI services are unavailable.");
-            return new Window(CreateRoot(services));
+            var window = new Window(CreateRoot(services));
+            // The painted screens size themselves to the window: a 20:9 phone, a foldable
+            // opened or closed, a split screen. The Thor at Auto keeps exactly 1.
+            Services.UiScaleSetting.ApplyToPainters(DeviceDisplay.MainDisplayInfo.Width, DeviceDisplay.MainDisplayInfo.Height);
+            window.SizeChanged += (_, _) => Services.UiScaleSetting.ApplyToPainters(window.Width, window.Height);
+            return window;
         }
         catch (Exception error)
         {

@@ -9,10 +9,32 @@ public interface ISaveEngineSession : IDisposable
     SaveSnapshot Snapshot { get; }
     EntityDetail ReadEntity(int box, int slot);
     void ApplyEdit(int box, int slot, EntityEdit edit);
+    /// <summary>The save's bytes as they would be written. Side-effect free: a preview, a hex
+    /// view or a write that is then refused leaves no trace anywhere.</summary>
     ReadOnlyMemory<byte> Serialize();
+
+    /// <summary>
+    /// Records what this session's transfers did in Pokémon History (when the player has it on).
+    /// Call it only once the bytes from <see cref="Serialize"/> were written; until then the trips
+    /// wait in the session, and they are dropped with it when the write is refused or discarded.
+    /// </summary>
+    void CommitHistory() { }
 
     /// <summary>Ability ids this species/form can legally have in the open save's game.</summary>
     IReadOnlyList<int> GetAbilityChoices(int species, int form);
+
+    /// <summary>
+    /// False where a Pokémon records which of its species' abilities it has, not the ability
+    /// itself (Generation 3 and the hacks built on it): an ability from outside its species
+    /// cannot be written there, so no mode should offer one.
+    /// </summary>
+    bool StoresAnyAbility => true;
+
+    /// <summary>
+    /// Whether the open game can hold this national move id (0, no move, always). A pick it
+    /// cannot hold would be dropped on save, so move pickers offer only these.
+    /// </summary>
+    bool StoresMove(int move) => true;
 
     /// <summary>Console generation of the open save (1-9): selects the living dex bundle.</summary>
     int Generation { get; }
@@ -24,6 +46,11 @@ public interface ISaveEngineSession : IDisposable
     /// <summary>The open game's own item name table, indexed by its item ids. Modern
     /// lists misname Gen 1-4 ids (Rare Candy et al); this is per-context truth.</summary>
     IReadOnlyList<string> GetItemNames();
+
+    /// <summary>Names for the held-item ids <see cref="EntityDetail.HeldItem"/> and the slot
+    /// summaries carry. The game's own table, except for an engine that bridges held items to
+    /// PKHeX's modern ids (the CFRU hacks) while its bag keeps the ROM's.</summary>
+    IReadOnlyList<string> GetHeldItemNames() => GetItemNames();
 
     /// <summary>Display names of every form this species has in the open save's game,
     /// indexed by form id. One entry (or an empty name at 0) means no form choice.</summary>
@@ -91,12 +118,24 @@ public interface ISaveEngineSession : IDisposable
 
     /// <summary>Empties the slot (release). Irreversible except via restore points.</summary>
     void ReleaseSlot(int box, int slot);
+
+    /// <summary>
+    /// The Game Boy games store a box as a list with no gaps, so their save file closes any
+    /// gap an edit leaves. This closes the same gaps in the session, keeping what is shown
+    /// equal to what is written. True when a Pokémon changed slot; other games never pack.
+    /// </summary>
+    bool PackListBoxes() => false;
     /// <summary>
     /// Fills the storage with the pre-generated living dex bundle (built by tools/DexGen,
     /// shipped as an asset): one of each species, copied byte-for-byte. Zero on-device
     /// legalization. Returns how many mons were placed.
     /// </summary>
     int PlaceLivingDex(byte[] compressedBundle);
+    /// <summary>
+    /// The bundled living dex file made for this save's exact game (its entity format, not
+    /// just its generation), or null when none fits: the tool is then not offered.
+    /// </summary>
+    string? LivingDexBundle => null;
     /// <summary>
     /// Sorts the given boxes (null = every box). Mons compact to the front of the
     /// FIRST target box, overflow continues into the next; empties pool at the end.
@@ -105,6 +144,13 @@ public interface ISaveEngineSession : IDisposable
     /// </summary>
     /// <returns>How many mons were placed.</returns>
     int SortBoxes(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false);
+
+    /// <summary>
+    /// Where each Pokémon of a <see cref="SortBoxes"/> with the same arguments would come from,
+    /// in the order it would be written (compacted from the first target box). Writes nothing.
+    /// Null when this format cannot sort.
+    /// </summary>
+    IReadOnlyList<(int Box, int Slot)>? PreviewSortOrder(SortCriteria criteria, IReadOnlyList<int>? boxes = null, bool reverse = false) => null;
 
     /// <summary>Applies an instruction ("Prop=Value", $suggest/$rand/$shiny) to every non-empty
     /// slot in the given boxes (null = all boxes; -1 = the party). Returns how many mons were touched.</summary>
@@ -140,6 +186,12 @@ public interface ISaveEngineSession : IDisposable
 
     // ── Trainer card ──
     TrainerInfo GetTrainer();
+
+    /// <summary>The gym badges the save records, or null where the game keeps none PKForge can read.</summary>
+    SaveBadges? GetBadges() => null;
+
+    /// <summary>Every Pokémon in the party and boxes, as the game journal follows it; empty where PKForge cannot tell one from another.</summary>
+    IReadOnlyList<JournalMon> GetJournalRoster() => [];
     void SetTrainer(TrainerInfo trainer);
     /// <summary>Makes a Pokémon owned by the current save or a named trainer profile.
     /// Fixed-OT encounters are refused and the edit is committed only when it remains legal.</summary>
@@ -353,7 +405,8 @@ public sealed record MoveDetailsEdit(IReadOnlyList<int>? PP = null, IReadOnlyLis
 /// <summary>Format-gated Day Care / Nursery data. The game owns breeding and egg state; PKForge only displays it.</summary>
 public sealed record DaycareInfo(bool Supported, IReadOnlyList<DaycareFacility> Facilities);
 public sealed record DaycareFacility(string Name, bool EggAvailable, IReadOnlyList<DaycareSlot> Slots);
-public sealed record DaycareSlot(int Index, bool Occupied, string SpeciesName, string Nickname, int Level, uint? Experience);
+public sealed record DaycareSlot(int Index, bool Occupied, string SpeciesName, string Nickname, int Level, uint? Experience,
+    int Species = 0, int Form = 0, bool Shiny = false);
 /// <summary>Destination of a successful Day Care withdrawal.</summary>
 public sealed record DaycareWithdrawal(int Box, int Slot, string SpeciesName);
 
@@ -599,18 +652,29 @@ public sealed record TrainerInfo(string Name, int TID, int SID, uint Money, int 
 public sealed record TrainerProfile(string Id, string DisplayName, string OriginalTrainer, int TID, int SID, int Gender);
 
 /// <summary>Trainer-card counters with per-field support flags and storage maxima.
-/// PlayTimeHoursMax is 255 on Gen 1's one-byte counter, 65535 on later formats.</summary>
+/// PlayTimeHoursMax is 255 on Gen 1's one-byte counter, 65535 on later formats.
+/// Watts are the Pokéwalker's (HeartGold, SoulSilver) or the Wild Area's (Sword, Shield);
+/// Festival Coins are Sun/Moon's Festival Plaza; League Points and Blueberry Points are
+/// Scarlet/Violet's (the latter only once The Indigo Disk has added its block).</summary>
 public sealed record TrainerStats(
     bool SupportsPlayTime, int PlayTimeHours, int PlayTimeMinutes, int PlayTimeHoursMax,
     bool SupportsBP, int BP, int BPMax,
-    bool SupportsCoins, int Coins, int CoinsMax);
+    bool SupportsCoins, int Coins, int CoinsMax,
+    bool SupportsWatts = false, int Watts = 0, int WattsMax = 0,
+    bool SupportsFestaCoins = false, int FestaCoins = 0, int FestaCoinsMax = 0,
+    bool SupportsLeaguePoints = false, int LeaguePoints = 0, int LeaguePointsMax = 0,
+    bool SupportsBlueberryPoints = false, int BlueberryPoints = 0, int BlueberryPointsMax = 0);
 
 /// <summary>Partial trainer-stat mutation; only non-null fields apply.</summary>
 public sealed record TrainerStatsEdit(
     int? PlayTimeHours = null,
     int? PlayTimeMinutes = null,
     int? BP = null,
-    int? Coins = null);
+    int? Coins = null,
+    int? Watts = null,
+    int? FestaCoins = null,
+    int? LeaguePoints = null,
+    int? BlueberryPoints = null);
 
 /// <summary>App-owned generation preference consumed by the engine without depending on MAUI.</summary>
 public interface IGenerationOwnershipSettings
@@ -694,6 +758,8 @@ public enum SortCriteria
     AgeOldest,
     /// <summary>Shinies first, then dex number.</summary>
     ShinyFirst,
+    /// <summary>Original trainer's name A-Z, then trainer ID, then dex number: each trainer's catches together.</summary>
+    OriginalTrainer,
 }
 
 
@@ -724,8 +790,14 @@ public sealed record EntityDetail(
     IReadOnlyList<int>? Stats = null,
     int CurrentHp = 0,
     int StatusCondition = 0,
-    SpriteTraits Traits = default)
+    SpriteTraits Traits = default,
+    string? AbilityName = null,
+    IReadOnlyList<string?>? MoveNames = null)
 {
+    // AbilityName / MoveNames: what a ROM hack engine calls an ability or move that has no
+    // PKHeX id (Ability or MoveN is then 0), or one it cannot decode. Shown read-only in place
+    // of the id's name; null where the id says it all.
+
     /// <summary>The sprite key (gender art, Alcremie sweet, cosplay via <see cref="Traits"/>).</summary>
     public SpriteLook Look => new(Species, Form, IsShiny, Traits);
 }

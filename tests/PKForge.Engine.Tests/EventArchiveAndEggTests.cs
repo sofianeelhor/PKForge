@@ -5,6 +5,7 @@ using Xunit;
 
 namespace PKForge.Engine.Tests;
 
+[Collection(nameof(EventDatabaseCollection))] // swaps the process-wide event database
 public sealed class EventArchiveAndEggTests
 {
     [Fact]
@@ -51,12 +52,15 @@ public sealed class EventArchiveAndEggTests
         var outcome = legalizer.GenerateEggs(session, [25, 6], new EggOptions(MaxIv: true, Shiny: true));
 
         Assert.True(outcome.Success, outcome.Message);
+        // Real eggs of each line's first stage (issue #75: never a level-100 "hatched" Pokémon).
         var pikachu = session.GetEntity(0, 0);
         var charizard = session.GetEntity(0, 1);
         Assert.True(pikachu.IsEgg);
-        Assert.Equal(25, pikachu.Species);
+        Assert.Equal(172, pikachu.Species); // Pichu
         Assert.True(charizard.IsEgg);
-        Assert.Equal(6, charizard.Species);
+        Assert.Equal(4, charizard.Species); // Charmander
+        Assert.Equal(1, pikachu.CurrentLevel);
+        Assert.Equal(EggStateLegality.GetMaximumEggHatchCycles(pikachu), pikachu.OriginalTrainerFriendship);
         Span<int> ivs = stackalloc int[6];
         pikachu.GetIVs(ivs);
         Assert.All(ivs.ToArray(), iv => Assert.Equal(31, iv));
@@ -66,6 +70,6 @@ public sealed class EventArchiveAndEggTests
         Assert.True(SaveUtil.TryGetSaveFile(bytes, out var reopened));
         using var reloaded = new SaveEngineSession(reopened!, null);
         Assert.True(reloaded.GetEntity(0, 0).IsEgg);
-        Assert.Equal(25, reloaded.GetEntity(0, 0).Species);
+        Assert.Equal(172, reloaded.GetEntity(0, 0).Species);
     }
 }

@@ -1,4 +1,3 @@
-using PKForge.App.Theme;
 using PKForge.App.ViewModels;
 using PKForge.Domain;
 
@@ -20,8 +19,8 @@ public static class GrandUndergroundEditor
             }
 
             var options = items.Select(item => new PadOption($"{item.Name} · {item.Count}/{item.MaxCount} · {item.Type}"))
-                .Append(new PadOption("Fill every stack", IconPath: "fill", Detail: "Every item goes to its maximum; a restore point is made first."))
-                .Append(new PadOption("Clear every stack", IconPath: "clear", Detail: "Every item goes to 0; a restore point is made first."))
+                .Append(new PadOption("Fill every stack", IconPath: "fill", Detail: "Every item goes to its maximum."))
+                .Append(new PadOption("Clear every stack", IconPath: "clear", Detail: "Every item goes to 0."))
                 .ToArray();
             var choice = await EditorMenu.ShowAsync(host, "Grand underground", "Spheres, treasures, statues, and pedestals", options);
             if (choice is null) return;
@@ -31,7 +30,7 @@ public static class GrandUndergroundEditor
                 var filling = choice == "Fill every stack";
                 var verb = filling ? "Fill" : "Clear";
                 var confirmed = await PadMenu.ConfirmAsync(host, $"{verb} underground items?",
-                    filling ? "Every Grand Underground stack becomes full. A restore point is created first." : "Every Grand Underground stack becomes 0. A restore point is created first.",
+                    filling ? "Every Grand Underground stack becomes full. Restore points can undo it." : "Every Grand Underground stack becomes 0. Restore points can undo it.",
                     filling ? "Fill" : "Clear");
                 if (!confirmed) continue;
                 var saved = await viewModel.RunMutationAsync(s =>

@@ -189,4 +189,32 @@ public sealed class StorageMarksTests
     [InlineData(-1, 0, 0, false)]
     public void StorageRectangle_contains(int from, int to, int slot, bool expected) =>
         Assert.Equal(expected, StorageRectangle.Contains(from, to, slot, Columns));
+
+    [Fact]
+    public void Released_marks_follow_their_own_Pokemon_when_a_Game_Boy_box_closes_up()
+    {
+        // Yellow, 3.1.1: after "Move to Bank" the box closed up and the three Pokémon that slid
+        // into the freed slots came out marked, ready to be sent next by mistake.
+        var marks = new StorageMarks();
+        foreach (var slot in new[] { 0, 1, 2, 5 }) marks.Toggle(Slots, 0, slot);
+        marks.Toggle(Slots, 1, 7);
+
+        marks.Released([(0, 0), (0, 2)], listBoxes: true);
+
+        Assert.Equal([(0, 0), (0, 3), (1, 7)], marks.Ordered);
+    }
+
+    [Fact]
+    public void Released_keeps_slots_in_fixed_boxes_and_closes_the_party_in_every_game()
+    {
+        var marks = new StorageMarks();
+        marks.Toggle(Slots, 0, 1);
+        marks.Toggle(Slots, 0, 5);
+        marks.Toggle(Slots, -1, 0);
+        marks.Toggle(Slots, -1, 1);
+
+        marks.Released([(0, 1), (-1, 0)], listBoxes: false);
+
+        Assert.Equal([(-1, 0), (0, 5)], marks.Ordered);
+    }
 }

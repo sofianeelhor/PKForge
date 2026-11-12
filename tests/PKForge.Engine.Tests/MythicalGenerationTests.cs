@@ -24,7 +24,6 @@ public sealed class MythicalGenerationTests
     [InlineData(719)] // Diancie
     [InlineData(720)] // Hoopa
     [InlineData(721)] // Volcanion
-    [InlineData(801)] // Magearna
     [InlineData(802)] // Marshadow
     [InlineData(807)] // Zeraora
     public void GiftOnlyMythicalsGenerateWithAuthenticEventOT(int species)
@@ -42,6 +41,23 @@ public sealed class MythicalGenerationTests
         var detail = session.ReadEntity(0, 0);
         Assert.Equal(species, detail.Species);
         Assert.NotEqual("PKForge", detail.OriginalTrainer); // distribution identity, not the save trainer
+    }
+
+    [Fact]
+    public void MagearnaTakesTheSaveTrainerNotAlm()
+    {
+        // Magearna's QR gift has no fixed OT: whoever receives it is the trainer. It used to
+        // come out as "ALM", Auto-Legality's stand-in trainer, because its encounter is from
+        // another Gen 7 game than the blank save.
+        var engine = new SaveEngine();
+        using var session = engine.OpenBlankSession(7);
+        var legalizer = new LegalizerService();
+
+        var outcome = legalizer.Generate(session, 0, 0,
+            new GenerationRequest(801, 50, Shiny: false, Nature: null, Ability: null, Ball: null, Moves: null, Form: 0));
+
+        Assert.True(outcome.Success, outcome.Message);
+        Assert.Equal("PKForge", session.ReadEntity(0, 0).OriginalTrainer);
     }
 
     [Theory]

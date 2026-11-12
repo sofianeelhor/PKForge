@@ -22,6 +22,8 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         public EmulatorKind Kind;
         /// <summary>Names in the folder currently being walked, for ROM-name hints.</summary>
         public IReadOnlyList<string>? Siblings;
+        /// <summary>The linked folder's document id: a save's path is judged from here down.</summary>
+        public string RootDocId = "";
         public readonly List<string> Rejected = [];
         public readonly List<string> Diagnostics = [];
 
@@ -74,10 +76,12 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         string treeId, EmulatorKind kind, CancellationToken cancellationToken,
         Action<DetectedSave>? onSave)
     {
+        if (kind == EmulatorKind.LinkedFile)
+            return ScanLinkedFile(treeId, onSave);
         var treeUri = AndroidUri.Parse(treeId) ?? throw new ArgumentException("Invalid tree URI.", nameof(treeId));
         var rootDocId = DocumentsContract.GetTreeDocumentId(treeUri)
             ?? throw new InvalidOperationException("The folder grant has no tree document id.");
-        var state = new ScanState { Kind = kind };
+        var state = new ScanState { Kind = kind, RootDocId = rootDocId };
         state.Trace($"Scanner={nameof(AndroidEmulatorScanner)} kind={kind}");
         state.Trace($"TreeUri={treeUri}");
         state.Trace($"RootDocId={rootDocId}");
@@ -87,7 +91,8 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
             found = kind switch
             {
                 EmulatorKind.RetroArch or EmulatorKind.MelonDS or EmulatorKind.Linkboy or
-                EmulatorKind.DraStic or EmulatorKind.PizzaBoyGba or EmulatorKind.PizzaBoyGbc or EmulatorKind.Dolphin =>
+                EmulatorKind.DraStic or EmulatorKind.PizzaBoyGba or EmulatorKind.PizzaBoyGbc or EmulatorKind.Dolphin or
+                EmulatorKind.MyBoy or EmulatorKind.MyOldBoy or EmulatorKind.PokeDaisy =>
                     ScanFlatFolder(treeUri, rootDocId, kind, cancellationToken, state, onSave),
                 EmulatorKind.Eden => ScanEden(treeUri, rootDocId, cancellationToken, state, onSave),
                 EmulatorKind.Azahar or EmulatorKind.CitraMmj => ScanThreeDs(treeUri, rootDocId, kind, cancellationToken, state, onSave),
@@ -105,6 +110,75 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         ScanCache.Flush();
         return new EmulatorScanResult(EmulatorSaveHeuristics.Normalize(found), state.FilesSeen,
             [.. state.Rejected], [.. state.Diagnostics]);
+    }
+
+    /// <summary>
+    /// A single linked save file (#37): read through its persisted document grant and
+    /// described like any scanned save. A file that is gone or no longer readable is
+    /// reported as rejected and stays linked, so it comes back when it is readable again.
+    /// </summary>
+    private EmulatorScanResult ScanLinkedFile(string documentId, Action<DetectedSave>? onSave)
+    {
+        var state = new ScanState { Kind = EmulatorKind.LinkedFile };
+        state.Trace($"Scanner={nameof(AndroidEmulatorScanner)} kind={EmulatorKind.LinkedFile}");
+        state.Trace($"DocumentUri={documentId}");
+        var found = new List<DetectedSave>();
+        string name = "Pokémon save";
+        try
+        {
+            var uri = AndroidUri.Parse(documentId) ?? throw new ArgumentException("Invalid document URI.", nameof(documentId));
+            var resolver = Platform.AppContext.ContentResolver ?? throw new InvalidOperationException("No ContentResolver.");
+            DateTimeOffset? modified = null;
+            var cursor = resolver.Query(uri, [IOpenableColumns.DisplayName, DocumentsContract.Document.ColumnLastModified], null, null, null);
+            try
+            {
+                if (cursor is not null && cursor.MoveToFirst())
+                {
+                    var nameIndex = cursor.GetColumnIndex(IOpenableColumns.DisplayName);
+                    if (nameIndex >= 0 && cursor.GetString(nameIndex) is { Length: > 0 } shown) name = shown;
+                    var modifiedIndex = cursor.GetColumnIndex(DocumentsContract.Document.ColumnLastModified);
+                    if (modifiedIndex >= 0 && !cursor.IsNull(modifiedIndex))
+                        modified = DateTimeOffset.FromUnixTimeMilliseconds(cursor.GetLong(modifiedIndex));
+                }
+            }
+            finally
+            {
+                ContentCursors.Release(cursor);
+            }
+            state.FilesSeen = 1;
+            using var stream = resolver.OpenInputStream(uri) ?? throw new IOException("The document provider returned no stream.");
+            const long maxSaveBytes = 32 * 1024 * 1024;
+            using var buffer = new MemoryStream();
+            var chunk = new byte[81920];
+            int read;
+            while ((read = stream.Read(chunk, 0, chunk.Length)) > 0)
+            {
+                buffer.Write(chunk, 0, read);
+                if (buffer.Length > maxSaveBytes) throw new IOException($"larger than {maxSaveBytes} bytes");
+            }
+            var description = engine.TryDescribe(buffer.ToArray(), name);
+            if (description is null)
+            {
+                state.Trace($"PARSER REJECTED: {engine.DescribeRejection(buffer.ToArray()) ?? "ISaveEngine.TryDescribe returned null"}");
+                state.Rejected.Add(name);
+            }
+            else
+            {
+                var guess = SaveIdentityRules.Guess(description.GameName, description.Generation, name, null, name);
+                state.Trace($"PARSER ACCEPTED game={description.GameName} generation={description.Generation} label={guess.Label}");
+                var save = new DetectedSave(documentId, name, guess.Label, EmulatorKind.LinkedFile,
+                    RequiresExtraCare: false, modified, description.Generation, description.TrainerName,
+                    description.PlayTime, guess, Language: description.Language, TrainerId: description.TrainerId);
+                found.Add(save);
+                onSave?.Invoke(save);
+            }
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            state.Trace($"LINKED FILE UNREADABLE {error.Message}");
+            state.Rejected.Add($"{name} (linked file not readable: {error.Message})");
+        }
+        return new EmulatorScanResult(found, state.FilesSeen, [.. state.Rejected], [.. state.Diagnostics]);
     }
 
     /// <summary>Emulator folders whose contents can never be saves - pruned so a whole-RetroArch grant stays fast.</summary>
@@ -156,7 +230,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
         {
             EmulatorKind.Dolphin => ["GC"],
             EmulatorKind.DraStic => ["backup"],
-            EmulatorKind.PizzaBoyGba or EmulatorKind.PizzaBoyGbc => ["save", "saves"],
+            EmulatorKind.PizzaBoyGba or EmulatorKind.PizzaBoyGbc or EmulatorKind.MyBoy or EmulatorKind.MyOldBoy => ["save", "saves"],
             _ => ["saves"],
         };
         var savesDirs = rootChildren.Where(x => x.IsDirectory && preferredFolders.Contains(x.Name, StringComparer.OrdinalIgnoreCase)).ToArray();
@@ -267,10 +341,15 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
             // saves whose timestamps have not changed since the previous install.
             var cacheKey = documentUri + "#" + kind + "#" + InstallEpoch;
             var modifiedTicks = child.LastModified?.UtcTicks ?? 0;
+            // A backup or a sync tool's old version is still a save the player may want: it
+            // is found like the others and only starts off the shelf, in Hidden saves.
+            var isCopy = SaveNoise.IsCopyPath(PathBelowRoot(state.RootDocId, child.DocId),
+                kind == EmulatorKind.DraStic ? "backup" : null);
+            if (isCopy) state.Trace("COPY (backup or hidden folder): starts in Hidden saves");
             if (ScanCache.TryGet(cacheKey, modifiedTicks, out var cached))
             {
                 state.Trace(cached is null ? "CACHED rejection (unchanged since it last failed to parse)" : $"CACHED {cached.GameLabel}");
-                return cached;
+                return cached is null ? null : cached with { IsCopy = isCopy };
             }
 
             using var stream = Platform.AppContext.ContentResolver?.OpenInputStream(documentUri);
@@ -308,7 +387,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
             var description = engine.TryDescribe(bytes, child.Name);
             if (description is null)
             {
-                state.Trace("PARSER REJECTED: ISaveEngine.TryDescribe returned null");
+                state.Trace($"PARSER REJECTED: {engine.DescribeRejection(bytes) ?? "ISaveEngine.TryDescribe returned null"}");
                 // Remembering a rejection keeps big RetroArch folders fast. A 3DS or Switch save
                 // is one known file per game: always re-read it, so a read that caught the
                 // emulator mid-write does not hide the game until the file changes again.
@@ -335,7 +414,9 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
                 guess,
                 romName,
                 EmulatorSaveHeuristics.FolderHint(child.DocId),
-                Language: description.Language);
+                Language: description.Language,
+                IsCopy: isCopy,
+                TrainerId: description.TrainerId);
             ScanCache.Store(cacheKey, modifiedTicks, detected);
             return detected;
         }
@@ -344,6 +425,15 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
             state.Trace($"CANDIDATE EXCEPTION {error}");
             return null; // unreadable candidates are simply not saves
         }
+    }
+
+    /// <summary>The part of a document id below the linked folder ("mGBA/Emerald.srm").</summary>
+    private static string PathBelowRoot(string rootDocId, string docId)
+    {
+        if (rootDocId.Length > 0 && docId.StartsWith(rootDocId, StringComparison.Ordinal))
+            return docId[rootDocId.Length..].TrimStart('/');
+        var volume = docId.IndexOf(':');
+        return volume >= 0 ? docId[(volume + 1)..] : docId;
     }
 
     private sealed record ChildDocument(string DocId, string Name, bool IsDirectory, DateTimeOffset? LastModified);
@@ -377,7 +467,7 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
     {
         // Detection support can expand between releases. Keep cached negative
         // results versioned so a newly supported save is always retried once.
-        private const string Key = "scan_cache_v5"; // v5: cards re-read after the out-of-range party count fix
+        private const string Key = "scan_cache_v7"; // v7: Elite Redux saves are read (v6 cached them as rejected)
         private const int MaxEntries = 512;
         private static Dictionary<string, CacheEntry>? _entries;
         private static readonly Lock Gate = new();
@@ -505,18 +595,24 @@ public sealed class AndroidEmulatorScanner(ISaveEngine engine) : IIncrementalEmu
             DocumentsContract.Document.ColumnMimeType,
             DocumentsContract.Document.ColumnLastModified,
         ];
-        using var cursor = Platform.AppContext.ContentResolver?.Query(childrenUri, projection, null, null, null);
+        var cursor = Platform.AppContext.ContentResolver?.Query(childrenUri, projection, null, null, null);
         if (cursor is null) return results;
-
-        while (cursor.MoveToNext())
+        try
         {
-            var docId = cursor.GetString(0);
-            var name = cursor.GetString(1);
-            if (docId is null || name is null) continue;
-            var isDirectory = cursor.GetString(2) == DocumentsContract.Document.MimeTypeDir;
-            var modifiedMs = cursor.GetLong(3);
-            results.Add(new ChildDocument(docId, name, isDirectory,
-                modifiedMs > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(modifiedMs) : null));
+            while (cursor.MoveToNext())
+            {
+                var docId = cursor.GetString(0);
+                var name = cursor.GetString(1);
+                if (docId is null || name is null) continue;
+                var isDirectory = cursor.GetString(2) == DocumentsContract.Document.MimeTypeDir;
+                var modifiedMs = cursor.GetLong(3);
+                results.Add(new ChildDocument(docId, name, isDirectory,
+                    modifiedMs > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(modifiedMs) : null));
+            }
+        }
+        finally
+        {
+            ContentCursors.Release(cursor);
         }
         return results;
     }

@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" android:installLocation="auto">
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <!-- The Pokéwalker reads the phone's step counter, only when the player allows it. -->
+  <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+  <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
+  <!-- The widgets ask which home app shows them: only launchers known to animate widgets get the animated frames. -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.HOME" />
+    </intent>
+  </queries>
   <application android:label="PKForge" android:icon="@mipmap/pkforge" android:roundIcon="@mipmap/pkforge_round" android:allowBackup="true" android:supportsRtl="true" />
 </manifest>

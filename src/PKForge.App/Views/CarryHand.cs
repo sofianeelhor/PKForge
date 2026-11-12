@@ -133,7 +133,7 @@ public sealed class CarryHand
             // from below-right, as the storage cursor does.
             var height = cell * 0.42f;
             var width = height * pointer.Width / pointer.Height;
-            using var image = SKImage.FromBitmap(pointer);
+            var image = Services.SpriteImages.Of(pointer);
             canvas.DrawImage(image, SKRect.Create(held.MidX + size * 0.12f, held.MidY + size * 0.08f, width, height),
                 BoxGridRenderer.SpriteSampling);
         }

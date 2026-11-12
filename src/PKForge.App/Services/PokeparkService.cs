@@ -5,8 +5,15 @@ using PKForge.Domain;
 
 namespace PKForge.App.Services;
 
+/// <param name="Soul">Who the Pokémon is whatever slot it came from (<see cref="ParkIdentity.Soul"/>);
+/// empty when its data could not be read.</param>
 public sealed record ParkPokemon(string Id, int Species, int Form, bool Shiny, string Name, string Source,
-    string GameName = "", string TrainerName = "", string Origin = "");
+    string GameName = "", string TrainerName = "", string Origin = "", string Soul = "")
+{
+    /// <summary>One per park: the Pokémon's identity, or its visit id when that is unknown.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string Identity => Soul.Length > 0 ? Soul : Id;
+}
 public enum PokeparkSource { Both, Bank, Save, Disabled }
 public sealed record PokeparkSettings
 {
@@ -31,7 +38,8 @@ public sealed class PokeparkService(IBankService bank, ISaveSessionService saves
         var result = bank.GetAll().Where(e => e.Info.Species > 0).Select(e =>
             new ParkPokemon($"bank:{e.Id:N}", e.Info.Species, e.Info.Form, e.Info.Shiny,
                 Name(e.Info.Nickname, e.Info.Species), $"Bank · Box {e.Box + 1} · Slot {e.Slot + 1}",
-                GameName: $"Gen {e.Info.Generation}", TrainerName: "", Origin: e.Info.SourceName)).ToList();
+                GameName: $"Gen {e.Info.Generation}", TrainerName: "", Origin: e.Info.SourceName,
+                Soul: BankSoul(e))).ToList();
         var session = saves.CurrentSession;
         var document = saves.Current?.Document;
         if (session is null || document is null) return result;
@@ -47,9 +55,47 @@ public sealed class PokeparkService(IBankService bank, ISaveSessionService saves
                 species, slot.Form, slot.IsShiny,
                 string.IsNullOrWhiteSpace(slot.Nickname) ? SpeciesName(species) : slot.Nickname,
                 $"{document.DisplayName} · {(slot.Box < 0 ? "Party" : $"Box {slot.Box + 1}")} · Slot {slot.Slot + 1}",
-                GameName: gameName, TrainerName: trainer, Origin: document.DisplayName));
+                GameName: gameName, TrainerName: trainer, Origin: document.DisplayName,
+                Soul: SoulOf(() => session.ExportSlot(slot.Box, slot.Slot))));
         }
         return result;
+    }
+
+    private readonly Dictionary<Guid, string> _bankSouls = new();
+
+    // A Bank entry's bytes never move under its id, so its identity is read once.
+    private string BankSoul(BankEntry entry)
+    {
+        lock (_bankSouls) if (_bankSouls.TryGetValue(entry.Id, out var known)) return known;
+        var soul = SoulOf(() => new SlotExport(bank.GetData(entry.Id), "", entry.Info.Format));
+        lock (_bankSouls) _bankSouls[entry.Id] = soul;
+        return soul;
+    }
+
+    /// <summary>The Pokémon's identity from its own data, empty when it cannot be read.</summary>
+    private static string SoulOf(Func<SlotExport> read)
+    {
+        try
+        {
+            var data = read();
+            return PKForge.Engine.EntityBytes.Parse(data.Data, string.IsNullOrEmpty(data.Format) ? null : data.Format) is { Species: > 0 } pk
+                ? ParkIdentity.Soul(pk.PID, pk.Format >= 6 ? pk.EncryptionConstant : null, pk.OriginalTrainerName, pk.TID16)
+                : "";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or IndexOutOfRangeException or IOException or FormatException)
+        {
+            return "";
+        }
+    }
+
+    /// <summary>A resident saved before identities were kept, given its identity when its source can be read.</summary>
+    private ParkPokemon WithSoul(ParkPokemon mon)
+    {
+        if (mon.Soul.Length > 0) return mon;
+        var parts = mon.Id.Split(':');
+        if (parts is ["bank", var guid, ..] && Guid.TryParse(guid, out var id) && bank.GetAll().FirstOrDefault(e => e.Id == id) is { } entry)
+            return mon with { Soul = BankSoul(entry) };
+        return SourceOf(mon) is { BankId: null } source ? mon with { Soul = SoulOf(() => new SlotExport(source.Data, "", source.Format)) } : mon;
     }
 
     /// <summary>The species name, the same table every picker shows.</summary>
@@ -73,7 +119,7 @@ public sealed class PokeparkService(IBankService bank, ISaveSessionService saves
             {
                 var candidates = GetCandidates().Where(p => Settings.Source == PokeparkSource.Both ||
                     p.Id.StartsWith(Settings.Source == PokeparkSource.Bank ? "bank:" : "save:"));
-                roster = ParkSelection.Select(candidates, p => p.Id, true, Settings.Count, []);
+                roster = ParkSelection.Select(candidates, p => p.Identity, true, Settings.Count, []);
             }
             SaveRoster(roster);
         }
@@ -101,20 +147,36 @@ public sealed class PokeparkService(IBankService bank, ISaveSessionService saves
             p.Id.StartsWith(settings.Source == PokeparkSource.Bank ? "bank:" : "save:"));
         var available = candidates.ToArray();
         if (available.Length == 0) return 0;
-        var fresh = available.Where(p => !previous.Any(old => old.Id == p.Id)).ToArray();
+        var fresh = available.Where(p => !previous.Any(old => old.Identity == p.Identity)).ToArray();
         if (fresh.Length >= Math.Min(settings.Count, MaximumResidents))
             available = fresh;
         // Automatic filling is independent from the old manual-selection
         // list. In combined mode, guarantee representation from both Save and
         // Bank whenever both are available and the requested count allows it.
         var roster = settings.Source == PokeparkSource.Both
-            ? ParkSelection.SelectBalanced(available, p => p.Id,
+            ? ParkSelection.SelectBalanced(available, p => p.Identity,
                 p => p.Id.StartsWith("save:", StringComparison.Ordinal) ? "save" : "bank",
                 settings.Count)
-            : ParkSelection.Select(available, p => p.Id, true, settings.Count, []);
+            : ParkSelection.Select(available, p => p.Identity, true, settings.Count, []);
         if (roster.Count == 0) return 0;
         SaveRoster(roster);
         return roster.Count;
+    }
+
+    /// <summary>Brings the park up to the auto-fill size from the auto-fill source, keeping everyone
+    /// already there (a smaller size removes nobody). Returns how many arrived.</summary>
+    public int TopUpAutoFill()
+    {
+        var settings = Settings;
+        if (settings.Source == PokeparkSource.Disabled) return 0;
+        var roster = LoadRoster();
+        var candidates = GetCandidates().Where(p => settings.Source == PokeparkSource.Both ||
+            p.Id.StartsWith(settings.Source == PokeparkSource.Bank ? "bank:" : "save:"));
+        var filled = ParkSelection.TopUp(roster, candidates, p => p.Identity, settings.Count);
+        if (filled.Count == roster.Count) return 0;
+        Write(AutoFillSuppressedKey, false);
+        SaveRoster(filled);
+        return filled.Count - roster.Count;
     }
 
     public void SaveSettings(PokeparkSettings settings)
@@ -145,14 +207,18 @@ public sealed class PokeparkService(IBankService bank, ISaveSessionService saves
         // rosters to the species name so every surface (journal, park, speech bubbles)
         // shows the real name without a re-invite.
         var healed = false;
+        // Residents saved before identities were kept get theirs when their source can be read,
+        // and a Pokémon that ended up in the park twice (once auto-filled, once invited) stays once.
         roster = roster.Select(p =>
         {
-            if (!IsLegacyFallbackName(p.Name, p.Species)) return p;
-            healed = true;
-            return p with { Name = SpeciesName(p.Species) };
+            var named = IsLegacyFallbackName(p.Name, p.Species) ? p with { Name = SpeciesName(p.Species) } : p;
+            var known = named.Soul.Length > 0 ? named : WithSoul(named);
+            if (!ReferenceEquals(known, p)) healed = true;
+            return known;
         }).ToArray();
-        if (healed) SaveRoster(roster);
-        return roster.Where(p => p.Species > 0).DistinctBy(p => p.Id).Take(MaximumResidents).ToArray();
+        var unique = roster.Where(p => p.Species > 0).DistinctBy(p => p.Id).DistinctBy(p => p.Identity).Take(MaximumResidents).ToArray();
+        if (healed || unique.Length != roster.Length) SaveRoster(unique);
+        return unique;
     }
 
     /// <summary>Matches exactly the old fallback pattern "Pokémon #N" (and its ASCII
@@ -170,7 +236,7 @@ public sealed class PokeparkService(IBankService bank, ISaveSessionService saves
         return AddVisitor(new ParkPokemon($"bank:{entry.Id:N}", entry.Info.Species, entry.Info.Form,
             entry.Info.Shiny, Name(entry.Info.Nickname, entry.Info.Species),
             $"Bank · Box {entry.Box + 1} · Slot {entry.Slot + 1}",
-            GameName: $"Gen {entry.Info.Generation}", TrainerName: "", Origin: entry.Info.SourceName));
+            GameName: $"Gen {entry.Info.Generation}", TrainerName: "", Origin: entry.Info.SourceName, Soul: BankSoul(entry)));
     }
 
     public string AddSaveVisitor(int box, int slot)
@@ -183,11 +249,13 @@ public sealed class PokeparkService(IBankService bank, ISaveSessionService saves
         if (session.GetMetInfo(box, slot).IsEgg) return "Eggs can visit Poképark after they hatch.";
         var detail = session.ReadEntity(box, slot);
         var documentId = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(document.DocumentId)))[..16];
-        var fingerprint = Convert.ToHexString(SHA256.HashData(session.ExportSlot(box, slot).Data));
+        var export = session.ExportSlot(box, slot);
+        var fingerprint = Convert.ToHexString(SHA256.HashData(export.Data));
         return AddVisitor(new ParkPokemon($"save:{documentId}:{box}:{slot}:{fingerprint}", detail.Species,
             detail.Form, detail.IsShiny, string.IsNullOrWhiteSpace(detail.Nickname) ? detail.SpeciesName : detail.Nickname,
             $"{document.DisplayName} · {(box < 0 ? "Party" : $"Box {box + 1}")} · Slot {slot + 1}",
-            GameName: $"Gen {session.Generation}", TrainerName: session.GetTrainer().Name, Origin: document.DisplayName));
+            GameName: $"Gen {session.Generation}", TrainerName: session.GetTrainer().Name, Origin: document.DisplayName,
+            Soul: SoulOf(() => export)));
     }
 
     private readonly Dictionary<string, int> _natures = new();
@@ -297,7 +365,7 @@ public sealed class PokeparkService(IBankService bank, ISaveSessionService saves
     private string AddVisitor(ParkPokemon pokemon)
     {
         var roster = LoadRoster();
-        if (roster.Any(p => p.Id == pokemon.Id)) return $"{pokemon.Name} already lives in Poképark.";
+        if (roster.Any(p => p.Id == pokemon.Id || p.Identity == pokemon.Identity)) return $"{pokemon.Name} already lives in Poképark.";
         if (roster.Count >= MaximumResidents)
             return $"Poképark has {MaximumResidents} residents. Open the park and remove a resident before adding another.";
         Write(AutoFillSuppressedKey, false);

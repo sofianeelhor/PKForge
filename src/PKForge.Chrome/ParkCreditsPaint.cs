@@ -48,9 +48,9 @@ public static class ParkCreditsPaint
             y += size + 30 * unit;
         }
         paint.Color = SKColors.White;
-        c.DrawText("PKForge", mid, y + 52 * unit, SKTextAlign.Center, big, paint);
+        c.DrawTextFallback("PKForge", mid, y + 52 * unit, SKTextAlign.Center, big, paint);
         paint.Color = Role;
-        c.DrawText("and its Poképark", mid, y + 100 * unit, SKTextAlign.Center, role, paint);
+        c.DrawTextFallback("and its Poképark", mid, y + 100 * unit, SKTextAlign.Center, role, paint);
         y += 220 * unit;
 
         foreach (var section in sections)
@@ -66,7 +66,7 @@ public static class ParkCreditsPaint
                     // The Pokémon walks on the spot, facing the reader, beside the names.
                     var frame = sprite(look, now);
                     // Just left of the name and the artists, whichever is wider.
-                    var block = Math.Max(heading.MeasureText(entry.Name), entry.Role is { } r ? Math.Min(small.MeasureText(r), w * .42f) : 0);
+                    var block = Math.Max(heading.MeasureFallback(entry.Name), entry.Role is { } r ? Math.Min(small.MeasureFallback(r), w * .42f) : 0);
                     var spriteX = mid + 60 * unit - block / 2 - 70 * unit;
                     if (frame is not null && y > -200 * unit && y < h + 200 * unit)
                     {
@@ -79,14 +79,14 @@ public static class ParkCreditsPaint
                     textX = mid + 60 * unit;
                 }
                 paint.Color = SKColors.White;
-                c.DrawText(entry.Name, textX, y, SKTextAlign.Center, hasSprite ? heading : name, paint);
+                c.DrawTextFallback(entry.Name, textX, y, SKTextAlign.Center, hasSprite ? heading : name, paint);
                 y += (hasSprite ? 40 : 50) * unit;
                 if (entry.Role is { } what)
                 {
                     paint.Color = Role;
                     foreach (var line in Wrap(what, hasSprite ? small : role, w * (hasSprite ? .42f : .56f)))
                     {
-                        c.DrawText(line, textX, y, SKTextAlign.Center, hasSprite ? small : role, paint);
+                        c.DrawTextFallback(line, textX, y, SKTextAlign.Center, hasSprite ? small : role, paint);
                         y += (hasSprite ? 30 : 36) * unit;
                     }
                 }
@@ -95,13 +95,13 @@ public static class ParkCreditsPaint
             y += 70 * unit;
         }
         paint.Color = Gold;
-        c.DrawText("Thank you for playing!", mid, y + 120 * unit, SKTextAlign.Center, name, paint);
+        c.DrawTextFallback("Thank you for playing!", mid, y + 120 * unit, SKTextAlign.Center, name, paint);
         var contentHeight = y + 120 * unit + scroll - h * .62f;
 
         // The roll fades in at the bottom and out at the top.
         Fade(c, w, h, unit);
         paint.Color = Role.WithAlpha(200);
-        c.DrawText("Up and Down to scroll  ·  B to close", mid, h - 24 * unit, SKTextAlign.Center, small, paint);
+        c.DrawTextFallback("Up and Down to scroll  ·  B to close", mid, h - 24 * unit, SKTextAlign.Center, small, paint);
         return contentHeight;
     }
 
@@ -109,8 +109,8 @@ public static class ParkCreditsPaint
     private static void Heading(SKCanvas c, string text, float mid, float y, SKFont font, float unit)
     {
         using var paint = new SKPaint { Color = Gold, IsAntialias = false };
-        var half = font.MeasureText(text) / 2;
-        c.DrawText(text, mid, y, SKTextAlign.Center, font, paint);
+        var half = font.MeasureFallback(text) / 2;
+        c.DrawTextFallback(text, mid, y, SKTextAlign.Center, font, paint);
         foreach (var side in new[] { -1, 1 })
         {
             var x = mid + side * (half + 34 * unit);
@@ -167,7 +167,7 @@ public static class ParkCreditsPaint
         foreach (var word in text.Split(' '))
         {
             var next = line.Length == 0 ? word : line + " " + word;
-            if (font.MeasureText(next) <= width || line.Length == 0) { line = next; continue; }
+            if (font.MeasureFallback(next) <= width || line.Length == 0) { line = next; continue; }
             yield return line;
             line = word;
         }

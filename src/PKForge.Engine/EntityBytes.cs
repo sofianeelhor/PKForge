@@ -33,6 +33,9 @@ public static partial class EntityBytes
             [nameof(PB7)] = (b => new PB7(b), EntityContext.Gen7b),
             [nameof(PK8)] = (b => new PK8(b), EntityContext.Gen8),
             [nameof(PB8)] = (b => new PB8(b), EntityContext.Gen8b),
+            // Luminescent Platinum's record is a PB8 read against the hack's own tables. Left
+            // out, its recorded format was ignored and the bytes came back as a Sword PK8.
+            [nameof(PB8LUMI)] = (b => new PB8LUMI(b), EntityContext.Gen8bLumi),
             [nameof(PA8)] = (b => new PA8(b), EntityContext.Gen8a),
             [nameof(PK9)] = (b => new PK9(b), EntityContext.Gen9),
             [nameof(PA9)] = (b => new PA9(b), EntityContext.Gen9a),

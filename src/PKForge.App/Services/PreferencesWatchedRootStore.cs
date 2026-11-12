@@ -24,6 +24,10 @@ public sealed class PreferencesWatchedRootStore : IWatchedRootStore
 
     public void AddRoot(WatchedRoot root)
     {
+        // A folder brought from another device waits by name until this emulator is linked here.
+        var waiting = AppDataTransfer.ToRelink;
+        if (waiting.Any(x => x.Kind == root.Kind))
+            AppDataTransfer.SetToRelink([.. waiting.Where(x => x.Kind != root.Kind)]);
         var roots = GetRoots().ToList();
         if (roots.Any(x => x.Kind == root.Kind && x.TreeId == root.TreeId)) return;
         roots.Add(root);

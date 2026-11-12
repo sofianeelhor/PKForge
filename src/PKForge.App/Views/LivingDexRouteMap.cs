@@ -1,5 +1,4 @@
 using PKForge.App.Services;
-using PKForge.App.Theme;
 using PKForge.Chrome;
 using SkiaSharp;
 using SkiaSharp.Views.Maui;
@@ -23,7 +22,7 @@ public sealed class LivingDexRouteMap : SKCanvasView
     private readonly Queue<RouteTraveler> _queue = new();
     private readonly List<(RouteTraveler Traveler, double StartMs)> _flying = [];
     private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
-    private IDispatcherTimer? _timer;
+    private Services.VsyncLoop? _timer;
     private LivingDexRoute? _route;
     private long _sequence = -1;
     private double _lastLaunchMs;
@@ -35,7 +34,7 @@ public sealed class LivingDexRouteMap : SKCanvasView
         Compact = compact;
         EnableTouchEvents = false;
         InputTransparent = true;
-        PaintSurface += Paint;
+        PaintSurface += PaintGuard.Wrap("LivingDexRouteMap.Paint", Paint);
         Unloaded += (_, _) => Stop();
     }
 
@@ -67,9 +66,12 @@ public sealed class LivingDexRouteMap : SKCanvasView
     private void Start()
     {
         if (_timer is not null) return;
-        _timer = Dispatcher.CreateTimer();
-        _timer.Interval = TimeSpan.FromMilliseconds(16);
-        _timer.Tick += (_, _) => Tick();
+        // A frame on every screen refresh (see VsyncLoop).
+        _timer = new Services.VsyncLoop(_ =>
+        {
+            Tick();
+            return true;
+        });
         _timer.Start();
     }
 
@@ -288,7 +290,7 @@ public sealed class LivingDexRouteMap : SKCanvasView
         {
             var text = Trim(generation, sticker, label.Width - 4 * unit);
             sticker.MeasureText(text, out var bounds);
-            c.DrawText(text, label.MidX, label.MidY - bounds.MidY, SKTextAlign.Center, sticker, ink);
+            c.DrawTextFallback(text, label.MidX, label.MidY - bounds.MidY, SKTextAlign.Center, sticker, ink);
         }
 
         // The save's name under its cartridge, trimmed to the cartridge's width (neighbours never overlap).
@@ -302,7 +304,7 @@ public sealed class LivingDexRouteMap : SKCanvasView
         }
         if (badge is not null)
         {
-            var width = count.MeasureText(badge) + 10 * unit;
+            var width = count.MeasureFallback(badge) + 10 * unit;
             var pill = new SKRect(r.MidX - width / 2, r.Top - count.Size * 0.9f, r.MidX + width / 2, r.Top + count.Size * 0.45f);
             using var fill = new SKPaint { Color = focus ? Pksm.Legal : Pksm.Paper, IsAntialias = true };
             using var rim = new SKPaint { Color = Pksm.PaperEdge, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 1.5f * unit };
@@ -344,8 +346,8 @@ public sealed class LivingDexRouteMap : SKCanvasView
 
     private static string Trim(string text, SKFont font, float width)
     {
-        if (font.MeasureText(text) <= width) return text;
-        while (text.Length > 1 && font.MeasureText(text + "…") > width) text = text[..^1];
+        if (font.MeasureFallback(text) <= width) return text;
+        while (text.Length > 1 && font.MeasureFallback(text + "…") > width) text = text[..^1];
         return text + "…";
     }
 }

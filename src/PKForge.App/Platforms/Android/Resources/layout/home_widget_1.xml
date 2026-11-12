@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A home-screen widget as one complete painted picture (HomeWidgetPaint), the default: hosts that
+     photograph the widget into their own tile (Cocoon) keep exactly this. Each update brings the next frame. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/home_widget_root"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:clipToOutline="true"
+    android:background="@drawable/home_widget_background">
+    <ImageView android:id="@+id/home_widget_frame0"
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="fitCenter" android:importantForAccessibility="no" />
+</FrameLayout>

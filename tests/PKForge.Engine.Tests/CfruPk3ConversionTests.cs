@@ -22,11 +22,11 @@ public sealed class CfruPk3ConversionTests(ITestOutputHelper output)
 
     public static TheoryData<string> HackSaves => new()
     {
-        "radicalred-champ.sav",
-        "unbound-v2111.srm",
+        "thor/retroarch/mGBA/Radical-red-champ.sav",
+        "thor/retroarch/mGBA/Pokémon Unbound (v2.1.1.1).srm",
         "romhacks/demo/Radical Red.sav",
         "romhacks/demo/Pokemon Unbound.srm",
-        "romhacks/demo/Pokemon GS Chronicles.sav",
+        "romhacks/batch-2026-11-12/romhack/romhack saves/Pokemon - GS Chronicles.sav",
     };
 
     private static byte[]? TestData(string file)
@@ -116,7 +116,7 @@ public sealed class CfruPk3ConversionTests(ITestOutputHelper output)
     {
         "romhacks/demo/Radical Red.sav",
         "romhacks/demo/Pokemon Unbound.srm",
-        "romhacks/demo/Pokemon GS Chronicles.sav",
+        "romhacks/batch-2026-11-12/romhack/romhack saves/Pokemon - GS Chronicles.sav",
     };
 
     [Theory]

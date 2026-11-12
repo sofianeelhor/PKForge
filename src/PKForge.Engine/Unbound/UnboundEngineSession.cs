@@ -20,6 +20,8 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     private readonly byte[] _originalBytes;
     private readonly int[] _sections;
     private readonly byte[] _stream;
+    private readonly byte[] _blockBoxes;
+    private readonly int _presetWindow;
     private readonly string? _displayName;
     private bool _disposed;
 
@@ -35,6 +37,18 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
             throw new InvalidDataException("These bytes are not a Pokémon Unbound save.");
         _sections = SectionOffsets(_data);
         _stream = ReadStream(_data, _sections);
+        _blockBoxes = new byte[BlockBoxCount * BoxStride];
+        CopyBlockBoxes(toFile: false);
+        // The preset box's section is checksummed over the window its stored value
+        // proves: CFRU's 0xF24 (sizeof SaveBlock2), else PUSE's 0xADC. A section that
+        // proves neither falls back to the engine's own window.
+        var preset = _sections[PresetSection];
+        var stored = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(preset + 0xFF6));
+        _presetWindow = Checksum(_data.AsSpan(preset, PresetChecksumLength), PresetChecksumLength) == stored
+            ? PresetChecksumLength
+            : Checksum(_data.AsSpan(preset, PresetChecksumLengthPuse), PresetChecksumLengthPuse) == stored
+                ? PresetChecksumLengthPuse
+                : PresetChecksumLength;
         _displayName = displayName;
     }
 
@@ -65,12 +79,54 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
 
         var location = ResolveSlot(box, slot);
         if (location is null) return null;
-        return location.Value.Stream
-            ? new UnboundMon(_stream, location.Value.Offset, party: false)
-            : new UnboundMon(_data, location.Value.Offset, party: false);
+        return new UnboundMon(BufferOf(location.Value), location.Value.Offset, party: false);
     }
 
-    private readonly record struct SlotLocation(bool Stream, int Offset);
+    private enum SlotStore { Stream, File, Block }
+
+    private readonly record struct SlotLocation(SlotStore Store, int Offset);
+
+    private byte[] BufferOf(SlotLocation location) => location.Store switch
+    {
+        SlotStore.Stream => _stream,
+        SlotStore.Block => _blockBoxes,
+        _ => _data,
+    };
+
+    // ── Save-block boxes 22-23 ──
+    // Two 1740-byte boxes at SaveBlock1 0x1F08..0x2CA0, carried by sections 2-3 at 0xFF0
+    // bytes each (the GS Chronicles layout of the same CFRU engine): box 22 starts at
+    // section 2 +0xF18, its slot 3 straddles into section 3, and box 23 starts at
+    // section 3 +0x5F4. Both sections are checksummed over 0xFF0.
+    private const int BlockBoxCount = 2;
+    private const int BoxStride = 30 * PcMonSize;
+    private const int BlockBoxesOffset = 0x1F08;
+    private const int SaveBlock1Window = 0xFF0;
+
+    private IEnumerable<(int Section, int SectionOffset, int Length, int ImageOffset)> BlockBoxSegments()
+    {
+        var done = 0;
+        while (done < BlockBoxCount * BoxStride)
+        {
+            var blockOffset = BlockBoxesOffset + done;
+            var section = PartySection + blockOffset / SaveBlock1Window;
+            var sectionOffset = blockOffset % SaveBlock1Window;
+            var length = Math.Min(BlockBoxCount * BoxStride - done, SaveBlock1Window - sectionOffset);
+            yield return (section, sectionOffset, length, done);
+            done += length;
+        }
+    }
+
+    private void CopyBlockBoxes(bool toFile)
+    {
+        foreach (var (section, sectionOffset, length, imageOffset) in BlockBoxSegments())
+        {
+            var file = _data.AsSpan(_sections[section] + sectionOffset, length);
+            var image = _blockBoxes.AsSpan(imageOffset, length);
+            if (toFile) image.CopyTo(file);
+            else file.CopyTo(image);
+        }
+    }
 
     /// <summary>Physical location of a PC slot: the stream for boxes 1-19, PUSE's
     /// fragmented layouts for 20-24, and the preset box 26 in section 0.</summary>
@@ -80,31 +136,39 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
 
         if (box <= 18)
         {
-            var offset = (box * BoxSlotCount + slot) * PcMonSize;
-            return offset + PcMonSize <= _stream.Length ? new SlotLocation(true, offset) : null;
+            var offset = StreamBoxArea + (box * BoxSlotCount + slot) * PcMonSize;
+            return offset + PcMonSize <= _stream.Length ? new SlotLocation(SlotStore.Stream, offset) : null;
         }
 
         return box switch
         {
-            19 => slot <= 20 ? new SlotLocation(false, 0x1EB0C + slot * PcMonSize) : null,
-            20 => new SlotLocation(false, 0x1F1E8 + slot * PcMonSize),
-            21 => new SlotLocation(false, 0x1F8B4 + slot * PcMonSize),
-            22 => slot <= 3
-                ? new SlotLocation(false, _sections[2] + 0x0F18 + slot * PcMonSize)
-                : new SlotLocation(false, _sections[3] + 0x0010 + (slot - 4) * PcMonSize),
-            23 => new SlotLocation(false, _sections[3] + 0x05F4 + slot * PcMonSize),
-            _ => new SlotLocation(false, _sections[PresetSection] + PresetOffset + slot * PcMonSize),
+            19 => slot <= 20 ? new SlotLocation(SlotStore.File, 0x1EB0C + slot * PcMonSize) : null,
+            20 => new SlotLocation(SlotStore.File, 0x1F1E8 + slot * PcMonSize),
+            21 => new SlotLocation(SlotStore.File, 0x1F8B4 + slot * PcMonSize),
+            22 or 23 => new SlotLocation(SlotStore.Block, (box - 22) * BoxStride + slot * PcMonSize),
+            _ => new SlotLocation(SlotStore.File, _sections[PresetSection] + PresetOffset + slot * PcMonSize),
         };
     }
 
     private void CommitPc(SlotLocation? location)
     {
         if (location is not { } where) return;
-        if (where.Stream)
-            WriteStream(_data, _sections, _stream);
-        else if (where.Offset >= _sections[PresetSection] && where.Offset < _sections[PresetSection] + SectorSize)
-            WriteChecksum(_data, _sections[PresetSection], PresetChecksumLength);
-        // Fragmented boxes live in areas the game does not checksum-verify on load.
+        switch (where.Store)
+        {
+            case SlotStore.Stream:
+                WriteStream(_data, _sections, _stream);
+                break;
+            case SlotStore.Block:
+                CopyBlockBoxes(toFile: true);
+                foreach (var section in BlockBoxSegments().Select(segment => segment.Section).Distinct())
+                    WriteChecksum(_data, _sections[section], SaveBlock1Window);
+                break;
+            default:
+                if (where.Offset >= _sections[PresetSection] && where.Offset < _sections[PresetSection] + SectorSize)
+                    WriteChecksum(_data, _sections[PresetSection], _presetWindow);
+                // Boxes 19-21 live in the raw sector-30/31 region, which carries no checksum.
+                break;
+        }
     }
 
     private void CommitParty()
@@ -164,13 +228,15 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
             UnboundData.GenderOf(mon.Pid, species),
             mon.Friendship,
             mon.PartyStats ?? UnboundData.ComputeStats(mon),
-            mon.CurrentHp);
+            mon.CurrentHp,
+            MoveNames: HackNames.UnmappedMoves(moves, UnboundData.MoveToNational, UnboundData.MoveName));
 
         static EntityDetail Empty(int box, int slot) => new(box, slot, true, 0, string.Empty, 0, string.Empty, 0, 0, 0, 0, 0, 0, 0, 0, [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], false, 0, string.Empty);
     }
 
     public void ApplyEdit(int box, int slot, EntityEdit edit)
     {
+        edit = NameCharset.FitGen3Edit(edit); // charset first: a name the game cannot hold is refused, not emptied
         var mon = TryMon(box, slot) ?? throw new InvalidOperationException("Cannot edit an empty slot.");
         var location = box == -1 ? null : ResolveSlot(box, slot);
         var before = mon.Buffer.AsSpan(mon.Offset, mon.Size).ToArray();
@@ -395,9 +461,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
             var location = ResolveSlot(box, slot);
             if (location is null)
                 return new GenerationOutcome(false, "That slot does not exist in this box.");
-            var destination = location.Value.Stream
-                ? new UnboundMon(_stream, location.Value.Offset, party: false)
-                : new UnboundMon(_data, location.Value.Offset, party: false);
+            var destination = new UnboundMon(BufferOf(location.Value), location.Value.Offset, party: false);
             CopyBetween(mon, destination);
             CommitPc(location);
         }
@@ -422,7 +486,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         {
             location = ResolveSlot(toBox, toSlot);
             if (location is null) return false;
-            target = new UnboundMon(location.Value.Stream ? _stream : _data, location.Value.Offset, party: false);
+            target = new UnboundMon(BufferOf(location.Value), location.Value.Offset, party: false);
             if (target.Species != 0) return false;
         }
         if (source.Party == target.Party)
@@ -463,22 +527,29 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         {
             // Moving into the party appends, exactly like the games.
             if (PartyCount >= 6) throw new InvalidOperationException("The party is full.");
+            // An empty or unreadable box slot has no party form to build.
+            if (fromBox != -1 && !source.CanEnterParty)
+                throw new InvalidOperationException("That box slot holds no Pokémon that can join the party.");
             var party = new UnboundMon(_data, PartyBase + PartyOffset + PartyCount * PartyMonSize, party: true);
             CopyBetween(sourceView, party);
             BinaryPrimitives.WriteUInt32LittleEndian(_data.AsSpan(PartyBase + PartyCountOffset), (uint)(PartyCount + 1));
             if (fromBox == -1) CompactPartyFrom(fromSlot); // party-to-party: reorder in place
             else ClearSlot(fromBox, fromSlot);
             CommitParty();
+            // The box slot it left is written too, or the file keeps it in both places.
+            if (fromBox != -1) CommitPc(ResolveSlot(fromBox, fromSlot));
             return;
         }
 
         var target = ResolveSlot(toBox, toSlot) ?? throw new InvalidOperationException("The destination slot does not exist.");
-        var destination = target.Stream
-            ? new UnboundMon(_stream, target.Offset, party: false)
-            : new UnboundMon(_data, target.Offset, party: false);
+        var destination = new UnboundMon(BufferOf(target), target.Offset, party: false);
         var destinationBytes = new byte[destination.Size];
         destination.Buffer.AsSpan(destination.Offset, destination.Size).CopyTo(destinationBytes);
-        var occupied = destination.LooksValid;
+        // Any non-empty occupant is a Pokémon to keep: LooksValid rejects EXP 0, which a
+        // level-1 Pokémon stores, and treating it as empty overwrote it.
+        var occupied = !destination.IsEmpty;
+        if (source.Party && occupied && !destination.CanEnterParty)
+            throw new InvalidOperationException("The Pokémon in that box slot cannot be read, so it cannot swap into the party.");
 
         // The source lands in the destination (converting formats when crossing the
         // party/PC boundary); the previous occupant, if any, lands back in the source.
@@ -521,6 +592,9 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     {
         if (box == -1)
         {
+            // An empty party slot has nothing to release: compacting from it would remove
+            // the last real member, or write a count of 0xFFFFFFFF on an empty party.
+            if ((uint)slot >= (uint)PartyCount) return;
             CompactPartyFrom(slot);
             CommitParty();
             return;
@@ -538,8 +612,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         }
         var location = ResolveSlot(box, slot);
         if (location is null) return;
-        var buffer = location.Value.Stream ? _stream : _data;
-        buffer.AsSpan(location.Value.Offset, PcMonSize).Clear();
+        BufferOf(location.Value).AsSpan(location.Value.Offset, PcMonSize).Clear();
     }
 
     public bool ImportSlot(int box, int slot, byte[] fileBytes, string? format = null)
@@ -548,21 +621,18 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
             return ImportOwn(box, slot, fileBytes);
         var entity = EntityBytes.Parse(fileBytes, format);
         if (entity is null || entity.Species == 0) return false;
-        if (entity is not PK3)
-        {
-            var converted = EntityConverter.ConvertToType(entity, typeof(PK3), out _) as PK3;
-            if (converted is null) return false;
-            entity = converted;
-        }
-        var pk3 = (PK3)entity;
-        if (Landing(pk3, out _) is not { } ids) return false;
+        if (CfruPk3.Source(entity) is not { } pkm) return false;
+        if (Landing(pkm, out _) is not { } ids) return false;
 
         if (box == -1)
         {
             if (PartyCount >= 6) return false;
-            var party = new UnboundMon(_data, PartyBase + PartyOffset + PartyCount * PartyMonSize, party: true);
-            _data.AsSpan(party.Offset, PartyMonSize).Clear();
-            FromPk3(pk3, ids, party);
+            // Built as a box record first, then withdrawn like the game does: the party
+            // tail (level, stats, current HP, PP) is computed, never left at zero.
+            var boxed = new UnboundMon(new byte[PcMonSize], 0, party: false);
+            FromPkm(pkm, ids, boxed);
+            boxed.Buffer[0x25] = 70; // base friendship, as a party import always had
+            Withdraw(boxed.Buffer, new UnboundMon(_data, PartyBase + PartyOffset + PartyCount * PartyMonSize, party: true));
             BinaryPrimitives.WriteUInt32LittleEndian(_data.AsSpan(PartyBase + PartyCountOffset), (uint)(PartyCount + 1));
             CommitParty();
             return true;
@@ -570,11 +640,9 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
 
         var location = ResolveSlot(box, slot);
         if (location is null) return false;
-        var target = location.Value.Stream
-            ? new UnboundMon(_stream, location.Value.Offset, party: false)
-            : new UnboundMon(_data, location.Value.Offset, party: false);
+        var target = new UnboundMon(BufferOf(location.Value), location.Value.Offset, party: false);
         target.Buffer.AsSpan(target.Offset, PcMonSize).Clear();
-        FromPk3(pk3, ids, target);
+        FromPkm(pkm, ids, target);
         CommitPc(location);
         return true;
     }
@@ -603,33 +671,50 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         BinaryPrimitives.WriteUInt16LittleEndian(party.Buffer.AsSpan(party.Offset + 0x56), (ushort)party.PartyStats![0]);
     }
 
-    /// <summary>The Unbound ids <paramref name="pk3"/> lands with, or null with the reason one
+    /// <summary>The Unbound ids <paramref name="pkm"/> lands with, or null with the reason one
     /// of its national ids has no counterpart in Unbound's tables.</summary>
-    internal static CfruPk3.Inbound? Landing(PK3 pk3, out string? refusal) =>
-        CfruPk3.FromPk3(pk3, "Unbound", UnboundData.SpeciesFromNational, UnboundData.MoveFromNational, UnboundData.ItemFromNational,
+    internal static CfruPk3.Inbound? Landing(PKM pkm, out string? refusal, List<string>? adjustments = null) =>
+        CfruPk3.FromPkm(pkm, "Unbound", UnboundData.SpeciesFromNational, UnboundData.MoveFromNational, UnboundData.ItemFromNational,
             species => UnboundData.AbilityIds(species) is var (a1, a2, hidden)
                 ? (UnboundData.AbilityToNational(a1), UnboundData.AbilityToNational(a2), UnboundData.AbilityToNational(hidden))
                 : default,
-            ball => UnboundMon.TryStoreBall(ball, out var stored) ? stored : -1, out refusal);
+            ball => UnboundMon.TryStoreBall(ball, out var stored) ? stored : -1, out refusal, adjustments);
 
-    private static void FromPk3(PK3 pk3, CfruPk3.Inbound ids, UnboundMon target)
+    /// <summary>
+    /// Unbound reads nature, gender, shininess and ability slot from the PID alone. A
+    /// Generation 3 or 4 PID already says the same; a later one, or one whose parity picks the
+    /// other slot in Unbound's table, is solved again for what the Pokémon shows.
+    /// </summary>
+    private static void FitPid(PKM pkm, CfruPk3.Inbound ids, UnboundMon target)
+    {
+        var nature = (int)pkm.StatAlignment;
+        int? gender = pkm.Gender is 0 or 1 ? pkm.Gender : null;
+        if (target.Nature == nature && target.IsShiny == pkm.IsShiny
+            && (ids.AbilitySlot is not { } slot || (target.Pid & 1) == slot)
+            && (gender is null || UnboundData.GenderOf(target.Pid, target.Species) == gender))
+            return;
+        RerollPid(target, nature, pkm.IsShiny, gender, ids.AbilitySlot);
+    }
+
+    private static void FromPkm(PKM pkm, CfruPk3.Inbound ids, UnboundMon target)
     {
         target.Species = ids.Species;
         target.HeldItem = ids.HeldItem;
-        target.Experience = Math.Max(pk3.EXP, 1u);
-        target.Pid = pk3.PID;
-        target.Otid = pk3.ID32;
-        target.Nickname = pk3.Nickname.Length > 0 ? pk3.Nickname : UnboundData.SpeciesName(target.Species);
+        target.Experience = Math.Max(pkm.EXP, 1u);
+        target.Pid = pkm.PID;
+        target.Otid = pkm.ID32;
+        target.Nickname = pkm.Nickname.Length > 0 ? pkm.Nickname : UnboundData.SpeciesName(target.Species);
         target.Moves = ids.Moves;
         Span<int> ivs = stackalloc int[6]; // PKHeX order: HP, Atk, Def, Spe, SpA, SpD
-        pk3.GetIVs(ivs);
+        pkm.GetIVs(ivs);
         target.IVs = [ivs[0], ivs[1], ivs[2], ivs[4], ivs[5], ivs[3]]; // -> app order HP, Atk, Def, SpA, SpD, Spe
-        target.EVs = [pk3.EV_HP, pk3.EV_ATK, pk3.EV_DEF, pk3.EV_SPA, pk3.EV_SPD, pk3.EV_SPE];
+        target.EVs = [pkm.EV_HP, pkm.EV_ATK, pkm.EV_DEF, pkm.EV_SPA, pkm.EV_SPD, pkm.EV_SPE];
         target.Ball = ids.Ball;
         target.HiddenAbility = ids.HiddenAbility;
-        target.Buffer[target.Offset + 0x12] = (byte)Math.Clamp(pk3.Language, 1, 5);
+        target.Buffer[target.Offset + 0x12] = (byte)Math.Clamp(pkm.Language, 1, 5);
         target.Buffer[target.Offset + 0x13] = 2; // hasSpecies, as the game sets it
-        WriteOtName(target, pk3.OriginalTrainerName);
+        WriteOtName(target, pkm.OriginalTrainerName);
+        FitPid(pkm, ids, target);
         if (target.Party)
         {
             target.Buffer[target.Offset + 0x29] = 70;
@@ -655,7 +740,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
 
         var location = ResolveSlot(box, slot);
         if (location is null) return false;
-        compact.CopyTo((location.Value.Stream ? _stream : _data).AsSpan(location.Value.Offset, PcMonSize));
+        compact.CopyTo(BufferOf(location.Value).AsSpan(location.Value.Offset, PcMonSize));
         CommitPc(location);
         return true;
     }
@@ -737,6 +822,10 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         return SramPadding.Restore(_data, _originalBytes);
     }
 
+    public bool StoresAnyAbility => false;
+
+    public bool StoresMove(int move) => move == 0 || (move > 0 && UnboundData.MoveFromNational(move) > 0);
+
     public IReadOnlyList<int> GetAbilityChoices(int species, int form)
     {
         // Species arrives as a national id and the answer is read through PKHeX's
@@ -754,8 +843,13 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
         var names = new string[730];
         for (var id = 0; id < names.Length; id++)
             names[id] = UnboundData.ItemName(id);
-        return names;
+        return HackNames.WithNoItem(names);
     }
+
+    private static readonly Lazy<string[]> HeldItemNames = new(() => HackNames.NationalItems(UnboundData.ItemFromNational));
+
+    /// <summary>Held items are bridged to PKHeX's ids (ReadEntity, slot summaries); the bag keeps the ROM's.</summary>
+    public IReadOnlyList<string> GetHeldItemNames() => HeldItemNames.Value;
 
     public IReadOnlyList<string> GetFormChoices(int species) => [""];
     public IReadOnlyList<int> GetSpeciesTypes(int species) => UnboundData.TypesOf(species);
@@ -858,7 +952,7 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     {
         for (var slot = 0; slot < BoxSlotCount; slot++)
             ClearSlot(box, slot);
-        CommitPc(box <= 18 ? new SlotLocation(true, 0) : ResolveSlot(box, 0));
+        CommitPc(ResolveSlot(box, 0));
     }
 
     public TrainerInfo GetTrainer()
@@ -907,7 +1001,10 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
     private const int ItemsPocketCapacity = 100;
     private const int BallPocketCapacity = 50;
     private const int TmPocketCapacity = 128;
-    private const int BerryPocketCapacity = 100;
+    // 75, as in the CFRU engine (Radical Red's Berries pocket at the same offset): the
+    // 100 slots once assumed reach 0x1E774, and 0x1E710.. holds other state (the real
+    // save stores 0x0002 at 0x1E712), which every berry edit then zeroed.
+    private const int BerryPocketCapacity = 75;
 
     private readonly record struct BagLayout(string Name, int ReadOffset, int[] WriteOffsets, int Capacity);
 
@@ -959,6 +1056,17 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
             return 0;
 
         var items = ReadPouch(layout);
+        // The run is rewritten from what was read. An item-shaped entry past the readable
+        // prefix would be erased by that rewrite, so the edit is refused instead.
+        var readable = items.Count;
+        for (var slot = readable; slot < layout.Capacity; slot++)
+        {
+            var offset = layout.ReadOffset + slot * 4;
+            if (BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(offset)) != 0
+                && BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(offset + 2)) != 0)
+                throw new InvalidOperationException(
+                    $"The {layout.Name} pocket holds an entry PKForge cannot read; editing it would erase the entries after it.");
+        }
         var index = items.FindIndex(item => item.Id == itemId);
         if (count <= 0)
         {
@@ -983,13 +1091,23 @@ internal sealed class UnboundEngineSession : ISaveEngineSession
                     items[i] = new BagItem(itemId, 1);
         }
 
-        // Rebuild the pocket run and write it to every mirror.
-        var run = new byte[layout.Capacity * 4];
-        for (var i = 0; i < items.Count; i++)
+        // Rebuild the list (entries, then the slot a removal freed) in the live copy,
+        // leaving the slack past it as found, then give every mirror the live run.
+        var listed = Math.Max(items.Count, readable);
+        for (var i = 0; i < listed; i++)
         {
-            BinaryPrimitives.WriteUInt16LittleEndian(run.AsSpan(i * 4), (ushort)items[i].Id);
-            BinaryPrimitives.WriteUInt16LittleEndian(run.AsSpan(i * 4 + 2), (ushort)items[i].Count);
+            var entry = _data.AsSpan(layout.ReadOffset + i * 4, 4);
+            if (i < items.Count)
+            {
+                BinaryPrimitives.WriteUInt16LittleEndian(entry, (ushort)items[i].Id);
+                BinaryPrimitives.WriteUInt16LittleEndian(entry[2..], (ushort)items[i].Count);
+            }
+            else
+            {
+                entry.Clear();
+            }
         }
+        var run = _data.AsSpan(layout.ReadOffset, layout.Capacity * 4).ToArray();
 
         var sectors = new HashSet<int>();
         foreach (var offset in layout.WriteOffsets)

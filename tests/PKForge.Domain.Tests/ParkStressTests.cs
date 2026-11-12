@@ -4,7 +4,7 @@ using Xunit;
 namespace PKForge.Domain.Tests;
 
 /// <summary>
-/// Edge cases, by force: random parks of 1 to 12 residents drawn from every species (with the
+/// Edge cases, by force: random parks of 1 to 30 residents drawn from every species (with the
 /// lore's special ones often), random natures and personalities, day and night, the player
 /// doing anything at any time, residents leaving and arriving mid-moment, needs restored from
 /// weeks ago. The park must never throw, never put a Pokémon in a wall or a land walker in the

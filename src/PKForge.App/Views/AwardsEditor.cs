@@ -1,5 +1,6 @@
 using PKForge.App.Theme;
 using PKForge.Domain;
+using PKForge.Engine;
 
 namespace PKForge.App.Views;
 
@@ -17,6 +18,7 @@ public static class AwardsEditor
             var pokerus = session.GetPokerus(box, slot);
             var ribbons = session.GetRibbons(box, slot);
             var affixed = session.GetAffixedRibbon(box, slot);
+            var training = SuperTrainingService.GetMedals(session, box, slot);
             var selected = ribbons.Count(r => r.Value != 0);
             var options = new List<PadOption>();
             if (pokerus.Supported || pokerus.Status != PokerusStatus.Susceptible)
@@ -26,6 +28,10 @@ public static class AwardsEditor
                 options.Add(new PadOption($"Ribbons · {selected}/{ribbons.Count}", IconPath: "ribbons", Detail: "The ribbons and marks it has earned."));
             if (affixed.Supported)
                 options.Add(new PadOption($"Title · {affixed.SelectedName}", IconPath: "ribbons", Detail: "The ribbon or mark shown as a title with its name."));
+
+            if (training is not null)
+                options.Add(new PadOption($"Super Training · {training.Medals}/{MonSuperTraining.RegularCount + MonSuperTraining.SecretCount}",
+                    IconPath: "ribbons", Detail: "The super training medals it has earned."));
 
             if (options.Count == 0)
             {
@@ -46,6 +52,10 @@ public static class AwardsEditor
             else if (choice.StartsWith("Title", StringComparison.Ordinal))
             {
                 if (await EditAffixedRibbonAsync(host, session, box, slot)) dirty = true;
+            }
+            else if (choice.StartsWith("Super Training", StringComparison.Ordinal))
+            {
+                if (await EditSuperTrainingAsync(host, session, box, slot)) dirty = true;
             }
         }
     }
@@ -111,6 +121,38 @@ public static class AwardsEditor
 
         session.SetAffixedRibbon(box, slot, picked.Id);
         return true;
+    }
+
+    /// <summary>Medals after PKHeX's SuperTrainingEditor, kept legal: none on an egg or a Pokémon
+    /// that never visited a Gen 6 game, never the distribution ones.</summary>
+    private static async Task<bool> EditSuperTrainingAsync(Grid host, ISaveEngineSession session, int box, int slot)
+    {
+        if (SuperTrainingService.GetMedals(session, box, slot) is not { } medals) return false;
+        var detail = $"Regular {medals.Regular}/{MonSuperTraining.RegularCount} · secret {medals.Secret}/{MonSuperTraining.SecretCount}" +
+            (medals.HasSecretFlags
+                ? $"{Environment.NewLine}Secret Super Training {(medals.SecretUnlocked ? "unlocked" : "locked")}{(medals.SupremelyTrained ? " · supremely trained" : "")}"
+                : "");
+        if (!medals.CanTrain)
+        {
+            await EditorMenu.ShowAsync(host, "Super Training",
+                detail + Environment.NewLine + "Only a Pokémon that visited X, Y, Omega Ruby or Alpha Sapphire can earn medals.", "OK");
+            return false;
+        }
+
+        const string regular = "Earn the regular medals";
+        const string all = "Earn every medal";
+        const string clear = "Clear every medal";
+        var choice = await EditorMenu.ShowAsync(host, "Super Training", detail,
+            new PadOption(regular, Detail: medals.HasSecretFlags ? "The 18 regular medals; Secret Super Training opens." : "The 18 regular medals."),
+            new PadOption(all, Detail: medals.HasSecretFlags ? "All 30 medals, secret ones too: supremely trained." : "All 30 medals, secret ones too."),
+            new PadOption(clear, Glyph: "○", Accent: UiTokens.Ink1));
+        switch (choice)
+        {
+            case regular: SuperTrainingService.CompleteRegular(session, box, slot); return true;
+            case all: SuperTrainingService.CompleteAll(session, box, slot); return true;
+            case clear: SuperTrainingService.ClearAll(session, box, slot); return true;
+            default: return false;
+        }
     }
 
     private static string PokerusLabel(PokerusInfo info) => info.Status switch

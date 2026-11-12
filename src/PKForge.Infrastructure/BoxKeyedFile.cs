@@ -54,9 +54,7 @@ internal sealed class BoxKeyedFile
 
     private void Write()
     {
-        var tmp = _path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(_values));
-        File.Move(tmp, _path, overwrite: true);
+        AtomicFile.WriteText(_path, JsonSerializer.Serialize(_values));
     }
 
     private static Dictionary<int, string> Load(string path)
@@ -64,9 +62,10 @@ internal sealed class BoxKeyedFile
         try
         {
             if (File.Exists(path))
-                return JsonSerializer.Deserialize<Dictionary<int, string>>(File.ReadAllText(path)) ?? [];
+                return (JsonSerializer.Deserialize<Dictionary<int, string>>(File.ReadAllText(path)) ?? [])
+                    .Where(pair => !string.IsNullOrWhiteSpace(pair.Value)).ToDictionary();
         }
-        catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException)
+        catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException or NotSupportedException)
         {
             // Decoration: an unreadable file means no values, not a broken bank.
         }

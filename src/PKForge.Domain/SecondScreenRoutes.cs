@@ -20,6 +20,8 @@ public enum SecondScreenOwner
     Summary,
     /// <summary>The Living Dex Autopilot: the route map of cartridges and travelling Pokémon.</summary>
     Autopilot,
+    /// <summary>The compare screen on the top screen: the inspector follows its focused side.</summary>
+    Compare,
 }
 
 /// <summary>

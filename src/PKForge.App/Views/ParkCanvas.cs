@@ -27,13 +27,13 @@ public sealed class ParkCanvas
         if (UsesGpu)
         {
             _gpu = new SKGLView { EnableTouchEvents = true, HorizontalOptions = LayoutOptions.Fill, VerticalOptions = LayoutOptions.Fill };
-            _gpu.PaintSurface += (_, e) => Paint?.Invoke(e.Surface.Canvas, e.BackendRenderTarget.Width, e.BackendRenderTarget.Height);
+            _gpu.PaintSurface += PaintGuard.WrapGl("The park", (_, e) => Paint?.Invoke(e.Surface.Canvas, e.BackendRenderTarget.Width, e.BackendRenderTarget.Height));
             _gpu.Touch += (sender, e) => Touch?.Invoke(sender, e);
         }
         else
         {
             _cpu = new SKCanvasView { EnableTouchEvents = true, HorizontalOptions = LayoutOptions.Fill, VerticalOptions = LayoutOptions.Fill };
-            _cpu.PaintSurface += (_, e) => Paint?.Invoke(e.Surface.Canvas, e.Info.Width, e.Info.Height);
+            _cpu.PaintSurface += PaintGuard.Wrap("The park", (_, e) => Paint?.Invoke(e.Surface.Canvas, e.Info.Width, e.Info.Height));
             _cpu.Touch += (sender, e) => Touch?.Invoke(sender, e);
         }
     }

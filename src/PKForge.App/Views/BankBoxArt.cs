@@ -60,7 +60,7 @@ public static class BankBoxArt
             var dest = new SKRect(rect.MidX - w / 2, rect.MidY - h / 2, rect.MidX + w / 2, rect.MidY + h / 2);
             canvas.Save();
             canvas.ClipRect(rect);
-            using var image = SKImage.FromBitmap(picture);
+            var image = Services.SpriteImages.Of(picture);
             canvas.DrawImage(image, dest, PixelSampling);
             canvas.Restore();
             return;

@@ -12,7 +12,13 @@ namespace PKForge.App.Views;
 public sealed class PokeparkCardOverlay : IPadHandler
 {
     /// <summary>The panel's height on screen, so the page keeps the Pokémon above it.</summary>
-    public static float CoveredHeight(float width) => (ParkCardPaint.DesignHeight + 80) * width / 1920f;
+    public static float CoveredHeight(float width) => (ParkCardPaint.DesignHeight + 80) * width / 1920f + ReservedPixels;
+
+    /// <summary>The park's footer height (device-independent units), set by the page: the panel sits
+    /// above it instead of covering its button hints (QA 2026-11-12).</summary>
+    public static double ReservedBottom { get; set; }
+
+    private static float ReservedPixels => (float)(ReservedBottom * DeviceDisplay.Current.MainDisplayInfo.Density);
 
     private static readonly string[] Keys = ["talk", "snack", "play", "relax", "leave", "find"];
     private const float CharactersPerSecond = 45;
@@ -32,6 +38,11 @@ public sealed class PokeparkCardOverlay : IPadHandler
     private float _unit = 1;
     private int _selected;
     private bool _revealed, _closed;
+    // A dialogue longer than the box is read a page at a time.
+    private IReadOnlyList<string> _dialoguePages = [""];
+    private (float Width, bool Portrait) _dialogueLayout;
+    private int _dialoguePage;
+    private long _dialoguePageStart;
     private ParkCardPaint.Menu _menu = ParkCardPaint.Menu.Actions;
     private ParkCardPaint.Page _page = ParkCardPaint.Page.Care;
 
@@ -47,7 +58,7 @@ public sealed class PokeparkCardOverlay : IPadHandler
         _selected = card is null ? 0 : 1;
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
         _view.BackgroundColor = Colors.Transparent;
-        _view.PaintSurface += Paint;
+        _view.PaintSurface += PaintGuard.Wrap("PokeparkCardOverlay.Paint", Paint);
         _view.Touch += Touch;
         host.Add(_view);
         Grid.SetRowSpan(_view, Math.Max(1, host.RowDefinitions.Count));
@@ -81,18 +92,35 @@ public sealed class PokeparkCardOverlay : IPadHandler
         c.Clear(SKColors.Transparent);
         _unit = e.Info.Width / 1920f;
         var height = _card is null ? ParkCardPaint.DesignHeight : ParkCardPaint.HeightOf(_page);
-        _panel = new SKRect(40 * _unit, e.Info.Height - (40 + height) * _unit, e.Info.Width - 40 * _unit, e.Info.Height - 40 * _unit);
+        var reserve = _view.Height > 0 ? (float)(ReservedBottom * e.Info.Height / _view.Height) : 0f;
+        _panel = new SKRect(40 * _unit, e.Info.Height - reserve - (40 + height) * _unit, e.Info.Width - 40 * _unit, e.Info.Height - reserve - 40 * _unit);
         // The panel rises into place over its first 150 ms.
-        var rise = Math.Max(0, 1 - _clock.ElapsedMilliseconds / 150f);
+        var rise = Services.MotionSetting.Decorative ? Math.Max(0, 1 - _clock.ElapsedMilliseconds / 150f) : 0;
         c.Translate(0, rise * 60 * _unit);
         var portrait = Portrait();
         if (_card is not null)
             ParkCardPaint.PaintCard(c, _panel, _card(), portrait, _selected, PixelFont.Face, _unit, _menu, _page);
         else
         {
-            var shown = _revealed ? _text.Length : Math.Min(_text.Length, (int)(_clock.ElapsedMilliseconds / 1000f * CharactersPerSecond));
-            if (shown >= _text.Length) _revealed = true;
-            ParkCardPaint.PaintDialogue(c, _panel, _speaker, _text[..shown], portrait, _revealed, _clock.ElapsedMilliseconds, PixelFont.Face, _unit);
+            // The pages depend on the room the text has: cut again when it changes (the
+            // portrait arriving, the window resizing).
+            var layout = (_panel.Width, portrait is not null);
+            if (layout != _dialogueLayout)
+            {
+                _dialogueLayout = layout;
+                _dialoguePages = ParkCardPaint.DialoguePages(_panel, _text, layout.Item2, PixelFont.Face, _unit);
+                _dialoguePage = Math.Min(_dialoguePage, _dialoguePages.Count - 1);
+            }
+            var page = _dialoguePages[_dialoguePage];
+            // With motion off the text is simply there; the arrow below does not blink
+            // unless decorative motion is on.
+            if (!Services.MotionSetting.Any) _revealed = true;
+            var shown = _revealed ? page.Length
+                : Math.Min(page.Length, (int)((_clock.ElapsedMilliseconds - _dialoguePageStart) / 1000f * CharactersPerSecond));
+            if (shown >= page.Length) _revealed = true;
+            ParkCardPaint.PaintDialogue(c, _panel, _speaker, page[..shown], portrait,
+                _revealed && _dialoguePage < _dialoguePages.Count - 1,
+                Services.MotionSetting.Decorative ? _clock.ElapsedMilliseconds : 0, PixelFont.Face, _unit);
         }
     }
 
@@ -139,10 +167,17 @@ public sealed class PokeparkCardOverlay : IPadHandler
         if (!_panel.Contains(point)) Close(null);
     }
 
-    // The dialogue's A or tap: show the whole line first, then close.
+    // The dialogue's A or tap: show the whole page first, then turn to the next one, and
+    // close after the last.
     private void Advance()
     {
         if (!_revealed) _revealed = true;
+        else if (_dialoguePage < _dialoguePages.Count - 1)
+        {
+            _dialoguePage++;
+            _dialoguePageStart = _clock.ElapsedMilliseconds;
+            _revealed = false;
+        }
         else Close(null);
     }
 

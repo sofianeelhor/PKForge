@@ -26,7 +26,7 @@ public sealed class PokeparkEventOverlay : IPadHandler
     private readonly (Func<long, SKBitmap?> Frame, bool Shiny)[] _sprites;
     private readonly ParkEventPaint.Evolution? _evolution;
     private readonly string[] _choices;
-    private readonly IDispatcherTimer _timer;
+    private readonly Services.VsyncLoop _timer;
     private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
     private readonly bool _spectating;
     private long _skipped;
@@ -52,18 +52,18 @@ public sealed class PokeparkEventOverlay : IPadHandler
         _choices = highlight.Text.Contains("Talk to it", StringComparison.Ordinal) ? ["Go there", "Leave it"] : ["Watch", "Leave it"];
         _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
         _view.BackgroundColor = Colors.Transparent;
-        _view.PaintSurface += Paint;
+        _view.PaintSurface += PaintGuard.Wrap("PokeparkEventOverlay.Paint", Paint);
         _view.Touch += Touch;
         host.Add(_view);
         Grid.SetRowSpan(_view, Math.Max(1, host.RowDefinitions.Count));
         Grid.SetColumnSpan(_view, Math.Max(1, host.ColumnDefinitions.Count));
-        _timer = host.Dispatcher.CreateTimer();
-        _timer.Interval = TimeSpan.FromMilliseconds(16);
-        _timer.Tick += (_, _) =>
+        // A frame on every screen refresh (see VsyncLoop).
+        _timer = new Services.VsyncLoop(_ =>
         {
             if (Now > ChoicesAt + (_spectating ? SpectatorWaitFor : WaitFor)) Close(_spectating);
             else _view.InvalidateSurface();
-        };
+            return true;
+        });
         _timer.Start();
         App.Suspended += Later;
         _router?.Push(this);

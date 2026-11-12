@@ -20,4 +20,22 @@ public sealed class ItemNamingTests
         Assert.Equal(expected, names[storedId]);
         Assert.NotEqual(expected, GameInfo.GetStrings("en").itemlist[storedId]); // the modern list would name it wrong
     }
+
+    /// <summary>
+    /// Opening the held item list on a Legends: Z-A save closed the app: the tail of its
+    /// table came back without strings, and the list asked each one for its length.
+    /// </summary>
+    [Theory]
+    [InlineData(GameVersion.ZA)]
+    [InlineData(GameVersion.SL)]
+    [InlineData(GameVersion.PLA)]
+    [InlineData(GameVersion.BD)]
+    [InlineData(GameVersion.SW)]
+    [InlineData(GameVersion.E)]
+    [InlineData(GameVersion.RD)]
+    public void EveryItemIdHasAName_EvenAnEmptyOne(GameVersion version)
+    {
+        using var session = new SaveEngineSession(BlankSaveFile.Get(version, "TEST", LanguageID.English), null);
+        Assert.DoesNotContain(null, session.GetItemNames());
+    }
 }

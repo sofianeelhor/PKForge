@@ -50,7 +50,7 @@ public sealed class DexGridView : SKCanvasView
     {
         _sprites = sprites;
         EnableTouchEvents = true;
-        PaintSurface += OnPaint;
+        PaintSurface += PaintGuard.Wrap("DexGridView.OnPaint", OnPaint);
         Touch += OnTouch;
         // Drag, flick with momentum, and a thumb you can grab, in canvas pixels.
         _scroller = new TouchScroller(Dispatcher, () => _scroll, ScrollTo, () => MaxScroll, () => CanvasSize.Height, Track,
@@ -233,8 +233,6 @@ public sealed class DexGridView : SKCanvasView
             var look = _lookOf(_ids[i]);
             var selected = i == _cursor;
             var ground = cell.Top + 112 * _unit;
-            if (selected)
-                StoragePaint.CursorPool(c, SKRect.Create(cell.Left, cell.Top, cell.Width, ground - cell.Top + 38 * _unit), _unit * 0.9f);
 
             var lift = selected ? StoragePaint.CursorLift * _unit : 0;
             var spriteLook = new SpriteLook(species, form, look.Shiny);
@@ -246,7 +244,9 @@ public sealed class DexGridView : SKCanvasView
                 var w = 40 * IconScale * _unit;
                 var h = 30 * IconScale * _unit;
                 dest = new SKRect(cell.MidX - w / 2, ground - h - lift, cell.MidX + w / 2, ground - lift);
-                art = SKImage.FromBitmap(sheet);
+                // The sheet's image is made once: copying the whole 480x4110 sheet for every
+                // visible cell on every frame is what made the grid drag.
+                art = Services.SpriteImages.Of(sheet);
                 src = SKRect.Create(source.Left, source.Top, source.Width, source.Height);
             }
             else if (_sprites.GetSprite(spriteLook) is { } sprite)
@@ -255,7 +255,7 @@ public sealed class DexGridView : SKCanvasView
                 var box = 96 * _unit;
                 var fit = Math.Min(box / sprite.Width, box / sprite.Height);
                 dest = new SKRect(cell.MidX - sprite.Width * fit / 2, ground - sprite.Height * fit - lift, cell.MidX + sprite.Width * fit / 2, ground - lift);
-                art = SKImage.FromBitmap(sprite);
+                art = Services.SpriteImages.Of(sprite);
                 src = SKRect.Create(0, 0, sprite.Width, sprite.Height);
             }
             else _sprites.Warm(spriteLook, Redraw);
@@ -270,12 +270,11 @@ public sealed class DexGridView : SKCanvasView
                     c.Restore();
                 }
                 else c.DrawImage(art, src, dest, sampling, null);
-                art.Dispose();
             }
-            c.DrawText($"{species:000}", cell.MidX, ground + 24 * _unit, SKTextAlign.Center, number, numberInk);
+            c.DrawTextFallback($"{species:000}", cell.MidX, ground + 24 * _unit, SKTextAlign.Center, number, numberInk);
 
             if (look.Caught) PokeBall(c, cell.Right - 30 * _unit, ground - 6 * _unit, 11 * _unit);
-            if (look.ShinyMark) c.DrawText("★", cell.Right - 30 * _unit, cell.Top + 34 * _unit, SKTextAlign.Center, star, gold);
+            if (look.ShinyMark) c.DrawTextFallback("★", cell.Right - 30 * _unit, cell.Top + 34 * _unit, SKTextAlign.Center, star, gold);
             if (look.Ticked) Tick(c, cell.Left + 30 * _unit, cell.Top + 26 * _unit, 14 * _unit);
         }
 

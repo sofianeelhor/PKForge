@@ -1,3 +1,4 @@
+using PKForge.Domain;
 using PKForge.Engine;
 using PKHeX.Core;
 using Xunit;
@@ -57,6 +58,30 @@ public sealed class ReceivedDexRegistrationTests
             using var session = Seed(version, mon);
             Assert.True(session.GetDexEntry(25).Caught, $"{version}: a received Pokémon must register");
         }
+    }
+
+    /// <summary>
+    /// "When creating a Pokémon it is not registered in the Pokédex the way PKHeX does."
+    /// A Pokémon the player creates is one they now own, in every game.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    public void AGeneratedPokemonIsRegisteredAsOwned(int generation)
+    {
+        using var session = (SaveEngineSession)new SaveEngine().OpenBlankSession(generation);
+        Assert.False(session.GetDexEntry(25).Caught, "a blank save starts without the species");
+
+        var outcome = new LegalizerService().Generate(session, 0, 0,
+            new GenerationRequest(25, 20, Shiny: false, Nature: null, Ability: null, Ball: null, Moves: null));
+
+        Assert.True(outcome.Success, outcome.Message);
+        Assert.True(session.GetDexEntry(25).Caught, $"Gen {generation}: a created Pokémon must read as owned");
     }
 
     [Fact]

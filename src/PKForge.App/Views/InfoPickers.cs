@@ -38,7 +38,7 @@ public static class InfoPickers
         {
             // No facts for this session (none open, or a romhack's own move table): the plain list.
             var plain = Enumerable.Range(includeNone ? 0 : 1, Math.Max(0, data.MoveNames.Count - (includeNone ? 0 : 1)))
-                .Where(i => i == 0 || data.MoveNames[i].Length > 0)
+                .Where(i => i == 0 || (data.MoveNames[i].Length > 0 && session?.StoresMove(i) != false))
                 .Select(i => new PickItem(i, i == 0 ? "(none)" : data.MoveNames[i])).ToList();
             return await PickerMenu.ShowAsync(host, title, plain, current);
         }
@@ -60,15 +60,18 @@ public static class InfoPickers
     /// <summary>
     /// One move row. With learn data every row carries its legality mark: legal moves are
     /// tagged "✓ Lv 32 / TM / Egg…" in the learn colour, the rest "Illegal" in red and
-    /// muted, so the unfiltered list (Y, or HaX mode) still says which picks are legal.
+    /// muted, so the unfiltered list (Y, or HaX mode) still says which picks are legal. Egg
+    /// moves legal only had it hatched are tagged "? If hatched" in amber (still muted: not
+    /// legal for its current encounter).
     /// </summary>
     private static PickItem MoveRow(MoveChoice move, string name, bool hasLearnData) =>
         new(move.Id, name, Detail: InfoKit.MoveNumbers(move))
         {
             TypeId = move.Type,
             Category = move.Category,
-            Tag = move.Learn.IsLegal ? $"✓ {move.Learn.Label}" : hasLearnData ? "Illegal" : null,
-            TagColor = move.Learn.IsLegal ? InfoKit.LearnColor(move.Learn.Kind) : UiTokens.Bad,
+            // An egg move it could only know by hatching is "possibly legal", in amber, not red.
+            Tag = move.Learn.IsLegal ? $"✓ {move.Learn.Label}" : move.Learn.IsLegalIfHatched ? "? If hatched" : hasLearnData ? "Illegal" : null,
+            TagColor = move.Learn.IsLegal ? InfoKit.LearnColor(move.Learn.Kind) : move.Learn.IsLegalIfHatched ? UiTokens.Warn : UiTokens.Bad,
             Muted = hasLearnData && !move.Learn.IsLegal,
             Keywords = $"{TypeFacts.Name(move.Type)} {TypeFacts.CategoryName(move.Category)} {move.Learn.Label}" + (move.Learn.IsLegal ? " legal" : ""),
         };
@@ -174,7 +177,9 @@ public static class InfoPickers
             TagColor = a.Slot == "Hidden" ? Color.FromArgb("#B8860B") : UiTokens.Blueprint,
             Keywords = a.Slot,
         }).ToList();
-        if (!Services.HaXMode.IsOn) return items;
+        // HaX lifts the legality limit, not the format's: where only the slot is stored, any
+        // other pick silently fell back to the first ability on save.
+        if (!Services.HaXMode.IsOn || session is { StoresAnyAbility: false }) return items;
 
         var seen = own.Select(a => a.Id).ToHashSet();
         var rest = Enumerable.Range(0, data.AbilityNames.Count)
@@ -201,7 +206,7 @@ public static class InfoPickers
         // number items differently from the modern table, so labels and the id written back
         // must both come from it. The modern names only fill in effect descriptions.
         var modern = data.ItemNames;
-        var names = session?.GetItemNames() is { Count: > 0 } n ? n : modern;
+        var names = session?.GetHeldItemNames() is { Count: > 0 } n ? n : modern;
         var legal = session is not null ? Info?.GetHeldItems(session).ToHashSet() ?? [] : [];
 
         var items = new List<PickItem>(names.Count) { new(0, "(none)", Detail: "Holds nothing.") };

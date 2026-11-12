@@ -26,7 +26,7 @@ public static class Kit
         var prerenderedSize = new SKSizeI(-1, -1);
         var prerenderedTheme = -1;
 
-        canvasView.PaintSurface += (_, args) =>
+        canvasView.PaintSurface += PaintGuard.Wrap("Kit canvasView", (_, args) =>
         {
             var info = args.Info;
             if (info.Width <= 0 || info.Height <= 0) return;
@@ -38,7 +38,7 @@ public static class Kit
                 prerenderedTheme = ColorTheme.Version;
             }
             args.Surface.Canvas.DrawBitmap(prerendered, 0, 0);
-        };
+        });
         canvasView.Unloaded += (_, _) =>
         {
             prerendered?.Dispose();
@@ -301,7 +301,7 @@ public static class Kit
             imageSpecies = -1;
         }
 
-        walker.PaintSurface += (_, args) =>
+        walker.PaintSurface += PaintGuard.Wrap("Kit walker", (_, args) =>
         {
             var canvas = args.Surface.Canvas;
             canvas.Clear(SKColors.Transparent);
@@ -332,7 +332,7 @@ public static class Kit
             canvas.DrawImage(image, new SKRect(x, y, x + w, y + h),
                 new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
             canvas.Restore();
-        };
+        });
 
         // The stroll timer only runs while the strip is actually on screen.
         IDispatcherTimer? timer = null;
@@ -496,7 +496,7 @@ public static class Kit
         if (KeyArt.TryGetValue(glyph, out var art) && KeyImage(art) is { } image)
         {
             var canvas = new SKCanvasView { InputTransparent = true };
-            canvas.PaintSurface += (_, args) =>
+            canvas.PaintSurface += PaintGuard.Wrap("Kit canvas", (_, args) =>
             {
                 var c = args.Surface.Canvas;
                 c.Clear(SKColors.Transparent);
@@ -504,7 +504,7 @@ public static class Kit
                 var side = Math.Min(args.Info.Width, args.Info.Height);
                 var dest = SKRect.Create((args.Info.Width - side) / 2f, (args.Info.Height - side) / 2f, side, side);
                 c.DrawImage(image, dest, new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None), tint);
-            };
+            });
             face = canvas;
         }
         else face = new Label
@@ -726,12 +726,37 @@ public static class Kit
         Content = Emphasis(ConsoleCode(generation), EraColor(generation)),
     };
 
+    /// <summary>
+    /// Keeps Android's own focus off <paramref name="view"/>. A screen driven by the pad
+    /// draws its own cursor; a focusable button would take the first d-pad press after a
+    /// touch for itself (Android leaving touch mode) and the screen never saw it.
+    /// </summary>
+    public static void NoNativeFocus(View view)
+    {
+        void Apply()
+        {
+#if ANDROID
+            if (view.Handler?.PlatformView is Android.Views.View platform)
+            {
+                platform.Focusable = false;
+                platform.FocusableInTouchMode = false;
+            }
+#endif
+        }
+        view.HandlerChanged += (_, _) => Apply();
+        Apply();
+    }
+
     /// <summary>Pop-in entrance for floating windows: quick fade + settle.</summary>
     public static void AnimateIn(View window)
     {
+        // Full: fade and settle. Reduced: fade only. Off: the window is simply there.
+        var motion = Services.MotionSetting.Level;
+        if (motion == Services.MotionLevel.Off) return;
         window.Opacity = 0;
-        window.Scale = 0.92;
         _ = window.FadeToAsync(1, 130, Easing.CubicOut);
+        if (motion != Services.MotionLevel.Full) return;
+        window.Scale = 0.92;
         _ = window.ScaleToAsync(1, 160, Easing.SpringOut);
     }
 
@@ -755,22 +780,47 @@ public static class Kit
     }
 
     /// <summary>
+    /// A crop of <paramref name="whole"/> that stays valid once <paramref name="whole"/> is
+    /// disposed. Skia answers a crop covering the whole image with the image itself, and
+    /// SkiaSharp hands back the same managed object: <c>using var whole … whole.Subset(…)</c>
+    /// then disposed the result and the next paint crashed natively in sk_image_get_width
+    /// (seen 2026-11-12 on the Bank's actions menu, an icon with no transparent border).
+    /// </summary>
+    public static SKImage SubsetOf(SKImage whole, SKRectI rect)
+    {
+        var cut = whole.Subset(rect);
+        if (cut is not null && !ReferenceEquals(cut, whole)) return cut;
+        using var pixels = whole.PeekPixels();
+        return (pixels is null ? null : SKImage.FromPixelCopy(pixels)) ?? whole.ToRasterImage(true);
+    }
+
+    /// <summary>
+    /// The dimmed layer under a modal window. It always carries a tap recognizer, even when a
+    /// tap does nothing: on Android a view without one lets the touch fall through to the page
+    /// underneath (QA 2026-11-12: an empty spot of the Tools hub's footer opened the box page's
+    /// slot menu, another left the save).
+    /// </summary>
+    public static BoxView Scrim(Action? onTap = null, Color? color = null)
+    {
+        var scrim = new BoxView { Color = color ?? UiTokens.Scrim };
+        var tap = new TapGestureRecognizer();
+        tap.Tapped += (_, _) => onTap?.Invoke();
+        scrim.GestureRecognizers.Add(tap);
+        return scrim;
+    }
+
+    /// <summary>
     /// Layers scrim + window over the whole host grid (spanning every row/column) and
     /// plays the pop-in. Returns the overlay grid so the caller can remove it on close.
     /// </summary>
     public static Grid AttachOverlay(Grid host, View window, Action? onScrimTap = null)
     {
-        var scrim = new BoxView { Color = UiTokens.Scrim };
-        if (onScrimTap is not null)
-        {
-            var tap = new TapGestureRecognizer();
-            tap.Tapped += (_, _) => onScrimTap();
-            scrim.GestureRecognizers.Add(tap);
-        }
+        var scrim = Scrim(onScrimTap);
         var overlay = new Grid { Children = { scrim, window } };
         host.Add(overlay);
         Grid.SetRowSpan(overlay, Math.Max(1, host.RowDefinitions.Count));
         Grid.SetColumnSpan(overlay, Math.Max(1, host.ColumnDefinitions.Count));
+        StatusToast.RaiseIn(host); // a notice stays readable over the menu it announces
         AnimateIn(window);
         return overlay;
     }

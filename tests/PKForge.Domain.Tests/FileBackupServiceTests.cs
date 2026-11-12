@@ -40,6 +40,45 @@ public sealed class FileBackupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task APinnedPointOutlivesTheAllowance()
+    {
+        var service = new FileBackupService(_root, maxVersions: 3);
+        var first = await service.CreateAsync(Snapshot([1], "save.sav"), "Before the League", "doc");
+        await service.SetPinnedAsync(first.BackupId, pinned: true);
+
+        for (byte i = 2; i <= 6; i++)
+        {
+            await Task.Delay(5); // ids are timestamps
+            await service.CreateAsync(Snapshot([i], "save.sav"), $"Edit {i}", "doc");
+        }
+
+        var listed = await service.ListAsync();
+        Assert.Equal(4, listed.Count); // the three newest and the pinned one
+        var pinned = Assert.Single(listed, info => info.Pinned);
+        Assert.Equal(first.BackupId, pinned.BackupId);
+        Assert.Equal(new byte[] { 1 }, (await service.ReadAsync(first.BackupId)).ToArray());
+    }
+
+    [Fact]
+    public async Task APointLetGoFallsBackUnderTheAllowance()
+    {
+        var service = new FileBackupService(_root, maxVersions: 2);
+        var first = await service.CreateAsync(Snapshot([1], "save.sav"), "Before the League", "doc");
+        await service.SetPinnedAsync(first.BackupId, pinned: true);
+        for (byte i = 2; i <= 3; i++)
+        {
+            await Task.Delay(5);
+            await service.CreateAsync(Snapshot([i], "save.sav"), $"Edit {i}", "doc");
+        }
+
+        await service.SetPinnedAsync(first.BackupId, pinned: false);
+
+        var listed = await service.ListAsync();
+        Assert.Equal(2, listed.Count);
+        Assert.DoesNotContain(listed, info => info.BackupId == first.BackupId);
+    }
+
+    [Fact]
     public async Task ReadDetectsCorruptBytes()
     {
         var service = new FileBackupService(_root);

@@ -254,12 +254,12 @@ public static class GenerateWizard
         };
         Grid.SetColumn(body.Children[1] as View, 1);
         var backdrop = new SKCanvasView { InputTransparent = true };
-        backdrop.PaintSurface += (_, args) =>
+        backdrop.PaintSurface += PaintGuard.Wrap("GenerateWizard backdrop", (_, args) =>
         {
             args.Surface.Canvas.Clear(SKColors.Transparent);
             StoragePaint.WellPanel(args.Surface.Canvas, new SKRect(0, 0, args.Info.Width, args.Info.Height),
                 args.Info.Width / 1720f);
-        };
+        });
         var content = new Grid
         {
             WidthRequest = Design(1720),
@@ -279,15 +279,15 @@ public static class GenerateWizard
     private static SKCanvasView BallArt(ISpriteService sprites, int ball)
     {
         var view = new SKCanvasView { WidthRequest = Design(40), HeightRequest = Design(40), InputTransparent = true, VerticalOptions = LayoutOptions.Center };
-        view.PaintSurface += (_, args) =>
+        view.PaintSurface += PaintGuard.Wrap("GenerateWizard view", (_, args) =>
         {
             var c = args.Surface.Canvas;
             c.Clear(SKColors.Transparent);
             var bitmap = sprites.GetBall(ball);
             if (bitmap is null) { sprites.WarmBall(ball, () => MainThread.BeginInvokeOnMainThread(view.InvalidateSurface)); return; }
-            using var image = SKImage.FromBitmap(bitmap);
+            var image = Services.SpriteImages.Of(bitmap);
             c.DrawImage(image, new SKRect(0, 0, args.Info.Width, args.Info.Height), new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
-        };
+        });
         return view;
     }
 
@@ -316,7 +316,7 @@ public static class GenerateWizard
             _name = formName.Length > 0 ? $"{species.Name} ({formName})" : species.Name;
             _card = InfoPickers.Info?.GetSpeciesCard(session, species.Id, form);
             InputTransparent = true;
-            PaintSurface += OnPaint;
+            PaintSurface += PaintGuard.Wrap("GenerateWizard.OnPaint", OnPaint);
         }
 
         public void SetShiny(bool shiny)
@@ -372,7 +372,7 @@ public static class GenerateWizard
                         var k = Math.Clamp(MathF.Floor(Math.Min(300f / sprite.Width, 260f / sprite.Height)), 1, 5);
                         var w = sprite.Width * k;
                         var h = sprite.Height * k;
-                        using var image = SKImage.FromBitmap(sprite);
+                        var image = Services.SpriteImages.Of(sprite);
                         c.DrawImage(image, new SKRect(DesignWidth / 2 - w / 2, 250 - h / 2, DesignWidth / 2 + w / 2, 250 + h / 2),
                             new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
                     }

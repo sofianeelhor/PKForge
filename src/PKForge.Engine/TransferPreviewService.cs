@@ -28,8 +28,8 @@ public sealed record TransferPreview(
 
     public string Verdict => Legality switch
     {
-        TransferLegality.Legal => "Legal ✓",
-        TransferLegality.Illegal => "Likely flagged as illegal ✗ (the game still loads it)",
+        TransferLegality.Legal => "Legal", // no check mark: the pixel font has none (QA 2026-11-12)
+        TransferLegality.Illegal => "Likely flagged as illegal (the game still loads it)",
         _ => "Legality unknown",
     };
 }
@@ -75,12 +75,16 @@ public sealed class TransferPreviewService
             var own = EntityBytes.Normalize(format) is { } normalized
                 && (scratch is CfruEngineSession cfru ? cfru.EntityFormat == normalized
                     : scratch is Unbound.UnboundEngineSession && normalized == CfruEntity.Unbound);
+            // A Pokémon from another game may lose an ability the hack does not give its species.
+            IReadOnlyList<string> adjustments = !own && EntityBytes.Parse(entityBytes, format) is { } incoming
+                ? CfruEntity.ImportAdjustments(incoming, scratch.Snapshot.Format)
+                : [];
             return new TransferPreview(
                 [own
                     ? "It goes back into its own game exactly as it was stored."
                     : "Conversion details are not available for this game's engine; the transfer itself is unchanged."],
                 TransferLegality.Unknown,
-                ["This game has no offline legality analysis."]);
+                ["This game has no offline legality analysis."], adjustments);
         }
 
         var before = EntityBytes.Parse(entityBytes, format, session.GetEntity(box, slot).Context);
@@ -282,7 +286,7 @@ public sealed class TransferPreviewService
     private string LocationName(PKM entity, bool egg)
     {
         var id = egg ? entity.EggLocation : entity.MetLocation;
-        return GameInfo.GetLocationName(egg, id, entity.Format, entity.Generation, entity.Version) is { Length: > 0 } name
+        return LocationNames.Of(entity, id, egg) is { Length: > 0 } name
             ? name
             : $"#{id}";
     }

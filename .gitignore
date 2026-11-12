@@ -13,6 +13,7 @@ obj/
 .agents/
 .omp/
 .local-testdata/
+.local-notes/
 
 # Local environment and editor state
 .env

@@ -237,6 +237,59 @@ public sealed record WonderCardQuery
         + (Language is null ? 0 : 1) + (Series is null ? 0 : 1);
 }
 
+/// <summary>
+/// The album's remembered knobs, as one preferences string ("kind=1;shiny=1;sort=2").
+/// Only choices that make sense in any game's gallery are kept: kind, shiny, fits-save,
+/// received status, language, one-per-event, sort, and a grouping the player changed.
+/// Search, year, species and series depend on one game's card set and start fresh.
+/// </summary>
+public static class WonderCardQueryMemory
+{
+    public static string Save(WonderCardQuery query, WonderCardQuery defaults)
+    {
+        var parts = new List<string>
+        {
+            $"kind={(int)query.Kind}",
+            $"shiny={(query.ShinyOnly ? 1 : 0)}",
+            $"fits={(query.CompatibleOnly ? 1 : 0)}",
+            $"received={(int)query.Received}",
+            $"one={(query.OnePerEvent ? 1 : 0)}",
+            $"sort={(int)query.Sort}",
+        };
+        if (query.Grouping != defaults.Grouping) parts.Add($"group={(int)query.Grouping}");
+        if (query.Language is { Length: > 0 } language && !language.Contains(';') && !language.Contains('='))
+            parts.Add($"lang={language}");
+        return string.Join(';', parts);
+    }
+
+    /// <summary>The defaults with the remembered knobs laid over them; unknown or broken values are skipped.</summary>
+    public static WonderCardQuery Restore(string? stored, WonderCardQuery defaults)
+    {
+        if (string.IsNullOrWhiteSpace(stored)) return defaults;
+        var query = defaults;
+        foreach (var part in stored.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = part.IndexOf('=');
+            if (eq <= 0) continue;
+            var (key, value) = (part[..eq], part[(eq + 1)..]);
+            var hasNumber = int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var n);
+            query = key switch
+            {
+                "kind" when hasNumber && Enum.IsDefined((WonderCardKindFilter)n) => query with { Kind = (WonderCardKindFilter)n },
+                "shiny" when hasNumber => query with { ShinyOnly = n == 1 },
+                "fits" when hasNumber => query with { CompatibleOnly = n == 1 },
+                "received" when hasNumber && Enum.IsDefined((WonderCardReceivedFilter)n) => query with { Received = (WonderCardReceivedFilter)n },
+                "one" when hasNumber => query with { OnePerEvent = n == 1 },
+                "sort" when hasNumber && Enum.IsDefined((WonderCardSort)n) => query with { Sort = (WonderCardSort)n },
+                "group" when hasNumber && Enum.IsDefined((WonderCardGrouping)n) => query with { Grouping = (WonderCardGrouping)n },
+                "lang" when value.Length > 0 => query with { Language = value },
+                _ => query,
+            };
+        }
+        return query;
+    }
+}
+
 public sealed record WonderCardGroup(string Title, int Start, int Count);
 
 /// <summary>What the album shows for a query: the ordered cards, the section headers over

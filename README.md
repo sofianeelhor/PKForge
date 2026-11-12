@@ -53,6 +53,8 @@ Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
   your save.
 - **Edit the bag.** The bag editor handles any pouch, any item, any quantity, with
   presets and one-tap refills.
+- **Item Bank.** Keep items across saves and generations in the Bank's Items tab, send
+  them to any game that has them, or make items for any game.
 - **Edit the trainer.** Change your name, IDs, money, and gender on the trainer card,
   and manage trainer profiles and records.
 - **RNG tools.** Inspect PID, IVs, and nature, and reroll a nature while keeping
@@ -63,11 +65,18 @@ Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
   hatch Pokémon, including one egg of every species.
 - **Complete the Pokédex.** Mark everything seen, generate a living dex, and track
   what is missing.
-- **Play with your Pokémon.** The Poképark is a living world where up to 24 of your
+- **Play with your Pokémon.** The Poképark is a living world where up to 30 of your
   Pokémon live by their tempers, friendships and rivalries, act out scenes together and
   have rare events. Feed them, play with them, take photos. The Nuzlocke report tracks
   first encounters and dupes per route, and the encounter browser shows every way to
   catch a species in each game.
+- **Pokéwalker.** Take a Poképark resident on walks counted by your phone's step
+  counter, with the Poké Radar, Dowsing, catches and HeartGold / SoulSilver sync.
+- **Home-screen widgets.** A living Poképark, the Pokéwalker, your partner Pokémon and
+  the Day Care egg, set up from Settings.
+- **Every save in one place.** The Saves section lists every save with named snapshots,
+  comparisons and conversions for another emulator, plus a Hall of Fame museum across
+  all your playthroughs. An optional PKForge folder mirrors the Bank as readable files.
 - **Share your teams.** Import and export Showdown sets, and generate QR codes to move
   a set between devices.
 - **Game-specific editors.** Grand Underground, Poké Beans, Fashion, and more for each
@@ -77,8 +86,13 @@ Not affiliated with Nintendo, Game Freak, or The Pokémon Company.
   honey trees, event flags, and key item events such as the Eon Ticket or the GS Ball.
 - **Organize boxes.** Box manager (move, lock, copy, rename, wallpapers), sort by dex,
   level, IVs, type or age, and a legality check and audit of the whole save.
-- **ROM hacks.** Pokémon Unbound, Radical Red, GS Chronicles, Luminescent Platinum and
-  Pokémon Compass are supported with their own data. Unknown hacks open read-only with a
+- **ROM hacks.** Pokémon Unbound, Radical Red, GS Chronicles, Elite Redux, Origin
+  HeartGold, Fire Red Extended, Crystal Advance Redux, Emerald Exceeded, Pokémon
+  Recharged Yellow, Pokémon Quetzal, Pokémon Soul Gold, pokeemerald-expansion hacks
+  (Heart & Soul, Lazarus, Lucid, Emerald Enhanced, Perfect Emerald, Team Rocket Edition,
+  Black Pearl, Fire Emerald and standard expansion saves), Luminescent Platinum and
+  Pokémon Compass are supported with their own data. Recognized hacks that can't be
+  edited yet open read-only under their own name; unknown hacks open read-only with a
   warning.
 - **HaX and Hardcore modes.** HaX lifts the legality limits. Hardcore turns data editing
   off for challenge runs and RetroAchievements players, while moving Pokémon stays
@@ -145,18 +159,19 @@ games and popular romhacks:
 - **Generation VII:** Sun, Moon, Ultra Sun, Ultra Moon, Let's Go Pikachu, Let's Go Eevee
 - **Generation VIII:** Sword, Shield, Brilliant Diamond, Shining Pearl, Legends: Arceus
 - **Generation IX:** Scarlet, Violet
-- **Romhacks:** Pokémon Unbound, Radical Red, GS Chronicles, Luminescent Platinum, Pokémon Compass
+- **Romhacks:** Pokémon Unbound, Radical Red, GS Chronicles, Elite Redux, Origin HeartGold, Fire Red Extended, Crystal Advance Redux, Emerald Exceeded, Pokémon Recharged Yellow, Pokémon Quetzal, Pokémon Soul Gold, pokeemerald-expansion hacks, Luminescent Platinum, Pokémon Compass
 
 ## Supported emulators
 
 Link a storage unit and PKForge finds your saves automatically:
 
-- **Game Boy / Game Boy Color:** RetroArch, Linkboy, Pizza Boy C
-- **Game Boy Advance:** RetroArch, Linkboy, Pizza Boy A
+- **Game Boy / Game Boy Color:** RetroArch, Linkboy, Pizza Boy C, My OldBoy!
+- **Game Boy Advance:** RetroArch, Linkboy, Pizza Boy A, My Boy!
 - **Nintendo DS:** melonDS, DraStic, RetroArch
 - **GameCube:** Dolphin
 - **Nintendo 3DS:** Azahar, Lime3DS, Citra MMJ
 - **Nintendo Switch:** Eden
+- **All in one:** PokeDaisy (Game Boy, Game Boy Advance and Nintendo DS)
 
 You can also open a single save file directly.
 

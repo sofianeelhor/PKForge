@@ -40,17 +40,19 @@ public sealed class LegalityAssistService : ILegalityAssistService
             list.Add(new LegalityCheckLine(severity, text));
         }
 
+        var eggOnly = MonInfoService.EggOnlyMoves(pk, la, pk.Version);
+        string Hint(ushort id) => eggOnly.Contains(id) ? $" {MoveVerdict.IfHatchedReason}." : "";
         for (var i = 0; i < la.Info.Moves.Length; i++)
         {
             var move = la.Info.Moves[i];
             if (!move.IsParsed || move.Valid) continue;
-            Add(CheckIdentifier.CurrentMove, CheckSeverity.Invalid, $"Move {i + 1} ({MoveName(pk.GetMove(i))}): {move.Summary(ctx)}");
+            Add(CheckIdentifier.CurrentMove, CheckSeverity.Invalid, $"Move {i + 1} ({MoveName(pk.GetMove(i))}): {move.Summary(ctx)}{Hint(pk.GetMove(i))}");
         }
         for (var i = 0; i < la.Info.Relearn.Length; i++)
         {
             var move = la.Info.Relearn[i];
             if (!move.IsParsed || move.Valid) continue;
-            Add(CheckIdentifier.RelearnMove, CheckSeverity.Invalid, $"Relearn {i + 1} ({MoveName(pk.GetRelearnMove(i))}): {move.Summary(ctx)}");
+            Add(CheckIdentifier.RelearnMove, CheckSeverity.Invalid, $"Relearn {i + 1} ({MoveName(pk.GetRelearnMove(i))}): {move.Summary(ctx)}{Hint(pk.GetRelearnMove(i))}");
         }
         foreach (var check in la.Results)
         {
@@ -80,13 +82,22 @@ public sealed class LegalityAssistService : ILegalityAssistService
     {
         var la = new LegalityAnalysis(pk);
         var ctx = LegalityLocalizationContext.Create(la);
+        // Egg moves its line hatches with: invalid here, but legal had it hatched from an egg.
+        var eggOnly = MonInfoService.EggOnlyMoves(pk, la, pk.Version);
+        MoveVerdict Judge(in LegalityLocalizationContext ctx, MoveResult result, ushort move)
+        {
+            var verdict = Verdict(ctx, result, move);
+            return !verdict.Valid && move != 0 && eggOnly.Contains(move)
+                ? verdict with { Reason = $"{MoveVerdict.IfHatchedReason} ({verdict.Reason})", LegalIfHatched = true }
+                : verdict;
+        }
         var moves = new List<MoveVerdict>(4);
         for (var i = 0; i < la.Info.Moves.Length; i++)
-            moves.Add(Verdict(ctx, la.Info.Moves[i], pk.GetMove(i)));
+            moves.Add(Judge(ctx, la.Info.Moves[i], pk.GetMove(i)));
         var relearn = new List<MoveVerdict>(4);
         if (pk.Format >= 6)
             for (var i = 0; i < la.Info.Relearn.Length; i++)
-                relearn.Add(Verdict(ctx, la.Info.Relearn[i], pk.GetRelearnMove(i)));
+                relearn.Add(Judge(ctx, la.Info.Relearn[i], pk.GetRelearnMove(i)));
         return new MoveLegality(true, moves, relearn);
     }
 
@@ -726,7 +737,7 @@ public sealed class LegalityAssistService : ILegalityAssistService
             if (!string.Equals(before, after, StringComparison.Ordinal)) changes.Add(new FieldChange(name, before, after));
         }
         string Loc(bool egg, ushort value, PKM pk) =>
-            value == 0 && !egg ? "(none)" : GameInfo.GetLocationName(egg, value, pk.Format, pk.Generation, pk.Version) is { Length: > 0 } n ? n : $"#{value}";
+            value == 0 && !egg ? "(none)" : LocationNames.Of(pk, value, egg) is { Length: > 0 } n ? n : $"#{value}";
         string Date(DateOnly? d) => d?.ToString("yyyy-MM-dd") ?? "unset";
 
         Field("Level", a.CurrentLevel.ToString(), b.CurrentLevel.ToString());

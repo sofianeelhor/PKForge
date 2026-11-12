@@ -5,6 +5,13 @@ using Xunit;
 
 namespace PKForge.Engine.Tests;
 
+/// <summary>PKHeX's event database (MGDB / EGDB) is process-wide and these tests swap the
+/// gallery folder it loads: they run apart from the parallel tests, or one test's reset
+/// wipes the gallery another is reading.</summary>
+[CollectionDefinition(nameof(EventDatabaseCollection), DisableParallelization = true)]
+public sealed class EventDatabaseCollection;
+
+[Collection(nameof(EventDatabaseCollection))]
 public sealed class EventDatabaseMetadataTests
 {
     [Fact]

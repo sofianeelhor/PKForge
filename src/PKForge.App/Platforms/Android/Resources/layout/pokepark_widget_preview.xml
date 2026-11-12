@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shown in the launcher's widget picker, and until the park has painted the first picture. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:clipToOutline="true"
+    android:background="@drawable/pokepark_widget_background">
+    <TextView android:layout_width="match_parent" android:layout_height="match_parent"
+        android:gravity="center" android:padding="12dp"
+        android:text="@string/pokepark_widget_empty"
+        android:textColor="#204050" android:textSize="14sp" />
+</FrameLayout>

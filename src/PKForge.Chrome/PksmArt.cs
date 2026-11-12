@@ -11,10 +11,6 @@ public sealed class PksmArt
     private readonly Dictionary<string, SKBitmap> _cache = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SKBitmap> _miss = new(StringComparer.Ordinal);
 
-    
-
-    private static readonly SKPaint NearestPaint = new();
-
     /// <summary>Registers raw PNG bytes under a name (idempotent; first bytes win).</summary>
     public void Supply(string name, byte[] png)
     {

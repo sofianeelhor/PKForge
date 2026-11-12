@@ -26,13 +26,19 @@ public static class WorldEventsMenu
     /// <summary>True when the open game has anything to show here (the SAVE DATA entry is hidden otherwise).</summary>
     public static bool HasAny(ISaveEngineSession session) => Options(session).Length != 0;
 
-    public static async Task ShowAsync(Grid host, ISaveEngineSession session, BoxBrowserViewModel viewModel)
+    /// <summary>
+    /// The menu, until the player backs out. The session is asked for again before each
+    /// editor: an edit that is refused reopens the save, and an editor handed the session
+    /// from before would read a closed one while its writes went to the new one.
+    /// </summary>
+    public static async Task ShowAsync(Grid host, Func<ISaveEngineSession?> currentSession, BoxBrowserViewModel viewModel)
     {
         while (true)
         {
+            if (currentSession() is not { } session) return;
             var options = Options(session);
             if (options.Length == 0) return;
-            var note = HardcoreMode.IsOn ? HardcoreMode.StatusFor(SaveAction.EditWorld) : "Every change makes a restore point first.";
+            var note = HardcoreMode.IsOn ? HardcoreMode.StatusFor(SaveAction.EditWorld) : null;
             var choice = await PadMenu.ShowAsync(host, "World & events", note, options);
             switch (choice)
             {
@@ -41,7 +47,7 @@ public static class WorldEventsMenu
                 case Resets: await EventResetEditor.ShowAsync(host, session, viewModel); break;
                 case Entralink: await EntralinkEditor.ShowAsync(host, session, viewModel); break;
                 case Apricorns: await HgssGadgetsEditor.ShowApricornsAsync(host, session, viewModel); break;
-                case Walker: await HgssGadgetsEditor.ShowPokewalkerAsync(host, session, viewModel); break;
+                case Walker: await PokewalkerEditor.ShowAsync(host, session, viewModel); break;
                 case Honey: await HoneyTreeEditor.ShowAsync(host, session, viewModel); break;
                 case KeyItems: await KeyItemEventsEditor.ShowAsync(host, session, viewModel); break;
                 default: return;
@@ -76,7 +82,7 @@ public static class WorldEventsMenu
             }
             catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException or ArgumentException)
             {
-                return new GenerationOutcome(false, ex.Message);
+                return new GenerationOutcome(false, Domain.ErrorText.Plain(ex));
             }
         }, Math.Max(0, viewModel.SelectedSlot), refreshSlot: false, action: action);
 

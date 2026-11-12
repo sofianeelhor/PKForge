@@ -221,9 +221,9 @@ public static class KeyItemEventService
     public static IReadOnlyList<KeyItemEventStatus> GetEvents(ISaveEngineSession session)
     {
         var definitions = DefinitionsFor(session);
-        if (definitions.Length == 0)
+        if (definitions.Length == 0 || session is not SaveEngineSession engine)
             return [];
-        var save = ((SaveEngineSession)session).SaveFile;
+        var save = engine.SaveFile;
         var names = session.GetItemNames();
         return definitions.Select(definition => Read(session, save, names, definition)).ToList();
     }
@@ -302,8 +302,13 @@ public static class KeyItemEventService
     private static bool TryFind(ISaveEngineSession session, string id, out SaveFile save, out Definition definition)
     {
         definition = DefinitionsFor(session).FirstOrDefault(candidate => candidate.Id == id)!;
-        save = definition is null ? null! : ((SaveEngineSession)session).SaveFile;
-        return definition is not null;
+        if (definition is null || session is not SaveEngineSession engine)
+        {
+            save = null!;
+            return false;
+        }
+        save = engine.SaveFile;
+        return true;
     }
 
     private static Definition[] DefinitionsFor(ISaveEngineSession session)

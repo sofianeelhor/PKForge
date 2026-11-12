@@ -30,7 +30,7 @@ public sealed class EncounterCardTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "PKForge.sln")))
             directory = directory.Parent;
-        var path = directory is null ? null : Path.Combine(directory.FullName, ".local-testdata", "unbound-v2111.srm");
+        var path = directory is null ? null : Path.Combine(directory.FullName, ".local-testdata", "thor/retroarch/mGBA/Pokémon Unbound (v2.1.1.1).srm");
         return path is not null && File.Exists(path) ? new UnboundEngineSession(File.ReadAllBytes(path), "Unbound") : null;
     }
 

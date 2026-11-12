@@ -24,6 +24,8 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
     /// <summary>Test overrides for the time of day and the weather (Diagnostics builds); null follows the real clock.</summary>
     public ParkDayPhase? PhaseOverride { get; set; }
     public ParkWeather? WeatherOverride { get; set; }
+    /// <summary>The real weather of the player's city (Options, Time and weather), when it is on.</summary>
+    public ParkWeatherReading? RealWeather { get; set; }
 
     /// <summary>Hide and seek with the pad: the place the player is about to look.</summary>
     public ParkPoint? SeekCursor { get; set; }
@@ -101,10 +103,6 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
         return closest;
     }
 
-    // The launcher widget: a short loop of the park as it stands, without moving anyone.
-    public void DrawWidgetFrame(SKCanvas c, int width, int height, int frame) =>
-        Draw(c, width, height, frame * 400L, labels: false, ambient: true);
-
     /// <summary>Loads the park's art once; a failed load is tried again on the next call.</summary>
     public async Task LoadArtAsync()
     {
@@ -161,9 +159,9 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
         using var paint = new SKPaint { Color = new SKColor(255, 255, 255, 230), IsAntialias = false };
         using var back = new SKPaint { Color = new SKColor(0, 0, 0, 150) };
         var text = $"frame {_drawMs:0.0} ms (life {_lifeMs:0.00} ms)  ·  {(_frameGap > 0 ? 1000 / _frameGap : 0):0} fps  ·  {_life.Actors.Count} Pokémon";
-        var w = font.MeasureText(text);
+        var w = font.MeasureFallback(text);
         c.DrawRect(width - w - font.Size * 1.5f, 0, w + font.Size * 1.5f, font.Size * 1.8f, back);
-        c.DrawText(text, width - w - font.Size * .75f, font.Size * 1.3f, SKTextAlign.Left, font, paint);
+        c.DrawTextFallback(text, width - w - font.Size * .75f, font.Size * 1.3f, SKTextAlign.Left, font, paint);
     }
 
     // Diagnostic builds: a summary every five seconds and every slow frame, to read with adb logcat.
@@ -202,7 +200,7 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
         if (PhaseOverride is { } forced)
             now = now.Date.AddHours(forced switch { ParkDayPhase.Morning => 7.5, ParkDayPhase.Evening => 19.5, ParkDayPhase.Night => 23, _ => 13 });
         _life.Phase = ParkCare.PhaseAt(now);
-        _life.Weather = WeatherOverride ?? ParkCare.WeatherAt(now);
+        _life.Weather = ParkRealWeather.SkyFor(WeatherOverride, RealWeather, DateTimeOffset.Now, ParkCare.WeatherAt(now));
         _life.Today = DateOnly.FromDateTime(now);
         if (!ambient)
         {
@@ -293,11 +291,11 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
         }
         lowRes.End(screen, camera);
         // The name tag is text: drawn at the screen's own resolution, over the scaled-up world.
-        if (named is not null)
+        if (named is not null && !Screensaver)
             DrawLabel(screen, p, named.Resident.Name, (named.X - camera.Left) * camera.Scale, (named.Y - named.Altitude - camera.Top) * camera.Scale, width, height);
-        if (labels && ShowCaptions) DrawCaptions(screen, actors, heads, camera, width, height, selectedId);
+        if (labels && ShowCaptions && !Screensaver) DrawCaptions(screen, actors, heads, camera, width, height, selectedId);
         c = screen;
-        if (!ambient) DrawGameBanner(c, p, width, time);
+        if (!ambient && !Screensaver) DrawGameBanner(c, p, width, time);
         // A zap, or the storm's lightning, flashes the whole screen for an instant.
         if (!ambient && Math.Max(ParkEffects.Flash(_life.Effects, time), ParkSky.Lightning(_life.Weather, time)) is > 0 and var flash)
         {
@@ -402,12 +400,14 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
         }
         if (frame is not null)
         {
-            // Drawn 1:1 on whole art pixels, the PMD shadow's middle on the feet.
+            // Drawn on whole art pixels, the PMD shadow's middle on the feet; the big species a
+            // little smaller (issue #48), nearest-sampled.
             var source = frame.Source;
-            float middleX = actor.X - frame.Feet.X, middleY = actor.Y - lift - frame.Feet.Y + (swimming ? 4 : 0);
-            Sprite(frame.Bitmap, source, SKRect.Create(MathF.Round(middleX - source.Width / 2),
-                MathF.Round(middleY - source.Height / 2), source.Width, source.Height));
-            head = middleY + frame.Bounds.Top;
+            var scale = walking.GetScale(species, form, shiny);
+            float middleX = actor.X - frame.Feet.X * scale, middleY = actor.Y - lift - frame.Feet.Y * scale + (swimming ? 4 : 0);
+            float w = MathF.Round(source.Width * scale), h = MathF.Round(source.Height * scale);
+            Sprite(frame.Bitmap, source, SKRect.Create(MathF.Round(middleX - w / 2), MathF.Round(middleY - h / 2), w, h));
+            head = middleY + frame.Bounds.Top * scale;
         }
         else if (sprites.GetSprite(mon.Species, mon.Form, mon.Shiny) is { } bitmap)
         {
@@ -491,7 +491,7 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
     {
         var unit = width / 1920f;
         using var font = PixelFont.For(text, 40 * unit);
-        var w = font.MeasureText(text, p) + 60 * unit;
+        var w = font.MeasureFallback(text, p) + 60 * unit;
         var rect = SKRect.Create((width - w) / 2, 24 * unit, w, 64 * unit);
         p.Color = new SKColor(0x10, 0x16, 0x30, 220);
         c.DrawRoundRect(rect, 18 * unit, 18 * unit, p);
@@ -501,7 +501,7 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
             c.DrawRoundRect(SKRect.Create(rect.Left, rect.Bottom - 8 * unit, rect.Width * done, 8 * unit), 4 * unit, 4 * unit, p);
         }
         p.Color = new SKColor(0xf4, 0xf6, 0xff);
-        c.DrawText(text, rect.MidX, rect.MidY + 14 * unit, SKTextAlign.Center, font, p);
+        c.DrawTextFallback(text, rect.MidX, rect.MidY + 14 * unit, SKTextAlign.Center, font, p);
     }
 
     // Wild visitors have no roster entry: one is made up for drawing, and their sprites load on first sight.
@@ -571,6 +571,9 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
     /// <summary>A word over a Pokémon that has just done something (Options, Captions).</summary>
     public bool ShowCaptions { get; set; } = true;
 
+    /// <summary>The park as a screensaver: no captions, no banners, only the park.</summary>
+    public bool Screensaver { get; set; }
+
     private const long CaptionFor = 4000;
 
     // What a Pokémon just did, in a few words over its head for four seconds: the one you follow
@@ -597,7 +600,7 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
         var name = text.Length > 15 ? text[..14] + "…" : text;
         var size = MathF.Max(13, screenWidth / 88f);
         using var font = PixelFont.For(name, size);
-        var width = font.MeasureText(name, p) + size;
+        var width = font.MeasureFallback(name, p) + size;
         var height = size * 1.35f;
         var labelX = Math.Clamp(x, width / 2, screenWidth - width / 2);
         var top = Math.Min(screenHeight - height - 2, y + size * .5f);
@@ -607,7 +610,7 @@ public sealed class PokeparkScene(ISpriteService sprites, PokeparkSpriteService 
         p.Color = new SKColor(16, 22, 30, 165);
         c.DrawRoundRect(SKRect.Create(labelX - width / 2, top, width, height), height / 2, height / 2, p);
         p.Color = SKColors.White;
-        c.DrawText(name, labelX, top + height * .76f, SKTextAlign.Center, font, p);
+        c.DrawTextFallback(name, labelX, top + height * .76f, SKTextAlign.Center, font, p);
         p.IsAntialias = false;
         p.ColorFilter = filter;
     }

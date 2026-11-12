@@ -7,9 +7,10 @@ using Xunit;
 namespace PKForge.Engine.Tests;
 
 /// <summary>
-/// The Unbound session against the owner's real device save: party decode, box
-/// layout, checksum policies, format conversion, and the PID solver, all verified
-/// on ground truth rather than fixtures.
+/// The Unbound session against the owner's real device save (the Thor copy of
+/// "Pokémon Unbound (v2.1.1.1).srm": Larvitar alone in the party; Bulbasaur, Minior and
+/// Wartortle in box 1 slots 1-3): party decode, box layout, checksum policies, format
+/// conversion, and the PID solver, all verified on ground truth rather than fixtures.
 /// </summary>
 public sealed class UnboundSessionTests
 {
@@ -18,7 +19,7 @@ public sealed class UnboundSessionTests
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "PKForge.sln")))
             directory = directory.Parent;
-        var path = directory is null ? null : Path.Combine(directory.FullName, ".local-testdata", "unbound-v2111.srm");
+        var path = directory is null ? null : Path.Combine(directory.FullName, ".local-testdata", "thor", "retroarch", "mGBA", "Pokémon Unbound (v2.1.1.1).srm");
         return path is not null && File.Exists(path) ? path : null;
     }
 
@@ -38,14 +39,15 @@ public sealed class UnboundSessionTests
         Assert.True(session.DuplicateSlot(-1, 0, -1, 1));
         Assert.Equal(source, session.ExportSlot(-1, 0).Data);
         Assert.Equal(source, session.ExportSlot(-1, 1).Data);
-        Assert.True(session.DuplicateSlot(-1, 0, 0, 0));
-        var boxed = session.ExportSlot(0, 0).Data;
-        Assert.True(session.DuplicateSlot(0, 0, 0, 1));
-        Assert.Equal(boxed, session.ExportSlot(0, 1).Data);
-        Assert.False(session.DuplicateSlot(0, 0, 0, 1));
+        Assert.True(session.DuplicateSlot(-1, 0, 1, 0));
+        var boxed = session.ExportSlot(1, 0).Data;
+        Assert.True(session.DuplicateSlot(1, 0, 1, 1));
+        Assert.Equal(boxed, session.ExportSlot(1, 1).Data);
+        Assert.False(session.DuplicateSlot(1, 0, 1, 1));
+        Assert.False(session.DuplicateSlot(1, 0, 0, 0)); // box 1 slot 1 holds Bulbasaur
         using var reopened = new UnboundEngineSession(session.Serialize());
         Assert.Equal(source, reopened.ExportSlot(-1, 1).Data);
-        Assert.Equal(boxed, reopened.ExportSlot(0, 1).Data);
+        Assert.Equal(boxed, reopened.ExportSlot(1, 1).Data);
     }
 
     [Fact]
@@ -68,6 +70,13 @@ public sealed class UnboundSessionTests
         Assert.NotNull(larvitar.Stats);
         Assert.Equal(30, larvitar.Stats![0]); // max HP from the party tail
         Assert.True(session.ReadEntity(-1, 1).IsEmpty);
+
+        // The PC: three Pokémon at the start of box 1, nothing else.
+        Assert.Equal(1, session.ReadEntity(0, 0).Species);   // Bulbasaur
+        Assert.Equal(774, session.ReadEntity(0, 1).Species); // Minior
+        Assert.Equal(8, session.ReadEntity(0, 2).Species);   // Wartortle
+        Assert.Equal(3, Enumerable.Range(0, session.BoxCount)
+            .Sum(box => Enumerable.Range(0, session.BoxSlotCount).Count(slot => !session.ReadEntity(box, slot).IsEmpty)));
     }
 
     [Fact]
@@ -99,10 +108,10 @@ public sealed class UnboundSessionTests
     {
         var session = OpenGroundTruth();
         if (session is null) return;
-        session.MoveSlot(-1, 0, 0, 0);
+        session.MoveSlot(-1, 0, 1, 0);
 
         Assert.True(session.ReadEntity(-1, 0).IsEmpty); // party compacted away
-        var boxed = session.ReadEntity(0, 0);
+        var boxed = session.ReadEntity(1, 0);
         Assert.False(boxed.IsEmpty);
         Assert.Equal(246, boxed.Species);
         Assert.Equal("Larvitar", boxed.Nickname);
@@ -112,7 +121,7 @@ public sealed class UnboundSessionTests
 
         // Every live stream section must carry a checksum that matches its content.
         var reloaded = new UnboundEngineSession(bytes);
-        Assert.Equal(246, reloaded.ReadEntity(0, 0).Species);
+        Assert.Equal(246, reloaded.ReadEntity(1, 0).Species);
     }
 
     [Fact]
@@ -169,10 +178,14 @@ public sealed class UnboundSessionTests
         Assert.Equal(13, items.Items[0].Id);   // Potion x2
         Assert.Equal(2, items.Items[0].Count);
         Assert.Equal(86, items.Items[1].Id);   // Repel x2
+        Assert.Equal([new BagItem(61, 50), new BagItem(62, 50)], items.Items.Skip(2));
         var balls = bag.First(p => p.Name == "Balls");
-        Assert.Equal(4, balls.Items[0].Id);    // Poké Ball x10
-        Assert.Equal(10, balls.Items[0].Count);
+        Assert.Equal(25, balls.Items.Count);   // every ball type, 50 each
+        Assert.Equal(4, balls.Items[0].Id);    // Poké Ball x50
+        Assert.Equal(50, balls.Items[0].Count);
+        Assert.All(balls.Items, ball => Assert.Equal(50, ball.Count));
         Assert.Empty(bag.First(p => p.Name == "TMs").Items);
+        Assert.Empty(bag.First(p => p.Name == "Berries").Items);
     }
 
     [Fact]
@@ -210,7 +223,7 @@ public sealed class UnboundSessionTests
         var reloaded = new UnboundEngineSession(session.Serialize().ToArray());
         var items = reloaded.GetBag().First(p => p.Name == "Items").Items;
         Assert.DoesNotContain(items, item => item.Id == 25);
-        Assert.Equal(2, items.Count); // Potion + Repel remain
+        Assert.Equal(4, items.Count); // Potion, Repel and items 61-62 remain
         Assert.Equal(99, reloaded.GetBag().First(p => p.Name == "Balls").Items[0].Count);
     }
 
@@ -230,9 +243,9 @@ public sealed class UnboundSessionTests
     {
         var session = OpenGroundTruth();
         if (session is null) return;
-        var outcome = new LegalizerService().GenerateFromShowdown(session, 0, 0, "Larvitar");
+        var outcome = new LegalizerService().GenerateFromShowdown(session, 1, 2, "Larvitar");
         Assert.True(outcome.Success, outcome.Message);
-        Assert.Equal(246, session.ReadEntity(0, 0).Species);
+        Assert.Equal(246, session.ReadEntity(1, 2).Species);
     }
 
     [Fact]
@@ -243,11 +256,11 @@ public sealed class UnboundSessionTests
         if (session is null) return;
 
         // Modern id 246 = Larvitar; Unbound keeps it, but the resolution must go by name.
-        var outcome = legalizer.Generate(session, 0, 1,
+        var outcome = legalizer.Generate(session, 1, 1,
             new GenerationRequest(246, 50, Shiny: true, Nature: 8, Ability: null, Ball: 4, Moves: [44, 43]));
         Assert.True(outcome.Success, outcome.Message);
 
-        var generated = session.ReadEntity(0, 1);
+        var generated = session.ReadEntity(1, 1);
         Assert.Equal(246, generated.Species);
         Assert.Equal(50, generated.Level);
         Assert.True(generated.IsShiny);

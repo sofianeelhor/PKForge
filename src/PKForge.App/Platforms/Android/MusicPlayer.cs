@@ -43,6 +43,27 @@ public sealed class MusicPlayer : IMusicPlayer, IDisposable
         set => Preferences.Default.Set("music_autostart", value);
     }
 
+    public int Volume => MusicPlaces.ClampVolume(Preferences.Default.Get("music_volume", MusicPlaces.DefaultVolume));
+
+    public void SetVolume(int volume)
+    {
+        Preferences.Default.Set("music_volume", MusicPlaces.ClampVolume(volume));
+        // Heard at once; a fade in progress picks the new gain up on its next step.
+        if (_player is { } player) Apply(player, _level);
+    }
+
+    private float _level = 1;
+
+    // Fades work in 0..1 and the user's volume scales them.
+    private void Apply(MediaPlayer player, float level)
+    {
+        _level = level;
+        var gain = level * MusicPlaces.Gain(Volume);
+        player.SetVolume(gain, gain);
+    }
+
+    private bool Shuffling => MusicPlaces.Shuffles(_place, SourceFor, Order);
+
     public MusicPlayer()
     {
         var saved = Preferences.Default.Get("music_library", "");
@@ -102,7 +123,7 @@ public sealed class MusicPlayer : IMusicPlayer, IDisposable
         _fade++;
         if (_player is not null && _index is not null && _playerList is not null && SameList(_playerList, _playlist))
         {
-            _player.SetVolume(1, 1);
+            Apply(_player, 1);
             _player.Start();
             return;
         }
@@ -122,7 +143,7 @@ public sealed class MusicPlayer : IMusicPlayer, IDisposable
         if (list is null) return;
         _fade++;
         var at = _index is { } index ? Array.IndexOf(list, index) : -1;
-        var next = Order == MusicOrder.Shuffle && list.Length > 1
+        var next = Shuffling && list.Length > 1
             ? list.Where(i => i != _index).ElementAt(_rng.Next(list.Length - (at >= 0 ? 1 : 0)))
             : list[(at + 1) % list.Length];
         _on = true;
@@ -197,8 +218,7 @@ public sealed class MusicPlayer : IMusicPlayer, IDisposable
             if (old.IsPlaying)
                 for (var step = FadeSteps - 1; step >= 0; step--)
                 {
-                    var volume = (float)step / FadeSteps;
-                    old.SetVolume(volume, volume);
+                    Apply(old, (float)step / FadeSteps);
                     await Task.Delay(FadeStepMs);
                     if (fade != _fade || _player != old) return;
                 }
@@ -212,8 +232,7 @@ public sealed class MusicPlayer : IMusicPlayer, IDisposable
         {
             await Task.Delay(FadeStepMs);
             if (fade != _fade || _player != player) return;
-            var volume = (float)step / FadeSteps;
-            player.SetVolume(volume, volume);
+            Apply(player, (float)step / FadeSteps);
         }
     }
 
@@ -222,7 +241,7 @@ public sealed class MusicPlayer : IMusicPlayer, IDisposable
         _playerList = list;
         var (index, position) = _resume.TryGetValue(Key(list), out var spot) && list.Contains(spot.Index)
             ? spot
-            : (Order == MusicOrder.Shuffle ? list[_rng.Next(list.Length)] : list[0], 0);
+            : (Shuffling ? list[_rng.Next(list.Length)] : list[0], 0);
         PlayIndex(index, position, fadeIn ? 0 : 1);
     }
 
@@ -244,7 +263,7 @@ public sealed class MusicPlayer : IMusicPlayer, IDisposable
             _player.SetDataSource(context, global::Android.Net.Uri.Parse(track.DocumentId)!);
             _player.Prepare();
             if (position > 0) _player.SeekTo(position);
-            _player.SetVolume(volume, volume);
+            Apply(_player, volume);
             // Hidden by another app or the Bad Apple egg: it starts when they give the screen back.
             if (!_pausedInBackground) _player.Start();
             _failures = 0;

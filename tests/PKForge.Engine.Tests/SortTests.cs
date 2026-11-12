@@ -105,6 +105,7 @@ public sealed class SortTests
     [InlineData(Domain.SortCriteria.Type)]
     [InlineData(Domain.SortCriteria.AgeOldest)]
     [InlineData(Domain.SortCriteria.ShinyFirst)]
+    [InlineData(Domain.SortCriteria.OriginalTrainer)]
     public void GlobalSortPreservesEverySpeciesAndForm(Domain.SortCriteria criteria)
     {
         using var session = Open();
@@ -152,5 +153,29 @@ public sealed class SortTests
         session.SortBoxes(Domain.SortCriteria.LevelDesc, [0], reverse: true);
         var levels = ReadBox(session, 0, 30).Select(m => m.Level).ToList();
         Assert.Equal(levels.OrderBy(l => l).ToList(), levels);
+    }
+
+    [Theory]
+    [InlineData(Domain.SortCriteria.DexNumber, false)]
+    [InlineData(Domain.SortCriteria.Alphabetical, true)]
+    [InlineData(Domain.SortCriteria.LevelDesc, false)]
+    [InlineData(Domain.SortCriteria.IvTotalDesc, false)]
+    [InlineData(Domain.SortCriteria.Type, false)]
+    [InlineData(Domain.SortCriteria.AgeOldest, false)]
+    [InlineData(Domain.SortCriteria.ShinyFirst, true)]
+    [InlineData(Domain.SortCriteria.OriginalTrainer, false)]
+    public void PreviewIsExactlyWhatTheSortWrites(Domain.SortCriteria criteria, bool reverse)
+    {
+        using var session = Open();
+        IReadOnlyList<int> boxes = [0, 1, 2];
+        var preview = session.PreviewSortOrder(criteria, boxes, reverse);
+        var expected = preview.Select(p => session.ReadEntity(p.Box, p.Slot)).Select(d => (d.Species, d.Form, d.Level, d.Nickname)).ToList();
+
+        var placed = session.SortBoxes(criteria, boxes, reverse);
+        var actual = boxes.SelectMany(box => Enumerable.Range(0, 30).Select(slot => session.ReadEntity(box, slot)))
+            .Where(d => !d.IsEmpty).Select(d => (d.Species, d.Form, d.Level, d.Nickname)).ToList();
+
+        Assert.Equal(placed, preview.Count);
+        Assert.Equal(expected, actual);
     }
 }

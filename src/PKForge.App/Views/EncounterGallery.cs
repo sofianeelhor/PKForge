@@ -1,6 +1,4 @@
-using Microsoft.Maui.Controls.Shapes;
 using PKForge.App.Services;
-using PKForge.App.Theme;
 using PKForge.App.ViewModels;
 using PKForge.Domain;
 using PKForge.Chrome;
@@ -9,11 +7,6 @@ using SkiaSharp.Views.Maui;
 using SkiaSharp.Views.Maui.Controls;
 
 namespace PKForge.App.Views;
-
-file static class DpScale
-{
-    public static float Value => (float)DeviceDisplay.MainDisplayInfo.Density;
-}
 
 /// <summary>
 /// "How do I get this?" - the whole answer, no save required.
@@ -64,7 +57,7 @@ public static class EncounterGallery
             string.Join(" / ", session.GameNames), session.Generation, true, session.GetEncounterCards(species, form));
         while (true)
         {
-            var pick = await CardShelf.ShowAsync(host, listing, sprites, species, form, canCatch: true);
+            var pick = await CardShelf.ShowAsync(host, listing, sprites, species, form, canCatch: true, back: "Close", progress: session.GetBadges());
             if (pick is null || viewModel is null) return;
 
             var target = viewModel.VisibleSlots.FirstOrDefault(s => s.Species is null)?.Slot ?? -1;
@@ -188,7 +181,8 @@ public static class EncounterGallery
 
             var listing = listings[choice.Value];
             var canCatch = catchable.Contains(choice.Value);
-            var pick = await CardShelf.ShowAsync(host, listing, sprites, species, form, canCatch);
+            var pick = await CardShelf.ShowAsync(host, listing, sprites, species, form, canCatch, back: "Games",
+                progress: canCatch ? session?.GetBadges() : null);
             if (pick is null) continue; // back to the game list
 
             if (viewModel is null || session is null || !canCatch)
@@ -211,20 +205,46 @@ public static class EncounterGallery
         }
     }
 
-    /// <summary>Both screens live on the same night wallpaper so the flow feels like one place.</summary>
-    private static SKCanvasView Backdrop()
+    /// <summary>The Pokémon trimmed to its visible pixels, so it can be drawn large; null while it loads.</summary>
+    private static SKImage? TrimmedSprite(ISpriteService sprites, int species, int form, SKCanvasView repaint)
     {
-        var canvasView = new SKCanvasView { InputTransparent = true };
-        canvasView.PaintSurface += (_, args) =>
-            PksmPaint.Wallpaper(args.Surface.Canvas, new SKRect(0, 0, args.Info.Width, args.Info.Height), Pksm.Housing);
-        return canvasView;
+        var bitmap = sprites.GetSprite(species, form, false);
+        if (bitmap is null)
+        {
+            sprites.Warm(species, form, false, () => MainThread.BeginInvokeOnMainThread(repaint.InvalidateSurface));
+            return null;
+        }
+        var bounds = StoragePaint.OpaqueBounds(bitmap, new SKRectI(0, 0, bitmap.Width, bitmap.Height));
+        using var image = SKImage.FromBitmap(bitmap);
+        return bounds.Width > 0 && bounds.Height > 0 ? Kit.SubsetOf(image, bounds) : SKImage.FromBitmap(bitmap);
+    }
+
+    /// <summary>A bundled tool icon (ui/tools), read once per screen.</summary>
+    private static SKImage? ToolIcon(Dictionary<string, SKImage?> cache, string name)
+    {
+        if (cache.TryGetValue(name, out var known)) return known;
+        SKImage? image = null;
+        try
+        {
+            using var stream = FileSystem.OpenAppPackageFileAsync($"ui/tools/{name}.png").GetAwaiter().GetResult();
+            using var bitmap = SKBitmap.Decode(stream);
+            image = bitmap is null ? null : SKImage.FromBitmap(bitmap);
+        }
+        catch (Exception error) when (error is IOException or FileNotFoundException) { }
+        cache[name] = image;
+        return image;
     }
 
     // ── Screen 1: the games, grouped by generation ──────────────────────────────
 
+    /// <summary>
+    /// Every game, in the same painted screen as one game's ways (<see cref="EncounterPaint"/>):
+    /// the Pokémon at the left, one row per game with its generation, how it gives the Pokémon
+    /// out, and the open save's own game first. ↑↓ pick, A shows the ways, B closes. A tap
+    /// picks a game; a second tap opens it.
+    /// </summary>
     private sealed class GameShelf : IPadHandler
     {
-        private const float Pad = 10f, Gap = 6f, RowH = 44f, HeaderH = 22f;
         private readonly TaskCompletionSource<int?> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Grid _host;
         private readonly Grid _overlay;
@@ -232,118 +252,62 @@ public static class EncounterGallery
         private readonly IReadOnlyList<GameEncounterListing> _listings;
         private readonly IReadOnlyList<int> _order;      // display order over _listings
         private readonly IReadOnlyList<int> _catchable;
-        private readonly SKCanvasView _wall;
+        private readonly SKCanvasView _canvas = new() { EnableTouchEvents = true };
+        private readonly ISpriteService _sprites;
+        private readonly int _species;
+        private readonly int _form;
+        private readonly Dictionary<string, SKImage?> _icons = new(StringComparer.Ordinal);
+        private SKImage? _sprite;
+        private EncounterHits? _hits;
         private int _index;
-        private int _scrollRow;
-        private int _rowsPerScreen = 4;
+        private int _scroll;
+        private SKPoint? _pressedAt;
+        private bool _dragged;
+        private float _dragRows;
 
         public static Task<int?> ShowAsync(Grid host, IReadOnlyList<GameEncounterListing> listings, ISpriteService sprites, int species, int form, IReadOnlyList<int> catchable) =>
             new GameShelf(host, listings, sprites, species, form, catchable)._result.Task;
-
-        /// <summary>Rows the open save can actually catch into, by listing index.</summary>
-        private bool IsCurrent(int display) => _catchable.Contains(_order[Math.Clamp(display, 0, _order.Count - 1)]);
 
         private GameShelf(Grid host, IReadOnlyList<GameEncounterListing> listings, ISpriteService sprites, int species, int form, IReadOnlyList<int> catchable)
         {
             _host = host;
             _listings = listings;
             _catchable = catchable;
+            _sprites = sprites;
+            _species = species;
+            _form = form;
             _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
 
-            // A curated order: the generation the player is in first when a save is open,
-            // then oldest to newest, so "where can I get this?" reads chronologically.
+            // Oldest to newest, so "where can I get this?" reads chronologically; the open
+            // save's own game first, since that is the answer the player acts on.
             var order = Enumerable.Range(0, listings.Count).ToList();
             order.Sort((a, b) =>
             {
                 var byGen = listings[a].Generation.CompareTo(listings[b].Generation);
                 return byGen != 0 ? byGen : string.CompareOrdinal(listings[a].GameName, listings[b].GameName);
             });
-            // Rows the save owns come first: its own answer is what the player acts on.
-            var owned = order.Where(i => catchable.Contains(i)).ToList();
-            foreach (var index in owned)
+            foreach (var index in order.Where(i => catchable.Contains(i)).ToList())
             {
                 order.Remove(index);
                 order.Insert(0, index);
             }
             _order = order;
 
-            var maxW = host.Width > 0 ? host.Width - 24 : 616;
-            var maxH = host.Height > 0 ? host.Height - 16 : 344;
-            _wall = new SKCanvasView { EnableTouchEvents = true, HorizontalOptions = LayoutOptions.Fill, VerticalOptions = LayoutOptions.Fill };
-            _wall.PaintSurface += Paint;
-            _wall.Touch += Touch;
-
-            var hero = new SKCanvasView { WidthRequest = 64, HeightRequest = 46, HorizontalOptions = LayoutOptions.Start };
-            hero.PaintSurface += (_, args) =>
+            _canvas.PaintSurface += PaintGuard.Wrap("EncounterGallery.Paint", Paint);
+            _canvas.Touch += Touch;
+            var footer = DsChrome.Footer(
+                ("A", "Ways", () => OnPadButton(PadButton.A)),
+                ("B", "Close", () => OnPadButton(PadButton.B)));
+            var screen = new Grid
             {
-                var bitmap = sprites.GetSprite(species, form, false);
-                if (bitmap is null) sprites.Warm(species, form, false, () => MainThread.BeginInvokeOnMainThread(hero.InvalidateSurface));
-                EventGallery.PaintMon(args.Surface.Canvas, args.Info, bitmap, Math.Min(args.Info.Width, args.Info.Height) * 0.95f);
-            };
-            var heroRow = new Grid { ColumnSpacing = 10, ColumnDefinitions = [new(new GridLength(64)), new(GridLength.Star)] };
-            heroRow.Children.Add(hero);
-            var header = Kit.HeaderBar($"How to get · {listings.Count(l => l.Obtainable)} of {listings.Count} games");
-            heroRow.Children.Add(header);
-            Grid.SetColumn(header, 1);
-
-            var content = new Grid
-            {
+                Padding = new Thickness(14, 12, 14, 0),
                 RowSpacing = 10,
-                RowDefinitions = [new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto)],
-                Children =
-                {
-                    heroRow,
-                    _wall,
-                    Kit.WindowHints(("A", "WAYS", () => OnPadButton(PadButton.A)), ("B", "BACK", () => Close(null))),
-                },
+                RowDefinitions = [new(GridLength.Star), new(GridLength.Auto)],
+                Children = { _canvas, footer },
             };
-            content.SetRow(_wall, 1);
-            content.SetRow((View)content.Children[2], 2);
-
-            var window = new Border
-            {
-                BackgroundColor = UiTokens.Shell,
-                Stroke = UiTokens.ShellEdge,
-                StrokeThickness = 2,
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                Shadow = Kit.HardShadow(),
-                Padding = 14,
-                Content = new Grid { Children = { Backdrop(), content } },
-            };
-            window.MaximumWidthRequest = maxW;
-            window.MaximumHeightRequest = maxH;
-            window.HorizontalOptions = LayoutOptions.Center;
-            window.VerticalOptions = LayoutOptions.Center;
-
-            var scrim = new BoxView { Color = UiTokens.Scrim };
-            var scrimTap = new TapGestureRecognizer();
-            scrimTap.Tapped += (_, _) => Close(null);
-            scrim.GestureRecognizers.Add(scrimTap);
-            _overlay = new Grid { Children = { scrim, window } };
-            host.Add(_overlay);
-            Grid.SetRowSpan(_overlay, Math.Max(1, host.RowDefinitions.Count));
-            Grid.SetColumnSpan(_overlay, Math.Max(1, host.ColumnDefinitions.Count));
-
+            Grid.SetRow(footer, 1);
+            _overlay = Kit.AttachOverlay(host, new Grid { Children = { DsChrome.GridBackground(), screen } });
             _router?.Push(this);
-            Kit.AnimateIn(window);
-        }
-
-        /// <summary>Row height per display slot; generation headers take a header row.</summary>
-        private List<(bool IsHeader, string Text, int Display, int Generation)> BuildRows()
-        {
-            var rows = new List<(bool, string, int, int)>();
-            var generation = -1;
-            for (var i = 0; i < _order.Count; i++)
-            {
-                var listing = _listings[_order[i]];
-                if (listing.Generation != generation)
-                {
-                    generation = listing.Generation;
-                    rows.Add((true, $"Generation {Roman(generation)}", -1, generation));
-                }
-                rows.Add((false, listing.GameName, i, generation));
-            }
-            return rows;
         }
 
         private static string Roman(int gen) => gen switch
@@ -351,91 +315,78 @@ public static class EncounterGallery
             1 => "I", 2 => "II", 3 => "III", 4 => "IV", 5 => "V", 6 => "VI", 7 => "VII", 8 => "VIII", 9 => "IX", _ => $"{gen}",
         };
 
-        private void Paint(object? sender, SKPaintSurfaceEventArgs args)
-        {
-            var canvas = args.Surface.Canvas;
-            canvas.Clear(SKColors.Transparent);
-            // Laid out in dp (row heights, card widths): scale the pixel canvas to match.
-            var density = (float)DeviceDisplay.MainDisplayInfo.Density;
-            canvas.Scale(density);
-            var info = new SKImageInfo((int)(args.Info.Width / density), (int)(args.Info.Height / density));
-            _rowsPerScreen = Math.Max(2, (int)((info.Height - 8 + Gap) / (RowH + Gap)));
-
-            using var headerFont = new SKFont(PixelFont.Face, 14f) { Edging = SKFontEdging.Antialias };
-            using var nameFont = new SKFont(PixelFont.Face, 15f) { Edging = SKFontEdging.Antialias };
-            using var detailFont = new SKFont(PixelFont.Face, 12.5f) { Edging = SKFontEdging.Antialias };
-            using var ink = new SKPaint { Color = Pksm.Ink, IsAntialias = true };
-            using var inkSoft = new SKPaint { Color = Pksm.InkSoft, IsAntialias = true };
-
-            var rows = BuildRows();
-            // Scroll by whole rows so the selected game is always on screen; the
-            // generation headers ride along with the first visible entry.
-            var position = rows.FindIndex(r => !r.IsHeader && r.Display == _index);
-            var firstRow = Math.Max(0, position < 0 ? 0 : position - (_rowsPerScreen - 1));
-            var y = 4f;
-            for (var i = firstRow; i < rows.Count; i++)
-            {
-                var row = rows[i];
-                var height = row.IsHeader ? HeaderH : RowH;
-                if (y > info.Height) break;
-                var rect = new SKRect(Pad, y, info.Width - Pad, y + height);
-                if (row.IsHeader)
-                {
-                    PksmPaint.HeaderStrip(canvas, rect, row.Text, headerFont);
-                }
-                else
-                {
-                    var listing = _listings[_order[row.Display]];
-                    var selected = row.Display == _index;
-                    PksmPaint.Panel(canvas, rect);
-                    using var dim = new SKPaint { Color = Pksm.Ink.WithAlpha(0x60), IsAntialias = true };
-                    canvas.DrawText(EventGallery.Fit(nameFont, listing.GameName, rect.Width * 0.5f), rect.Left + 12, rect.MidY + 6, SKTextAlign.Left, nameFont, listing.Obtainable ? ink : dim);
-                    var summary = listing.Obtainable ? Summarize(listing) : "Not obtainable here";
-                    canvas.DrawText(EventGallery.Fit(detailFont, summary, rect.Width * 0.48f), rect.Right - 12, rect.MidY + 6, SKTextAlign.Right, detailFont, listing.Obtainable ? inkSoft : dim);
-                    if (IsCurrent(row.Display))
-                        canvas.DrawText("This game", rect.Left + 12, rect.Top + 15, SKTextAlign.Left, detailFont, inkSoft);
-                    if (selected) PksmPaint.Selection(canvas, rect);
-                }
-                y += height + Gap;
-            }
-        }
-
-        /// <summary>"3 ways · Wild, Egg, Events" - the honest one-line answer per game.</summary>
+        /// <summary>"3 ways · Wild, Eggs": the honest one-line answer per game.</summary>
         private static string Summarize(GameEncounterListing listing)
         {
-            var kinds = listing.Cards.Select(c => c.Kind).Distinct().ToList();
-            var parts = kinds.Select(KindLabel);
-            return $"{listing.Cards.Count} {(listing.Cards.Count == 1 ? "way" : "ways")} · {string.Join(", ", parts)}";
+            var kinds = listing.Cards.Select(c => c.Kind).Distinct().Select(KindLabel);
+            return $"{listing.Cards.Count} {(listing.Cards.Count == 1 ? "way" : "ways")} · {string.Join(", ", kinds)}";
         }
 
         private static string KindLabel(string kind) => kind switch
         {
             "Egg" => "Eggs",
             "Wild" => "Wild",
-            "Static" => "Static",
+            "Static" => "Gifts",
             "Trade" => "Trades",
             "Event" => "Events",
             _ => "Special",
         };
 
+        private void Paint(object? sender, SKPaintSurfaceEventArgs args)
+        {
+            args.Surface.Canvas.Clear(SKColors.Transparent);
+            var rows = _order.Select(i =>
+            {
+                var listing = _listings[i];
+                var current = _catchable.Contains(i);
+                var detail = listing.Obtainable
+                    ? $"{listing.GameName}: A shows each way to get it{(current ? ", and can catch it into this save." : ".")}"
+                    : $"{listing.GameName} does not give this Pokémon out.";
+                return new EncounterRow($"Generation {Roman(listing.Generation)}", listing.GameName,
+                    listing.Obtainable ? Summarize(listing) : "Not in this game", "", 1, false, detail,
+                    Badge: Roman(listing.Generation), Dim: !listing.Obtainable, Tag: current ? "This game" : null);
+            }).ToList();
+            var names = IPlatformApplication.Current?.Services.GetService<IGameDataService>()?.SpeciesNames;
+            var species = names is not null && (uint)_species < (uint)names.Count ? names[_species] : $"#{_species}";
+            var subtitle = $"Obtainable in {_listings.Count(l => l.Obtainable)} of {_listings.Count} games";
+            _sprite ??= TrimmedSprite(_sprites, _species, _form, _canvas);
+            var scene = new EncounterScene(species, _sprite, "", rows, _index, _scroll, name => ToolIcon(_icons, name), Games: true, Subtitle: subtitle);
+            _hits = EncounterPaint.Paint(args.Surface.Canvas, args.Info, scene, BoxBrowserPage.PixelTypeface());
+        }
+
         private void Touch(object? sender, SKTouchEventArgs args)
         {
-            if (args.ActionType == SKTouchAction.Pressed) { args.Handled = true; return; }
-            if (args.ActionType != SKTouchAction.Released) return;
             args.Handled = true;
-            var rows = BuildRows();
-            var y = 4f;
-            foreach (var row in rows)
+            if (_hits is not { } hits) return;
+            var at = args.Location;
+            switch (args.ActionType)
             {
-                var height = row.IsHeader ? HeaderH : RowH;
-                if (!row.IsHeader && args.Location.Y / DpScale.Value >= y && args.Location.Y / DpScale.Value <= y + height)
-                {
-                    _index = row.Display;
-                    _wall.InvalidateSurface();
-                    Close(_order[row.Display]); // display position -> listing index
+                case SKTouchAction.Pressed:
+                    _pressedAt = at;
+                    _dragged = false;
+                    _dragRows = 0;
                     return;
-                }
-                y += height + Gap;
+                case SKTouchAction.Moved when _pressedAt is { } start && hits.List.Contains(start):
+                    if (!_dragged && Math.Abs(start.Y - at.Y) < hits.RowHeight / 3) return;
+                    _dragged = true;
+                    var step = (int)((start.Y - at.Y) / hits.RowHeight - _dragRows);
+                    if (step == 0) return;
+                    _dragRows += step;
+                    _scroll = Math.Clamp(_scroll + step, 0, Math.Max(0, _order.Count - hits.VisibleRows));
+                    _canvas.InvalidateSurface();
+                    return;
+                case SKTouchAction.Released:
+                    var tapped = !_dragged;
+                    _pressedAt = null;
+                    if (!tapped) return;
+                    foreach (var (index, rect) in hits.Rows)
+                    {
+                        if (!rect.Contains(at)) continue;
+                        if (index == _index) Close(_order[index]);
+                        else Move(index);
+                        return;
+                    }
+                    return;
             }
         }
 
@@ -445,22 +396,24 @@ public static class EncounterGallery
             {
                 case PadButton.Up: Move(_index - 1); return true;
                 case PadButton.Down: Move(_index + 1); return true;
-                case PadButton.A: Close(_order[Math.Clamp(_index, 0, _order.Count - 1)]); return true;
+                case PadButton.L: Move(_index - Visible); return true;
+                case PadButton.R: Move(_index + Visible); return true;
+                case PadButton.A: if (_order.Count > 0) Close(_order[Math.Clamp(_index, 0, _order.Count - 1)]); return true;
                 case PadButton.B: Close(null); return true;
                 default: return true;
             }
         }
 
+        private int Visible => EncounterPaint.VisibleRows(new SKSizeI((int)_canvas.CanvasSize.Width, (int)_canvas.CanvasSize.Height));
+
         private void Move(int index)
         {
-            _index = Math.Clamp(index, 0, Math.Max(0, _order.Count - 1));
-            var rows = BuildRows();
-            var position = rows.FindIndex(r => !r.IsHeader && r.Display == _index);
-            var firstVisible = rows.FindIndex(r => !r.IsHeader && r.Display == _scrollRow);
-            if (firstVisible < 0) firstVisible = 0;
-            if (position < firstVisible)
-                _scrollRow = _index;
-            _wall.InvalidateSurface();
+            if (_order.Count == 0) return;
+            _index = Math.Clamp(index, 0, _order.Count - 1);
+            var visible = Visible;
+            if (_index < _scroll) _scroll = _index;
+            else if (_index >= _scroll + visible) _scroll = _index - visible + 1;
+            _canvas.InvalidateSurface();
         }
 
         private void Close(int? result)
@@ -473,107 +426,80 @@ public static class EncounterGallery
 
     // ── Screen 2: one game's cards, grouped by kind, repeats collapsed ──────────
 
+    /// <summary>
+    /// One game's ways to get the species, painted in the app's art direction
+    /// (<see cref="EncounterPaint"/>): the Pokémon at the left, every way as a row at the
+    /// right. ↑↓ pick a way, A catches it (after a confirm), B goes back. A tap picks a row;
+    /// a second tap on the picked row asks to catch it.
+    /// </summary>
     private sealed class CardShelf : IPadHandler
     {
-        private const float Pad = 10f, Gap = 8f, HeaderH = 22f, HeaderGap = 6f, MinCardW = 270f;
-        private readonly float _cardW;
-        private readonly float _cardH;
-
         private readonly TaskCompletionSource<int?> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Grid _host;
         private readonly Grid _overlay;
         private readonly GamepadRouter? _router;
         private readonly GameEncounterListing _listing;
+        private readonly SaveBadges? _progress;
         private readonly IReadOnlyList<CardGroup> _groups;
+        private readonly List<int> _ordered;
         private readonly bool _canCatch;
-        private readonly SKCanvasView _wall;
+        private readonly SKCanvasView _canvas = new() { EnableTouchEvents = true };
+        private readonly ISpriteService _sprites;
+        private readonly int _species;
+        private readonly int _form;
+        private readonly Dictionary<string, SKImage?> _icons = new(StringComparer.Ordinal);
+        private SKImage? _sprite;
+        private EncounterHits? _hits;
         private int _index;
-        private int _scrollRow;
-        private int _cols = 2;
+        private int _scroll;
         private bool _busy;
+        private SKPoint? _pressedAt;
+        private bool _dragged;
+        private float _dragRows;
 
         /// <summary>One displayed card: the representative encounter plus every source
         /// card index it stands for, so CATCH still places exactly what was shown.</summary>
         private sealed record CardGroup(EncounterCard Card, IReadOnlyList<int> Indices, bool SameMethod);
 
-        private readonly record struct LayoutRow(bool IsHeader, string? Header, int FirstCard, int CardCount);
+        /// <param name="progress">The open save's badges: cards beyond them are marked "later",
+        /// an estimate (<see cref="EncounterReach"/>). Null for another game's cards.</param>
+        public static Task<int?> ShowAsync(Grid host, GameEncounterListing listing, ISpriteService sprites, int species, int form, bool canCatch, string back,
+            SaveBadges? progress = null) =>
+            new CardShelf(host, listing, sprites, species, form, canCatch, back, progress)._result.Task;
 
-        public static Task<int?> ShowAsync(Grid host, GameEncounterListing listing, ISpriteService sprites, int species, int form, bool canCatch) =>
-            new CardShelf(host, listing, sprites, species, form, canCatch)._result.Task;
-
-        private CardShelf(Grid host, GameEncounterListing listing, ISpriteService sprites, int species, int form, bool canCatch)
+        private CardShelf(Grid host, GameEncounterListing listing, ISpriteService sprites, int species, int form, bool canCatch, string back,
+            SaveBadges? progress)
         {
             _host = host;
+            _progress = progress;
             _listing = listing;
             _groups = Collapse(listing.Cards);
+            _ordered = [.. _groups.Select((group, index) => (group, index))
+                .OrderBy(x => EncounterDatabaseRank(x.group.Card.Kind))
+                .ThenBy(x => x.group.Card.LevelMin)
+                .ThenBy(x => x.group.Card.Location, StringComparer.Ordinal)
+                .Select(x => x.index)];
             _canCatch = canCatch;
+            _sprites = sprites;
+            _species = species;
+            _form = form;
             _router = IPlatformApplication.Current?.Services.GetService<GamepadRouter>();
 
-            var maxW = host.Width > 0 ? host.Width - 24 : 616;
-            var maxH = host.Height > 0 ? host.Height - 16 : 344;
-            var wallW = maxW - 28;
-            _cols = Math.Max(2, (int)((wallW - Pad * 2 + Gap) / (MinCardW + Gap)));
-            _cardW = (float)((wallW - Pad * 2 - (_cols - 1) * Gap) / _cols);
-            var bodyH = maxH - 28 - 46 - 10 - 34;
-            _cardH = (float)Math.Clamp((bodyH - HeaderH - HeaderGap - Gap) / 2, 92, 118);
-
-            _wall = new SKCanvasView { EnableTouchEvents = true, HorizontalOptions = LayoutOptions.Fill, VerticalOptions = LayoutOptions.Fill };
-            _wall.PaintSurface += Paint;
-            _wall.Touch += Touch;
-
-            var hero = new SKCanvasView { WidthRequest = 64, HeightRequest = 46, HorizontalOptions = LayoutOptions.Start };
-            hero.PaintSurface += (_, args) =>
+            _canvas.PaintSurface += PaintGuard.Wrap("EncounterGallery.Paint", Paint);
+            _canvas.Touch += Touch;
+            var footer = DsChrome.Footer(
+                ("A", canCatch ? "Catch" : "Choose", () => OnPadButton(PadButton.A)),
+                ("B", back, () => OnPadButton(PadButton.B)));
+            var screen = new Grid
             {
-                var bitmap = sprites.GetSprite(species, form, false);
-                if (bitmap is null) sprites.Warm(species, form, false, () => MainThread.BeginInvokeOnMainThread(hero.InvalidateSurface));
-                EventGallery.PaintMon(args.Surface.Canvas, args.Info, bitmap, Math.Min(args.Info.Width, args.Info.Height) * 0.95f);
-            };
-            var heroRow = new Grid { ColumnSpacing = 10, ColumnDefinitions = [new(new GridLength(64)), new(GridLength.Star)] };
-            heroRow.Children.Add(hero);
-            var header = Kit.HeaderBar($"{listing.GameName} · {listing.Cards.Count} ways");
-            heroRow.Children.Add(header);
-            Grid.SetColumn(header, 1);
-
-            var content = new Grid
-            {
+                Padding = new Thickness(14, 12, 14, 0),
                 RowSpacing = 10,
-                RowDefinitions = [new(GridLength.Auto), new(GridLength.Star), new(GridLength.Auto)],
-                Children =
-                {
-                    heroRow,
-                    _wall,
-                    Kit.WindowHints(("A", canCatch ? "Catch" : "INFO", null), ("B", "Games", () => Close(null))),
-                },
+                RowDefinitions = [new(GridLength.Star), new(GridLength.Auto)],
+                Children = { _canvas, footer },
             };
-            content.SetRow(_wall, 1);
-            content.SetRow((View)content.Children[2], 2);
-
-            var window = new Border
-            {
-                BackgroundColor = UiTokens.Shell,
-                Stroke = UiTokens.ShellEdge,
-                StrokeThickness = 2,
-                StrokeShape = new RoundRectangle { CornerRadius = 6 },
-                Shadow = Kit.HardShadow(),
-                Padding = 14,
-                Content = new Grid { Children = { Backdrop(), content } },
-            };
-            window.MaximumWidthRequest = maxW;
-            window.MaximumHeightRequest = maxH;
-            window.HorizontalOptions = LayoutOptions.Center;
-            window.VerticalOptions = LayoutOptions.Center;
-
-            var scrim = new BoxView { Color = UiTokens.Scrim };
-            var scrimTap = new TapGestureRecognizer();
-            scrimTap.Tapped += (_, _) => Close(null);
-            scrim.GestureRecognizers.Add(scrimTap);
-            _overlay = new Grid { Children = { scrim, window } };
-            host.Add(_overlay);
-            Grid.SetRowSpan(_overlay, Math.Max(1, host.RowDefinitions.Count));
-            Grid.SetColumnSpan(_overlay, Math.Max(1, host.ColumnDefinitions.Count));
-
+            Grid.SetRow(footer, 1);
+            _overlay = Kit.AttachOverlay(host, new Grid { Children = { DsChrome.GridBackground(), screen } });
             _router?.Push(this);
-            Kit.AnimateIn(window);
         }
 
         /// <summary>
@@ -617,110 +543,32 @@ public static class EncounterGallery
             return groups;
         }
 
-        private static string KindHeader(string kind) => kind switch
-        {
-            "Egg" => "EGGS",
-            "Wild" => "WILD",
-            "Static" => "Static",
-            "Trade" => "In-game trades",
-            "Event" => "Events",
-            _ => "Special",
-        };
-
-        private List<LayoutRow> BuildLayout()
-        {
-            var rows = new List<LayoutRow>();
-            var ordered = _groups
-                .Select((group, index) => (group, index))
-                .OrderBy(x => EncounterDatabaseRank(x.group.Card.Kind))
-                .ThenBy(x => x.group.Card.LevelMin)
-                .ThenBy(x => x.group.Card.Location, StringComparer.Ordinal)
-                .ToList();
-            _ordered.Clear();
-            _ordered.AddRange(ordered.Select(x => x.index));
-            var i = 0;
-            while (i < _ordered.Count)
-            {
-                var kind = _groups[_ordered[i]].Card.Kind;
-                var count = 0;
-                while (i + count < _ordered.Count && _groups[_ordered[i + count]].Card.Kind == kind) count++;
-                rows.Add(new LayoutRow(true, $"{KindHeader(kind)} · {count}", i, count));
-                for (var c = 0; c < count; c += _cols)
-                    rows.Add(new LayoutRow(false, null, i + c, Math.Min(_cols, count - c)));
-                i += count;
-            }
-            return rows;
-        }
-
         private static int EncounterDatabaseRank(string kind) => kind switch
         {
             "Egg" => 0, "Wild" => 1, "Static" => 2, "Trade" => 3, "Event" => 4, _ => 5,
         };
 
-        private readonly List<int> _ordered = [];
+        private SKImage? Sprite() => _sprite ??= TrimmedSprite(_sprites, _species, _form, _canvas);
+
+        private SKImage? Icon(string name) => ToolIcon(_icons, name);
 
         private void Paint(object? sender, SKPaintSurfaceEventArgs args)
         {
-            var canvas = args.Surface.Canvas;
-            canvas.Clear(SKColors.Transparent);
-            // Laid out in dp (row heights, card widths): scale the pixel canvas to match.
-            var density = (float)DeviceDisplay.MainDisplayInfo.Density;
-            canvas.Scale(density);
-            var info = new SKImageInfo((int)(args.Info.Width / density), (int)(args.Info.Height / density));
-
-            using var headerFont = new SKFont(PixelFont.Face, 14f) { Edging = SKFontEdging.Antialias };
-            using var nameFont = new SKFont(PixelFont.Face, 15f) { Edging = SKFontEdging.Antialias };
-            using var lvFont = new SKFont(PixelFont.Face, 12.5f) { Edging = SKFontEdging.Antialias };
-            using var ink = new SKPaint { Color = Pksm.Ink, IsAntialias = true };
-            using var inkSoft = new SKPaint { Color = Pksm.InkSoft, IsAntialias = true };
-
-            var y = 4f;
-            var cardRow = 0;
-            foreach (var row in BuildLayout())
+            args.Surface.Canvas.Clear(SKColors.Transparent);
+            var rows = _ordered.Select(i =>
             {
-                if (y > info.Height) break;
-                if (row.IsHeader)
-                {
-                    if (cardRow >= _scrollRow && y > -HeaderH)
-                    {
-                        var strip = new SKRect(Pad, y, info.Width - Pad, y + HeaderH);
-                        PksmPaint.HeaderStrip(canvas, strip, row.Header!, headerFont);
-                    }
-                    y += HeaderH + HeaderGap;
-                    continue;
-                }
-                if (cardRow >= _scrollRow)
-                {
-                    for (var c = 0; c < row.CardCount; c++)
-                    {
-                        var slot = row.FirstCard + c;
-                        var group = _groups[_ordered[slot]];
-                        var card = group.Card;
-                        var x = Pad + c * (_cardW + Gap);
-                        var rect = new SKRect(x, y, x + _cardW, y + _cardH);
-                        PksmPaint.Panel(canvas, rect);
-
-                        var line1 = string.IsNullOrEmpty(card.Location) ? card.Kind : card.Location;
-                        canvas.DrawText(EventGallery.Fit(nameFont, line1, _cardW - 14), x + _cardW / 2, y + _cardH - 38, SKTextAlign.Center, nameFont, ink);
-                        var levels = card.LevelMin == card.LevelMax ? $"Lv. {card.LevelMin}" : $"Lv. {card.LevelMin}-{card.LevelMax}";
-                        var method = group.SameMethod ? MethodTag(card.Detail) : string.Empty;
-                        var line2 = string.IsNullOrEmpty(method) ? levels : $"{levels} · {method}";
-                        canvas.DrawText(EventGallery.Fit(lvFont, line2, _cardW - 14), x + _cardW / 2, y + _cardH - 14, SKTextAlign.Center, lvFont, inkSoft);
-
-                        // Repeats carry a count so it is honest that one card stands for many.
-                        if (group.Indices.Count > 1)
-                            canvas.DrawText($"{group.Indices.Count} spots", x + _cardW / 2, y + 18, SKTextAlign.Center, lvFont, inkSoft);
-
-                        if (card.ShinyGuaranteed)
-                            PksmPaint.Sparkle(canvas, new SKPoint(x + _cardW - 14, y + 14), 6f);
-
-                        if (slot == _index)
-                            PksmPaint.Selection(canvas, rect);
-                    }
-                }
-                cardRow++;
-                y += _cardH + Gap;
-            }
+                var group = _groups[i];
+                var card = group.Card;
+                var levels = card.LevelMin == card.LevelMax ? $"Lv. {card.LevelMin}" : $"Lv. {card.LevelMin}-{card.LevelMax}";
+                if (EncounterReach.Judge(card, _progress).Reach == EncounterReachKind.Later) levels += " · later?";
+                var place = string.IsNullOrEmpty(card.Location) ? EncounterPaint.KindTitle(card.Kind) : card.Location;
+                return new EncounterRow(card.Kind, place, levels, group.SameMethod ? MethodTag(card.Detail) : "",
+                    group.Indices.Count, card.ShinyGuaranteed, card.Detail);
+            }).ToList();
+            var names = IPlatformApplication.Current?.Services.GetService<IGameDataService>()?.SpeciesNames;
+            var species = names is not null && (uint)_species < (uint)names.Count ? names[_species] : $"#{_species}";
+            var scene = new EncounterScene(species, Sprite(), _listing.GameName, rows, _index, _scroll, Icon);
+            _hits = EncounterPaint.Paint(args.Surface.Canvas, args.Info, scene, BoxBrowserPage.PixelTypeface());
         }
 
         /// <summary>LongName ("Wild Encounter (Pearl) Walking") minus the shared "(Game)" part.</summary>
@@ -735,93 +583,65 @@ public static class EncounterGallery
 
         private void Touch(object? sender, SKTouchEventArgs args)
         {
-            if (args.ActionType == SKTouchAction.Pressed) { args.Handled = true; return; }
-            if (args.ActionType != SKTouchAction.Released) return;
             args.Handled = true;
-
-            var index = HitTest(args.Location.X / DpScale.Value, args.Location.Y / DpScale.Value);
-            if (index < 0) return;
-            _index = index;
-            EnsureVisible();
-            _wall.InvalidateSurface();
-            ConfirmCatch();
-        }
-
-        private int HitTest(float px, float py)
-        {
-            if (_wall.Width <= 0) return -1;
-            var y = 4f;
-            var cardRow = 0;
-            foreach (var row in BuildLayout())
+            if (_hits is not { } hits) return;
+            var at = args.Location;
+            switch (args.ActionType)
             {
-                if (row.IsHeader) { y += HeaderH + HeaderGap; continue; }
-                if (cardRow >= _scrollRow && py >= y && py <= y + _cardH)
-                {
-                    var col = (int)((px - Pad) / (_cardW + Gap));
-                    return col >= 0 && col < row.CardCount ? row.FirstCard + col : -1;
-                }
-                cardRow++;
-                y += _cardH + Gap;
-                if (y > py) break;
+                case SKTouchAction.Pressed:
+                    _pressedAt = at;
+                    _dragged = false;
+                    _dragRows = 0;
+                    return;
+                case SKTouchAction.Moved when _pressedAt is { } start && hits.List.Contains(start):
+                    if (!_dragged && Math.Abs(start.Y - at.Y) < hits.RowHeight / 3) return;
+                    _dragged = true;
+                    var step = (int)((start.Y - at.Y) / hits.RowHeight - _dragRows);
+                    if (step == 0) return;
+                    _dragRows += step;
+                    _scroll = Math.Clamp(_scroll + step, 0, Math.Max(0, _ordered.Count - hits.VisibleRows));
+                    _canvas.InvalidateSurface();
+                    return;
+                case SKTouchAction.Released:
+                    var tapped = !_dragged;
+                    _pressedAt = null;
+                    if (!tapped) return;
+                    foreach (var (index, rect) in hits.Rows)
+                    {
+                        if (!rect.Contains(at)) continue;
+                        // A tap picks the way; a second tap on it asks to catch it.
+                        if (index == _index) ConfirmCatch();
+                        else Move(index);
+                        return;
+                    }
+                    return;
             }
-            return -1;
         }
 
         public bool OnPadButton(PadButton button)
         {
             switch (button)
             {
-                case PadButton.Left: Move(_index - 1); return true;
-                case PadButton.Right: Move(_index + 1); return true;
-                case PadButton.Up: Move(_index - _cols); return true;
-                case PadButton.Down: Move(_index + _cols); return true;
+                case PadButton.Up: Move(_index - 1); return true;
+                case PadButton.Down: Move(_index + 1); return true;
+                case PadButton.L: Move(_index - Visible); return true;
+                case PadButton.R: Move(_index + Visible); return true;
                 case PadButton.A: ConfirmCatch(); return true;
                 case PadButton.B: Close(null); return true;
                 default: return true;
             }
         }
 
+        private int Visible => EncounterPaint.VisibleRows(new SKSizeI((int)_canvas.CanvasSize.Width, (int)_canvas.CanvasSize.Height));
+
         private void Move(int index)
         {
-            _index = Math.Clamp(index, 0, Math.Max(0, _groups.Count - 1));
-            EnsureVisible();
-            _wall.InvalidateSurface();
-        }
-
-        private void EnsureVisible()
-        {
-            var target = CardRowOf(_index);
-            if (target < _scrollRow)
-            {
-                _scrollRow = target;
-                return;
-            }
-            var height = _wall.Height > 0 ? (float)_wall.Height : 300f;
-            var y = 4f;
-            var cardRow = 0;
-            foreach (var row in BuildLayout())
-            {
-                if (row.IsHeader) { y += HeaderH + HeaderGap; continue; }
-                if (cardRow == target)
-                {
-                    if (y + _cardH > height) _scrollRow = Math.Max(0, target - 1);
-                    return;
-                }
-                y += _cardH + Gap;
-                cardRow++;
-            }
-        }
-
-        private int CardRowOf(int slot)
-        {
-            var seen = 0;
-            foreach (var row in BuildLayout())
-            {
-                if (row.IsHeader) continue;
-                if (slot < row.FirstCard + row.CardCount) return seen;
-                seen++;
-            }
-            return Math.Max(0, seen - 1);
+            if (_ordered.Count == 0) return;
+            _index = Math.Clamp(index, 0, _ordered.Count - 1);
+            var visible = Visible;
+            if (_index < _scroll) _scroll = _index;
+            else if (_index >= _scroll + visible) _scroll = _index - visible + 1;
+            _canvas.InvalidateSurface();
         }
 
         private async void ConfirmCatch()
@@ -839,9 +659,18 @@ public static class EncounterGallery
                         $"This is how {_listing.GameName} gives out this Pokémon. Open that save to catch one into it.", "OK");
                     return;
                 }
+                var reach = EncounterReach.Judge(card, _progress);
+                var later = reach.Reach == EncounterReachKind.Later
+                    ? $"\nProbably not reachable yet: {reach.Note}. Judged from the badges only."
+                    : "";
                 var confirmed = await PadMenu.ConfirmAsync(_host, "Catch this encounter?",
-                    $"A legal Pokémon from {_listing.GameName} ({card.Kind.ToLowerInvariant()}, {where}) is placed in this box's first empty slot. One backed-up write.", "Catch");
+                    $"A legal Pokémon from {_listing.GameName} ({card.Kind.ToLowerInvariant()}, {where}) is placed in this box's first empty slot. One backed-up write.{later}", "Catch");
                 if (confirmed) Close(group.Indices[0]);
+            }
+            catch (Exception error)
+            {
+                // async void: a failed question is logged, the gallery stays open.
+                AppLog.Error("encounters", "The catch could not be confirmed", error);
             }
             finally
             {

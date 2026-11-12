@@ -2,5 +2,6 @@
 <resources>
     <string name="pokepark_widget_title">POKÉPARK</string>
     <string name="pokepark_widget_description">Your Pokémon living in Poképark. Tap to visit.</string>
+    <string name="live_park_widget_description">Your Pokémon walking, sitting and sleeping in Poképark. Tap to visit.</string>
     <string name="pokepark_widget_empty">Your little Pokémon meadow\n\nTap to visit Poképark</string>
 </resources>

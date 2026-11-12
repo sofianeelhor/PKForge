@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="walker_widget_description">Your Pokéwalker: today\'s steps, watts and the Pokémon on a walk.</string>
+    <string name="partner_widget_description">Your partner Pokémon, awake by day and asleep at night.</string>
+    <string name="egg_widget_description">Your egg, wobbling more as it gets close to hatching.</string>
+    <string name="home_widget_loading">PKForge\nGetting ready…</string>
+    <string name="home_widget_failed">PKForge\nTap to open</string>
+    <string name="shortcut_last_save">Open last save</string>
+    <string name="shortcut_bank">Bank</string>
+    <string name="shortcut_walker">Pokéwalker</string>
+    <string name="shortcut_pokepark">Poképark</string>
+</resources>

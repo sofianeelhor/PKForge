@@ -193,6 +193,8 @@ public sealed class ParkActor
     internal long LeaveAt { get; set; }
     /// <summary>The gate a wild visitor came in by, and leaves by.</summary>
     internal ParkPoint? Gateway { get; set; }
+    /// <summary>The place a wild visitor came into (its kind fits that place).</summary>
+    internal string? Place { get; set; }
 
     internal ParkNavigator Navigator { get; }
     internal Random Random { get; }

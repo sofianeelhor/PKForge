@@ -3,8 +3,64 @@ using Xunit;
 
 namespace PKForge.Engine.Tests;
 
+[Collection(nameof(LegalityEraCollection))] // MakeActive sets the process-wide Game Boy era
 public sealed class GameIdentificationTests
 {
+    [Theory]
+    [InlineData("Pokémon Red", GameVersion.RD)]
+    [InlineData("Pokémon Blue (INT)", GameVersion.GN)]
+    [InlineData("Pokémon Green (JP)", GameVersion.GN)]
+    [InlineData("Pokémon Blue (JP)", GameVersion.BU)]
+    public void TheChosenGameResolvesTheRedBlueEdition(string chosenGame, GameVersion expected)
+    {
+        var save = new SAV1();
+        SaveParser.ApplyVersionHint(save, chosenGame);
+        Assert.Equal(expected, save.Version);
+    }
+
+    [Theory]
+    [InlineData("Pokemon - Red Version (USA, Europe).sav")]
+    [InlineData("Pokémon Red / Blue")]
+    [InlineData("Pokémon Blue")]
+    [InlineData(null)]
+    public void FileNamesAndTheGroupLabelNeverPickTheRedBlueEdition(string? name)
+    {
+        var save = new SAV1();
+        SaveParser.ApplyVersionHint(save, name);
+        Assert.Equal(GameVersion.RB, save.Version);
+    }
+
+    [Fact]
+    public void ARedBlueSaveIsDescribedAsTheSharedGroup()
+    {
+        var description = new SaveEngine().TryDescribe(RecognizableRedBlue());
+        Assert.NotNull(description);
+        Assert.Equal("Red / Blue", description!.GameName);
+        Assert.Equal(1, description.Generation);
+    }
+
+    [Fact]
+    public void OpeningTheChosenCartridgeAppliesItToTheSessionOnly()
+    {
+        using var session = new SaveEngineSession(RecognizableRedBlue(), "Pokémon Blue (JP)");
+        Assert.Equal(GameVersion.BU, Assert.IsType<SAV1>(session.SaveFile).Version);
+        var previous = EntityConverter.VirtualConsoleSourceGen1;
+        session.MakeActive();
+        // No process-wide transfer origin is set by opening a save (see SaveEngineSession.MakeActive).
+        Assert.Equal(previous, EntityConverter.VirtualConsoleSourceGen1);
+    }
+
+    /// <summary>A blank SAV1 lacks the list terminators the recognizer needs (from PR #60).</summary>
+    private static byte[] RecognizableRedBlue()
+    {
+        var data = new byte[0x8000];
+        data[0x2F2C] = 0;
+        data[0x2F2D] = 0xFF;
+        data[0x30C0] = 0;
+        data[0x30C1] = 0xFF;
+        return data;
+    }
+
     [Theory]
     [InlineData("Pokémon LeafGreen", GameVersion.LG)]
     [InlineData("Pokémon FireRed", GameVersion.FR)]

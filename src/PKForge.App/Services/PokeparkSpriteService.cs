@@ -9,6 +9,9 @@ namespace PKForge.App.Services;
 /// <param name="Feet">Where the feet are (PMD's shadow), relative to the cell's center.</param>
 public sealed record ParkSpriteFrame(SKBitmap Bitmap, SKRect Source, SKRect Bounds, SKPoint Feet);
 
+/// <summary>A whole animation facing one way: each frame's cell in <paramref name="Bitmap"/>, its feet (from the cell's center) and duration.</summary>
+public sealed record ParkSpriteClip(SKBitmap Bitmap, SKRectI[] Sources, SKPoint[] Feet, int[] Durations, bool Pending);
+
 /// <summary>PMDCollab sprites and portraits, downloaded on first use and kept on disk. Walk and
 /// Idle load with the species; every other animation loads the first time a pose asks for it,
 /// and the pose falls back to a loaded one meanwhile. Never substitutes a different form or shiny state.</summary>
@@ -96,6 +99,59 @@ public sealed class PokeparkSpriteService
         var row = animation.Rows == 1 ? 0 : ((direction % 8) + 8) % 8;
         return new(animation.Bitmap, SKRect.Create(frame * animation.Width, row * animation.Height, animation.Width, animation.Height),
             animation.Bounds, animation.Feet[row * animation.Durations.Length + frame]);
+    }
+
+    /// <summary>
+    /// Every frame of a pose's animation facing one way (for the living park widget, which cuts them
+    /// into its own sheet). <see cref="ParkSpriteClip.Pending"/>: a better animation for the pose is
+    /// still loading, and this is the stand-in. Null before the species has loaded.
+    /// </summary>
+    public ParkSpriteClip? GetClip(int species, int form, bool shiny, ParkPose pose, int direction)
+    {
+        var key = Key(species, form, shiny);
+        Animation? animation = null;
+        var pending = false;
+        lock (_gate)
+        {
+            if (key is null || !_sheets.TryGetValue(key, out var sheet) || sheet is null) return null;
+            foreach (var candidate in ParkPoses.Animations(pose))
+            {
+                if (!sheet.Definitions.ContainsKey(candidate)) continue;
+                if (sheet.Animations.TryGetValue(candidate, out var loaded))
+                {
+                    if (loaded is null) continue;
+                    animation = loaded;
+                    break;
+                }
+                pending = true;
+                if (sheet.Loading.Add(candidate)) _ = LoadAnimationAsync(sheet, candidate);
+            }
+            animation ??= sheet.Animations.GetValueOrDefault("Idle") ?? sheet.Animations.GetValueOrDefault("Walk");
+        }
+        if (animation is null) return null;
+        var row = animation.Rows == 1 ? 0 : ((direction % 8) + 8) % 8;
+        var count = animation.Durations.Length;
+        var sources = new SKRectI[count];
+        var feet = new SKPoint[count];
+        for (var i = 0; i < count; i++)
+        {
+            sources[i] = SKRectI.Create(i * animation.Width, row * animation.Height, animation.Width, animation.Height);
+            feet[i] = animation.Feet[row * count + i];
+        }
+        return new(animation.Bitmap, sources, feet, [.. animation.Durations], pending);
+    }
+
+    /// <summary>How big to draw the species (issue #48, see <see cref="ParkSpriteScale"/>): from the
+    /// height of its standing animation, the same for every pose; 1 until that has loaded.</summary>
+    public float GetScale(int species, int form, bool shiny)
+    {
+        var key = Key(species, form, shiny);
+        lock (_gate)
+        {
+            if (key is null || !_sheets.TryGetValue(key, out var sheet) || sheet is null) return 1;
+            var standing = sheet.Animations.GetValueOrDefault("Idle") ?? sheet.Animations.GetValueOrDefault("Walk");
+            return standing is null ? 1 : ParkSpriteScale.For(standing.Bounds.Height);
+        }
     }
 
     /// <summary>PMD's shadow size for the species (0 small, 1 medium, 2 large), once loaded.</summary>

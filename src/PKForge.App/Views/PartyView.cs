@@ -1,5 +1,4 @@
 using PKForge.App.Services;
-using PKForge.App.Theme;
 using PKForge.Chrome;
 using PKForge.Domain;
 using SkiaSharp;
@@ -232,7 +231,7 @@ public static class PartyView
             var h = bitmap.Height * scale;
             using var paint = new SKPaint();
             if (fainted) paint.ColorFilter = SKColorFilter.CreateBlendMode(new SKColor(0x70, 0x50, 0x48), SKBlendMode.SrcIn);
-            using var image = SKImage.FromBitmap(bitmap);
+            var image = Services.SpriteImages.Of(bitmap);
             canvas.DrawImage(image, new SKRect(spriteArea.MidX - w / 2, spriteArea.Bottom - h, spriteArea.MidX + w / 2, spriteArea.Bottom),
                 new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None), paint);
         }
@@ -303,7 +302,7 @@ public static class PartyView
             canvas.DrawRect(r, fill);
         var font = LabelFont(r.Height * 0.9f);
         using var ink = new SKPaint { Color = SKColors.White, IsAntialias = true };
-        canvas.DrawText(text, r.MidX, r.MidY + font.Size * 0.36f, SKTextAlign.Center, font, ink);
+        canvas.DrawTextFallback(text, r.MidX, r.MidY + font.Size * 0.36f, SKTextAlign.Center, font, ink);
     }
 
     /// <summary>The panel's octagon: corners cut at a fifth of its height.</summary>
@@ -385,19 +384,19 @@ public static class PartyView
     {
         var step = MathF.Max(2, 2.4f * unit);
         using (var shadow = new SKPaint { Color = TextShadow, IsAntialias = true })
-            canvas.DrawText(text, x + step, y + step, align, font, shadow);
+            canvas.DrawTextFallback(text, x + step, y + step, align, font, shadow);
         using var fg = new SKPaint { Color = color, IsAntialias = true };
-        canvas.DrawText(text, x, y, align, font, fg);
+        canvas.DrawTextFallback(text, x, y, align, font, fg);
     }
 
     /// <summary>Trims a nickname with an ellipsis so it never runs into the gender mark.</summary>
     private static string Fit(string text, SKFont font, float width)
     {
-        if (font.MeasureText(text) <= width) return text;
+        if (font.MeasureFallback(text) <= width) return text;
         for (var n = text.Length - 1; n > 0; n--)
         {
             var candidate = text[..n] + "…";
-            if (font.MeasureText(candidate) <= width) return candidate;
+            if (font.MeasureFallback(candidate) <= width) return candidate;
         }
         return text;
     }

@@ -86,6 +86,7 @@ public sealed class MonSummaryService(IGameDataService data, IMonInfoService inf
         {
             // The MOVES page marks each move legal / not legal with the engine's reason.
             MoveVerdicts = legal is null || entity is null ? null : Try(() => LegalityAssistService.GetMoveLegality(entity)),
+            HistoryKey = entity is not null && PokemonHistoryService.Covers(entity) ? PokemonHistoryService.Soul(entity) : null,
         };
     }
 

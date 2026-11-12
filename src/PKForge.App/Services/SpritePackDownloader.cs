@@ -65,6 +65,84 @@ public sealed class SpritePackDownloader(ISpriteService sprites, IGameDataServic
         ? []
         : [.. data.ItemNames.Where(n => SpritePack.ItemSlug(n).Length > 0).Distinct().Where(n => !ItemArt.IsCachedOrKnownMissing(n))];
 
+    /// <summary>One pack as the sprite pack screen shows it: what it brings, its size, how much of it is here.</summary>
+    public sealed record PackStatus(string Name, string About, long Bytes, bool IsMain, bool Installed, int Missing, bool Started);
+
+    /// <summary>The main pack, then each add-on, with where each stands on this device. Reads the disk: call off the UI thread.</summary>
+    public IReadOnlyList<PackStatus> Packs()
+    {
+        var root = FileSystem.AppDataDirectory;
+        var missing = CountMissing();
+        var list = new List<PackStatus>
+        {
+            new(Main.Name, "Animated battle sprites, HOME pictures and item icons for every Pokémon, to use offline.",
+                Main.Bytes, true, missing == 0, missing, File.Exists(Main.DoneMarker(root)) || HasFiles(root, "home") || HasFiles(root, "showdown")),
+        };
+        foreach (var addOn in AddOns)
+        {
+            var done = File.Exists(addOn.DoneMarker(root));
+            list.Add(new(addOn.Name, addOn.Name == "BDSP icons"
+                    ? "Box icons in the Brilliant Diamond / Shining Pearl style, normal and shiny, for those games' boxes."
+                    : "Extra art for PKForge.",
+                addOn.Bytes, false, done, done ? 0 : 1, done));
+        }
+        return list;
+    }
+
+    private static bool HasFiles(string root, string folder)
+    {
+        var path = Path.Combine(root, folder);
+        return Directory.Exists(path) && Directory.EnumerateFiles(path).Any();
+    }
+
+    /// <summary>Downloads one pack: the main one (with its add-ons, as always) or a single add-on.</summary>
+    public async Task RunPackAsync(string name, Action<string, double> onProgress, CancellationToken cancellationToken)
+    {
+        if (name == Main.Name)
+        {
+            await RunAsync(onProgress, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        var root = FileSystem.AppDataDirectory;
+        if (AddOns.FirstOrDefault(a => a.Name == name) is not { } addOn || File.Exists(addOn.DoneMarker(root))) return;
+        await AddOnGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!await TryArchiveAsync(root, addOn, onProgress, cancellationToken).ConfigureAwait(false))
+                throw new IOException($"{addOn.Name} could not be downloaded. Check the connection and the free space, then try again.");
+            await File.WriteAllTextAsync(addOn.DoneMarker(root), addOn.Url, cancellationToken).ConfigureAwait(false);
+            sprites.ForgetAddOnLookups();
+        }
+        finally { AddOnGate.Release(); }
+    }
+
+    /// <summary>
+    /// Removes a pack's files from this device, to free the space. The main pack's sprites come
+    /// back one by one when a screen shows them (online), as before any download; an add-on's
+    /// art simply stops being drawn until it is downloaded again.
+    /// </summary>
+    public void DeletePack(string name)
+    {
+        var root = FileSystem.AppDataDirectory;
+        string[] folders;
+        Archive archive;
+        if (name == Main.Name) { folders = ["home", "showdown", "items"]; archive = Main; }
+        else if (AddOns.FirstOrDefault(a => a.Name == name) is { } addOn) { folders = [BdspIcons.Folder]; archive = addOn; }
+        else return;
+        TryDelete(archive.DoneMarker(root));
+        foreach (var folder in folders)
+        {
+            var path = Path.Combine(root, folder);
+            try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                AppLog.Warn("sprites", $"Deleting {folder}: {error.Message}");
+            }
+        }
+        sprites.ForgetAddOnLookups();
+        AppLog.Info("sprites", $"Player deleted the {name} pack");
+    }
+
     public async Task RunAsync(Action<string, double> onProgress, CancellationToken cancellationToken)
     {
         var root = FileSystem.AppDataDirectory;

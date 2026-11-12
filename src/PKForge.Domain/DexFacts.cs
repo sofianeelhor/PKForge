@@ -164,13 +164,18 @@ public static class TypeFacts
     };
 }
 
-/// <summary>How a Pokémon can know a move in the open game, most useful first.</summary>
-public enum LearnKind : byte { None, LevelUp, Evolution, Machine, Tutor, Egg, Relearn, Special }
+/// <summary>How a Pokémon can know a move in the open game, most useful first.
+/// <see cref="EggIfHatched"/> is not legal for this one's encounter, but would be had it
+/// hatched from an egg (an egg move of its line on a wild or gift Pokémon).</summary>
+public enum LearnKind : byte { None, LevelUp, Evolution, Machine, Tutor, Egg, Relearn, Special, EggIfHatched }
 
 /// <summary>A learn source with its level-up level (0 when the level is not known).</summary>
 public readonly record struct MoveLearn(LearnKind Kind, int Level = 0)
 {
-    public bool IsLegal => Kind != LearnKind.None;
+    public bool IsLegal => Kind is not (LearnKind.None or LearnKind.EggIfHatched);
+
+    /// <summary>Not legal as it stands, legal had it hatched from an egg.</summary>
+    public bool IsLegalIfHatched => Kind == LearnKind.EggIfHatched;
 
     /// <summary>The picker tag: "Lv 32", "Evo", "TM", "Tutor", "Egg", "Relearn", "Special".</summary>
     public string Label => Kind switch
@@ -182,6 +187,7 @@ public readonly record struct MoveLearn(LearnKind Kind, int Level = 0)
         LearnKind.Egg => "Egg",
         LearnKind.Relearn => "Relearn",
         LearnKind.Special => "Special",
+        LearnKind.EggIfHatched => "If hatched",
         _ => "",
     };
 
@@ -195,6 +201,7 @@ public readonly record struct MoveLearn(LearnKind Kind, int Level = 0)
         LearnKind.Egg => "Egg move (breeding)",
         LearnKind.Relearn => "Relearnable / from its encounter",
         LearnKind.Special => "From its encounter or event",
+        LearnKind.EggIfHatched => "Egg move: legal if it hatched from an egg, not for its current encounter",
         _ => "Not learnable legally in this game",
     };
 }

@@ -24,6 +24,38 @@ public sealed class LuminescentPlatinumTests
         return new SAV8BS(bytes).Write().ToArray();
     }
 
+    /// <summary>
+    /// A Pokémon sent from Luminescent Platinum to the Bank and back came home rewritten:
+    /// its recorded format was not one PKForge knew, so the bytes were read as a Sword
+    /// record and "converted" to the game they had never left.
+    /// </summary>
+    [Fact]
+    public void APokemonComesBackFromTheBankExactlyAsItLeft()
+    {
+        var engine = new SaveEngine();
+        using var home = engine.OpenSession(LuminescentSave());
+        var mon = new PB8LUMI
+        {
+            Species = 25, CurrentLevel = 42, PID = 0xCAFE1234, EncryptionConstant = 0x0BADF00D,
+            Version = GameVersion.BD, MetLocation = 197, MetLevel = 5, Ball = 4,
+            OriginalTrainerName = "PKForge", TID16 = 12345, SID16 = 54321, Language = (int)LanguageID.English,
+            Move1 = 84, Nickname = "PIKACHU",
+        };
+        mon.RefreshChecksum();
+        var stored = new byte[mon.SIZE_STORED];
+        mon.WriteDecryptedDataStored(stored);
+        Assert.True(home.ImportSlot(0, 0, stored, nameof(PB8LUMI)));
+
+        var banked = home.ExportSlot(0, 0);
+        Assert.Equal(nameof(PB8LUMI), banked.Format);
+        Assert.IsType<PB8LUMI>(EntityBytes.Parse(banked.Data, banked.Format));
+
+        using var back = engine.OpenSession(LuminescentSave());
+        Assert.True(back.ImportSlot(0, 3, banked.Data, banked.Format));
+
+        Assert.Equal(banked.Data, back.ExportSlot(0, 3).Data);
+    }
+
     [Fact]
     public void RecognizesTheReportedLuminescentRevision()
     {

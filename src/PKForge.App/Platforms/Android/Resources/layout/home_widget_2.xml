@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A home-screen widget as 2 painted frames (HomeWidgetPaint). The launcher's ViewFlipper swaps
+     them while the home screen is visible and stops on its own when it is not: no loop runs in PKForge. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/home_widget_root"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:clipToOutline="true"
+    android:background="@drawable/home_widget_background">
+    <ViewFlipper android:id="@+id/home_widget_flipper"
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:autoStart="true" android:flipInterval="900">
+        <ImageView android:id="@+id/home_widget_frame0"
+            android:layout_width="match_parent" android:layout_height="match_parent"
+            android:scaleType="fitCenter" android:importantForAccessibility="no" />
+        <ImageView android:id="@+id/home_widget_frame1"
+            android:layout_width="match_parent" android:layout_height="match_parent"
+            android:scaleType="fitCenter" android:importantForAccessibility="no" />
+    </ViewFlipper>
+</FrameLayout>

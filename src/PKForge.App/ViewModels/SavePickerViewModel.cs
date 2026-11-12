@@ -105,6 +105,9 @@ public static class SaveDescriptions
         EmulatorKind.PizzaBoyGba => "Pizza Boy GBA",
         EmulatorKind.PizzaBoyGbc => "Pizza Boy GBC",
         EmulatorKind.CitraMmj => "Citra MMJ",
+        EmulatorKind.MyBoy => "My Boy!",
+        EmulatorKind.MyOldBoy => "My OldBoy!",
+        EmulatorKind.LinkedFile => "Linked file",
         _ => kind.ToString(),
     };
 }
@@ -139,6 +142,7 @@ public partial class SavePickerViewModel : ObservableObject
     }
 
     private const string SetupDoneKey = "setup_complete";
+    private static bool _shelfReadyLogged;
 
     /// <summary>
     /// Every visible detected save, with the player's identity applied: <see cref="DetectedSave.GameLabel"/>
@@ -238,16 +242,31 @@ public partial class SavePickerViewModel : ObservableObject
     private Task AddPizzaBoyGbcAsync() => AddRootAndScanAsync(EmulatorKind.PizzaBoyGbc);
 
     [RelayCommand]
+    private Task AddMyBoyAsync() => AddRootAndScanAsync(EmulatorKind.MyBoy);
+
+    [RelayCommand]
+    private Task AddMyOldBoyAsync() => AddRootAndScanAsync(EmulatorKind.MyOldBoy);
+
+    [RelayCommand]
+    private Task AddPokeDaisyAsync() => AddRootAndScanAsync(EmulatorKind.PokeDaisy);
+
+    [RelayCommand]
     public async Task RescanAsync()
     {
         if (IsBusy && !ReleaseIfStuck()) return;
         var roots = _roots.GetRoots();
         if (roots.Count == 0)
         {
-            Status = "No storage units linked yet. Open Link and choose your platform and emulator.";
+            // The last link was just removed: the shelf must not keep its cartridges.
+            Saves.Clear();
+            Groups.Clear();
+            _saveIds.Clear();
+            _detected.Clear();
+            Status = "Nothing linked yet. Link your emulator with Y.";
             return;
         }
 
+        var scanWatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             _busyWith = "a scan";
@@ -268,6 +287,7 @@ public partial class SavePickerViewModel : ObservableObject
                 _scanDiagnostics.Add($"ROOT kind={root.Kind} name={root.DisplayName}");
                 _scanDiagnostics.Add($"TREE URI {root.TreeId}");
                 _scanningRoot = root.TreeId;
+                var rootWatch = System.Diagnostics.Stopwatch.StartNew();
                 Status = $"Scanning {SaveDescriptions.EmulatorName(root.Kind)} unit · {root.DisplayName}…";
                 try
                 {
@@ -309,15 +329,27 @@ public partial class SavePickerViewModel : ObservableObject
                 catch (Exception error)
                 {
                     _scanDiagnostics.Add($"ROOT FAILED {error}");
-                    Status = $"Scan of {SaveDescriptions.EmulatorName(root.Kind)} failed: {error.Message}";
+                    Status = $"Scan of {SaveDescriptions.EmulatorName(root.Kind)} failed. {Domain.ErrorText.Plain(error)}";
                 }
+                PerfTrace.Log($"scan.root[{root.Kind}]", rootWatch);
             }
             _scanningRoot = null;
             AppLog.Info("scan", $"{roots.Count} linked folder(s): {Saves.Count} save(s), {filesSeen} file(s) scanned, {_rejectedCandidates.Count} rejected");
             RebuildGroups();
-            Status = Saves.Count == 0
+            // Copies set aside are said every time, with where they went: nothing found is ever silently dropped.
+            var copies = HiddenSaves.Count(save => save.IsCopy);
+            var aside = copies == 0 ? "" : $" {copies} backup {(copies == 1 ? "copy is" : "copies are")} set aside in Saves.";
+            // Said as a notice only when the number changed: at every launch it would be noise.
+            if (copies != Preferences.Default.Get(CopiesNoticedKey, 0))
+            {
+                Preferences.Default.Set(CopiesNoticedKey, copies);
+                if (copies > 0) NoticeRaised?.Invoke($"{copies} backup {(copies == 1 ? "copy" : "copies")} set aside in Saves.");
+            }
+            PerfTrace.Log("scan.total", scanWatch);
+            if (!_shelfReadyLogged) { _shelfReadyLogged = true; PerfTrace.SinceProcessStart("start.shelf-ready"); }
+            Status = (Saves.Count == 0
                 ? $"No games found. Scanned {filesSeen} file(s), {_rejectedCandidates.Count} looked like saves but did not parse."
-                : $"{Saves.Count} save(s) on the shelf. Scanned {filesSeen} file(s).";
+                : $"{Saves.Count} save(s) on the shelf. Scanned {filesSeen} file(s).") + aside;
         }
         finally
         {
@@ -345,7 +377,7 @@ public partial class SavePickerViewModel : ObservableObject
     private DetectedSave Resolve(DetectedSave detected)
     {
         var guess = GuessOf(detected);
-        var identity = SaveIdentityResolver.Resolve(guess, _identities.Get(detected.DocumentId));
+        var identity = SaveIdentityResolver.Resolve(guess, _identities.Get(detected.DocumentId), detected.IsCopy);
         return detected with { GameLabel = identity.DisplayName, Guess = guess, Identity = identity };
     }
 
@@ -381,18 +413,28 @@ public partial class SavePickerViewModel : ObservableObject
         [ObservableProperty] private string _caption = "All";
     }
 
-    public FilterState Filter { get; } = new();
-    private string _filterKey = "all";
+    public FilterState Filter { get; } = new() { Caption = ShelfFilter.CaptionOf(StoredFilter()) };
+    private string _filterKey = StoredFilter();
+
+    private const string FilterPreferenceKey = "home.shelfFilter";
+
+    /// <summary>The shelf filter the player last picked, so Home opens the way they left it.</summary>
+    private static string StoredFilter()
+    {
+        try { return ShelfFilter.Normalize(Preferences.Default.Get<string?>(FilterPreferenceKey, null)); }
+        catch (Exception) { return ShelfFilter.Default; } // no preferences store: start unfiltered
+    }
 
     /// <summary>
-    /// Applies a shelf filter: "all", "az", "gen1".."gen9", or a console bucket
-    /// ("gb", "gba", "ds", "3ds", "switch"). The unfiltered list is always kept in
-    /// Saves; only the shelf view narrows.
+    /// Applies and remembers a shelf filter (see <see cref="ShelfFilter"/> for the keys).
+    /// The unfiltered list is always kept in Saves; only the shelf view narrows.
     /// </summary>
-    public void ApplyFilter(string key, string caption)
+    public void ApplyFilter(string key)
     {
-        _filterKey = key;
-        Filter.Caption = caption;
+        _filterKey = ShelfFilter.Normalize(key);
+        Filter.Caption = ShelfFilter.CaptionOf(_filterKey);
+        try { Preferences.Default.Set(FilterPreferenceKey, _filterKey); }
+        catch (Exception) { /* not persisted: the filter still applies for this run */ }
         RebuildGroups();
     }
 
@@ -405,31 +447,12 @@ public partial class SavePickerViewModel : ObservableObject
         {
             "release" => groups.OrderBy(ReleaseRank).ThenBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase),
             "az" => groups.OrderBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase),
-            "gen1" or "gen2" or "gen3" or "gen4" or "gen5" or "gen6" or "gen7" or "gen8" or "gen9"
-                => groups.Where(g => g.Generation == int.Parse(_filterKey[3..])),
-            "gb" => groups.Where(g => ConsoleOf(g) == "Game Boy"),
-            "gba" => groups.Where(g => ConsoleOf(g) == "GBA"),
-            "ds" => groups.Where(g => ConsoleOf(g) == "DS"),
-            "3ds" => groups.Where(g => ConsoleOf(g) == "3DS"),
-            "switch" => groups.Where(g => ConsoleOf(g) == "Switch"),
-            _ => groups,
+            _ => groups.Where(g => ShelfFilter.Matches(_filterKey, g.Generation, g.GameLabel,
+                ShelfFilter.IsRomHack(g.Save.Identity, g.Save.Guess))),
         };
         foreach (var group in groups)
             Groups.Add(group);
     }
-
-    /// <summary>Console a game belongs to. Let's Go is a Switch game despite being
-    /// generation 7 with the 3DS pair.</summary>
-    private static string ConsoleOf(SaveCard group) => group.GameLabel.StartsWith("Pokémon Let's Go", StringComparison.Ordinal)
-        ? "Switch"
-        : group.Generation switch
-        {
-            1 or 2 => "Game Boy",
-            3 => "GBA",
-            4 or 5 => "DS",
-            6 or 7 => "3DS",
-            _ => "Switch",
-        };
 
     /// <summary>
     /// Chronological shelf order: Red/Blue (1996) through Legends: Z-A, with the
@@ -445,7 +468,13 @@ public partial class SavePickerViewModel : ObservableObject
             // Omega Ruby contains "Ruby", Brilliant Diamond contains "Diamond"...
             _ when label.Contains("FireRed", StringComparison.Ordinal) || label.Contains("LeafGreen", StringComparison.Ordinal) ||
                     label.Contains("Unbound", StringComparison.Ordinal) || label.Contains("Radical Red", StringComparison.Ordinal) ||
-                    label.Contains("GS Chronicles", StringComparison.Ordinal) => 2004,
+                    label.Contains("GS Chronicles", StringComparison.Ordinal) || label.Contains("Fire Red Extended", StringComparison.Ordinal) ||
+                    label.Contains("Crystal Advance", StringComparison.Ordinal) => 2004,
+            // Emerald-engine hacks without a retail name in their label sit with Emerald.
+            _ when label.Contains("Quetzal", StringComparison.Ordinal) || label.Contains("Heart and Soul", StringComparison.Ordinal) ||
+                    label.Contains("pokeemerald-expansion", StringComparison.Ordinal) || label.Contains("Team Rocket Edition", StringComparison.Ordinal) ||
+                    label.Contains("R.O.W.E.", StringComparison.Ordinal) || label.Contains("Elite Redux", StringComparison.Ordinal) ||
+                    label.Contains("Lazarus", StringComparison.Ordinal) || label.Contains("Lucid", StringComparison.Ordinal) => 2004,
             _ when label.Contains("HeartGold", StringComparison.Ordinal) || label.Contains("SoulSilver", StringComparison.Ordinal) => 2009,
             _ when label.Contains("Black 2", StringComparison.Ordinal) || label.Contains("White 2", StringComparison.Ordinal) => 2012,
             _ when label.Contains("Omega", StringComparison.Ordinal) || label.Contains("Alpha", StringComparison.Ordinal) => 2014,
@@ -481,21 +510,25 @@ public partial class SavePickerViewModel : ObservableObject
     [RelayCommand]
     private async Task LinkFileAsync()
     {
-        if (IsBusy) return;
+        // Reset before the busy check: a call that opens nothing never reports the last save as opened.
         OpenedSave = false;
+        if (IsBusy) return;
         try
         {
             _busyWith = "opening a save file";
             IsBusy = true;
             Status = "Select the save file to link…";
             var document = await _filePicker.PickSaveAsync();
-            if (document is null) { Status = "Link cancelled."; return; }
+            if (document is null) { Status = "Cancelled."; return; }
             Status = $"Linking {document.DisplayName}…";
             await _sessions.OpenAsync(document);
             _boxBrowser.RefreshFromCurrentSession();
             OpenedSave = true;
+            // The picker took a persistable grant: keep the file on the shelf across launches,
+            // like a linked folder (#37). Unlink it from Manage linked storage.
+            _roots.AddRoot(new WatchedRoot(EmulatorKind.LinkedFile, document.DocumentId, document.DisplayName));
             CompleteSetup();
-            Status = "Storage linked.";
+            Status = "Linked.";
         }
         catch (Exception error)
         {
@@ -503,7 +536,7 @@ public partial class SavePickerViewModel : ObservableObject
             // to the copyable scan report so a player can send it.
             _scanDiagnostics.Add($"OPEN FAILED (single file) {error}");
             AppLog.Error("open", "Linking a single save file failed", error);
-            Status = $"Could not link save: {error.Message}";
+            Status = $"Could not link save. {Domain.ErrorText.Plain(error)}";
         }
         finally
         {
@@ -516,6 +549,11 @@ public partial class SavePickerViewModel : ObservableObject
 
     /// <summary>Raised after a folder is linked: a title and what the scan found there, for the UI to show.</summary>
     public event Action<string, string>? LinkReported;
+
+    /// <summary>Raised with something the player should see once, as a notice on Home.</summary>
+    public event Action<string>? NoticeRaised;
+
+    private const string CopiesNoticedKey = "backup_copies_noticed";
 
     private async Task AddRootAndScanAsync(EmulatorKind kind)
     {
@@ -531,8 +569,17 @@ public partial class SavePickerViewModel : ObservableObject
         var emulator = SaveDescriptions.EmulatorName(kind);
         if (found > 0)
         {
+            // Copies among them are said here too: the shelf shows fewer cartridges than "found".
+            var copies = _detected.Count(save => save.IsCopy && save.DocumentId.StartsWith(folder.TreeId, StringComparison.Ordinal));
+            // How many of those the shelf set aside, said as a number: the shelf shows fewer cartridges than "found".
+            var aside = HiddenSaves.Count(save => save.IsCopy && save.DocumentId.StartsWith(folder.TreeId, StringComparison.Ordinal));
+            var shown = copies - aside;
             LinkReported?.Invoke($"{emulator} linked",
-                $"Found {found} Pokémon save{(found == 1 ? "" : "s")} in {folder.DisplayName}.");
+                $"Found {found} Pokémon save{(found == 1 ? "" : "s")} in {folder.DisplayName}."
+                + (copies == 0 ? " No backup copies among them: every save is on the Home shelf."
+                    : $" {copies} {(copies == 1 ? "is a backup copy" : "are backup copies")}: {aside} set aside off the Home shelf"
+                        + (shown > 0 ? $", {shown} kept on it as you asked" : "")
+                        + ". Find them in Saves, or in Settings › Games and folders › Hidden saves."));
             return;
         }
         var rejected = _rejectedCandidates.Count(r => r.StartsWith($"{kind}:", StringComparison.Ordinal));
@@ -555,8 +602,9 @@ public partial class SavePickerViewModel : ObservableObject
 
     public async Task OpenAsync(DetectedSave save)
     {
-        if (IsBusy) return;
+        // Reset before the busy check: a call that opens nothing never reports the last save as opened.
         OpenedSave = false;
+        if (IsBusy) return;
         try
         {
             _busyWith = $"opening {save.GameLabel}";
@@ -564,8 +612,13 @@ public partial class SavePickerViewModel : ObservableObject
             Status = $"Connecting to {save.GameLabel}…";
             // EngineHint carries the chosen game (FireRed vs LeafGreen), never the custom
             // name; the session service reads the chosen engine route from the store.
-            await _sessions.OpenAsync(new PickedDocument(save.DocumentId, save.EngineHint));
+            var syncWatch = System.Diagnostics.Stopwatch.StartNew();
+            var opening = _sessions.OpenAsync(new PickedDocument(save.DocumentId, save.EngineHint));
+            PerfTrace.Log("open.ui-thread-blocked", syncWatch);
+            await opening;
+            syncWatch.Restart();
             _boxBrowser.RefreshFromCurrentSession();
+            PerfTrace.Log("open.refresh-snapshot", syncWatch);
             OpenedSave = true;
             AppLog.Info("open", $"Opened {save.GameLabel} ({save.Emulator}, gen {save.Generation})");
             Status = "Connected.";
@@ -574,7 +627,7 @@ public partial class SavePickerViewModel : ObservableObject
         {
             _scanDiagnostics.Add($"OPEN FAILED {save.FileName} {error}");
             AppLog.Error("open", $"Opening {save.GameLabel} ({save.Emulator}, {save.FileName}) failed", error);
-            Status = $"Could not connect: {error.Message}";
+            Status = $"Could not connect. {Domain.ErrorText.Plain(error)}";
         }
         finally
         {

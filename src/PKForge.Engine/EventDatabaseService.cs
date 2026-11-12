@@ -242,7 +242,7 @@ public sealed class EventDatabaseService : IEventDatabaseService
         if (created.Species == 0)
             return new GenerationOutcome(false, "This gift could not be converted for your save.");
 
-        save.SetBoxSlotAtIndex(created, box, slot, EntityImportSettings.None);
+        save.SetBoxSlotAtIndex(created, box, slot, NewcomerImport.For(save, created));
         return new GenerationOutcome(true, "Here's your gift. Take good care of it!");
     }
 

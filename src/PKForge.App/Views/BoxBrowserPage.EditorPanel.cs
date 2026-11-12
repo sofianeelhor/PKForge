@@ -1,4 +1,3 @@
-using PKForge.App.Services;
 using PKForge.App.Theme;
 using PKForge.App.ViewModels;
 using PKForge.Chrome;
@@ -26,9 +25,9 @@ public sealed partial class BoxBrowserPage
     private Grid EditorShell(View body)
     {
         _editorBackdrop = new SKCanvasView { InputTransparent = true };
-        _editorBackdrop.PaintSurface += PaintEditorBackdrop;
+        _editorBackdrop.PaintSurface += PaintGuard.Wrap("The editor backdrop", PaintEditorBackdrop);
         _editorHeader = new SKCanvasView { HeightRequest = Design(EditorPaint.DesignHeaderHeight), InputTransparent = true };
-        _editorHeader.PaintSurface += PaintEditorHeader;
+        _editorHeader.PaintSurface += PaintGuard.Wrap("The editor header", PaintEditorHeader);
 
         var layout = new Grid
         {
@@ -38,7 +37,7 @@ public sealed partial class BoxBrowserPage
         Grid.SetRow(body, 1);
         body.Margin = new Thickness(Design(3), Design(16), Design(3), Design(24));
 
-        _viewModel.PropertyChanged += (_, args) =>
+        ViewModelChanged += (_, args) =>
         {
             if (args.PropertyName is nameof(BoxBrowserViewModel.Selected) or nameof(BoxBrowserViewModel.EditNickname)
                 or nameof(BoxBrowserViewModel.EditLevel) or nameof(BoxBrowserViewModel.EditShiny)
@@ -79,7 +78,7 @@ public sealed partial class BoxBrowserPage
             _sprites.Warm(look, Redraw);
             return;
         }
-        using var image = SKImage.FromBitmap(sprite);
+        var image = Services.SpriteImages.Of(sprite);
         EditorPaint.PaintWatermark(canvas, bounds, image, unit, BoxGridRenderer.SpriteSampling);
     }
 
@@ -132,7 +131,7 @@ public sealed partial class BoxBrowserPage
             star.Text = _viewModel.EditShiny ? "★" : "☆";
             star.TextColor = _viewModel.EditShiny ? UiTokens.Gold : EditorValue;
         }
-        _viewModel.PropertyChanged += (_, args) =>
+        ViewModelChanged += (_, args) =>
         {
             if (args.PropertyName is nameof(BoxBrowserViewModel.EditGender) or nameof(BoxBrowserViewModel.EditShiny)
                 or nameof(BoxBrowserViewModel.Selected))
@@ -160,6 +159,13 @@ public sealed partial class BoxBrowserPage
     /// One move row: the move's type plate, its name, its PP (the stored PP while the move is
     /// unchanged, the new move's base PP otherwise), and the chevron that opens the picker.
     /// </summary>
+    /// <summary>A ROM hack's own move in this slot (no PKHeX id, read as 0), by the engine's name.</summary>
+    private string? HackMoveName(int index) =>
+        _viewModel.Selected is { IsEmpty: false, MoveNames: { } names } shown && index < names.Count
+        && (index switch { 0 => shown.Move1, 1 => shown.Move2, 2 => shown.Move3, _ => shown.Move4 }) == 0
+            ? names[index] is { Length: > 0 } name ? name : null
+            : null;
+
     private Border MoveRow(int index, string vmProperty, IGameDataService data, bool dark, Func<Task> open)
     {
         var badge = InfoKit.TypeBadge(null, Design(128));
@@ -185,7 +191,7 @@ public sealed partial class BoxBrowserPage
         {
             var id = ParseInt(GetVmString(vmProperty)) ?? 0;
             var session = _sessionsFor();
-            name.Text = id == 0 ? "—" : (uint)id < (uint)data.MoveNames.Count ? data.MoveNames[id] : $"#{id}";
+            name.Text = id == 0 ? HackMoveName(index) ?? "—" : (uint)id < (uint)data.MoveNames.Count ? data.MoveNames[id] : $"#{id}";
             var facts = id == 0 || session is null ? null : InfoPickers.Info?.GetMove(session, id);
             InfoKit.SetType(badge, facts?.Type);
             pp.Text = "";
@@ -200,7 +206,7 @@ public sealed partial class BoxBrowserPage
             catch (Exception error) when (error is ArgumentException or InvalidOperationException) { }
             pp.Text = stored is { } s ? $"PP {s.PP}/{s.MaxPP}" : $"PP {facts.PP}";
         }
-        _viewModel.PropertyChanged += (_, args) =>
+        ViewModelChanged += (_, args) =>
         {
             if (args.PropertyName == vmProperty || args.PropertyName is nameof(BoxBrowserViewModel.Selected))
                 Refresh();
@@ -297,7 +303,7 @@ public sealed partial class BoxBrowserPage
             };
             report.IsVisible = _viewModel.LegalityBadge == "✗";
         }
-        _viewModel.PropertyChanged += (_, args) =>
+        ViewModelChanged += (_, args) =>
         {
             if (args.PropertyName is nameof(BoxBrowserViewModel.LegalityBadge) or nameof(BoxBrowserViewModel.Selected))
                 Refresh();
@@ -378,7 +384,7 @@ public sealed partial class BoxBrowserPage
         {
             WidthRequest = Design(40), HeightRequest = Design(40), InputTransparent = true, VerticalOptions = LayoutOptions.Center,
         };
-        view.PaintSurface += (_, args) =>
+        view.PaintSurface += PaintGuard.Wrap("BoxBrowserPage.EditorPanel view", (_, args) =>
         {
             var c = args.Surface.Canvas;
             c.Clear(SKColors.Transparent);
@@ -391,8 +397,8 @@ public sealed partial class BoxBrowserPage
             }
             using var image = SKImage.FromBitmap(bitmap);
             c.DrawImage(image, new SKRect(0, 0, args.Info.Width, args.Info.Height), new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None));
-        };
-        _viewModel.PropertyChanged += (_, args) =>
+        });
+        ViewModelChanged += (_, args) =>
         {
             if (args.PropertyName is nameof(BoxBrowserViewModel.EditBall) or nameof(BoxBrowserViewModel.Selected))
                 view.InvalidateSurface();

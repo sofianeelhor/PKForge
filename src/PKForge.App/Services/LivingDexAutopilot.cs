@@ -96,6 +96,14 @@ public static class LivingDexAutopilot
                     sources.Add(Excluded(save, label, LivingDexExclusion.Hidden));
                     continue;
                 }
+                // A backup copy put back on Home is listed, named as a copy, and never touched:
+                // gathering from it or into it would split the dex across a file no game plays.
+                if (save.IsCopy)
+                {
+                    sources.Add(Excluded(save, $"{label} (backup)", LivingDexExclusion.Hidden,
+                        $"A backup copy ({SaveTargets.Where(save)}). The autopilot works on live saves only."));
+                    continue;
+                }
                 try
                 {
                     var bytes = await access.ReadAsync(save.DocumentId, cancellationToken).ConfigureAwait(false);
@@ -106,7 +114,7 @@ public static class LivingDexAutopilot
                 catch (OperationCanceledException) { throw; }
                 catch (Exception error)
                 {
-                    sources.Add(Excluded(save, label, LivingDexExclusion.Unreadable, $"Could not be read: {error.Message}"));
+                    sources.Add(Excluded(save, label, LivingDexExclusion.Unreadable, $"Could not be read. {Domain.ErrorText.Plain(error)}"));
                 }
             }
             if (bank is not null) sources.Add(LivingDexSources.FromBank(bank));
@@ -130,6 +138,8 @@ public static class LivingDexAutopilot
     {
         if (hardcore) return (LivingDexExclusion.Hardcore, null);
         var hack = save.Format is SaveFormat.Unbound or SaveFormat.RadicalRed or SaveFormat.GsChronicles
+            or SaveFormat.RechargedYellow or SaveFormat.Quetzal or SaveFormat.SoulGold or SaveFormat.Expansion or SaveFormat.OriginHeartGold or SaveFormat.EliteRedux
+            or SaveFormat.FireRedExtended or SaveFormat.CrystalAdvanceRedux
             || save.Identity?.GameChoiceId?.StartsWith("hack", StringComparison.Ordinal) == true
             || session is not SaveEngineSession
             || writer.LayoutRiskOf(save.DocumentId, session.Snapshot) is not null
@@ -138,7 +148,11 @@ public static class LivingDexAutopilot
         if (writer.WhyWritesAreRefused(save.DocumentId, session.Snapshot) is { } refusal) return (LivingDexExclusion.ReadOnly, refusal);
         if (!session.SupportsBoxTools) return (LivingDexExclusion.Unsupported, null);
         // The open save may hold edits PKForge has not written: the file is not the truth then.
-        if (save.DocumentId == openId && openBytes is { } live && !live.Span.SequenceEqual(bytes.Span))
+        // The live session is compared with this file written the same way, not with the raw
+        // file: a Game Boy cartridge leaves stale bytes after its lists that a write tidies,
+        // so an untouched Red, Blue or Yellow never equals its own file byte for byte.
+        if (save.DocumentId == openId && openBytes is { } live && !live.Span.SequenceEqual(bytes.Span)
+            && !live.Span.SequenceEqual(session.Serialize().Span))
             return (LivingDexExclusion.UnsavedChanges, null);
         return (LivingDexExclusion.None, null);
     }

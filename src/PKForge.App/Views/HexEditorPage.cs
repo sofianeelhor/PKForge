@@ -59,7 +59,7 @@ public sealed class HexEditorPage : IPadHandler
         }
         catch (Exception error)
         {
-            viewModel.Status = $"Hex editor closed: {error.Message}";
+            viewModel.Status = $"Hex editor closed. {Domain.ErrorText.Plain(error)}";
         }
     }
 
@@ -76,7 +76,7 @@ public sealed class HexEditorPage : IPadHandler
         _cursorInfo = new Label { TextColor = UiTokens.Ink1, FontFamily = DsChrome.PixelFont, FontSize = UiTokens.TextBody };
 
         _canvas = new SKCanvasView { EnableTouchEvents = true, VerticalOptions = LayoutOptions.Fill };
-        _canvas.PaintSurface += Paint;
+        _canvas.PaintSurface += PaintGuard.Wrap("HexEditorPage.Paint", Paint);
         _canvas.Touch += Touch;
 
         View hints = Kit.WindowHints(
@@ -403,7 +403,7 @@ public sealed class HexEditorPage : IPadHandler
         if (_edits.Count > 0)
         {
             var choice = await PadMenu.ShowAsync(_host, "Save byte changes?",
-                $"{_edits.Count} byte(s) changed. Raw edits skip format checks; a restore point is created first.",
+                $"{_edits.Count} byte(s) changed. Raw edits skip format checks. Restore points can undo it.",
                 "Save changes", "Discard changes", "Keep editing");
             if (choice == "Save changes") { await CommitAsync(); return; }
             if (choice == "Keep editing" || choice is null) return;
@@ -453,7 +453,7 @@ public sealed class HexEditorPage : IPadHandler
         }
 
         var confirmed = await PadMenu.ConfirmAsync(_host, "Write byte changes?",
-            $"{_edits.Count} byte(s) will be written to {current.Document.DisplayName}. A restore point is created first.",
+            $"{_edits.Count} byte(s) will be written to {current.Document.DisplayName}. Restore points can undo it.",
             "Write");
         if (!confirmed) return;
 
@@ -469,7 +469,7 @@ public sealed class HexEditorPage : IPadHandler
                 _viewModel.RefreshFromCurrentSession();
             }
             _viewModel.Status = receipt.Changed
-                ? $"Bytes saved. Restore point {receipt.BackupId[..13]}…"
+                ? "Saved."
                 : "No changes.";
             _edits.Clear();
             TearDown();
@@ -479,7 +479,7 @@ public sealed class HexEditorPage : IPadHandler
         {
             // The write aborted (validation, storage, format refusal): keep the editor
             // open with the staged changes instead of closing as if it worked.
-            _viewModel.Status = $"Byte write aborted: {error.Message}";
+            _viewModel.Status = $"Not written. {Domain.ErrorText.Plain(error)}";
         }
         finally
         {
